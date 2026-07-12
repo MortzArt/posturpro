@@ -64,7 +64,8 @@ test.describe("tap targets ≥ 44px on mobile (AC-14)", () => {
   })
 
   test("back-home CTA on the 404 is at least 44px tall", async ({ page }) => {
-    await page.goto("/sillas")
+    // `/sillas` is a real catalog route as of T3; use a still-dead path.
+    await page.goto("/pagina-que-no-existe")
     const box = await page.getByTestId("not-found-home").boundingBox()
     expect(box).not.toBeNull()
     expect(box!.height).toBeGreaterThanOrEqual(44)

@@ -1,6 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
-import { getStoreSettings } from "@/lib/store-settings";
+import { getStoreSettingsStatic } from "@/lib/store-settings";
 import { formatMXN } from "@/lib/money";
 import { SEED_STORE_NAME } from "@/lib/config";
 import { cn } from "@/lib/utils";
@@ -11,8 +11,10 @@ import { cn } from "@/lib/utils";
  * free-shipping line derived from `store_settings` via `formatMXN`, and a
  * copyright line with the current year.
  *
- * Data resolves server-side (no client spinner, no CLS). If `getStoreSettings`
- * returns `null` (row absent / RLS / network error — already logged in the
+ * Data resolves server-side (no client spinner, no CLS) via the COOKIE-FREE,
+ * tag-cached `getStoreSettingsStatic` so the footer no longer forces every
+ * route dynamic (T3 AC-11). If it returns `null` (row absent / RLS / network
+ * error — already logged in the
  * wrapper), the free-shipping line is omitted and the store name falls back to
  * `SEED_STORE_NAME`; the rest of the footer still renders (graceful degrade).
  * The free-shipping slot reserves height (`min-h-[1lh]`) so its presence or
@@ -41,7 +43,7 @@ const FOOTER_LINK_CLASS = cn(
 
 export async function SiteFooter() {
   const t = await getTranslations("footer");
-  const settings = await getStoreSettings();
+  const settings = await getStoreSettingsStatic();
 
   const storeName = settings?.store_name ?? SEED_STORE_NAME;
   const freeShippingLine =

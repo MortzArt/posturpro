@@ -58,5 +58,60 @@
     "description": "An unexpected error occurred. Please try again.",
     "retry": "Try again",
     "reference": "Reference: {digest}"
+  },
+  "catalog": {
+    "title": "Chairs",
+    "subtitle": "Our full collection of ergonomic chairs.",
+    "breadcrumb": {
+      "home": "Home",
+      "catalog": "Chairs",
+      "categories": "Categories",
+      "brands": "Brands",
+      "styles": "Styles"
+    },
+    "categories": {
+      "title": "Categories",
+      "subtitle": "Browse our chairs by category."
+    },
+    "brands": {
+      "title": "Brands",
+      "subtitle": "Discover the brands we carry."
+    },
+    "styles": {
+      "title": "Styles",
+      "subtitle": "Find the style that suits you."
+    },
+    "stock": {
+      "inStock": "In stock",
+      "lowStock": "Only {count} left",
+      "outOfStock": "Out of stock"
+    },
+    "card": {
+      "colorsCount": "{count} colors",
+      "imagePlaceholder": "Image unavailable"
+    },
+    "pagination": {
+      "label": "Pagination",
+      "previous": "Previous",
+      "next": "Next",
+      "pageOf": "Page {page} of {total}",
+      "goToPage": "Page {page}",
+      "morePages": "More pages"
+    },
+    "empty": {
+      "category": "No chairs in this category yet.",
+      "brand": "No chairs from this brand yet.",
+      "style": "No chairs in this style yet.",
+      "cta": "View the full catalog"
+    },
+    "brand": {
+      "logoAlt": "{brand} logo"
+    },
+    "metadata": {
+      "catalogTitle": "Chairs",
+      "categoriesTitle": "Categories",
+      "brandsTitle": "Brands",
+      "stylesTitle": "Styles"
+    }
   }
 }

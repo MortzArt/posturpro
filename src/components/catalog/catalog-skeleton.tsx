@@ -1,0 +1,72 @@
+import { PRODUCTS_PER_PAGE } from "@/lib/config";
+import { cn } from "@/lib/utils";
+
+/**
+ * Loading skeletons (T3 UX — loading state). Card-shaped placeholders that
+ * match the real `ProductGrid` columns and the `aspect-[4/5]` image box
+ * PIXEL-FOR-PIXEL, so the swap to real content causes NO layout shift (Emil:
+ * "reserve exact space; never pop content in"). Pulse is `motion-safe:` only —
+ * reduced-motion users get static boxes, not a looping opacity animation.
+ */
+
+/** A single skeleton card (image box + two text bars). */
+function SkeletonCard() {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="aspect-[4/5] w-full bg-muted motion-safe:animate-pulse" />
+      <div className="flex flex-col gap-2 p-3 md:p-4">
+        <div className="h-3 w-1/3 rounded bg-muted motion-safe:animate-pulse" />
+        <div className="h-4 w-2/3 rounded bg-muted motion-safe:animate-pulse" />
+        <div className="h-3 w-1/4 rounded bg-muted motion-safe:animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
+/** A full skeleton grid of `PRODUCTS_PER_PAGE` cards in the real grid layout. */
+export function ProductGridSkeleton() {
+  return (
+    <ul
+      className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 md:gap-x-6 md:gap-y-10 lg:grid-cols-4"
+      aria-hidden
+      data-testid="product-grid-skeleton"
+    >
+      {Array.from({ length: PRODUCTS_PER_PAGE }).map((_, index) => (
+        <li key={index}>
+          <SkeletonCard />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * A full listing-page skeleton: reserves the breadcrumb row + page header +
+ * product grid so the whole above-the-fold holds its space during data fetch.
+ */
+export function CatalogPageSkeleton({
+  className,
+}: {
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8",
+        className,
+      )}
+    >
+      {/* breadcrumb row */}
+      <div className="flex items-center gap-2 py-3">
+        <div className="h-4 w-12 rounded bg-muted motion-safe:animate-pulse" />
+        <div className="h-4 w-16 rounded bg-muted motion-safe:animate-pulse" />
+      </div>
+      {/* page header */}
+      <div className="mb-6 mt-2 flex flex-col gap-3 md:mb-8">
+        <div className="h-8 w-40 rounded bg-muted motion-safe:animate-pulse" />
+        <div className="h-4 w-64 max-w-full rounded bg-muted motion-safe:animate-pulse" />
+      </div>
+      <ProductGridSkeleton />
+    </div>
+  );
+}

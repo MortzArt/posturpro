@@ -378,3 +378,72 @@
     transform: none;
   }
 }
+/* ======================================================================== *
+ * CATALOG CARD LIFT (T3)
+ * ------------------------------------------------------------------------
+ * Product/index-tile hover + press treatment. transform/opacity only; hover
+ * gated behind hover-capable pointers so it never sticks on touch; press feels
+ * responsive (Emil "respond on pointer-down"); reduced motion drops transforms.
+ * The image scale target is a child with `.card-image`.
+ * ======================================================================== */
+.card-lift {
+  transition: box-shadow 200ms var(--ease-out);
+}
+.card-lift:active {
+  transform: scale(0.99);
+  transition: transform 160ms var(--ease-out);
+}
+.card-lift .card-image {
+  transition: transform 200ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .card-lift:hover {
+    box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.06));
+  }
+  .card-lift:hover .card-image {
+    transform: scale(1.02);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-lift,
+  .card-lift:active {
+    transform: none;
+  }
+  .card-lift .card-image,
+  .card-lift:hover .card-image {
+    transform: none;
+  }
+}
+
+/* ======================================================================== *
+ * GRID STAGGER ENTRANCE (T3)
+ * ------------------------------------------------------------------------
+ * Cards/tiles enter with opacity + a small rise; the per-item delay is set
+ * inline (`style={{ transitionDelay }}`) and capped by the caller so a full
+ * grid finishes staggering in ≤ ~200ms. CSS transition (not keyframes) so it
+ * stays interruptible and off the main thread. Reduced motion: opacity only,
+ * no translate, no delay.
+ * ======================================================================== */
+.stagger {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stagger {
+    transition: opacity 200ms ease;
+    transition-delay: 0ms !important;
+
+    @starting-style {
+      opacity: 0;
+      transform: none;
+    }
+  }
+}

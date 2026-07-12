@@ -3,10 +3,15 @@ import { expect, test } from "@playwright/test"
 /**
  * 404 / invalid-locale routing (T2 AC-10, edge case 1, edge case 8).
  *
- * Invalid locale segments (`/fr`) and dead in-locale routes (`/sillas`) must
- * render the localized friendly 404 INSIDE the shell (header + footer) with a
- * "back to home" action and an HTTP 404 status — never a blank page or a crash.
+ * Invalid locale segments (`/fr`) and dead in-locale routes (a nonexistent
+ * path caught by the catch-all) must render the localized friendly 404 INSIDE
+ * the shell (header + footer) with a "back to home" action and an HTTP 404
+ * status — never a blank page or a crash. NOTE: `/sillas` is a REAL catalog
+ * route as of T3, so a still-dead path is used here instead.
  */
+
+/** A path with no real route (caught by `[locale]/[...rest]` → notFound). */
+const DEAD_ROUTE = "/pagina-que-no-existe"
 
 test.describe("localized 404 inside the shell (AC-10)", () => {
   test("invalid locale /fr returns 404 with the localized 404 in the shell (edge case 1)", async ({
@@ -22,17 +27,17 @@ test.describe("localized 404 inside the shell (AC-10)", () => {
     await expect(page.locator("main h1")).toHaveText(/página no encontrada/i)
   })
 
-  test("dead in-locale route /sillas renders the 404 inside the shell", async ({
+  test("dead in-locale route renders the 404 inside the shell", async ({
     page,
   }) => {
-    const response = await page.goto("/sillas")
+    const response = await page.goto(DEAD_ROUTE)
     expect(response?.status()).toBe(404)
     await expect(page.getByTestId("header-wordmark")).toBeVisible()
     await expect(page.getByTestId("not-found-home")).toBeVisible()
   })
 
   test("back-home CTA returns to the homepage", async ({ page }) => {
-    await page.goto("/sillas")
+    await page.goto(DEAD_ROUTE)
     await page.getByTestId("not-found-home").click()
     await expect(page).toHaveURL(/\/$/)
     await expect(page.locator("main h1")).toHaveText(/sillas ergonómicas/i)

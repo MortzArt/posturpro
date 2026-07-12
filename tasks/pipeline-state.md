@@ -1,8 +1,8 @@
 # Pipeline State
 Task: T3 — Catalog browsing
 Tier: full-cycle (auto-classified: complexity=medium → run all stages EXCEPT Stage 11 Hacker)
-Stage: 2
-Agent: ultradesign (Stage 3 — UI Design)
+Stage: 4
+Agent: ultradev (Stage 4 — Dev). UI design done: 10 components (ProductCard atom, StockBadge, ProductGrid w/ capped stagger, Breadcrumbs, crawlable Pagination, BrandLogo w/ monogram fallback, EmptyState, CategoryTree, index tiles, skeleton loading.tsx). 2-col mobile grid, aspect-[4/5] images, out-of-stock clickable, cards stay server components, no new deps.
 Last Updated: 2026-07-12
 Notes: Stage 1+2 (PlanResearch) COMPLETE. Artifacts written: tasks/next-ticket.md + tasks/research-report.md.
 

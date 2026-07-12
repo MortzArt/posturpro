@@ -105,3 +105,66 @@ export const SEED_STORE_NAME = "PosturPro" as const;
 
 /** Default store contact email written by the seed (admin-editable in T10). */
 export const SEED_STORE_CONTACT_EMAIL = "hola@posturpro.mx" as const;
+
+/* ========================================================================= *
+ * CATALOG (T3) — non-secret tunables, single-sourced here (Rule 4).
+ * ========================================================================= */
+
+/**
+ * Products shown per catalog/category/brand/style grid page (T3 AC-9).
+ * 12 is divisible by the 2 / 3 / 4 grid columns, so the last row is never
+ * ragged at any breakpoint. Change this and pagination math + skeleton count
+ * follow automatically (both read this constant).
+ */
+export const PRODUCTS_PER_PAGE = 12;
+
+/**
+ * Inclusive upper bound for the "low stock" badge state (T3 AC-8). Effective
+ * stock `1..LOW_STOCK_THRESHOLD` renders "Solo quedan {n}"; `> threshold`
+ * renders "En stock"; `0` renders "Agotado".
+ */
+export const LOW_STOCK_THRESHOLD = 5;
+
+/**
+ * ISR revalidation window (seconds) for cached catalog reads and the static
+ * store-settings read (T3 AC-11). Catalog pages become static/ISR; admin CRUD
+ * (T10) busts the relevant `unstable_cache` tag on demand, so this is only the
+ * fallback staleness ceiling, not the primary freshness mechanism. 5 minutes.
+ */
+export const CATALOG_REVALIDATE_SECONDS = 300;
+
+/* ------------------------------------------------------------------------- *
+ * Catalog route segments — locale-agnostic Spanish paths (T3 routing
+ * decision). The locale-aware `Link` adds the `/en` prefix automatically, so
+ * these are single-sourced here rather than hardcoded across pages/breadcrumbs.
+ * ------------------------------------------------------------------------- */
+
+/** All-products catalog grid. */
+export const CATALOG_PATH = "/sillas" as const;
+/** Category index. */
+export const CATEGORIES_PATH = "/categorias" as const;
+/** Brand index. */
+export const BRANDS_PATH = "/marcas" as const;
+/** Style index. */
+export const STYLES_PATH = "/estilos" as const;
+
+/** Build the canonical category detail path for a slug. */
+export function categoryPath(slug: string): string {
+  return `${CATEGORIES_PATH}/${slug}`;
+}
+/** Build the canonical brand detail path for a slug. */
+export function brandPath(slug: string): string {
+  return `${BRANDS_PATH}/${slug}`;
+}
+/** Build the canonical style detail path for a slug. */
+export function stylePath(slug: string): string {
+  return `${STYLES_PATH}/${slug}`;
+}
+/**
+ * Canonical product-detail (PDP) path for a slug (T3 AC-12). The route is
+ * owned by T4 and may 404 via the catch-all until it ships — T3 only links to
+ * it. Single-sourced so T4 need not hunt for hardcoded strings.
+ */
+export function productPath(slug: string): string {
+  return `/producto/${slug}`;
+}

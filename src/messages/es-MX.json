@@ -58,5 +58,60 @@
     "description": "Ocurrió un error inesperado. Inténtalo de nuevo.",
     "retry": "Reintentar",
     "reference": "Referencia: {digest}"
+  },
+  "catalog": {
+    "title": "Sillas",
+    "subtitle": "Toda nuestra colección de sillas ergonómicas.",
+    "breadcrumb": {
+      "home": "Inicio",
+      "catalog": "Sillas",
+      "categories": "Categorías",
+      "brands": "Marcas",
+      "styles": "Estilos"
+    },
+    "categories": {
+      "title": "Categorías",
+      "subtitle": "Explora nuestras sillas por categoría."
+    },
+    "brands": {
+      "title": "Marcas",
+      "subtitle": "Descubre las marcas que trabajamos."
+    },
+    "styles": {
+      "title": "Estilos",
+      "subtitle": "Encuentra el estilo que va contigo."
+    },
+    "stock": {
+      "inStock": "En stock",
+      "lowStock": "Solo quedan {count}",
+      "outOfStock": "Agotado"
+    },
+    "card": {
+      "colorsCount": "{count} colores",
+      "imagePlaceholder": "Imagen no disponible"
+    },
+    "pagination": {
+      "label": "Paginación",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "pageOf": "Página {page} de {total}",
+      "goToPage": "Página {page}",
+      "morePages": "Más páginas"
+    },
+    "empty": {
+      "category": "No hay sillas en esta categoría todavía.",
+      "brand": "No hay sillas de esta marca todavía.",
+      "style": "No hay sillas con este estilo todavía.",
+      "cta": "Ver todo el catálogo"
+    },
+    "brand": {
+      "logoAlt": "Logo de {brand}"
+    },
+    "metadata": {
+      "catalogTitle": "Sillas",
+      "categoriesTitle": "Categorías",
+      "brandsTitle": "Marcas",
+      "stylesTitle": "Estilos"
+    }
   }
 }

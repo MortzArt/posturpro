@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { routing } from "@/i18n/routing";
-import { getStoreSettings } from "@/lib/store-settings";
+import { getStoreSettingsStatic } from "@/lib/store-settings";
 import { SEED_STORE_NAME } from "@/lib/config";
 import { sans } from "@/app/fonts";
 import { SiteHeader } from "@/components/layout/site-header";
@@ -63,7 +63,9 @@ export default async function LocaleLayout({
   setRequestLocale(locale);
 
   const t = await getTranslations("nav");
-  const settings = await getStoreSettings();
+  // Cookie-free, tag-cached read so the shell no longer forces every route
+  // dynamic — catalog pages become static/ISR (T3 AC-11).
+  const settings = await getStoreSettingsStatic();
   const storeName = settings?.store_name ?? SEED_STORE_NAME;
 
   return (
