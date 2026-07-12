@@ -21,3 +21,16 @@ Open items discovered during the pipeline. Check off when addressed.
   by a view/generated column. Consider an `effective_stock` view when the
   cart/inventory logic lands so consumers cannot read the wrong column.
   (Ref: review minor m-2.)
+- [ ] **Race-safe stock reservation primitive (T7).** The schema has stock
+  columns but no reservation mechanism. T7 checkout must implement an atomic
+  RPC / `SELECT ... FOR UPDATE` decrement inside the order-creation
+  transaction — never an app-level read-then-write. (Ref: architecture review,
+  HIGH risk.)
+- [ ] **Webhook idempotency ledger for Mercado Pago (T8).** `mp_payment_id`
+  exists but there is no processed-events table or unique constraint making
+  duplicate webhook deliveries safe. Add before handling MP callbacks in T8.
+  (Ref: architecture review, HIGH risk.)
+- [ ] **PostgREST embedding through `products_public` (T3).** Views cannot
+  embed related rows the way base tables can. Standardize the catalog-read
+  embedding strategy at the start of T3 so it isn't discovered mid-build.
+  (Ref: architecture review, MED risk.)

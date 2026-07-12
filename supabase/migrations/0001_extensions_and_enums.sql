@@ -58,6 +58,10 @@ $$;
 create or replace function set_updated_at()
 returns trigger
 language plpgsql
+-- Pin search_path (defense-in-depth): keeps name resolution deterministic and
+-- immune to a caller-controlled search_path, matching Supabase's
+-- `function_search_path_mutable` lint. No behavior change.
+set search_path = ''
 as $$
 begin
   new.updated_at = now();

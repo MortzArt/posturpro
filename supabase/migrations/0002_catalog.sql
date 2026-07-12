@@ -47,6 +47,9 @@ create index if not exists categories_parent_id_idx on categories (parent_id);
 create or replace function categories_check_no_cycle()
 returns trigger
 language plpgsql
+-- Pin search_path (defense-in-depth). Table references below are schema-
+-- qualified (public.categories) so an empty search_path resolves correctly.
+set search_path = ''
 as $$
 declare
   ancestor_id uuid := new.parent_id;
@@ -65,7 +68,7 @@ begin
       raise exception 'category ancestor chain exceeds max depth (possible cycle)'
         using errcode = 'check_violation';
     end if;
-    select parent_id into ancestor_id from categories where id = ancestor_id;
+    select parent_id into ancestor_id from public.categories where id = ancestor_id;
   end loop;
   return new;
 end;

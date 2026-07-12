@@ -170,6 +170,8 @@ create table if not exists store_settings (
 create or replace function orders_block_snapshot_update()
 returns trigger
 language plpgsql
+-- Pin search_path (defense-in-depth); function only touches new/old, no tables.
+set search_path = ''
 as $$
 begin
   if new.order_number            is distinct from old.order_number
@@ -213,6 +215,8 @@ $$;
 create or replace function order_items_block_update()
 returns trigger
 language plpgsql
+-- Pin search_path (defense-in-depth); function only touches new/old, no tables.
+set search_path = ''
 as $$
 begin
   if new.order_id         is distinct from old.order_id
