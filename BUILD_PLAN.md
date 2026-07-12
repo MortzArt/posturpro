@@ -6,7 +6,7 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 
 ## Phase 1 tasks
 
-- [ ] **T1 — Data foundation** (tier: full-cycle)
+- [x] **T1 — Data foundation** (tier: full-cycle)
   Supabase integration + full database schema: products, variants, brands, categories (nestable, many-to-many with products), styles, tags, product images, orders, order items, order status history, customers (guest records), discount codes (table only), product questions (Q&A), store settings, static pages (data-backed), i18n content structure. Row-level security. Seed data: ~30 chairs, ~5 brands, ~6 categories, ~6 styles, color variants, realistic MXN prices. Store settings seeded: flat rate MX$500, free-shipping threshold MX$10,000.
 
 - [ ] **T2 — App shell & design system** (tier: standard)
