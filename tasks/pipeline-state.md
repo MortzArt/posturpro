@@ -1,7 +1,7 @@
 # Pipeline State
-Task: T1 — Data foundation
-Tier: full-cycle (high)
-Stage: COMPLETE
-Agent: —
+Task: T2 — App shell & design system
+Tier: full-cycle (pending auto-classification; BUILD_PLAN recommends standard)
+Stage: 1
+Agent: ultraplanner-research
 Last Updated: 2026-07-12
-Notes: T1 SHIPPED (verify verdict SHIP, quality 9/10, 133/133 tests). Marked [x] in BUILD_PLAN.md. Outstanding user action: apply migrations to the remote Supabase project — `supabase login` → link → `npm run db:push` → `npm run db:types` → `npm run db:seed` (sequence in tasks/dev-done.md; everything verified against local Docker Supabase). Next task: T2 — App shell & design system (tier: standard, unblocked). Forward obligations for T3/T7/T8 recorded in tasks/clean-code-backlog.md.
+Notes: Starting full cycle for T2: layout, header with navigation, footer, neutral design tokens (centralized for later brand swap), ES/EN i18n setup with Spanish default and language toggle, mobile-first responsive foundation, 404/error pages, WhatsApp floating button. T1 (data foundation) shipped; local Docker Supabase workflow available (npm run db:reset / db:seed / test:integration). Remote Supabase apply still pending user action (supabase login). First UI task — Emil Kowalski craft skills in .claude/skills/ now mandatory for UI stages (see CLAUDE.md → UI Craft & Animation Skills).

@@ -1,160 +1,150 @@
-# Task: T1 — Data Foundation (Supabase + Full Database Schema)
+# Task: T2 — App Shell & Design System
 
 ## Priority
 
-**Critical** — This is the root dependency of the entire build plan. T2 (app shell), T3–T7 (catalog, cart, checkout), T10 (admin), and T13 (static pages) are all `blocked by: T1`. Nothing renders real data, no order can be created, and no admin screen can function until the schema, typed client, RLS, and seed data exist. It is also the only task that defines the persistence contract every later task codes against — getting the model wrong here forces schema rework across 13 downstream tasks.
+**High** — T2 is the foundational UI layer that every subsequent storefront task (T3 catalog, T4 PDP, T5 search, T6 cart, T13 homepage/static pages) builds on. It is the first user-visible surface and establishes the design-token, i18n, and layout contracts the rest of Phase 1 inherits. Blocking dependency for T3 and T13. Shipping it wrong (e.g. hardcoded brand values, an i18n approach that fights the existing `translations` table) forces expensive rework across the whole storefront.
 
 ## Complexity
 
-**high** — Justified against the criteria:
-
-- **New subsystem, not a pattern copy.** The repo is a bare Next.js scaffold (one `button.tsx`, one `cn()` util, no data layer at all). There is no existing Supabase client, no migration harness, no types, no seed pipeline to copy from — all of it is net-new.
-- **15+ files changed.** ~18 database tables across multiple migration files, RLS policies, a generated types file, server + browser Supabase client wrappers, an env-config module, a seed script, seed data fixtures, `next.config.ts` image remote-patterns, plus tests.
-- **New data models + architectural decisions.** Introduces the entire relational model (many-to-many product↔category, nestable categories via self-referential FK, variant/price-override logic, order immutability, guest-customer records, i18n content structure) and the RLS trust model for a guest-checkout store with a single admin owner. These are architectural choices the rest of the app is built on.
-
-This maps directly to the CLAUDE.md `high` example "building the automation engine / new data models."
+**medium** — New feature surface (header, footer, layout, i18n, error pages, WhatsApp button, design tokens) touching ~15–20 files, and it introduces one new dependency (`next-intl`) plus a routing convention (`[locale]` segment + middleware). But it follows established patterns: shadcn/ui + Tailwind v4 tokens already scaffolded in `globals.css`, typed data wrappers in `src/lib/`, config centralization in `src/lib/config.ts`. No new data model, no DB migration, no backend logic beyond a single typed read of the existing `store_settings` row. It sits at the top of the medium band (a homegrown i18n or extra brand-token indirection could push it toward high), not low, because of the routing/middleware surface and the number of new files. **Recommended tier: standard.**
 
 ## Feature Type
 
-**backend-only** (data/infrastructure layer).
-
-There is **no visible UI surface** in this task — no pages, no components. Deliverables are the schema, RLS, typed data-access clients, env config, and seed data. Pipeline implication: **UI Design (Stage 3) and UX (Stage 8) run lightweight/skipped**; Security (Stage 9) and Arch (Stage 10) run at **full depth** (RLS correctness and data-model soundness are the whole point of this task). QA (Stage 7) focuses on migration idempotency, RLS policy behavior, seed correctness, and type-generation — not DOM tests.
+**full-stack** (frontend-heavy). Predominantly frontend (layout, components, tokens, i18n, motion), with a thin backend read: the footer/header consume the store name and shipping-threshold copy derived from the existing `store_settings` row via a typed server wrapper. No new endpoints, no mutations, no migration. UI Design (Stage 3) and UX (Stage 8) run at full depth; Security/Arch run lightweight (no new attack surface beyond one public read that RLS already governs).
 
 ## User Story
 
-As the **store owner and every future task in the build plan**, I want a **complete, typed, secured Postgres schema on Supabase with realistic seed data**, so that **the storefront, cart, checkout, and admin can all be built against a stable, correct data contract without schema rework later**.
+As a **Spanish-speaking shopper in Mexico on a phone**, I want **a fast, coherent store shell — clear navigation, a footer with policies, a language toggle, and an easy way to reach the store on WhatsApp — that loads in Spanish by default**, so that **I can orient myself, move between sections, and get help without friction, in my own language.**
 
 ## Background
 
-Today the repo (`/Users/MortzArt/Documents/projects/posturpro`) is a fresh Next.js 16 App Router scaffold: React 19, Tailwind v4, shadcn (radix-ui base), vitest + playwright configured, TS strict. The only source files are `src/app/{layout,page}.tsx`, `src/lib/utils.ts` (`cn()`), and `src/components/ui/button.tsx`. There is **no data layer of any kind**.
+T1 shipped the full data foundation: Supabase clients (`src/lib/supabase/{client,server,admin}.ts`), typed schema (`src/lib/supabase/database.types.ts`), centralized non-secret config (`src/lib/config.ts`), money via `formatMXN` (`src/lib/money.ts`), a `store_settings` single-row table (store name, contact email, shipping flat rate, free-shipping threshold), a polymorphic `translations` table for **DB content** localization, and `static_pages` seeded in Spanish (`sobre-nosotros`, `envios-y-devoluciones`, `preguntas-frecuentes`, `contacto`). 69 unit + 64 integration tests pass.
 
-A Supabase project already exists and its credentials are in `.env.local` (gitignored). Notably these are the **new-format** Supabase keys, not the legacy JWT anon/service_role pair:
+What exists today is a create-next-app starter: `src/app/layout.tsx` has placeholder metadata ("Create Next App"), `lang="en"`, a font tangle (Geist + Geist_Mono + Inter all wired at once), and `src/app/page.tsx` is the Next.js template splash. `globals.css` already has a complete **neutral** shadcn token set in OKLCH (`--primary`, `--background`, `--border`, radius scale, dark variant) — this is the brand-swap seam and must be treated as the single source of design truth.
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (client-safe, replaces the old anon key)
-- `SUPABASE_SECRET_KEY` (server-only, replaces the old service_role key — **must never** reach the client bundle or be prefixed `NEXT_PUBLIC_`)
+What's missing (this task): a real app shell (header + nav + footer), centralized **neutral** design tokens documented for a later brand swap, ES/EN i18n with **Spanish default** and a language toggle, mobile-first responsive foundation, friendly 404 + error pages, and a site-wide WhatsApp floating button.
 
-This task must (per PRODUCT_SPEC.md and BUILD_PLAN.md T1) deliver the full Phase-1 relational model, Row-Level Security, and seed data (~30 chairs, ~5 brands, ~6 categories, ~6 styles, color variants, realistic MXN prices; store settings seeded flat-rate MX$500 / free-shipping MX$10,000).
-
-**Scope guardrail (from BUILD_PLAN rule 2 + PRODUCT_SPEC Phase 2):** the schema must *support* Phase-2 features but this task builds **no Phase-2 behavior**. That means: `discount_codes` is a **table only** (no validation logic, no management UI); no customer-account auth (guest `customers` records only); no rich-text/page-editing UI (static-page content stored as data); i18n is a **content structure** only (no runtime toggle — that is T2). CFDI fields (order-level RFC optional, full tax/amount breakdown columns) exist for Phase-3 readiness but are unused now.
+**Scope guardrails.** Scope authority is PRODUCT_SPEC.md Phase 1. This task builds the *shell only*. It must NOT build T3 (catalog browsing, product grids, category/brand/style pages), T5 (search/filters), or T13 (homepage hero/featured content, static-page bodies). The homepage may contain only a minimal placeholder within T2's scope (a heading + short intro + nav affordances) — no featured chairs, no brand carousel, no hero imagery pipeline. Nav links may point to routes that don't exist yet; those routes are delivered by their owning tasks. The `translations` **runtime** (reading DB content per locale) is T3+; T2 only wires the locale mechanism and static UI strings.
 
 ## Acceptance Criteria
 
-Each is binary PASS/FAIL.
+Each criterion is binary — PASS or FAIL.
 
-- [ ] **AC-1:** Supabase client libraries (`@supabase/supabase-js`, `@supabase/ssr`) are installed and appear in `package.json` dependencies.
-- [ ] **AC-2:** A typed environment-config module (e.g. `src/lib/env.ts`) reads the three Supabase env vars, throws a descriptive error at startup if any required var is missing, and is the single source of truth for them. `SUPABASE_SECRET_KEY` is only ever referenced from server-side code paths and is never imported into a `"use client"` file.
-- [ ] **AC-3:** A browser Supabase client factory (`src/lib/supabase/client.ts`) uses only `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
-- [ ] **AC-4:** A server Supabase client factory (`src/lib/supabase/server.ts`) uses `@supabase/ssr` `createServerClient` with Next 16 `cookies()` wiring; a separate admin/service client helper uses `SUPABASE_SECRET_KEY` and is exported from a server-only module (guarded with `import "server-only"`).
-- [ ] **AC-5:** SQL migrations under `supabase/migrations/` create ALL of these tables: `brands`, `categories` (self-referential `parent_id` for nesting), `styles`, `tags`, `products`, `product_categories` (M2M join), `product_tags` (M2M join), `product_variants`, `product_images`, `product_questions`, `customers`, `orders`, `order_items`, `order_status_history`, `discount_codes`, `store_settings`, `static_pages`, and an i18n/translations structure for localizable content.
-- [ ] **AC-6:** The `products` table covers the full spec product model: name, slug, description, `brand_id`, base price (MXN), `compare_at_price`, `cost_price` (internal, never client-exposed), SKU, stock, status enum (`draft`/`active`/`archived`), dimensions (width/depth/height/seat_height), weight, materials (frame/upholstery/finish), `best_seller`/sales-count field for best-selling sort, and `featured` flag.
-- [ ] **AC-7:** `product_variants` has its own SKU, stock, optional `price_override`, color name + hex, and links to variant-specific images.
-- [ ] **AC-8:** `orders` stores a complete immutable financial snapshot: order number, guest `customer_id`, contact + shipping address fields (incl. Mexican `state` + `postal_code`), delivery notes, optional `rfc` (CFDI Phase-3), subtotal, shipping amount, discount amount, tax breakdown columns, total, currency (MXN), status enum matching the spec pipeline (`pending_payment`/`paid`/`preparing`/`shipped`/`delivered`/`cancelled`), payment method/status, and Mercado Pago reference columns (nullable now, populated in T8).
-- [ ] **AC-9:** `order_items` snapshot product name, SKU, unit price, quantity, and line total **at time of purchase** (not FKs alone) so historical orders survive product edits/deletes.
-- [ ] **AC-10:** `order_status_history` records each status transition with timestamp, from/to status, and an optional note.
-- [ ] **AC-11:** `store_settings` is seeded with a single row: store name, contact email, `shipping_flat_rate_cents` = 50000 (MX$500), `free_shipping_threshold_cents` = 1000000 (MX$10,000). All monetary values are stored as integer cents (documented convention), not floats.
-- [ ] **AC-12:** Row-Level Security is **enabled on every table** and policies implement the guest-store trust model: public/anon can `SELECT` only active catalog data (active products, their variants/images, active categories/brands/styles/tags, published static pages, store settings, answered questions) and can `INSERT` product questions + (via server) orders; anon can never read `cost_price`, other customers' orders/customer records, or `discount_codes`. All privileged reads/writes go through the secret-key server client which bypasses RLS.
-- [ ] **AC-13:** A repeatable seed script (`npm run db:seed`) populates ~5 brands, ~6 categories (including at least one nested child), ~6 styles, a tag set, ~30 chair products with realistic Spanish names and realistic MXN prices, ≥1 color variant per product with variant images, product↔category M2M links, and the store-settings row. Running it twice does not create duplicates (idempotent upsert on stable slugs/keys).
-- [ ] **AC-14:** A generated TypeScript types file (`src/lib/supabase/database.types.ts`) reflects the schema and is imported by the client factories so queries are fully typed. No `any` and no non-null `!` used to satisfy the compiler (per CLAUDE.md).
-- [ ] **AC-15:** `npm run test` passes, including new tests for the env-config module (missing-var throws), the cents/money helper, and seed-data invariants (counts, price ranges, referential integrity). `npm run lint` and `tsc --noEmit` (via `next build` typecheck) pass with zero errors.
-- [ ] **AC-16:** `next.config.ts` `images.remotePatterns` allows the Supabase Storage hostname so seeded product image URLs render via `next/image` in later tasks.
-- [ ] **AC-17:** All placeholder/config values (shipping amounts, currency, image bucket name, seed image base URL) are centralized in named constants with documented units and a short "how to swap real values" note in `tasks/dev-done.md`.
+- [ ] **AC-1**: Visiting `/` with no locale cookie and any `Accept-Language` renders the store **in Spanish (es-MX)** with **no locale prefix** in the URL. English is deterministically opt-in only (see AC-6). Automatic `Accept-Language` negotiation is disabled.
+- [ ] **AC-2**: `next-intl` is installed at `^4.13.x`, wired via `withNextIntl` in `next.config.ts`, with `src/i18n/routing.ts` declaring `locales: ["es-MX","en"]`, `defaultLocale: "es-MX"`, `localePrefix: "as-needed"`, and locale detection disabled.
+- [ ] **AC-3**: All static UI strings (nav labels, footer, buttons, 404/error copy, WhatsApp label, toggle labels) are read from message dictionaries `src/messages/es-MX.json` and `src/messages/en.json` via `getTranslations`/`useTranslations`. There is **zero** hardcoded user-facing UI string in any component (grep for literal Spanish/English UI text in `src/components` and `src/app` returns none).
+- [ ] **AC-4**: Both dictionaries have **identical key sets** (no missing/extra keys in either locale). A unit test asserts key-set parity.
+- [ ] **AC-5**: The header renders on every page: store name/logo slot (links home), primary nav (catalog/brands/styles/contact as label placeholders, links may be dead), the language toggle, and a mobile hamburger that opens a nav drawer/sheet below the `md` breakpoint.
+- [ ] **AC-6**: The language toggle switches locale by rewriting the current URL segment (`/productos` ↔ `/en/products`) via next-intl navigation, preserves the current path, and persists the choice in the `NEXT_LOCALE` cookie so the next visit honors it. Toggling does not full-page reload.
+- [ ] **AC-7**: The footer renders on every page: store name, links to the seeded static pages by their real Spanish slugs (`/sobre-nosotros`, `/contacto`, etc. — links may be dead until T13), a free-shipping line derived from `store_settings.free_shipping_threshold_cents` via `formatMXN`, and a copyright line with the current year.
+- [ ] **AC-8**: A WhatsApp floating button is fixed bottom-right on every page, above other content, links to `https://wa.me/<number>?text=<prefilled es message>` (number + message read from centralized config), opens in a new tab with `rel="noopener noreferrer"`, and has an accessible label from the dictionary.
+- [ ] **AC-9**: All brand-swappable design values (colors, radius, fonts) live as CSS custom properties in `globals.css` (already scaffolded) and are documented in a `## Brand Tokens` block in `tasks/dev-done.md` describing exactly what to edit for a brand swap. No component hardcodes a hex/oklch color or a raw font family; all use token utilities (`bg-primary`, `text-foreground`, `font-sans`, etc.).
+- [ ] **AC-10**: A custom `not-found.tsx` (404) renders inside the shell (header+footer), shows a localized friendly message and a "back to home" action.
+- [ ] **AC-11**: A custom `error.tsx` (client error boundary) renders a localized friendly message with a "try again" (`reset()`) action and does not leak stack traces or error messages to the user in production.
+- [ ] **AC-12**: `src/app/[locale]/layout.tsx` sets `<html lang>` to the active locale (not hardcoded `en`), real `<title>`/`description` metadata (Spanish default, from dictionary/config — not "Create Next App"), and a single, intentional font wiring (no Geist+Inter tangle). The `next.svg`/`vercel.svg` template splash is removed.
+- [ ] **AC-13**: Enter animations use `ease-out`; the mobile drawer, WhatsApp button, and toggle animate `transform`/`opacity` only (never layout properties, never `transition: all`); all motion is gated by `@media (prefers-reduced-motion: reduce)` to opacity-only/none; hover-transform effects are wrapped in `@media (hover: hover) and (pointer: fine)`. Exact specs in UX Requirements → Motion.
+- [ ] **AC-14**: Layout is mobile-first and correct at 375px, 768px, and ≥1024px with no horizontal scroll and no overlap between the WhatsApp button and footer/nav at any width.
+- [ ] **AC-15**: The `store_settings` read is a typed server wrapper in `src/lib/` (e.g. `src/lib/store-settings.ts`) returning the typed `store_settings` Row, used by the footer; it degrades gracefully if the row is absent (see Error States).
+- [ ] **AC-16**: `npm run lint`, `tsc` (strict), and `npm run test` all pass; no `any`, no non-null `!` to silence the compiler, no new file over ~400 lines.
+- [ ] **AC-17**: The active locale is exposed such that a future T3 content layer can read the same `es-MX`/`en` string next-intl resolved (documented in dev-done); no second locale source of truth is introduced besides `NEXT_LOCALE`.
 
 ## Edge Cases
 
-At least five that MUST be handled:
+At least 5 specific edge cases that MUST be handled:
 
-1. **Missing/blank env var at boot** — `src/lib/env.ts` throws a clear, named error (`Missing required env var SUPABASE_SECRET_KEY`) instead of a downstream cryptic "fetch failed"/undefined error.
-2. **Secret key leakage** — any attempt to import the service/secret client into a client component must fail the build. Guard the module with `import "server-only"` so a `"use client"` import errors at compile time rather than shipping the key.
-3. **Re-running migrations or seed** — migrations use `if not exists` / are ordered and idempotent; seed uses upsert on stable natural keys (slug/SKU) so a second `npm run db:seed` is a no-op, not a duplicate-key crash or duplicate rows.
-4. **Nested category integrity** — a category's `parent_id` must reference an existing category and must not allow a self-cycle (a category cannot be its own ancestor); deleting a parent with children must be handled (restrict or reparent, not orphan). Root categories have `parent_id = null`.
-5. **Variant price override precedence** — a variant with `price_override = null` inherits the product base price; a variant with a value overrides it. Seed data must include at least one variant of each kind so downstream price-display logic (T4) has both cases to render.
-6. **Money as float** — prices must never be stored/computed as floating point. Store integer cents everywhere; a `formatMXN(cents)` helper is the only place cents→display conversion happens. (Prevents MX$4999.999999 rounding bugs at checkout in T7.)
-7. **Product with zero variants vs. many** — schema and seed must support a product sold with no color variants (single default) and one with several; stock lives on the product AND per-variant, with a documented rule for which is authoritative when variants exist.
-8. **Order references a later-deleted/edited product** — because `order_items` snapshot name/SKU/price, an admin editing or archiving a product (T11) must not mutate historical order line items. FK to product is nullable/`on delete set null`, snapshot columns are the source of truth for order history.
+1. **Unknown/invalid locale in URL** (e.g. `/fr/...` or a bare `/es/...` without region) → next-intl `notFound()` renders the localized 404 inside the shell; the app never crashes or renders a blank page.
+2. **`store_settings` row missing/unreadable** (fresh DB, RLS denial, network error) → footer omits the free-shipping line and store name falls back to `SEED_STORE_NAME` from config; the shell still renders. Error is logged with context (no empty catch).
+3. **Browser set to English, first visit, no cookie** → user still lands on Spanish `/` (detection disabled by design, AC-1). They opt into English via the toggle; the cookie then persists English for return visits.
+4. **`prefers-reduced-motion: reduce`** → drawer opens with an opacity fade only (no slide), WhatsApp button and toggle have no scale/transform motion; nothing is fully static-broken (states still change, just without transform).
+5. **Toggle pressed rapidly / mid-navigation** → navigation is interruptible; no desync between URL segment and rendered strings; last press wins. No stuck loading state.
+6. **Very long store name or nav label in either locale** → header/footer truncate or wrap gracefully at 375px with no horizontal scroll and no overlap with the toggle/hamburger.
+7. **WhatsApp number not configured** (empty config value) → button is not rendered (never produces a broken `wa.me/` link with no number). Absence logged in dev.
+8. **Deep link to a prefixed English URL** (`/en/anything`) shared/bookmarked → renders in English with the toggle reflecting EN; cookie updated accordingly.
 
 ## Error States Table
 
-(This is a backend task; "User Sees" is the developer/operator experience since there is no shopper UI yet.)
-
 | Trigger | User Sees | System Does |
-| --- | --- | --- |
-| Required Supabase env var missing at startup | Build/boot fails with `Missing required env var: <NAME>` | `env.ts` throws before any client is constructed; no partial init |
-| `SUPABASE_SECRET_KEY` imported from a client component | `next build` fails with a `server-only` import error | `import "server-only"` in the admin-client module halts the build |
-| `npm run db:seed` run twice | Console logs "upserted N rows (0 new)"; exits 0 | Upsert on natural keys; no duplicate rows, no unique-violation crash |
-| Seed run with a missing/invalid `SUPABASE_SECRET_KEY` | Clear "Cannot seed: secret key invalid/missing" message, exit 1 | Script validates env via `env.ts` before connecting; fails fast |
-| Anon client queries `cost_price` or another customer's order | Empty result / permission denied for restricted columns/rows | RLS policy denies; column excluded from public-safe views/selects |
-| Migration references a table out of order | Migration runner errors with the offending statement | Migrations are numbered/ordered; FKs declared after referenced tables |
-| Category `parent_id` points to a nonexistent category | Insert rejected with FK violation | Self-referential FK constraint enforces integrity |
+| ------- | ------------- | ---------------- |
+| `store_settings` read fails/absent | Footer without the free-shipping line; store name = config fallback; rest of shell intact | Server wrapper returns `null`, footer branches on it, logs a warning with context; no throw |
+| Unknown locale segment in URL | Localized friendly 404 inside header+footer with "back home" CTA | next-intl middleware / `notFound()`; no crash |
+| Uncaught render error in a route segment | Localized friendly error screen with "try again" (`reset()`) | `error.tsx` boundary catches; in prod, generic message only (no stack/PII) |
+| WhatsApp number unconfigured | No WhatsApp button | Config guard prevents a numberless `wa.me` link; warning logged in dev |
+| JS disabled / slow hydration | Header, footer, links, WhatsApp anchor all work (server-rendered anchors/links); drawer requires JS | Progressive enhancement: shell is server-rendered; only drawer open/close and toggle-without-reload need JS |
+| Navigation interrupted by rapid toggle | Final chosen locale renders; URL and strings consistent | next-intl `router.replace(pathname, { locale })`; last write wins |
 
 ## UX Requirements
 
-Not applicable as shopper-facing UI — this is a backend/data task with no rendered surface (see Feature Type). The equivalent "developer UX" requirements:
+For EVERY state the UI can be in:
 
-- **Seed script output:** prints a readable per-table summary (`brands: 5, categories: 6, products: 30, variants: 41, ...`) and a final ✓/✗ status; nonzero exit on failure.
-- **Types ergonomics:** importing `Database` types gives autocomplete on table rows in client/server factories; a `Tables<'products'>` helper type is exported for downstream tasks.
-- **Config discoverability:** a single documented location (`src/lib/config.ts` or similar) holds shipping/currency/bucket constants with unit-suffixed names (`SHIPPING_FLAT_RATE_CENTS`).
-- **Mobile/Tablet/Loading/Empty/Success states:** N/A (no UI this task).
+- **Loading**: Shell (header/footer) is server-rendered and appears immediately. The `store_settings`-derived footer line renders on the server with data already resolved (no client spinner). Any client transition must not cause layout shift (reserve space for the free-shipping line).
+- **Empty**: No "empty" content state in T2 itself; the minimal homepage placeholder shows a heading + short localized intro. Dead nav links are acceptable (owned by later tasks) but must not appear broken — clicking navigates to a route that 404s gracefully (AC-10) until built.
+- **Error**: `error.tsx` — localized "algo salió mal" message, "Reintentar" button calling `reset()`. `not-found.tsx` — localized "página no encontrada" with "Volver al inicio".
+- **Success**: Normal shell — header persistent (sticky optional), footer at bottom (min-h-full flex column already in `layout.tsx`), WhatsApp button floating.
+- **Mobile (375px)**: Single-column. Header collapses primary nav into a hamburger that opens a drawer/sheet; store name + hamburger + toggle fit one row without wrapping/overflow. Footer stacks vertically. WhatsApp button bottom-right with safe inset, not overlapping footer content on scroll-to-bottom. No horizontal scroll.
+- **Tablet (768px)**: Header may show partial or full nav depending on fit; drawer still available if nav doesn't fit. Footer in 2–3 columns. Comfortable tap targets (≥44px) for toggle and WhatsApp.
+
+### Motion (cite: `.claude/skills/emil-design-eng` — the taste authority)
+
+Baseline (always): animate `transform`/`opacity` only; never `transition: all` (name the property); nothing appears from `scale(0)` — enter from `scale(0.95–0.97)` + `opacity:0`; enter/exit use `ease-out`, never `ease-in`; keep UI motion < 300ms; exits faster than enters; respect `prefers-reduced-motion` (keep short opacity fades ~0.2s, drop all transform/position motion); hover transforms only under `@media (hover: hover) and (pointer: fine)`.
+
+Custom easings to define as CSS vars: `--ease-out: cubic-bezier(0.23,1,0.32,1)`; `--ease-drawer: cubic-bezier(0.32,0.72,0,1)`.
+
+- **Mobile nav drawer/sheet**: enter via `transform: translateX(-100%) → translateX(0)` (or bottom-sheet `translateY(100%) → 0`) + overlay `opacity` fade; ~300ms enter with `--ease-drawer`; exit ~200ms (faster). Use CSS transitions (not keyframes) so a mid-open dismiss is interruptible. Reduced motion: opacity fade only.
+- **WhatsApp floating button**: entrance `scale(0.95) + opacity:0 → scale(1) + opacity:1`, ~150–200ms `ease-out` (pop-in, never `scale(0)`); `:active` press `scale(0.97)`, 100–160ms; hover lift only on hover-capable pointers. Reduced motion: no transform.
+- **Language toggle**: label crossfade `opacity` (+ optional `scale(0.97)`), 125–200ms `ease-out`; `:active` `scale(0.97)` 100–160ms. Reduced motion: opacity only.
+- **Sticky header** (if sticky): elevation/shadow change on scroll via `transform`/`box-shadow`, ~180ms `ease-out`, subtle. Reduced motion: no motion.
 
 ## Technical Approach
 
 ### Files to Create
 
-- `src/lib/env.ts` — validated env accessor; throws on missing required vars; single source of truth for Supabase creds.
-- `src/lib/config.ts` — centralized non-secret constants: `CURRENCY = "MXN"`, `SHIPPING_FLAT_RATE_CENTS`, `FREE_SHIPPING_THRESHOLD_CENTS` (seed defaults; real values live in `store_settings` and are admin-editable in T10), `SUPABASE_STORAGE_BUCKET`, seed image base URL. Documented with units + swap instructions.
-- `src/lib/money.ts` — `formatMXN(cents)` + cents helpers; the only cents→display boundary.
-- `src/lib/supabase/client.ts` — browser client factory (`createBrowserClient` from `@supabase/ssr`).
-- `src/lib/supabase/server.ts` — server client factory (`createServerClient` + Next 16 `cookies()`).
-- `src/lib/supabase/admin.ts` — secret-key service client; `import "server-only"` guard.
-- `src/lib/supabase/database.types.ts` — generated types (via `supabase gen types typescript`).
-- `supabase/migrations/0001_extensions_and_enums.sql` — pgcrypto/uuid, status enums.
-- `supabase/migrations/0002_catalog.sql` — brands, categories (self-ref), styles, tags, products, product_categories, product_tags, product_variants, product_images.
-- `supabase/migrations/0003_commerce.sql` — customers, orders, order_items, order_status_history, discount_codes, store_settings.
-- `supabase/migrations/0004_content_qa.sql` — product_questions, static_pages, i18n translations structure.
-- `supabase/migrations/0005_rls_policies.sql` — enable RLS + all policies.
-- `supabase/config.toml` — Supabase CLI project config (if local CLI workflow adopted).
-- `scripts/seed.ts` — idempotent seed script (uses admin client).
-- `scripts/seed-data/*.ts` — brand/category/style/tag/product/variant fixtures.
-- Tests: `src/lib/env.test.ts`, `src/lib/money.test.ts`, `scripts/seed.test.ts` (or a seed-invariants test).
+- `src/i18n/routing.ts` — `defineRouting({ locales:["es-MX","en"], defaultLocale:"es-MX", localePrefix:"as-needed", localeDetection:false })`.
+- `src/i18n/navigation.ts` — `createNavigation(routing)` → typed `Link`, `redirect`, `usePathname`, `useRouter`.
+- `src/i18n/request.ts` — `getRequestConfig` loading `src/messages/<locale>.json` for the active request (RSC).
+- `src/middleware.ts` — `createMiddleware(routing)` with matcher `['/((?!api|_next|_vercel|.*\\..*).*)']`.
+- `src/messages/es-MX.json` — Spanish UI strings (nav, footer, buttons, 404/error, WhatsApp, toggle). Source of truth.
+- `src/messages/en.json` — English UI strings, identical key set.
+- `src/app/[locale]/layout.tsx` — locale layout: `setRequestLocale`, `NextIntlClientProvider`, `generateStaticParams` for locales, `<html lang={locale}>`, header + footer + WhatsApp button wrap `children`, real metadata.
+- `src/app/[locale]/page.tsx` — minimal placeholder homepage (localized heading + intro), replacing the template splash.
+- `src/app/[locale]/not-found.tsx` — localized 404 inside shell.
+- `src/app/[locale]/error.tsx` — `"use client"` localized error boundary with `reset()`.
+- `src/components/layout/site-header.tsx` — header (server) composing nav + toggle + mobile drawer trigger.
+- `src/components/layout/site-footer.tsx` — footer (server), reads store settings.
+- `src/components/layout/mobile-nav.tsx` — `"use client"` drawer/sheet (shadcn `Sheet` if in registry, else Radix Dialog primitive from `radix-ui`).
+- `src/components/layout/language-toggle.tsx` — `"use client"` toggle using `src/i18n/navigation`.
+- `src/components/layout/whatsapp-button.tsx` — floating WhatsApp anchor (server; config-guarded).
+- `src/lib/store-settings.ts` — typed server wrapper: `getStoreSettings(): Promise<StoreSettings | null>` reading the `store_settings` row via `createClient()`; logs + returns `null` on absence/error.
+- (Test) `src/messages/messages.test.ts` — asserts es-MX/en key-set parity (AC-4).
 
 ### Files to Modify
 
-- `package.json` — add `@supabase/supabase-js`, `@supabase/ssr`, `server-only`, dev-dep `supabase` (CLI) + `tsx`/`dotenv` for the seed script; add scripts `db:seed`, `db:reset`, `db:types`.
-- `next.config.ts` — add `images.remotePatterns` for the Supabase Storage host.
-- `.env.local` — (already present) confirm all three keys; add any new keys as documented placeholders. Do NOT commit (gitignored).
-- `tasks/dev-done.md` — document config, migration/seed/type-gen workflow, and the "swap real values" note.
+- `src/app/layout.tsx` — becomes the thin root (imports globals, defines the single font); the shell + `<html lang>` move to `[locale]/layout.tsx`. Remove Geist/Inter tangle and the "Create Next App" metadata. (Decide root-vs-locale `<html>` placement and document it in dev-done — Next 16 + next-intl typically keep `<html>` in the `[locale]` layout.)
+- `src/app/page.tsx` — delete (superseded by `[locale]/page.tsx`); remove the template splash.
+- `src/app/globals.css` — add custom easing vars (`--ease-out`, `--ease-drawer`) to `:root`/`@theme`; add a documented "Brand Tokens" comment block marking the swap seam. Do NOT change the neutral palette values.
+- `next.config.ts` — wrap export with `withNextIntl('./src/i18n/request.ts')`.
+- `src/lib/config.ts` — add centralized WhatsApp config: `WHATSAPP_PHONE_E164` (digits only, `""` placeholder = disabled), `WHATSAPP_PREFILL_MESSAGE_ES`, and `DEFAULT_LOCALE = "es-MX"` (align with existing `CURRENCY_LOCALE`). Document as brand/placeholder values.
+- `public/` — remove `next.svg`/`vercel.svg` template assets if unused; use a text wordmark placeholder for the logo slot (no image dependency).
 
 ### Data Model Changes
 
-All new (see AC-5). Key relationships:
-
-- `categories.parent_id → categories.id` (nestable).
-- `product_categories(product_id, category_id)` and `product_tags(product_id, tag_id)` — M2M joins.
-- `product_variants.product_id → products.id`; `product_images.product_id/variant_id`.
-- `orders.customer_id → customers.id`; `order_items.order_id → orders.id` with snapshot columns; `order_status_history.order_id → orders.id`.
-- Money stored as integer **cents**; `status` columns use Postgres enums.
+None. No migration. Reads the existing `store_settings` row only.
 
 ### API Endpoints
 
-None this task. Data access is via typed Supabase client factories (server/browser/admin) that later tasks call from Server Components / Route Handlers.
+None. No new route handlers or mutations.
 
 ### Dependencies
 
-- `@supabase/supabase-js` — core client, latest v2.
-- `@supabase/ssr` — App Router cookie-based auth/session wiring (replaces deprecated `auth-helpers`), latest.
-- `server-only` — build-time guard preventing secret client from entering the client bundle.
-- `supabase` (dev) — CLI for migrations + type generation.
-- `tsx` (dev) — run the TypeScript seed script; `dotenv` if needed to load `.env.local` in the script.
-- Note: repo uses `legacy-peer-deps=true` (React 19) — install with that respected.
+- `next-intl@^4.13.2` — App Router i18n. Peer deps `next: ^16`, `react: ^19` — compatible with Next 16.2.9 / React 19.2.4; `.npmrc` already sets `legacy-peer-deps=true`. ~2KB, RSC-native. Chosen over homegrown because it solves middleware locale detection, RSC `getTranslations`, and `hreflang` alternate links (see research report). No other new deps — use existing shadcn/ui + `radix-ui` for the drawer, `@hugeicons/react` for icons.
 
 ## Out of Scope
 
-- Any shopper or admin **UI** (that is T2+ and T10+).
-- Discount-code **validation logic or management UI** (Phase 2 — table only here).
-- Customer-account **auth** / login / order-history (Phase 2 — guest `customers` records only).
-- Rich-text / page-content **editing UI** (Phase 2 — static-page content stored as data only).
-- Runtime **i18n language toggle** (T2 — this task only defines the content/translation structure).
-- Mercado Pago integration, webhooks, payment capture (T8 — order columns exist but stay nullable).
-- Email sending (T9).
-- CFDI invoicing logic (Phase 3 — only the optional RFC + amount/tax columns exist for future-proofing).
-- Search indexing / full-text config beyond basic columns (tuned in T5).
+- T3 catalog: product grid, category/brand/style pages, breadcrumbs, stock indicators, pagination.
+- T5 search, filters, sorting.
+- T13 homepage content (hero, featured chairs, featured brands) and static-page bodies/copy — the shell only links to them.
+- Reading the `translations` DB table at runtime for content localization (T3+). T2 wires only the locale mechanism + static UI strings.
+- Cookie-consent banner, analytics, SEO structured data, sitemap (T14).
+- Dark-mode user-facing theme switcher (tokens exist; do not build a settings surface).
+- Real brand identity (logo image, real palette, real fonts) — tokens stay neutral; T2 documents the swap seam only.
+- Any admin surface (T10+).
+- The `translations` orphan-cleanup job (backlog item; belongs to the i18n *content* runtime task, not T2's static-string setup).
