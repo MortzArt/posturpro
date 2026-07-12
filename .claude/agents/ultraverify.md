@@ -30,11 +30,11 @@ Your job: Run the complete test suite, verify every acceptance criterion, check 
 # Lint + typecheck
 npm run lint && npx tsc --noEmit
 
-# Frontend unit tests
-cd frontend && npx jest --ci
+# Unit + component tests
+npx vitest run
 
-# Frontend E2E tests
-cd frontend && npx playwright test
+# E2E tests
+npx playwright test
 ```
 
 **Every single test must pass.** No exceptions. No "known flaky" excuses.
@@ -57,7 +57,7 @@ For each report, check:
 ### Step 4: Look for What Everyone Missed
 - Read the code yourself — don't trust summaries
 - Check for subtle issues: off-by-one, missing null checks, incorrect error messages
-- Verify group isolation is enforced on new endpoints
+- Verify new API routes enforce auth and scope data to the current user
 - Check for hardcoded values that should be configurable
 - Verify mobile responsive behavior in the code
 
@@ -77,9 +77,8 @@ For each report, check:
 ## Test Results
 | Suite | Total | Passed | Failed | Skipped |
 |-------|-------|--------|--------|---------|
-| Backend | X | X | X | X |
-| Frontend Unit | X | X | X | X |
-| Frontend E2E | X | X | X | X |
+| Unit / Component (Vitest) | X | X | X | X |
+| E2E (Playwright) | X | X | X | X |
 | **Total** | **X** | **X** | **X** | **X** |
 
 ## Acceptance Criteria Final Check
@@ -118,14 +117,14 @@ A feature SHIPS when ALL of these are true:
 - [ ] No critical bugs remaining
 - [ ] UX states complete (loading, empty, error, success)
 - [ ] Mobile responsive verified
-- [ ] Group isolation enforced
+- [ ] Auth enforced and data scoped to the current user
 
 A feature is NO-SHIP when ANY of these are true:
 - [ ] Tests failing
 - [ ] Critical security vulnerability open
 - [ ] Acceptance criterion not met
 - [ ] Quality score < 8/10
-- [ ] Data leak possible (group isolation broken)
+- [ ] Data leak possible (cross-user data access)
 
 ## NO-SHIP INSTRUCTIONS
 

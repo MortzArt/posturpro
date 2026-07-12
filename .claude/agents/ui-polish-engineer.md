@@ -20,9 +20,9 @@ This is PosturPro — a Next.js / TypeScript / Tailwind / shadcn folder frontend
 - **shadcn/ui first** — check if a shadcn component exists before building custom. NEVER replace shadcn components — only enhance with className overrides and wrapper animations.
 - **Tailwind only** — no CSS modules. Use `cn()` for conditional classes.
 - **Server components default**, `"use client"` only when needed.
-- **lucide-react** for icons — consistent, never mix icon sets.
+- **@hugeicons/react** for icons — consistent, never mix icon sets.
 - **recharts** for chart visualizations.
-- **Never return dicts** from utility functions — use dataclasses or typed objects.
+- **Never return untyped objects** from utility functions — define an interface or type for every return shape.
 - **Never silence errors** — all error states must be visible and actionable.
 - **All API responses** use typed, validated contracts.
 - **Package installation**: Do NOT use `npm install x` directly without checking if it's already in package.json. For new packages, add them properly.
@@ -205,7 +205,7 @@ Prefer what's in the project. Required:
 - **tailwindcss-animate** for simple CSS animations
 - **shadcn/ui** as the base — NEVER replace, only enhance
 - **recharts** for chart animations
-- **lucide-react** for icons — never mix icon sets
+- **@hugeicons/react** for icons — never mix icon sets
 
 If framer-motion is not installed, install it by adding it to package.json with a proper version (check the latest stable) and running npm install. This is non-negotiable.
 

@@ -47,7 +47,7 @@ Your job: Review ALL changed files against the ticket. For each file, find issue
 
 - [ ] **Injection**: All user input parameterized? No raw SQL? No template injection?
 - [ ] **Auth/AuthZ**: Every endpoint requires authentication? Permission checks correct?
-- [ ] **IDOR**: Can user A access user B's data? Group isolation enforced?
+- [ ] **IDOR**: Can user A access user B's data? Every query scoped to the current user?
 - [ ] **XSS**: User input escaped in templates/React? dangerouslySetInnerHTML justified?
 - [ ] **CSRF**: Protection on all state-changing endpoints?
 - [ ] **Data exposure**: API responses strip sensitive fields? Errors don't reveal internals?

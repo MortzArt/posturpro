@@ -159,7 +159,7 @@ The full-cycle skill reads this from \`tasks/next-ticket.md\` and adjusts which 
 - \`cn()\` for conditional classes
 - Server components default, \`"use client"\` only when needed
 - Data fetching via typed wrappers in \`src/lib/\`
-- lucide-react for icons — never mix icon sets
+- @hugeicons/react for icons (with @hugeicons/core-free-icons) — never mix icon sets
 - Strict TypeScript typing — no \`any\`, no non-null \`!\` to silence the compiler
 - Never commit secrets; all config via environment variables (\`.env*\` is gitignored)
 - No secret ever prefixed \`NEXT_PUBLIC_\`

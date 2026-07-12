@@ -34,34 +34,34 @@ Your job: Write comprehensive tests and verify every acceptance criterion passes
 
 ## TEST PATTERNS
 
-### Unit Tests (Vitest / Jest)
-```python
-# Location: backend/apps/<app>/tests/test_<module>.py
-# Use test fixtures and factories for test data
-# Test happy path + every edge case
-# Test error conditions with specific exception types
-# Mock external services (APIs, third-party SDKs)
-```
-
-### Integration Tests (API routes)
-```python
-# Location: backend/apps/<app>/tests/test_views.py
-# Use APIClient, authenticate as different roles
-# Test access control — user can only reach their own data
-# Test permission checks — each role sees correct data
-# Test pagination, filtering, sorting
-# Test error responses (400, 401, 403, 404, 500)
-```
-
-### Frontend E2E Tests (Playwright)
+### Unit / Component Tests (Vitest + React Testing Library)
 ```typescript
-// Location: frontend/e2e/<page>.spec.ts
-// Use fixtures from e2e/fixtures/auth.ts and e2e/fixtures/api-mocks.ts
-// setupAuthenticatedPage() for auth + API mocking
+// Location: src/**/<module>.test.ts(x) — colocated next to the source file
+// Run: npx vitest run
+// Test lib/ utils and hooks in isolation — happy path + every edge case
+// Test components via React Testing Library: render, query by role, fire events
+// Test error conditions — assert on thrown errors or rendered error states
+// Mock external services and fetch calls (vi.mock / vi.fn) — never hit real APIs
+```
+
+### Integration Tests (API route handlers)
+```typescript
+// Location: src/app/api/**/route.test.ts — colocated next to route.ts
+// Invoke the exported GET/POST/etc. handlers directly with a Request object
+// Test validation — 400 with helpful errors for bad input
+// Test auth — 401 unauthenticated, 403 for insufficient permissions
+// Test pagination, filtering, sorting via searchParams
+// Assert the response shape matches the typed contract in src/lib/
+```
+
+### E2E Tests (Playwright)
+```typescript
+// Location: e2e/<page>.spec.ts
+// Run: npx playwright test
 // Test all user flows: create, read, update, delete
-// Test role-based access: admin, manager, rep, monitor, client
 // Test loading, empty, error states
 // Test responsive behavior at 375px, 768px, 1024px
+// Mock network responses with page.route() — keep e2e deterministic
 ```
 
 ### E2E Selector Resilience Rules
@@ -89,7 +89,7 @@ await page.getByText('Create Item').click();
 - [ ] Every edge case has a test
 - [ ] Invalid input is rejected with helpful error
 - [ ] Unauthorized access is blocked
-- [ ] Group isolation is enforced
+- [ ] Users can only reach their own data
 - [ ] Loading state appears while fetching
 - [ ] Empty state appears when no data
 - [ ] Error state appears on API failure
@@ -98,9 +98,9 @@ await page.getByText('Create Item').click();
 ### For APIs:
 - [ ] All HTTP methods that should work, work
 - [ ] All HTTP methods that shouldn't work, return 405
-- [ ] Authentication required — 401 without token
-- [ ] Authorization checked — 403 for wrong role
-- [ ] Group isolation — 404 for wrong group
+- [ ] Authentication required — 401 without a session
+- [ ] Authorization checked — 403 for insufficient permissions
+- [ ] No cross-user data access — requests scoped to the current user
 - [ ] Validation — 400 with helpful errors for bad input
 - [ ] Pagination works with page/page_size params
 - [ ] Filtering works with query params
@@ -179,5 +179,5 @@ await page.getByText('Create Item').click();
 4. Each test tests ONE thing — clear name, clear assertion
 5. If a test is flaky, fix it — never skip flaky tests
 6. Run the full test suite, not just new tests — catch regressions
-7. E2E tests must use the mock fixtures from e2e/fixtures/
+7. E2E tests must mock network responses (page.route()) — never depend on live data
 8. E2E selectors must follow the Selector Resilience Rules — prefer data-testid over getByText for interactive elements
