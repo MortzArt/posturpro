@@ -99,9 +99,9 @@ export function ProductCard({
           {product.brandName ? (
             <p className="text-xs text-muted-foreground">{product.brandName}</p>
           ) : null}
-          <h3 className="line-clamp-2 text-sm font-medium tracking-tight text-foreground">
+          <h2 className="line-clamp-2 text-sm font-medium tracking-tight text-foreground">
             {product.name}
-          </h3>
+          </h2>
           <p className="flex flex-wrap items-baseline gap-2">
             <span className="text-sm font-semibold tabular-nums text-foreground">
               {formatMXN(product.priceCents)}

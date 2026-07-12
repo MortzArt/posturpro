@@ -51,7 +51,7 @@ export default async function CatalogListPage({
   return (
     <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
       <Breadcrumbs
-        ariaLabel={t("breadcrumb.home")}
+        ariaLabel={t("breadcrumb.ariaLabel")}
         moreLabel={t("pagination.morePages")}
         items={[
           { label: t("breadcrumb.home"), href: "/" },

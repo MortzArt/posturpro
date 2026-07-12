@@ -63,6 +63,7 @@
     "title": "Sillas",
     "subtitle": "Toda nuestra colección de sillas ergonómicas.",
     "breadcrumb": {
+      "ariaLabel": "Ruta de navegación",
       "home": "Inicio",
       "catalog": "Sillas",
       "categories": "Categorías",

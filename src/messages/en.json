@@ -63,6 +63,7 @@
     "title": "Chairs",
     "subtitle": "Our full collection of ergonomic chairs.",
     "breadcrumb": {
+      "ariaLabel": "Breadcrumb",
       "home": "Home",
       "catalog": "Chairs",
       "categories": "Categories",

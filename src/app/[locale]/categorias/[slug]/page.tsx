@@ -101,7 +101,7 @@ export default async function CategoryPage({
   return (
     <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
       <Breadcrumbs
-        ariaLabel={t("breadcrumb.categories")}
+        ariaLabel={t("breadcrumb.ariaLabel")}
         moreLabel={t("pagination.morePages")}
         items={crumbs}
       />

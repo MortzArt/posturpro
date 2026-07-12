@@ -80,6 +80,7 @@ const CONSUMED_KEYS: readonly string[] = [
   // catalog (T3 pages + components)
   "catalog.title",
   "catalog.subtitle",
+  "catalog.breadcrumb.ariaLabel",
   "catalog.breadcrumb.home",
   "catalog.breadcrumb.catalog",
   "catalog.breadcrumb.categories",
