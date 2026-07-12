@@ -34,3 +34,20 @@ Open items discovered during the pipeline. Check off when addressed.
   embed related rows the way base tables can. Standardize the catalog-read
   embedding strategy at the start of T3 so it isn't discovered mid-build.
   (Ref: architecture review, MED risk.)
+
+## T2 — App shell (deferred by design)
+
+- [ ] **Fully dynamic shell defeats static catalog rendering (T3/T4).**
+  `getStoreSettings()` uses `cookies()` in `[locale]/layout.tsx`, forcing
+  on-demand rendering of every route under the shell. T3 must reopen this:
+  read the public config without `cookies()` and add tag-based revalidation
+  so catalog/PDP pages can be statically optimized. (Ref: T2 architecture
+  review, risk 1.)
+- [ ] **Middleware composability for admin (T10).** The locale matcher will
+  locale-route `/admin`, but admin must be fully separate from shopper
+  sessions. In T10, keep admin outside `[locale]` and compose admin auth into
+  the single `middleware.ts` chain (branch on `/admin`) or exclude it in the
+  matcher. (Ref: T2 architecture review, risk 2.)
+- [ ] **Security response headers (T14).** No CSP / X-Frame-Options /
+  Referrer-Policy / HSTS yet — author the CSP against the full asset/script
+  inventory during launch hardening. (Ref: T2 security audit SEC-L-1.)

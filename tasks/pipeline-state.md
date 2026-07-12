@@ -1,7 +1,7 @@
 # Pipeline State
 Task: T2 — App shell & design system
 Tier: full-cycle (medium) — Stage 11 (Hacker) will be SKIPPED
-Stage: 8
-Agent: ultraux (Stage 8 — UX). QA complete: 177 unit + 78 e2e (chromium + Pixel-7), 17/17 ACs + 8/8 edge cases proven. QA fixed 2 CRITICAL bugs: (1) closed drawer overlay had pointer-events:auto at z-60 blocking ALL clicks post-hydration; (2) drawer self-dismissed on opening tap + wasn't modal (no focus trap) — fixed via onInteractOutside guard + Radix FocusScope (new dep @radix-ui/react-focus-scope). E2E suites in e2e/ run via npx playwright test.
+Stage: 9+10 (parallel, lightweight per full-stack frontend-heavy)
+Agent: ultrasecurity + ultraarch (Block D). UX complete: 9/10, 5/5 fixes (toggle crossfade wired, hover fix, aria-live error boundary, toggle contrast, arrow nudge). Copy clean both locales. Gates: 177 unit / 78 e2e / lint / tsc / build all green.
 Last Updated: 2026-07-12
 Notes: PlanResearch done. Complexity=medium, Feature Type=full-stack (frontend-heavy) → Security(9)/Arch(10) lightweight, UI Design(3)/UX(8) full. Key decisions: next-intl@^4 (RSC-native), localePrefix "as-needed" (ES unprefixed, EN under /en), localeDetection:false (/ always Spanish — flagged to user, proceeding with recommendation), locale tag es-MX, brand-swap seam = existing OKLCH tokens in globals.css + new --ease vars. Footer links use seeded Spanish static-page slugs. T2 scope for T2: layout, header with navigation, footer, neutral design tokens (centralized for later brand swap), ES/EN i18n setup with Spanish default and language toggle, mobile-first responsive foundation, 404/error pages, WhatsApp floating button. T1 (data foundation) shipped; local Docker Supabase workflow available (npm run db:reset / db:seed / test:integration). Remote Supabase apply still pending user action (supabase login). First UI task — Emil Kowalski craft skills in .claude/skills/ now mandatory for UI stages (see CLAUDE.md → UI Craft & Animation Skills).
