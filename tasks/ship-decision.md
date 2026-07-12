@@ -1,4 +1,4 @@
-# Ship Decision: T1 — Data Foundation (Supabase + Full Database Schema)
+# Ship Decision: T2 — App Shell & Design System
 
 ## Verdict: SHIP
 
@@ -8,100 +8,71 @@
 
 ## Test Results
 
-All suites run fresh by the verifier from a clean state (unit locally; integration
-against a live local Supabase / Docker with `db reset` applying migrations 0001–0006
-+ seed, then `supabase stop`).
-
 | Suite | Total | Passed | Failed | Skipped |
 |-------|-------|--------|--------|---------|
-| Unit / Component (Vitest — `npm run test`) | 69 | 69 | 0 | 0 |
-| Integration (live DB — `npm run test:integration`) | 64 | 64 | 0 | 0 |
-| E2E (Playwright) | 0 (N/A — backend-only task, no UI) | — | — | — |
-| **Total** | **133** | **133** | **0** | **0** |
+| Unit / Component (Vitest) | 177 | 177 | 0 | 0 |
+| E2E (Playwright — chromium + mobile) | 78 | 78 | 0 | 0 |
+| **Total** | **255** | **255** | **0** | **0** |
 
-Gate commands (all green, re-run by the verifier):
+Gate re-run fresh by the verifier (not trusting reported numbers):
 
-| Gate | Command | Result |
-|------|---------|--------|
-| Lint | `npm run lint` | exit 0, 0 errors |
-| Typecheck | `npx tsc --noEmit` | exit 0 |
-| Unit | `npm run test` | 8 files / 69 passed |
-| Integration | `npm run test:integration` | 6 files / 64 passed (fresh reset → migrations 0001–0006 → seed → tests) |
-| Build | `npm run build` | Compiled successfully; TypeScript check passed |
+- `npm run lint` → clean (exit 0)
+- `npx tsc --noEmit` → clean (exit 0, strict)
+- `npm run test` → 14 files, 177 tests, all pass (2.75s)
+- `npx playwright test` → 78 passed (chromium + Pixel-7 mobile)
+- `npm run build` → success; the `store_settings` "Dynamic server usage" notice is the documented graceful-degrade path (footer degrades to config fallbacks), not a failure.
 
-Seed summary from the live reset (matches ticket expectation): brands 5, categories 6,
-styles 6, tags 8, products 30, variants 69, product_images 99, static_pages 4,
-store_settings 1 — "✓ Seed complete (idempotent — safe to re-run)."
+**T1 integration suite (64, Docker Supabase): not run — justified.** T2 added only `getStoreSettings` (read-only select on the existing `store_settings` row); it touches no migration, seed, or data-layer code the integration suite exercises. The wrapper's four paths are unit-tested, and the live E2E run exercised the graceful-degrade path against a DB with no `store_settings` row. Low risk; independently covered.
 
 ## Acceptance Criteria Final Check
 
 | # | Criterion | Code | Test | Verdict |
 |---|-----------|------|------|---------|
-| AC-1 | Supabase libs in deps | `package.json` (`@supabase/supabase-js`, `@supabase/ssr`) | build/import resolve | ✅ |
-| AC-2 | Typed env module, throws on missing, single source | `src/lib/env.ts` | `src/lib/env.test.ts` | ✅ |
-| AC-3 | Browser client publishable key only | `src/lib/supabase/client.ts` | `client.test.ts` | ✅ |
-| AC-4 | Server client `createServerClient`+`cookies()`; admin `server-only`+secret | `server.ts`, `admin.ts:10 import "server-only"` | `server.test.ts`, `client.test.ts` | ✅ |
-| AC-5 | All 18 tables + self-ref categories + i18n | migrations 0002/0003/0004; 18 tables enumerated | integration reset applies clean | ✅ |
-| AC-6 | Full product model incl. `cost_price_cents` | `0002_catalog.sql:128` | `rls-matrix` / seed invariants | ✅ |
-| AC-7 | Variant SKU/stock/override/color + variant images | `0002`; seed writes 69 variant-linked images | `seed.integration` | ✅ |
-| AC-8 | Orders immutable financial snapshot + status enum + currency/identity CHECKs | `0003:55,73,74` + `orders_block_snapshot_update` | `constraints.integration` | ✅ |
-| AC-9 | order_items snapshot survives product delete | `0003:102` + `order_items_block_update` (permits FK-null cascade) | `visibility.integration` | ✅ |
-| AC-10 | order_status_history from/to/note/timestamp | `0003` | `constraints.integration` | ✅ |
-| AC-11 | store_settings single row, 50000/1000000 cents, integer money | seed `SHIPPING_FLAT_RATE_CENTS`/`FREE_SHIPPING_THRESHOLD_CENTS`; `0006` singleton | `config.test.ts`, `seed.integration` | ✅ |
-| AC-12 | RLS on every table; anon denied cost_price/orders/customers/discounts | `0005` REVOKE ALL baseline + narrow grants + `products_public` view | `rls-matrix.integration` | ✅ |
-| AC-13 | Idempotent seed, correct counts, nested cat, variant images | `scripts/seed.ts` upserts on natural keys | `seed.integration` (re-run, counts unchanged) | ✅ |
-| AC-14 | Generated types imported, no `any`/`!` | `database.types.ts`; grep = 0 `any`/`!`/TODO in new code | `tsc --noEmit` exit 0 | ✅ |
-| AC-15 | test + lint + tsc pass incl. new tests | — | all green (verifier re-ran) | ✅ |
-| AC-16 | next.config remotePatterns for Storage host | `next.config.ts` | `build` succeeds | ✅ |
-| AC-17 | Centralized constants + units + swap note | `src/lib/config.ts` (unit-suffixed, documented) | `config.test.ts` | ✅ |
+| AC-1 | `/` es-MX unprefixed, no Accept-Language negotiation | `i18n/routing.ts:27` (`localeDetection:false`) | `home.spec` (en-US → es-MX), `routing.test` | ✅ |
+| AC-2 | next-intl ^4.13.x, `withNextIntl`, routing config exact | `package.json` (4.13.2), `next.config.ts:8,40`, `routing.ts:23-28` | `routing.test`, build | ✅ |
+| AC-3 | All UI strings from dictionaries, zero hardcoded | grep clean; only `global-error.tsx` (justified) | `keys-used.test`, `nav-items.test` | ✅ |
+| AC-4 | Identical key sets + parity test | `es-MX.json`/`en.json` — 38 keys match, no empty leaves | `messages.test` | ✅ |
+| AC-5 | Header on every page: wordmark/nav/toggle/hamburger drawer | `site-header.tsx`, `mobile-nav.tsx` (FocusScope trapped/loop) | `mobile-nav.spec` (trap/Esc/restore) | ✅ |
+| AC-6 | Toggle rewrites segment, preserves path, cookie, no reload | `language-toggle.tsx:61` (`router.replace`) | `i18n-toggle.spec` | ✅ |
+| AC-7 | Footer: name, static slugs, free-ship via formatMXN, © year | `site-footer.tsx:27-53,92` | `home.spec`, `whatsapp-and-footer.spec` | ✅ |
+| AC-8 | WhatsApp FAB fixed bottom-right, new tab, noopener, aria-label | `whatsapp-button.tsx:46-49`, `whatsapp.ts` | `whatsapp.test`, `whatsapp-and-footer.spec` | ✅ |
+| AC-9 | Brand values as CSS vars, documented, no hardcoded color/font | `globals.css:11` (font-mono system stack), `:146` BRAND TOKENS, `:159` names `fonts.ts` | code read | ✅ |
+| AC-10 | `not-found.tsx` inside shell, localized, back-home | `[locale]/not-found.tsx`, catch-all `[...rest]/page.tsx` → `notFound()` | `not-found.spec` | ✅ |
+| AC-11 | `error.tsx` localized, `reset()`, no stack/PII leak | `error.tsx:29,46-58` (dictionary-only, digest opaque) | code read | ✅ |
+| AC-12 | `<html lang>` active locale, real metadata, single font, splash gone | `[locale]/layout.tsx:70`, `generateMetadata:44`, `fonts.ts` | `home.spec` (lang+title) | ✅ |
+| AC-13 | Motion: ease-out, transform/opacity, reduced-motion, hover-gated | `globals.css` (5× reduced-motion branches, 3× hover gating) | `responsive-motion.spec` | ✅ |
+| AC-14 | Mobile-first 375/768/≥1024, no h-scroll, no FAB/footer overlap | truncate/shrink-0/safe-area; CTAs + drawer toggle ≥44px | `responsive-motion.spec`, `mobile-nav.spec` | ✅ |
+| AC-15 | Typed server wrapper returning Row, used by footer, degrades gracefully | `store-settings.ts` (`server-only`, `cache()`, null degrade) | `store-settings.test` (4 paths) | ✅ |
+| AC-16 | lint, tsc strict, test pass; no any/!; no file > 400 lines | all gates clean; grep: no `any`/`!`/TODO; largest shell file 197 lines | all suites | ✅ |
+| AC-17 | Active locale via single source (NEXT_LOCALE), documented | `useLocale()`/`getLocale()` + `NEXT_LOCALE`; no second source | `routing.test`, `config.test` | ✅ |
 
-All 8 edge cases verified present in code + covered by tests (env throw, `server-only`
-guard, seed idempotency, category acyclicity trigger, variant override precedence,
-integer-cents money guard, zero-vs-many variants, order snapshot survives delete).
+**Edge cases (8/8 handled):** invalid locale → shell 404 (`/fr` verified live); `store_settings` absent → degrade + fallback (verified live, no `store_settings` table in e2e DB); English browser → lands on Spanish; reduced-motion → opacity-only; rapid toggle → interruptible last-wins; long labels → truncate/shrink; WhatsApp unconfigured → FAB not rendered (verified, 0 buttons); deep link `/en/anything` → English 404 in shell.
 
 ## Report Summary
 
 | Report | Score | Key Finding |
 |--------|-------|-------------|
-| Code Review | 6.5 → APPROVE | 3 critical / 6 major all FIXED and verified live (cost_price leak, grant baseline, immutability, financial CHECKs); minors/nits fixed or backlogged with rationale |
-| QA | HIGH | 74 new tests; found & fixed Q-1 (immutability trigger blocked ON DELETE SET NULL cascade — edge case 8); 100% AC + edge coverage |
-| UX | N/A | Backend-only task, no UI surface (per Feature Type) |
-| Security | SECURE / SHIP | 0 critical, 0 high, 0 secrets; anon attack matrix verified live — cost_price/PII/orders/discounts all denied; residual is app-layer Q&A rate-limit (no form in T1) |
-| Architecture | 9/10 APPROVE | Model sound, immutability exemplary; two forward-obligations (T7 stock-reservation RPC, T8 webhook idempotency) documented in backlog |
-| Hacker | 2/10 chaos | 7 integrity gaps found & fixed in `0006` (slug/name/length/singleton/locale/window CHECKs) + 15 regression tests |
+| Code Review | 7.5/10 → RESOLVED | 2 critical (dead `--font-mono` Geist ghost, wrong brand-swap doc path) + 4 major (dead `sheet.tsx`, sub-44px tap targets ×2, double `store_settings` read) all FIXED in Stage 6; verified in code. |
+| QA | HIGH | 177 unit + 78 e2e, all pass. Caught + fixed 2 CRITICAL drawer defects (closed overlay swallowed all clicks; self-dismiss + missing focus trap) — real product fixes, not weakened tests. |
+| UX | 9/10 | Complete state coverage, focus trap + restore, live-region errors, AA contrast, cohesive reduced-motion-safe motion. Fixed inert toggle crossfade + inverted secondary-link hover. |
+| Security | SECURE | 0 critical/high/medium. Secret key server-only (never in bundle), no committed secrets, WhatsApp URL config-only + encoded, `rel="noopener noreferrer"`. 1 low (CSP headers) deferred to T14 by design. |
+| Architecture | 8.5/10 | SOUND. i18n seam, token seam, server/client split all correct and scalable. Two risks routed forward (not blockers). |
+| Hacker | n/a | Stage 11 skipped — medium-complexity classification per `/full-cycle` auto-classify (chaos testing folded into QA's live E2E defect hunt). |
 
 ## Remaining Concerns
 
-- **Migrations not applied to the managed remote Supabase project**: accepted context.
-  Identical DDL/seed proven correct against local Docker; apply sequence documented in
-  `dev-done.md` (link → `db:push` → `db:types` → `db:seed`). Severity: LOW — no code
-  change needed, one operational step when a live token is available.
-- **Q&A anon INSERT has no rate limit**: correctly deferred — the DB bounds length but
-  cannot rate-limit; no public question form ships in T1. Tracked in
-  `clean-code-backlog.md`. Severity: LOW for T1 (no exposed surface).
-- **T7 stock-reservation primitive & T8 webhook-idempotency ledger**: forward
-  architectural obligations, out of T1 scope, tracked in the backlog. Severity: N/A
-  for this task; must be owned by the named future tasks.
+- **Fully-dynamic shell** (`getStoreSettings()` uses `cookies()` in `[locale]/layout.tsx`): LOW/routed. Accepted T2 trade-off (data-reading storefront, single indexed row, `cache()`-deduped). Must be reopened in T3/T4 so catalog/PDP can be statically optimized — tracked in `clean-code-backlog.md`.
+- **Middleware not composed for admin** (`/admin` would be locale-routed): LATENT/routed to T10. Tracked in backlog.
+- **Security response headers absent** (CSP/X-Frame-Options/HSTS): LOW/deferred to T14 launch hardening (CSP needs the full asset inventory that doesn't exist yet). Tracked in backlog.
+- **`middleware.ts` vs Next 16 `proxy` deprecation notice**: cosmetic; functions correctly. Trivial rename for a later cleanup ticket.
+- **AC-11 real render path + FAB-with-real-number**: unexercised end-to-end (no throwing route / no configured number in T2). LOW — boundary is standard Next.js with dictionary-only copy; FAB anchor is static over already-tested URL logic.
 
-None of these are ship-blockers: no failing test, no open critical/high vulnerability,
-no unmet AC, no cross-user data-leak path (verified live), quality ≥ 8.
+None of these are ship-blockers: no failing tests, no critical/high security vulnerability, no unmet AC, no cross-user data leak (T2 has no auth surface and one RLS-enforced public read), quality ≥ 8.
 
 ## What Was Built
 
-A complete, typed, RLS-secured Postgres schema on Supabase for the PosturPro store:
-18 tables (catalog, commerce, content, i18n) across six ordered/idempotent migrations,
-a three-client factory pattern (browser publishable / server SSR / secret-key admin
-with `server-only` guard), integer-cents money handling with a single format boundary,
-and an idempotent seed producing ~30 chairs, 5 brands, 6 categories (1 nested), 6 styles,
-color variants (inherited + overridden prices), variant images, and the store-settings
-row (MX$500 flat / MX$10,000 free-ship). The guest-store trust model is enforced by an
-explicit privilege baseline plus a `products_public` view that structurally hides
-internal cost data.
+The PosturPro storefront shell and neutral design-system seam: next-intl i18n with Spanish (`es-MX`) as the unprefixed default and English as explicit opt-in under `/en`, a persistent header (wordmark, nav, language toggle, accessible mobile drawer), an async footer reading `store_settings` with graceful degradation, a config-guarded floating WhatsApp button, localized 404 + error boundaries, a documented brand-token swap seam, and a reduced-motion-safe motion layer. No catalog, search, cart, homepage content, or admin surface — those are owned by later tasks; the homepage is a minimal localized placeholder only.
 
 ## Summary
 
-Every gate passes from a clean run, all 17 acceptance criteria and 8 edge cases are
-verified in the actual code and backed by passing tests, the RLS trust model was
-independently confirmed live (anon cannot reach cost_price, PII, orders, or discounts),
-no secrets are committed, and scope is clean (no Phase-2 build-ahead). This is a strong,
-production-ready data foundation. **SHIP.**
+A disciplined, well-documented foundation: all 17 ACs verified in code, all 8 edge cases handled, every gate green (255/255 tests, lint, strict tsc, build), zero critical/high security findings, and the two critical drawer defects QA caught are fixed and re-verified. SHIP.

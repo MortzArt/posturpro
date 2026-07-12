@@ -9,7 +9,7 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 - [x] **T1 — Data foundation** (tier: full-cycle)
   Supabase integration + full database schema: products, variants, brands, categories (nestable, many-to-many with products), styles, tags, product images, orders, order items, order status history, customers (guest records), discount codes (table only), product questions (Q&A), store settings, static pages (data-backed), i18n content structure. Row-level security. Seed data: ~30 chairs, ~5 brands, ~6 categories, ~6 styles, color variants, realistic MXN prices. Store settings seeded: flat rate MX$500, free-shipping threshold MX$10,000.
 
-- [ ] **T2 — App shell & design system** (tier: standard)
+- [x] **T2 — App shell & design system** (tier: standard)
   Layout, header with navigation, footer, neutral design tokens (centralized for later brand swap), ES/EN i18n setup with Spanish default and language toggle, mobile-first responsive foundation, 404/error pages, WhatsApp floating button. `blocked by: T1`
 
 - [ ] **T3 — Catalog browsing** (tier: standard)
