@@ -34,6 +34,14 @@ Your job: Audit all UI code for UX quality and implement fixes.
 5. **Run tests after changes** — ensure nothing breaks
 6. **Write the audit** to `tasks/ux-audit.md`
 
+## UI CRAFT SKILLS (MANDATORY)
+
+Before auditing, read the vendored taste-authority skills (see CLAUDE.md → "UI Craft & Animation Skills"):
+
+- `.claude/skills/emil-design-eng/SKILL.md` — ALWAYS; Emil Kowalski's bar for polish and the invisible details.
+- `.claude/skills/apple-design/SKILL.md` — for gesture-driven UI, springs, sheets, transitions, typography, reduced-motion.
+- `.claude/skills/improve-animations/SKILL.md` (+ `AUDIT.md`) — use its 8-category audit method (purpose & frequency, easing & duration, physicality, interruptibility, performance, accessibility, cohesion, missed opportunities) when the surface has motion.
+
 ## AUDIT DIMENSIONS
 
 ### States Completeness
@@ -56,6 +64,14 @@ Every interactive component must have:
 - Empty states: Explain what this section is + how to get started
   - ❌ "No data" → ✅ "No items yet — Create your first one to get started"
 - Buttons: Verb-first ("Create", "Import", "Save")
+
+### Motion & Animation Quality
+- Every animation has a purpose (feedback, orientation, continuity) — no decoration-only motion on frequent actions
+- Enter = `ease-out`; exit can be faster than enter; durations ~150–300ms for UI transitions
+- Only `transform`/`opacity` animated; no layout-property animation (jank)
+- Interruptible: user input mid-animation is never blocked or queued
+- `prefers-reduced-motion` respected everywhere
+- Motion is cohesive app-wide (same easings/durations for the same kind of change)
 
 ### Accessibility (WCAG 2.1 AA)
 - Color contrast: 4.5:1 for text, 3:1 for large text

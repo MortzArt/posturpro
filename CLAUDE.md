@@ -164,6 +164,26 @@ The full-cycle skill reads this from \`tasks/next-ticket.md\` and adjusts which 
 - Never commit secrets; all config via environment variables (\`.env*\` is gitignored)
 - No secret ever prefixed \`NEXT_PUBLIC_\`
 
+## UI Craft & Animation Skills (Emil Kowalski)
+
+Vendored from [emilkowalski/skills](https://github.com/emilkowalski/skills) into \`.claude/skills/\`. These are the taste authority for all UI and motion work in this project — any agent building, designing, reviewing, or polishing UI MUST read the relevant SKILL.md before touching UI code.
+
+| Skill                  | Path                                        | When to load                                                                                      |
+| ---------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| \`emil-design-eng\`      | \`.claude/skills/emil-design-eng/SKILL.md\`   | ALWAYS before building or designing any UI — core philosophy on polish, components, animation choices |
+| \`apple-design\`         | \`.claude/skills/apple-design/SKILL.md\`      | Gesture-driven UI, springs, drag/swipe/sheets, interruptible transitions, depth, typography, reduced-motion |
+| \`review-animations\`    | \`.claude/skills/review-animations/SKILL.md\` (+ \`STANDARDS.md\`) | Reviewing any diff that adds/changes animation or transition code — strict bar, approval is earned |
+| \`improve-animations\`   | \`.claude/skills/improve-animations/SKILL.md\` | Codebase-wide motion audit producing prioritized, self-contained fix plans (read-only on source)  |
+| \`animation-vocabulary\` | \`.claude/skills/animation-vocabulary/SKILL.md\` | Naming a motion effect precisely (specs, tickets, prompts)                                        |
+
+**Pipeline integration** (orchestrator: include this in agent prompts for UI-surface tasks):
+
+- **UI Design (3, ultradesign)** — load \`emil-design-eng\` + \`apple-design\`; use \`animation-vocabulary\` terms in specs so implementation is unambiguous.
+- **Dev (4, ultradev)** — load \`emil-design-eng\` before writing components; \`apple-design\` when the ticket involves gestures, sheets, or springs.
+- **Review (5, ultrareview)** — apply \`review-animations\` STANDARDS.md to any animation/transition code in the diff.
+- **UX (8, ultraux) & ui-polish-engineer** — load \`emil-design-eng\` + \`apple-design\`; run \`improve-animations\`-style audits for motion passes.
+- **Baseline rules that always apply:** enter animations use \`ease-out\` (never \`ease-in\`); respect \`prefers-reduced-motion\`; animate \`transform\`/\`opacity\` (compositor-friendly), not layout properties; interactions must be interruptible; no motion without purpose.
+
 ## Clean Code Rules (Uncle Bob)
 
 Apply to ALL new code and every file you touch (Boy-Scout Rule: leave it cleaner than you found it). Open findings are tracked in \`tasks/clean-code-backlog.md\` — check items off there when you fix them.

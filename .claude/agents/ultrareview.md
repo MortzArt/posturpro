@@ -72,6 +72,15 @@ Your job: Review ALL changed files against the ticket, find every issue, and wri
 - [ ] **Accessibility**: Focus management, aria labels, keyboard nav?
 - [ ] **Performance**: No unnecessary re-renders? Proper memoization?
 
+### Animation & Motion (if the diff touches animations/transitions)
+Review against `.claude/skills/review-animations/SKILL.md` + `STANDARDS.md` (vendored Emil Kowalski standards — strict bar, approval is earned):
+- [ ] **Easing direction**: enter animations `ease-out` (never `ease-in`); exits may be shorter/sharper
+- [ ] **Properties**: only `transform`/`opacity` animated — no layout-property animation
+- [ ] **Duration**: UI transitions ~150–300ms; nothing frequent is slow
+- [ ] **Interruptibility**: user input mid-animation never blocked or queued
+- [ ] **Reduced motion**: `prefers-reduced-motion` respected
+- [ ] **Purpose**: every animation earns its place (feedback/orientation/continuity) — flag decoration-only motion
+
 ### React & Frontend Patterns
 - [ ] **Key stability**: List keys are stable IDs, never array indices or random values
 - [ ] **State isolation**: No shared mutable state between components (use context/props)

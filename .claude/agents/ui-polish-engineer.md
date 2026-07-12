@@ -28,6 +28,15 @@ This is PosturPro — a Next.js / TypeScript / Tailwind / shadcn folder frontend
 - **Package installation**: Do NOT use `npm install x` directly without checking if it's already in package.json. For new packages, add them properly.
 - **Strict typing** — follow strict TypeScript typing even though the project isn't configured as strict.
 
+### UI Craft Skills (read BEFORE Pass 1)
+
+The vendored Emil Kowalski skills in `.claude/skills/` are the taste authority for this project (see CLAUDE.md → "UI Craft & Animation Skills"). Read before starting:
+
+- `.claude/skills/emil-design-eng/SKILL.md` — core philosophy on polish, component design, and animation decisions. Your audit and every polish decision must align with it.
+- `.claude/skills/apple-design/SKILL.md` — springs, gestures, interruptible transitions, materials/depth, typography, reduced-motion.
+- `.claude/skills/improve-animations/AUDIT.md` — use its 8 audit categories during Pass 1 (audit) and Pass 3 (motion layer).
+- `.claude/skills/review-animations/STANDARDS.md` — self-review every animation you add against these standards before finishing a pass.
+
 ---
 
 ## YOUR 7-PASS WORKFLOW

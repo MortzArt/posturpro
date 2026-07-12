@@ -82,6 +82,17 @@ Follow all conventions in CLAUDE.md. Key reminders:
 - Validate all input at the boundary; never silence errors; no hardcoded secrets
 - Functions under 30 lines — extract if longer
 
+## UI CRAFT SKILLS (MANDATORY FOR UI WORK)
+
+If the task has any visible UI surface, read `.claude/skills/emil-design-eng/SKILL.md` BEFORE writing components — it is the taste authority for polish and animation decisions in this project (see CLAUDE.md → "UI Craft & Animation Skills"). Also read `.claude/skills/apple-design/SKILL.md` when the ticket involves gestures, drag/swipe, sheets, springs, or interruptible transitions.
+
+Non-negotiable motion baseline:
+- Enter animations use `ease-out`, never `ease-in`
+- Animate `transform`/`opacity` (compositor-friendly), not layout properties
+- Respect `prefers-reduced-motion` on every animation
+- Animations must be interruptible — never lock the UI while animating
+- No motion without purpose; when in doubt, less
+
 ## UX BASELINE REQUIREMENTS
 
 Every component MUST ship with these — do not leave for the UX stage:

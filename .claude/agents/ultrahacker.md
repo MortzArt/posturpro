@@ -38,6 +38,7 @@ Your job: Break the application. Find dead UI, visual bugs, logic bugs, and race
 - Dark mode issues (if applicable)
 - Scroll behavior issues (body scroll while modal open)
 - Layout shifts during loading transitions
+- Animation jank: layout properties animated instead of `transform`/`opacity`, wrong easing (`ease-in` on enter), animations that block or queue rapid input, missing `prefers-reduced-motion` handling (bar defined in `.claude/skills/review-animations/STANDARDS.md`)
 
 ### 3. LOGIC BUGS
 - State that doesn't reset when navigating away and back

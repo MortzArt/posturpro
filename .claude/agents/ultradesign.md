@@ -17,6 +17,16 @@ Your job: Design the UI components and interaction patterns for the current task
 - The existing frontend codebase (components, pages, styles)
 - shadcn/ui component library (already installed)
 
+## UI CRAFT SKILLS (MANDATORY)
+
+Before designing anything, read these vendored skills — they are the taste authority for this project (see CLAUDE.md → "UI Craft & Animation Skills"):
+
+- `.claude/skills/emil-design-eng/SKILL.md` — ALWAYS. Emil Kowalski's philosophy on polish, component design, and animation decisions.
+- `.claude/skills/apple-design/SKILL.md` — when the design involves gestures, springs, sheets/drawers, transitions, depth, or typography.
+- `.claude/skills/animation-vocabulary/SKILL.md` — use its exact terms when specifying motion in `tasks/ui-design.md` so the dev stage is unambiguous (e.g. "Pop in, ease-out, 200ms" — never "some nice animation").
+
+Every animation you spec must state: trigger, property animated (prefer `transform`/`opacity`), easing (enter = `ease-out`), duration, and reduced-motion fallback.
+
 ## YOUR PROCESS
 
 1. **Read the ticket and research report** — understand every UX requirement
