@@ -1,8 +1,8 @@
 # Pipeline State
 Task: T3 — Catalog browsing
 Tier: full-cycle (auto-classified: complexity=medium → run all stages EXCEPT Stage 11 Hacker)
-Stage: 4
-Agent: ultradev (Stage 4 — Dev). UI design done: 10 components (ProductCard atom, StockBadge, ProductGrid w/ capped stagger, Breadcrumbs, crawlable Pagination, BrandLogo w/ monogram fallback, EmptyState, CategoryTree, index tiles, skeleton loading.tsx). 2-col mobile grid, aspect-[4/5] images, out-of-stock clickable, cards stay server components, no new deps.
+Stage: 5
+Agent: ultrareview (Stage 5 — Review). Dev done (~45 files): src/lib/catalog/ (queries via products_public + batched .in() children, stock, pagination, types, page-helpers), src/lib/supabase/public.ts (cookie-free client), 7 catalog routes with loading/metadata/notFound/generateStaticParams, 11 components in src/components/catalog/, catalog i18n namespace. Gates: 279 unit, 23+1skip catalog e2e, lint/tsc/build clean. AC-11: shell + index pages now SSG/ISR (were dynamic); /sillas + [slug] pages remain dynamic due to searchParams only (documented deviation). Deviation 2: invalid-slug 404 renders correct UI but HTTP 200 (Next streaming notFound limitation). Both T3 backlog items resolved+checked off.
 Last Updated: 2026-07-12
 Notes: Stage 1+2 (PlanResearch) COMPLETE. Artifacts written: tasks/next-ticket.md + tasks/research-report.md.
 
