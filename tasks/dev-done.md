@@ -231,3 +231,26 @@ constraints/triggers were exercised live.
 - `npx tsc --noEmit` → exit 0.
 - `npm run test` → **44 passed** (41 prior + 3 new seed-image invariant tests).
 - `npm run build` → Compiled successfully, TypeScript check passed.
+
+### Bugs Fixed in Hacker / Chaos (Stage 11)
+
+New migration `supabase/migrations/0006_data_integrity_hardening.sql` closes
+integrity gaps found by chaos testing (no existing guarantee weakened; verified
+0-row violations against current seed before adding each constraint):
+
+| ID | Severity | Title | File |
+|----|----------|-------|------|
+| H-1 | MAJOR | `store_settings` singleton not enforced (a 2nd row was insertable) → partial unique index `store_settings_singleton` | `0006` |
+| H-2 | MAJOR | Blank/whitespace slugs + case/whitespace near-duplicate slugs (`'   '`, `ErgoVita`, `ergovita `) accepted → `*_slug_format` CHECK (canonical lowercase-hyphen slug) on brands/categories/styles/tags/products/static_pages | `0006` |
+| H-3 | MAJOR | Whitespace-only / blank display names accepted → `*_name_nonblank` CHECK (btrim length ≥ 1) across catalog + customers + store_settings | `0006` |
+| H-4 | MAJOR | Unbounded free text (a 5 MB `products.description` was accepted) → `*_len` CHECKs on descriptions, materials, static-page body, translation value | `0006` |
+| H-5 | MINOR | Garbage i18n locale (`zz-GARBAGE-🔥`) accepted → `translations_locale_format` BCP-47-shape CHECK | `0006` |
+| H-6 | MINOR | Whitespace-only Q&A author/question accepted (char_length passed) → non-blank table CHECK + tightened anon INSERT policy | `0006` |
+| H-7 | MINOR | `discount_codes` window ending before it starts accepted → `discount_codes_window_valid` CHECK | `0006` |
+
+Regression tests: `tests/integration/hardening.integration.test.ts` (15 tests —
+each chaos vector rejected + a companion valid-write-still-succeeds assertion).
+
+After Stage 11: `npm run lint` clean, `npx tsc --noEmit` exit 0,
+`npm run test` **69 passed**, `npm run test:integration` **64 passed**
+(49 prior + 15 hardening), `npm run build` compiled successfully.

@@ -1,7 +1,7 @@
 # Pipeline State
 Task: T1 — Data foundation
 Tier: full-cycle
-Stage: 9+10 (parallel)
-Agent: ultrasecurity + ultraarch (Block D, parallel). Stage 8 (UX) SKIPPED per backend-only. QA complete: 69 unit + 49 integration tests all pass (integration via `npm run test:integration`, local Docker Supabase, reset+seed each run). QA found+fixed MAJOR bug: order_items immutability trigger blocked ON DELETE SET NULL cascade (products undeletable). 17/17 ACs + 8/8 edge cases covered.
+Stage: 11
+Agent: ultrahacker (Stage 11 — Hacker; runs because complexity=HIGH). Block D complete: Security SECURE/SHIP (0 crit/high; SEC-L-1 search_path pinning fixed; 2 medium documented — Q&A insert spam is app-layer for the future form ticket). Arch SOUND 9/10 APPROVE; forward risks added to clean-code-backlog (T7 stock-reservation RPC, T8 webhook idempotency ledger, T3 view-embedding strategy). Note task is backend-only: hacker stage should chaos-test the data layer/PostgREST surface, not UI.
 Last Updated: 2026-07-12
 Notes: PlanResearch complete. Ticket + research report written. Complexity classified HIGH (new subsystem, 18 tables, RLS trust model, 15+ files). Feature Type = backend-only (no UI surface) → Security (9) + Arch (10) run FULL depth; UI Design (3) + UX (8) lightweight/skip. Key decisions: Supabase via @supabase/ssr (App Router); NEW-format keys already in .env.local (sb_publishable_/sb_secret_) — publishable=client, secret=server-only via `import "server-only"`; money stored as integer cents (formatMXN boundary); guest orders are server-only (no anon RLS read, tokenized tracking deferred to Phase 2); migrations via Supabase CLI in supabase/migrations/; generated database.types.ts committed; store_settings seeded MX$500 flat / MX$10,000 free-ship as integer cents; all placeholder values centralized in src/lib/config.ts. Scope guard: discount_codes table-only, no account auth, no page-editing UI, i18n structure only.
