@@ -23,7 +23,7 @@ export default async function NotFound() {
         <p className="max-w-md text-sm text-muted-foreground">
           {t("description")}
         </p>
-        <Button asChild size="lg" className="mt-2">
+        <Button asChild size="lg" className="mt-2 min-h-11 px-4">
           <Link href="/" data-testid="not-found-home">
             {t("backHome")}
           </Link>

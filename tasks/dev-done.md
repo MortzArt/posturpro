@@ -42,7 +42,6 @@ link → localized 404 in shell), `/en/anything` (English 404 in shell).
 | `src/components/layout/mobile-nav.tsx` | created | `"use client"` Radix Dialog drawer, `forceMount` + CSS-transition motion, auto-close ≥md. |
 | `src/components/layout/language-toggle.tsx` | created | `"use client"` compact (mobile) / segmented (≥md) toggle; `useTransition`, never disabled, `aria-pressed`. |
 | `src/components/layout/whatsapp-button.tsx` | created | Server FAB, config-guarded, `target=_blank rel=noopener noreferrer`, `aria-label`, pop-in motion. |
-| `src/components/ui/sheet.tsx` | created (shadcn) | shadcn Sheet added to registry (available primitive; drawer uses raw Dialog directly for transition control). |
 | `src/app/globals.css` | modified | Added `--ease-out/--ease-in-out/--ease-drawer`; drawer/FAB/toggle/enter-fade/nav-hover motion classes; `## BRAND TOKENS` doc block. Palette untouched. |
 | `next.config.ts` | modified | Wrapped export with `withNextIntl('./src/i18n/request.ts')`. |
 | `src/app/page.tsx` | deleted | Template splash removed (superseded by `[locale]/page.tsx`). |
@@ -122,8 +121,10 @@ documents the seam and adds easings).
 - **Drawer built on raw `radix-ui` Dialog with `forceMount` + CSS transitions**
   (not the shadcn Sheet's tw-animate-css keyframes) so a mid-open dismiss is
   interruptible (AC-13) and reduced motion is a clean opacity-only fade. Radix
-  still provides focus trap, Esc, scroll-lock, `role="dialog" aria-modal`. The
-  shadcn Sheet was added to the registry as an available primitive.
+  still provides focus trap, Esc, scroll-lock, `role="dialog" aria-modal`.
+  (A shadcn `Sheet` was briefly added to the registry but removed in Stage 6 —
+  it was dead code and its `transition-all` + tw-animate-css keyframes violate
+  the AC-13 motion baseline; re-add via the registry when a real consumer exists.)
 - **Catch-all `[locale]/[...rest]/page.tsx`** to make dead in-locale links
   render the shell 404 (`[locale]/not-found.tsx`) instead of the shell-less root
   `not-found.tsx`. Real routes from T3/T13 take precedence as they're added.
@@ -149,6 +150,10 @@ documents the seam and adds easings).
   in place (correct per the Next 16 gotcha and useful for future static leaf
   routes), but the shell route renders on-demand. Expected for a data-reading
   storefront; no perf concern for T2 (single indexed single-row select).
+  **Stage 6 (M-4):** `getStoreSettings` is now wrapped in React `cache()`, so
+  the layout read (header wordmark fallback) and the footer read collapse to a
+  single per-request DB round-trip instead of two. Keeping the shell dynamic is
+  the deliberate accepted trade-off above; the duplicate query is eliminated.
 
 ## Edge Cases Handled
 
@@ -204,3 +209,31 @@ documents the seam and adds easings).
 - `next-intl@^4.13.2` (installed 4.13.2) — App Router RSC-native i18n:
   middleware locale detection, `getTranslations`, `hreflang` alternates. Peer
   deps satisfied by Next 16.2.9 / React 19.2.4; `.npmrc legacy-peer-deps=true`.
+
+## Fixes Applied (Stage 6)
+
+### Issue Tracker
+| ID | Severity | Title | Status | File | Notes |
+|----|----------|-------|--------|------|-------|
+| C-1 | CRITICAL | `--font-mono` points at deleted Geist var | FIXED | `src/app/globals.css:11` | `var(--font-geist-mono)` → `ui-monospace, SFMono-Regular, Menlo, monospace` system stack. No Geist ghost. |
+| C-2 | CRITICAL | Brand-swap doc names wrong font file | FIXED | `src/app/globals.css:159` | `src/app/layout.tsx` → `src/app/fonts.ts`; now matches dev-done Brand Tokens §3. |
+| M-1 | MAJOR | `sheet.tsx` dead code + motion-bar violation | FIXED | `src/components/ui/sheet.tsx` (deleted) | Verified 0 importers, deleted (git remembers). |
+| M-2 | MAJOR | Primary CTAs 32px (< 44px) | FIXED | `not-found.tsx:26`, `error.tsx:49`, `page.tsx:33` | Added `min-h-11 px-4` to all three `size="lg"` CTAs. Desktop density unchanged. |
+| M-3 | MAJOR | Segmented toggle options 32px in drawer | FIXED | `language-toggle.tsx:110`, `mobile-nav.tsx:135` | Options size to group (`h-full min-h-8`); drawer passes `h-11` → 44px group. Header keeps `h-9`. |
+| M-4 | MAJOR | Double `store_settings` read | FIXED | `src/lib/store-settings.ts:36` | Wrapped `getStoreSettings` in React `cache()` → one query serves layout + footer. |
+| m-1 | MINOR | Dead keys `nav.home` / `nav.menuDescription` | FIXED | `mobile-nav.tsx`, `es-MX.json`, `en.json` | Wired `menuDescription` as `sr-only` `<Dialog.Description>`; deleted orphaned `nav.home` (parity preserved). |
+| m-2 | MINOR | `localeLabelKey` identity function | FIXED | `language-toggle.tsx` | Deleted the function; inlined `t(locale)` at both call sites. |
+| m-3 | MINOR | `enter-fade` doesn't replay after `reset()` | SKIPPED | — | Reviewer-acknowledged non-bug; mount fade is optional per spec. Forcing replay = pointless JS churn. |
+| m-4 | MINOR | `will-change` permanent on closed drawer | FIXED | `src/app/globals.css:194` | Moved `will-change: transform` onto `[data-state="open"]` only. |
+
+### Summary
+- Critical: 2/2 fixed
+- Major: 4/4 fixed, 0 skipped
+- Minor: 3/4 fixed, 1 skipped (m-3, justified)
+- AC-9 FAIL → PASS; AC-14 PARTIAL → PASS
+
+### Test Results After Fixes
+- Unit: Total 86 | Passed 86 | Failed 0 | Skipped 0
+- Lint (`npm run lint`): clean
+- Typecheck (`npx tsc --noEmit`): clean (exit 0)
+- Build (`npm run build`): success (the `store-settings` "Dynamic server usage" notice is pre-existing, expected, and handled by the graceful-degrade path — not a regression)

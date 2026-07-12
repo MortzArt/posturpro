@@ -79,7 +79,6 @@ export function MobileNav() {
         <Dialog.Content
           forceMount
           data-testid="mobile-nav-panel"
-          aria-describedby={undefined}
           className={cn(
             "drawer-panel fixed inset-y-0 left-0 z-[60] flex h-full w-[85vw] max-w-xs flex-col",
             "border-r border-border bg-background shadow-xl outline-none",
@@ -90,6 +89,9 @@ export function MobileNav() {
             <Dialog.Title className="truncate text-base font-semibold tracking-tight">
               {t("menuTitle")}
             </Dialog.Title>
+            <Dialog.Description className="sr-only">
+              {t("menuDescription")}
+            </Dialog.Description>
             <Dialog.Close asChild>
               <button
                 type="button"
@@ -131,7 +133,9 @@ export function MobileNav() {
           </nav>
 
           <div className="shrink-0 border-t border-border p-4">
-            <LanguageToggle variant="segmented" />
+            {/* Raise the group to a ≥44px touch target inside the drawer (AC-14);
+                options fill the height via `h-full`. Header keeps compact `h-9`. */}
+            <LanguageToggle variant="segmented" className="h-11" />
           </div>
         </Dialog.Content>
       </Dialog.Portal>

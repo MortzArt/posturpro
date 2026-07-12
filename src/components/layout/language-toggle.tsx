@@ -43,11 +43,6 @@ function localeNameKey(locale: string): "esName" | "enName" {
   return locale === "en" ? "enName" : "esName";
 }
 
-/** Short display label key for a locale (`es-MX`/`en` are valid dict keys). */
-function localeLabelKey(locale: Locale): Locale {
-  return locale;
-}
-
 export function LanguageToggle({
   variant = "segmented",
   className,
@@ -83,7 +78,7 @@ export function LanguageToggle({
         )}
       >
         <span key={target} className="toggle-label">
-          {t(localeLabelKey(target))}
+          {t(target)}
         </span>
       </button>
     );
@@ -96,6 +91,8 @@ export function LanguageToggle({
       aria-label={t("label")}
       className={cn(
         "inline-flex h-9 shrink-0 items-center rounded-md border border-border p-0.5",
+        // Consumers (e.g. the mobile drawer) may pass `h-11` to raise the group
+        // to a ≥44px touch target; the options fill the group height (`h-full`).
         className,
       )}
     >
@@ -110,13 +107,13 @@ export function LanguageToggle({
             aria-label={t("switchTo", { locale: t(localeNameKey(locale)) })}
             onClick={() => switchTo(locale)}
             className={cn(
-              "toggle-press inline-flex h-8 min-w-9 items-center justify-center rounded-[calc(var(--radius)*0.6)] px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "toggle-press inline-flex h-full min-h-8 min-w-9 items-center justify-center rounded-[calc(var(--radius)*0.6)] px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
               isActive
                 ? "bg-accent font-medium text-accent-foreground"
                 : "font-normal text-muted-foreground hover:text-foreground",
             )}
           >
-            <span className="toggle-label">{t(localeLabelKey(locale))}</span>
+            <span className="toggle-label">{t(locale)}</span>
           </button>
         );
       })}

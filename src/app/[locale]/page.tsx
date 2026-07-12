@@ -30,7 +30,7 @@ export default async function HomePage({ params }: HomePageProps) {
           {t("intro")}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-4">
-          <Button asChild size="lg">
+          <Button asChild size="lg" className="min-h-11 px-4">
             <Link href="/sillas" data-testid="home-cta-catalog">
               {t("ctaCatalog")}
             </Link>

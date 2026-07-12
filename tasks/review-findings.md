@@ -13,7 +13,7 @@ A strong, disciplined implementation: i18n wiring is textbook next-intl v4, the 
 - **Problem**: `--font-mono: var(--font-geist-mono);`. The Geist tangle was removed in this task (AC-12) — `--font-geist-mono` is no longer defined anywhere (grep confirms zero definitions). Any element resolving `font-mono` now gets an unresolved custom property.
 - **Impact**: The `--font-mono` token is silently dead and is a lingering Geist ghost, contradicting AC-12 "single, intentional font wiring (no Geist … tangle)". It will bite the first time any component uses `font-mono` (code blocks in T3+). The token system is meant to be the single source of design truth (AC-9); a token pointing at a non-existent variable is a broken seam.
 - **Suggested Fix**: Either bind a real mono font in `fonts.ts`, or (preferred for T2, mono unused) set a system stack `--font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;`, or remove the `--font-mono` line and its `@theme` `--color`/mono mapping entirely.
-- **Status**: OPEN
+- **Status**: FIXED — `globals.css:11` now `--font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;` (system stack, per the preferred T2 option). No more Geist ghost; grep for `geist` in `src` returns only the historical comment in `fonts.ts`.
 
 ### C-2: Brand-swap documentation points to the wrong file for the font
 - **ID**: C-2
@@ -22,7 +22,7 @@ A strong, disciplined implementation: i18n wiring is textbook next-intl v4, the 
 - **Problem**: The `BRAND TOKENS` block in `globals.css` says: "Font: the `--font-sans` binding in `src/app/layout.tsx` (swap the one next/font family)". The font is NOT in `layout.tsx` — that file was thinned to a pass-through (`return children;`). The font lives in `src/app/fonts.ts` (`Inter(...)`). `dev-done.md` correctly says `src/app/fonts.ts`, so the two brand-swap docs disagree, and the authoritative in-code one (the AC-9 seam) is wrong.
 - **Impact**: AC-9 requires the brand-token block to "describe exactly what to edit for a brand swap." It sends the next engineer to a file that no longer contains the font — the exact "shipping it wrong forces expensive rework" risk the ticket's Priority section calls out.
 - **Suggested Fix**: In `globals.css:159-160`, change "`src/app/layout.tsx`" → "`src/app/fonts.ts`".
-- **Status**: OPEN
+- **Status**: FIXED — brand-swap doc in `globals.css` now names `src/app/fonts.ts` (the actual `Inter(...)` binding), matching `dev-done.md` Brand Tokens §3. The two seam docs now agree.
 
 ## Major Issues (SHOULD FIX)
 
@@ -33,7 +33,7 @@ A strong, disciplined implementation: i18n wiring is textbook next-intl v4, the 
 - **Problem**: The dev correctly built the drawer on raw Radix Dialog for interruptibility, then also added the shadcn `Sheet` "as an available primitive." Nothing imports it (grep for importers = empty). CLAUDE.md Clean Code: "No dead code … delete unused code (git remembers)." The design spec (§MobileNav) said Sheet **if** addable **otherwise** Radix — an either/or, not both.
 - **Impact**: 147 lines of unmaintained, untested UI. `sheet.tsx` uses `transition-all` and tw-animate-css `animate-in slide-in-from-*` keyframes — both direct AC-13 baseline violations (`transition: all`; non-interruptible keyframes on a drawer). If a future dev reaches for it, they inherit a drawer that fails this task's own motion bar.
 - **Suggested Fix**: Delete `src/components/ui/sheet.tsx`. Re-add via the registry when a real consumer exists.
-- **Status**: OPEN
+- **Status**: FIXED — `src/components/ui/sheet.tsx` deleted (git remembers). Verified zero importers before deletion; `src/components/ui/` now holds only `button.tsx`. The sub-standard `transition-all` + tw-animate-css drawer can no longer be reused.
 
 ### M-2: Primary CTAs are 32px tall — fail the ≥44px tap-target requirement
 - **ID**: M-2
@@ -42,7 +42,7 @@ A strong, disciplined implementation: i18n wiring is textbook next-intl v4, the 
 - **Problem**: This repo's `Button` primitive defines `size: "lg"` as **`h-8`** (32px) — an unusually compact scale (`button.tsx:28`; default is `h-7`/28px). The UX Requirements → Tablet explicitly require "Comfortable tap targets (≥44px)". These are the primary actions on the error/404/home states and are 32px tall on mobile.
 - **Impact**: WCAG 2.5.5 and the ticket's own ≥44px rule violated on the most important actions of the error and empty states, on a mobile-first Mexican audience. `size="lg"` is misleadingly named here.
 - **Suggested Fix**: Don't trust the primitive's `lg`. Add `min-h-11` (44px) to these CTAs. The compact toggle and hamburger already use `h-11`/`size-11` — mirror that.
-- **Status**: OPEN
+- **Status**: FIXED — added `min-h-11 px-4` to all three `size="lg"` CTAs: `not-found.tsx:26`, `error.tsx:49`, `page.tsx:33`. Now ≥44px tall (WCAG 2.5.5 / AC-14). Desktop density unaffected — `min-h` floors the height without inflating it; `px-4` widens the horizontal hit area to match. Mirrors the existing `h-11`/`size-11` hamburger + compact toggle.
 
 ### M-3: Segmented language-toggle options are 32px tall (< 44px) in the drawer
 - **ID**: M-3
@@ -51,7 +51,7 @@ A strong, disciplined implementation: i18n wiring is textbook next-intl v4, the 
 - **Problem**: The mobile drawer renders `variant="segmented"` (`mobile-nav.tsx:134`), a touch surface. The design spec LanguageToggle §Layout says "Both are ≥ 44px tall." The segmented option buttons are `h-8` (32px) inside a `h-9` group.
 - **Impact**: Sub-44px tap target for the language switch on mobile, inside the drawer where it's thumb-operated. Contradicts the design spec and accessibility bar.
 - **Suggested Fix**: Give the drawer's toggle a 44px min height (taller segmented variant), or render the `compact` variant inside the drawer.
-- **Status**: OPEN
+- **Status**: FIXED — the segmented option buttons now size to the group (`h-full min-h-8`) instead of a fixed `h-8`, and `mobile-nav.tsx:134` passes `className="h-11"` to the drawer's toggle so the group is 44px and options fill it. The header's inline toggle keeps its compact `h-9` density (no className override). ≥44px touch target in the drawer per the design spec.
 
 ### M-4: `store_settings` read blocks the whole shell and is fetched twice per request
 - **ID**: M-4
@@ -60,25 +60,29 @@ A strong, disciplined implementation: i18n wiring is textbook next-intl v4, the 
 - **Problem**: `getStoreSettings()` → `createClient()` → `await cookies()` opts the entire `[locale]` layout (and every page under it) into dynamic rendering. Worse, it's awaited **twice** per request: once in the layout (`:66`, only to derive the header wordmark name) and again in `SiteFooter` (`:44`). Two DB round-trips for the same single row, with no `cache()` dedupe.
 - **Impact**: (1) `generateStaticParams`/`setRequestLocale` are inert for the shell — AC-2's static-render intent isn't realized (dev acknowledges but understates). (2) Duplicate query per page load, avoidable latency for the mobile audience.
 - **Suggested Fix**: Wrap `getStoreSettings` in React `cache()` so layout+footer collapse to one query. Consider using `SEED_STORE_NAME` for the header wordmark to keep the shell static and let only the footer be dynamic.
-- **Status**: OPEN
+- **Status**: FIXED (primary) — `getStoreSettings` is now wrapped in React `cache()` (`store-settings.ts:36`), so the layout read (`layout.tsx:66`) and the footer read (`site-footer.tsx:44`) collapse to a SINGLE per-request DB round-trip. Verified the 4 `store-settings` unit tests still pass (React `cache()` does not persist across separate top-level test calls, so mocked-per-call behavior is preserved). The static-render optimization (`SEED_STORE_NAME` for the wordmark) was NOT taken — it was an explicit "consider" (non-blocking) and the shell remaining dynamic is a documented, accepted T2 deviation (a data-reading storefront; single indexed row). The duplicate-query defect — the actual M-4 — is resolved.
 
 ## Minor Issues (NICE TO FIX)
 
 ### m-1: Dead dictionary keys `nav.home` and `nav.menuDescription`
 - **File**: `src/messages/es-MX.json:8,12` + `src/messages/en.json:8,12`
 - **Suggestion**: Both keys exist in both dictionaries but are referenced nowhere (`aria-describedby={undefined}` at `mobile-nav.tsx:82` deliberately drops the description). Either wire `menuDescription` via an `sr-only` `<Dialog.Description>` and use `nav.home` as the wordmark `aria-label`, or delete both. The parity test passes orphans silently.
+- **Status**: FIXED — `menuDescription` is now wired: removed `aria-describedby={undefined}` and added `<Dialog.Description className="sr-only">{t("menuDescription")}</Dialog.Description>` to the drawer (a genuine a11y gain — the dialog is now described to screen readers). `nav.home` deleted from both dictionaries (parity preserved): the wordmark's existing `aria-label={storeName}` is a more specific label than a generic "Home", so `nav.home` was truly orphaned.
 
 ### m-2: `localeLabelKey` is an identity function — needless indirection
 - **File**: `src/components/layout/language-toggle.tsx:46-49`
 - **Suggestion**: `function localeLabelKey(locale: Locale): Locale { return locale; }` returns its argument unchanged. Inline `t(locale)` at `:85` and `:119`; removes ~5 lines and a misleading abstraction.
+- **Status**: FIXED — deleted `localeLabelKey`; both call sites now call `t(target)` / `t(locale)` directly. tsc still clean (the `es-MX`/`en` label keys resolve fine as translation keys).
 
 ### m-3: `enter-fade` `@starting-style` doesn't replay after `reset()`
 - **File**: `src/app/[locale]/error.tsx:34`, `src/app/globals.css:291`
 - **Suggestion**: `@starting-style` runs once on true DOM entry; after `reset()` re-renders the same boundary the fade won't replay. Acceptable (spec calls the mount fade optional) — noted so it isn't mistaken for a bug.
+- **Status**: SKIPPED — the reviewer explicitly flags this as acceptable, not a bug (the mount fade is optional per the motion spec, and `reset()` re-rendering the same boundary without a replay is correct browser behavior for `@starting-style`). No code change; forcing a replay would add a JS mount-key hack for zero UX benefit — churn the Boy-Scout rule advises against.
 
 ### m-4: `will-change: transform` left permanently on the closed drawer panel
 - **File**: `src/app/globals.css:192`
 - **Suggestion**: `forceMount` keeps the panel mounted, so this holds a compositor layer alive for the whole page lifetime even when closed. Scope it to `[data-state="open"]` or drop it (the transition is already GPU-friendly).
+- **Status**: FIXED — moved `will-change: transform` off the base `.drawer-panel` rule and onto `.drawer-panel[data-state="open"]` (`globals.css`), with a comment explaining the transient-hint intent. The closed, off-screen force-mounted panel no longer holds a compositor layer for the whole page lifetime.
 
 ## Animation & Motion Review (AC-13 — Emil Kowalski bar)
 
@@ -142,12 +146,12 @@ A strong, disciplined implementation: i18n wiring is textbook next-intl v4, the 
 | AC-6 | Toggle rewrites segment, preserves path, persists cookie, no reload | PASS | `language-toggle.tsx:61-68` |
 | AC-7 | Footer: name, static slugs, free-shipping via formatMXN, © year | PASS | `site-footer.tsx:27-35,47-53,92` |
 | AC-8 | WhatsApp FAB fixed bottom-right, new tab, noopener, aria-label | PASS | `whatsapp-button.tsx:44-60`; `whatsapp.ts` |
-| AC-9 | Brand values as CSS vars, documented, no hardcoded color/font | **FAIL** | Tokens/grep clean BUT brand-token doc names wrong font file (C-2) and `--font-mono` is broken (C-1) |
+| AC-9 | Brand values as CSS vars, documented, no hardcoded color/font | PASS (after fix) | C-1 fixed (`--font-mono` → system stack) + C-2 fixed (brand-swap doc now names `src/app/fonts.ts`) |
 | AC-10 | `not-found.tsx` inside shell, localized, back-home | PASS | `[locale]/not-found.tsx`; catch-all `[...rest]/page.tsx` |
 | AC-11 | `error.tsx` localized, `reset()`, no stack/PII leak | PASS | `error.tsx:24-62` |
 | AC-12 | `<html lang>` active locale, real metadata, single font, splash gone | PASS | `layout.tsx:70`; `fonts.ts`; svgs deleted (Geist ghost in mono = C-1) |
 | AC-13 | Motion: ease-out, transform/opacity, reduced-motion, hover-gated | PASS | `globals.css:177-321`; see Motion verdict |
-| AC-14 | Mobile-first 375/768/≥1024, no h-scroll, no FAB/footer overlap | PARTIAL | Truncation/shrink-0/safe-area correct; but tap targets < 44px (M-2, M-3) violate this AC's own ≥44px UX requirement |
+| AC-14 | Mobile-first 375/768/≥1024, no h-scroll, no FAB/footer overlap | PASS (after fix) | Truncation/shrink-0/safe-area correct; M-2 + M-3 fixed — CTAs and drawer toggle now ≥44px |
 | AC-15 | Typed server wrapper returning Row, used by footer, degrades gracefully | PASS | `store-settings.ts`; tested |
 | AC-16 | lint, tsc strict, test pass; no any/!; no file > 400 lines | PASS | tsc ✓, eslint ✓, 86 tests ✓; no `any`/`!`; largest file 191 lines |
 | AC-17 | Active locale via single source (NEXT_LOCALE), documented | PASS | `useLocale()`/`getLocale()` + `NEXT_LOCALE` |
@@ -169,6 +173,6 @@ A strong, disciplined implementation: i18n wiring is textbook next-intl v4, the 
 
 Excellent architecture, i18n rigor, and a motion layer that genuinely clears the craft bar — rare. Docked for one broken token (`--font-mono`), a factually wrong brand-swap doc that AC-9 explicitly grades, dead code shipped as a "deliverable," and two sub-44px tap targets that violate the ticket's own accessibility rule on the primary CTAs and the mobile toggle.
 
-## Recommendation: REQUEST CHANGES
+## Recommendation: REQUEST CHANGES → RESOLVED (Stage 6 Fix)
 
-Not a happy-path blocker — every AC's core behavior works and all gates are green. But C-1 (broken font token), C-2 (wrong brand-swap doc — the exact rework risk the ticket flags), M-1 (dead `sheet.tsx` that violates the motion baseline if reused), and M-2/M-3 (< 44px tap targets contradicting AC-14's own UX requirements) must be fixed before ship. M-4 (double `store_settings` read / `cache()`) should be fixed but is not blocking.
+All findings addressed. C-1, C-2, M-1, M-2, M-3, M-4 FIXED; m-1, m-2, m-4 FIXED; m-3 SKIPPED (reviewer-acknowledged non-bug). AC-9 and AC-14 now PASS. All gates re-run green: `npm run lint` ✓, `npx tsc --noEmit` ✓, `npm run test` ✓ (86/86), `npm run build` ✓. No behavior regressions; no new issues introduced. Ready to advance.

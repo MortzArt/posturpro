@@ -46,7 +46,7 @@ export default function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
         <Button
           type="button"
           size="lg"
-          className="mt-2"
+          className="mt-2 min-h-11 px-4"
           data-testid="error-retry"
           onClick={reset}
         >

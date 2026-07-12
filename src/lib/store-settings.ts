@@ -9,6 +9,7 @@
  * `null` so callers can render the shell without crashing (T2 edge case 2).
  */
 import "server-only";
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -25,39 +26,46 @@ const SELECTED_COLUMNS =
 /**
  * Read the single `store_settings` row.
  *
+ * Wrapped in React `cache()` so the two shell consumers per request — the
+ * `[locale]` layout (header wordmark fallback) and `SiteFooter` — collapse to a
+ * SINGLE DB round-trip instead of two (T2 M-4). `cache()` memoizes per-request
+ * on the server; it does not persist across requests.
+ *
  * @returns the typed row, or `null` when it is absent/unreadable (never throws)
  */
-export async function getStoreSettings(): Promise<StoreSettings | null> {
-  try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("store_settings")
-      .select(SELECTED_COLUMNS)
-      .maybeSingle();
+export const getStoreSettings = cache(
+  async (): Promise<StoreSettings | null> => {
+    try {
+      const supabase = await createClient();
+      const { data, error } = await supabase
+        .from("store_settings")
+        .select(SELECTED_COLUMNS)
+        .maybeSingle();
 
-    if (error) {
+      if (error) {
+        console.warn(
+          `[store-settings] Failed to read store_settings row: ${error.message}. ` +
+            "Footer will degrade gracefully (config fallbacks, no free-shipping line).",
+        );
+        return null;
+      }
+
+      if (!data) {
+        console.warn(
+          "[store-settings] No store_settings row found. Footer will degrade " +
+            "gracefully (config fallbacks, no free-shipping line).",
+        );
+        return null;
+      }
+
+      return data;
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
       console.warn(
-        `[store-settings] Failed to read store_settings row: ${error.message}. ` +
+        `[store-settings] Unexpected error reading store_settings: ${message}. ` +
           "Footer will degrade gracefully (config fallbacks, no free-shipping line).",
       );
       return null;
     }
-
-    if (!data) {
-      console.warn(
-        "[store-settings] No store_settings row found. Footer will degrade " +
-          "gracefully (config fallbacks, no free-shipping line).",
-      );
-      return null;
-    }
-
-    return data;
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    console.warn(
-      `[store-settings] Unexpected error reading store_settings: ${message}. ` +
-        "Footer will degrade gracefully (config fallbacks, no free-shipping line).",
-    );
-    return null;
-  }
-}
+  },
+);
