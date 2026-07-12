@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog } from "radix-ui";
+import { FocusScope } from "@radix-ui/react-focus-scope";
 import { useTranslations } from "next-intl";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Menu01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
@@ -23,6 +24,13 @@ import { cn } from "@/lib/utils";
  *
  * The trigger is hidden at `md+` (inline nav takes over); if the viewport
  * crosses to `md` while open, the drawer closes so it never lingers.
+ *
+ * FORCE-MOUNT DISMISS GUARD: because the Content layer is `forceMount`ed, its
+ * DismissableLayer keeps a document-level pointer listener alive while closed.
+ * The very tap that opens the drawer would otherwise be seen as an
+ * "interact-outside" and close it in the same tick (open→close within ~7ms —
+ * the drawer never appears on a pointer/tap, only via keyboard). We suppress
+ * that by ignoring any outside-interaction whose target is the trigger itself.
  */
 
 /** Tailwind `md` breakpoint in px — the drawer is mobile-only below this. */
@@ -31,6 +39,7 @@ const MD_BREAKPOINT_PX = 768;
 export function MobileNav() {
   const t = useTranslations("nav");
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) {
@@ -53,6 +62,7 @@ export function MobileNav() {
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           data-testid="mobile-nav-trigger"
           aria-label={t("openMenu")}
@@ -74,18 +84,63 @@ export function MobileNav() {
         <Dialog.Overlay
           forceMount
           data-testid="mobile-nav-overlay"
-          className="drawer-scrim fixed inset-0 z-[60] bg-black/50 data-[state=closed]:pointer-events-none"
+          className="drawer-scrim fixed inset-0 z-[60] bg-black/50"
         />
         <Dialog.Content
           forceMount
           data-testid="mobile-nav-panel"
+          onInteractOutside={(event) => {
+            // Ignore the trigger's own tap — otherwise the opening pointer is
+            // treated as an outside-interaction and dismisses the drawer in the
+            // same tick (forceMount keeps this layer's listeners alive).
+            const target = event.target as Node | null;
+            if (target && triggerRef.current?.contains(target)) {
+              event.preventDefault();
+            }
+          }}
+          aria-modal={open ? true : undefined}
           className={cn(
             "drawer-panel fixed inset-y-0 left-0 z-[60] flex h-full w-[85vw] max-w-xs flex-col",
             "border-r border-border bg-background shadow-xl outline-none",
-            "data-[state=closed]:pointer-events-none",
           )}
         >
-          <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
+          {/* The panel is force-mounted (so its slide-out is an interruptible
+              CSS transition), which bypasses Radix's modal focus trap. Mount a
+              trapped FocusScope ONLY while open: it moves focus into the panel,
+              keeps Tab/Shift-Tab cycling inside it, and restores focus to the
+              trigger on close — the a11y contract a real modal drawer needs
+              (T2 AC-5). It unmounts on close (restoring focus) while the panel
+              keeps transitioning out underneath. */}
+          {open ? (
+            <FocusScope asChild loop trapped>
+              <div className="flex h-full flex-col">
+                <MobileNavBody
+                  t={t}
+                  onNavigate={() => setOpen(false)}
+                />
+              </div>
+            </FocusScope>
+          ) : null}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+interface MobileNavBodyProps {
+  t: ReturnType<typeof useTranslations>;
+  onNavigate: () => void;
+}
+
+/**
+ * The drawer's inner content (header row, nav list, language toggle). Extracted
+ * so it can be wrapped in a {@link FocusScope} that mounts only while open —
+ * keeping the render tree small and the focus-trap boundary explicit.
+ */
+function MobileNavBody({ t, onNavigate }: MobileNavBodyProps) {
+  return (
+    <>
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
             <Dialog.Title className="truncate text-base font-semibold tracking-tight">
               {t("menuTitle")}
             </Dialog.Title>
@@ -121,7 +176,7 @@ export function MobileNav() {
                 key={item.key}
                 href={item.href}
                 data-testid={`mobile-nav-item-${item.key}`}
-                onClick={() => setOpen(false)}
+                onClick={onNavigate}
                 className={cn(
                   "nav-hover flex items-center rounded-md px-3 py-3 text-base font-medium text-foreground outline-none",
                   "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
@@ -132,13 +187,11 @@ export function MobileNav() {
             ))}
           </nav>
 
-          <div className="shrink-0 border-t border-border p-4">
-            {/* Raise the group to a ≥44px touch target inside the drawer (AC-14);
-                options fill the height via `h-full`. Header keeps compact `h-9`. */}
-            <LanguageToggle variant="segmented" className="h-11" />
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      <div className="shrink-0 border-t border-border p-4">
+        {/* Raise the group to a ≥44px touch target inside the drawer (AC-14);
+            options fill the height via `h-full`. Header keeps compact `h-9`. */}
+        <LanguageToggle variant="segmented" className="h-11" />
+      </div>
+    </>
   );
 }

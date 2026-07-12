@@ -184,6 +184,15 @@
 .drawer-scrim[data-state="closed"] {
   opacity: 0;
   transition-duration: 200ms;
+  /* The scrim is force-mounted (so its fade is a CSS transition), so when
+   * closed it still covers the viewport at z-60. It MUST NOT intercept clicks
+   * or it blankets the whole shell and makes every control (toggle, hamburger,
+   * nav, CTAs) dead. Radix's DismissableLayer sets an INLINE
+   * `pointer-events: auto` on the force-mounted overlay, so overriding it
+   * requires `!important`. (T2 QA bug: the Tailwind `data-[state=closed]:
+   * pointer-events-none` utility never compiled AND could not have won against
+   * the inline style anyway.) */
+  pointer-events: none !important;
 }
 
 .drawer-panel {
@@ -200,6 +209,11 @@
 .drawer-panel[data-state="closed"] {
   transform: translateX(-100%);
   transition-duration: 200ms;
+  /* Same force-mount guard as the scrim: a closed (off-screen) panel must not
+   * capture pointer events. Radix sets inline `pointer-events: auto`, so this
+   * needs `!important` to win. The panel is translated off-screen when closed,
+   * but a 0-width sliver at the left edge could still catch a tap. */
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
