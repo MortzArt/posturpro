@@ -12,7 +12,7 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 - [x] **T2 — App shell & design system** (tier: standard)
   Layout, header with navigation, footer, neutral design tokens (centralized for later brand swap), ES/EN i18n setup with Spanish default and language toggle, mobile-first responsive foundation, 404/error pages, WhatsApp floating button. `blocked by: T1`
 
-- [ ] **T3 — Catalog browsing** (tier: standard)
+- [x] **T3 — Catalog browsing** (tier: standard)
   Product listing grid, category pages, brand pages (logo + description), style browsing, breadcrumbs, stock indicators, pagination. `blocked by: T2`
 
 - [ ] **T4 — Product detail page** (tier: standard)
