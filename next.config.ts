@@ -1,4 +1,11 @@
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
+
+/**
+ * next-intl plugin (T2 AC-2). Points at the per-request config module so RSCs
+ * can resolve the active locale's messages. Must wrap the exported config.
+ */
+const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 /**
  * Supabase Storage host derived from the project URL. Product images are
@@ -30,4 +37,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withNextIntl(nextConfig);

@@ -1,0 +1,63 @@
+{
+  "metadata": {
+    "title": "PosturPro — Ergonomic chairs",
+    "description": "Ergonomic chairs to care for your back. Find the perfect chair among our brands and styles."
+  },
+  "nav": {
+    "skipToContent": "Skip to content",
+    "home": "Home",
+    "openMenu": "Open navigation menu",
+    "closeMenu": "Close menu",
+    "menuTitle": "Navigation",
+    "menuDescription": "Main store links",
+    "items": {
+      "catalog": "Chairs",
+      "brands": "Brands",
+      "styles": "Styles",
+      "contact": "Contact"
+    }
+  },
+  "toggle": {
+    "label": "Change language",
+    "switchTo": "Switch to {locale}",
+    "es-MX": "ES",
+    "en": "EN",
+    "esName": "Español",
+    "enName": "English"
+  },
+  "footer": {
+    "freeShipping": "Free shipping on orders over {threshold}",
+    "sections": {
+      "store": "Store",
+      "help": "Help"
+    },
+    "links": {
+      "about": "About us",
+      "shipping": "Shipping & returns",
+      "faq": "Frequently asked questions",
+      "contact": "Contact"
+    },
+    "rights": "© {year} {storeName}. All rights reserved."
+  },
+  "whatsapp": {
+    "label": "Contact us on WhatsApp"
+  },
+  "home": {
+    "title": "Ergonomic chairs for your back",
+    "intro": "Find the perfect chair among our brands and styles.",
+    "ctaCatalog": "Browse chairs",
+    "ctaBrands": "Brands"
+  },
+  "notFound": {
+    "code": "404",
+    "title": "Page not found",
+    "description": "The page you are looking for does not exist or has been moved.",
+    "backHome": "Back to home"
+  },
+  "error": {
+    "title": "Something went wrong",
+    "description": "An unexpected error occurred. Please try again.",
+    "retry": "Try again",
+    "reference": "Reference: {digest}"
+  }
+}

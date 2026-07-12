@@ -41,6 +41,40 @@ export const CURRENCY = "MXN" as const;
 export const CURRENCY_LOCALE = "es-MX" as const;
 
 /**
+ * Canonical default UI locale (BCP-47 with region), aligned with
+ * `CURRENCY_LOCALE`. This is the SAME tag next-intl resolves and the SAME tag a
+ * future Supabase `translations` content lookup (T3+) must use — do NOT
+ * introduce a second locale source of truth. The store serves this locale at
+ * `/` with no URL prefix; English is the explicit opt-in under `/en` (see
+ * `src/i18n/routing.ts`). If you localize to another market, change it here AND
+ * in `src/i18n/routing.ts` (they must stay in sync).
+ */
+export const DEFAULT_LOCALE = "es-MX" as const;
+
+/**
+ * WhatsApp contact number in E.164 format, DIGITS ONLY, no `+`, spaces, or
+ * dashes (e.g. Mexico City mobile → `5215512345678`). This is NON-SECRET
+ * config, not an env var — safe to ship in the client bundle.
+ *
+ * HOW TO SWAP THE REAL VALUE
+ * --------------------------
+ * Replace the empty string with the store's real WhatsApp number. While it is
+ * empty (`""`), the floating WhatsApp button is NOT rendered at all — this is
+ * the intentional guard that prevents a broken `wa.me/` link with no number
+ * (T2 edge case 7). Do not prefix with `+`; `wa.me` wants bare digits.
+ */
+export const WHATSAPP_PHONE_E164 = "" as const;
+
+/**
+ * Prefilled Spanish message inserted into the `wa.me` deep link (URL-encoded at
+ * the call site). Kept in config (not a dictionary) because it is a fixed
+ * business value, not a translated UI string, and the store's WhatsApp audience
+ * is Spanish-speaking regardless of the site's UI locale. Swap freely.
+ */
+export const WHATSAPP_PREFILL_MESSAGE_ES =
+  "Hola, tengo una pregunta sobre las sillas de PosturPro." as const;
+
+/**
  * Seed default for flat-rate shipping, in integer cents (MXN centavos).
  * 50000 cents = MX$500.00. Runtime source of truth is `store_settings`.
  */

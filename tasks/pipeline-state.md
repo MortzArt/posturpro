@@ -1,7 +1,7 @@
 # Pipeline State
 Task: T2 — App shell & design system
 Tier: full-cycle (medium) — Stage 11 (Hacker) will be SKIPPED
-Stage: 3
-Agent: ultradesign (Stage 3 — UI Design)
+Stage: 4
+Agent: ultradev (Stage 4 — Dev). UI design done: 8 components (SiteHeader, LanguageToggle, MobileNav via shadcn Sheet, SiteFooter, WhatsAppButton, NotFound, ErrorBoundary, HomePlaceholder), motion tokens --ease-out/--ease-in-out/--ease-drawer, authoritative motion table (transform/opacity only, enters ease-out, exits faster, reduced-motion fallbacks).
 Last Updated: 2026-07-12
 Notes: PlanResearch done. Complexity=medium, Feature Type=full-stack (frontend-heavy) → Security(9)/Arch(10) lightweight, UI Design(3)/UX(8) full. Key decisions: next-intl@^4 (RSC-native), localePrefix "as-needed" (ES unprefixed, EN under /en), localeDetection:false (/ always Spanish — flagged to user, proceeding with recommendation), locale tag es-MX, brand-swap seam = existing OKLCH tokens in globals.css + new --ease vars. Footer links use seeded Spanish static-page slugs. T2 scope for T2: layout, header with navigation, footer, neutral design tokens (centralized for later brand swap), ES/EN i18n setup with Spanish default and language toggle, mobile-first responsive foundation, 404/error pages, WhatsApp floating button. T1 (data foundation) shipped; local Docker Supabase workflow available (npm run db:reset / db:seed / test:integration). Remote Supabase apply still pending user action (supabase login). First UI task — Emil Kowalski craft skills in .claude/skills/ now mandatory for UI stages (see CLAUDE.md → UI Craft & Animation Skills).

@@ -1,0 +1,63 @@
+{
+  "metadata": {
+    "title": "PosturPro — Sillas ergonómicas",
+    "description": "Sillas ergonómicas para cuidar tu espalda. Encuentra la silla perfecta entre nuestras marcas y estilos."
+  },
+  "nav": {
+    "skipToContent": "Saltar al contenido",
+    "home": "Inicio",
+    "openMenu": "Abrir menú de navegación",
+    "closeMenu": "Cerrar menú",
+    "menuTitle": "Navegación",
+    "menuDescription": "Enlaces principales de la tienda",
+    "items": {
+      "catalog": "Sillas",
+      "brands": "Marcas",
+      "styles": "Estilos",
+      "contact": "Contacto"
+    }
+  },
+  "toggle": {
+    "label": "Cambiar idioma",
+    "switchTo": "Cambiar a {locale}",
+    "es-MX": "ES",
+    "en": "EN",
+    "esName": "Español",
+    "enName": "English"
+  },
+  "footer": {
+    "freeShipping": "Envío gratis en compras mayores a {threshold}",
+    "sections": {
+      "store": "Tienda",
+      "help": "Ayuda"
+    },
+    "links": {
+      "about": "Sobre nosotros",
+      "shipping": "Envíos y devoluciones",
+      "faq": "Preguntas frecuentes",
+      "contact": "Contacto"
+    },
+    "rights": "© {year} {storeName}. Todos los derechos reservados."
+  },
+  "whatsapp": {
+    "label": "Contáctanos por WhatsApp"
+  },
+  "home": {
+    "title": "Sillas ergonómicas para tu espalda",
+    "intro": "Encuentra la silla perfecta entre nuestras marcas y estilos.",
+    "ctaCatalog": "Ver sillas",
+    "ctaBrands": "Marcas"
+  },
+  "notFound": {
+    "code": "404",
+    "title": "Página no encontrada",
+    "description": "La página que buscas no existe o fue movida.",
+    "backHome": "Volver al inicio"
+  },
+  "error": {
+    "title": "Algo salió mal",
+    "description": "Ocurrió un error inesperado. Inténtalo de nuevo.",
+    "retry": "Reintentar",
+    "reference": "Referencia: {digest}"
+  }
+}

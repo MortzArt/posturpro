@@ -73,6 +73,19 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
+
+  /* ---------------------------------------------------------------------- *
+   * Motion easing tokens (T2 AC-13). The built-in CSS easings are too weak;
+   * these custom curves give UI motion intentional punch. Enter/exit uses
+   * --ease-out, on-screen movement uses --ease-in-out, the mobile drawer uses
+   * the iOS --ease-drawer curve. Consumed via inline `transition-timing-function`
+   * / utility classes on layout components — never redefined per-component.
+   * (Source: .claude/skills/emil-design-eng — the motion taste authority.)
+   * ---------------------------------------------------------------------- */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -126,5 +139,183 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* ======================================================================== *
+ * BRAND TOKENS — the brand-swap seam (T2 AC-9)
+ * ------------------------------------------------------------------------
+ * To re-skin PosturPro for a different chair brand, edit ONLY the values in
+ * `:root` (and `.dark`) above. No component hardcodes a hex/oklch color, a
+ * radius, or a raw font family — every visual value flows through a token
+ * utility (`bg-primary`, `text-foreground`, `border-border`, `rounded-md`,
+ * `font-sans`).
+ *
+ * WHAT TO EDIT FOR A BRAND SWAP
+ *   1. Colors:  `:root` + `.dark` → --primary, --primary-foreground,
+ *               --background, --foreground, --border, --muted*, --accent*,
+ *               --ring, --destructive.
+ *   2. Radius:  `:root` → --radius (the whole radius scale derives from it).
+ *   3. Font:    the `--font-sans` binding in `src/app/layout.tsx` (swap the one
+ *               next/font family); this file consumes it via `font-sans`.
+ *   4. Copy/ids: `src/lib/config.ts` → SEED_STORE_NAME, WHATSAPP_PHONE_E164,
+ *               WHATSAPP_PREFILL_MESSAGE_ES, contact email.
+ *
+ * The motion easing tokens (--ease-out / --ease-in-out / --ease-drawer) are
+ * NOT brand values — leave them; they encode the app's motion feel.
+ * ======================================================================== */
+
+/* ======================================================================== *
+ * MOBILE NAV DRAWER MOTION (T2 AC-13)
+ * ------------------------------------------------------------------------
+ * CSS TRANSITIONS (not keyframes) so a mid-open dismiss is interruptible and
+ * retargets smoothly. Radix Dialog sets data-state="open"|"closed" on the
+ * force-mounted overlay and panel; we transition transform/opacity ONLY off
+ * that attribute. Enter uses --ease-drawer at 300ms; exit is faster (200ms).
+ * Reduced motion drops the slide (transform:none) and keeps an opacity fade.
+ * ======================================================================== */
+.drawer-scrim {
+  opacity: 0;
+  transition: opacity 300ms var(--ease-drawer);
+}
+.drawer-scrim[data-state="open"] {
+  opacity: 1;
+}
+.drawer-scrim[data-state="closed"] {
+  opacity: 0;
+  transition-duration: 200ms;
+}
+
+.drawer-panel {
+  transform: translateX(-100%);
+  transition: transform 300ms var(--ease-drawer);
+  will-change: transform;
+}
+.drawer-panel[data-state="open"] {
+  transform: translateX(0);
+}
+.drawer-panel[data-state="closed"] {
+  transform: translateX(-100%);
+  transition-duration: 200ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-panel,
+  .drawer-panel[data-state="open"],
+  .drawer-panel[data-state="closed"] {
+    transform: none;
+    transition: opacity 200ms ease;
+    will-change: opacity;
+  }
+  .drawer-panel {
+    opacity: 0;
+  }
+  .drawer-panel[data-state="open"] {
+    opacity: 1;
+  }
+}
+
+/* ======================================================================== *
+ * WHATSAPP FAB MOTION (T2 AC-13)
+ * ------------------------------------------------------------------------
+ * Pop-in entrance from scale(0.95)+opacity:0 (never scale(0)), press feedback,
+ * and a hover lift gated behind hover-capable pointers. transform/opacity only.
+ * Uses @starting-style for the mount transition (no JS mount flag needed).
+ * ======================================================================== */
+.fab-pop {
+  transform: scale(1);
+  opacity: 1;
+  transition:
+    transform 180ms var(--ease-out),
+    box-shadow 120ms ease;
+
+  @starting-style {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+}
+.fab-pop:active {
+  transform: scale(0.97);
+  transition-duration: 120ms;
+}
+@media (hover: hover) and (pointer: fine) {
+  .fab-pop:hover {
+    transform: translateY(-1px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fab-pop {
+    transition: opacity 200ms ease;
+
+    @starting-style {
+      transform: none;
+      opacity: 0;
+    }
+  }
+  .fab-pop:active,
+  .fab-pop:hover {
+    transform: none;
+  }
+}
+
+/* ======================================================================== *
+ * LANGUAGE TOGGLE MOTION (T2 AC-13)
+ * ------------------------------------------------------------------------
+ * Label crossfade on locale change + press feedback. transform/opacity only.
+ * ======================================================================== */
+.toggle-label {
+  transition:
+    opacity 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
+}
+.toggle-press {
+  transition: transform 120ms var(--ease-out);
+}
+.toggle-press:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .toggle-label {
+    transition: opacity 150ms ease;
+    transform: none;
+  }
+  .toggle-press:active {
+    transform: none;
+  }
+}
+
+/* ======================================================================== *
+ * ENTER FADE for low-frequency pages (404 / error). transform/opacity only;
+ * @starting-style entrance; reduced motion drops the translate. (T2 AC-13)
+ * ======================================================================== */
+.enter-fade {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .enter-fade {
+    transition: opacity 200ms ease;
+
+    @starting-style {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* Nav item hover — color only, gated behind hover-capable pointers (AC-13). */
+@media (hover: hover) and (pointer: fine) {
+  .nav-hover {
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
   }
 }

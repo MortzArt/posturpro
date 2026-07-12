@@ -1,256 +1,206 @@
-# Dev Summary: T1 — Data Foundation (Supabase + Full Schema)
+# Dev Summary: T2 — App Shell & Design System
 
-Status: **success** — all code implemented production-ready, zero TODOs.
-Build, lint, typecheck, and the 41-test vitest suite all pass. Migrations +
-seed are correct and runnable; they could not be applied to the live instance
-this session (no CLI access token / DB password — documented below).
+Feature type: **full-stack (frontend-heavy)**. Built the storefront shell:
+next-intl i18n (Spanish default, English opt-in), header + nav + language
+toggle + mobile drawer, async footer reading `store_settings`, WhatsApp FAB,
+localized 404/error pages, minimal homepage placeholder, motion tokens +
+documented brand-swap seam. All 17 ACs and 8 edge cases addressed.
+
+Verification: `npm run lint` ✓, `npx tsc --noEmit` ✓, `npm run test` ✓ (86
+passed), `npm run build` ✓. Dev server smoke-tested: `/` (es-MX, 200), `/en`
+(en, 200), `/fr` (invalid locale → localized 404 in shell), `/sillas` (dead nav
+link → localized 404 in shell), `/en/anything` (English 404 in shell).
 
 ## Files Changed
 
 | Path | Change | Summary |
 |------|--------|---------|
-| `src/lib/config.ts` | created | Centralized non-secret constants (currency, shipping cents, storage bucket, seed image base URL) with units + "how to swap real values" doc (AC-17). |
-| `src/lib/money.ts` | created | `formatMXN(cents)` + `pesosToCents` / `centsToPesos`; the only cents↔display boundary; throws on non-integer cents (edge case 6). |
-| `src/lib/env.ts` | created | Validated env accessor; `getPublicEnv` / `getServerEnv` / `requireEnv`; `MissingEnvVarError` thrown on missing/blank var (AC-2, edge case 1). |
-| `src/lib/supabase/client.ts` | created | Browser client factory — publishable key only (AC-3). |
-| `src/lib/supabase/server.ts` | created | Server client factory — `createServerClient` + async Next 16 `cookies()`, `setAll` try/catch (AC-4). |
-| `src/lib/supabase/admin.ts` | created | Secret-key service client, `import "server-only"` guard (AC-4, edge case 2). |
-| `src/lib/supabase/database.types.ts` | created | Typed schema for all 18 tables + enums; `Tables`/`TablesInsert`/`TablesUpdate` helpers (AC-14). |
-| `supabase/migrations/0001_extensions_and_enums.sql` | created | pgcrypto + `product_status`/`order_status`/`payment_status`/`discount_type` enums + `set_updated_at()` trigger fn. |
-| `supabase/migrations/0002_catalog.sql` | created | brands, categories (self-ref), styles, tags, products, product_categories, product_tags, product_variants, product_images + indexes + triggers (AC-5/6/7). |
-| `supabase/migrations/0003_commerce.sql` | created | customers, orders (immutable snapshot), order_items (snapshot cols), order_status_history, discount_codes (table only), store_settings (AC-8/9/10/11). |
-| `supabase/migrations/0004_content_qa.sql` | created | product_questions, static_pages, translations (i18n structure) (AC-5). |
-| `supabase/migrations/0005_rls_policies.sql` | created | RLS enabled on every table; anon SELECT on active catalog only; anon INSERT questions; `cost_price_cents` column REVOKEd from anon; orders/customers/discounts server-only (AC-12). |
-| `supabase/config.toml` | created | Supabase CLI project config. |
-| `scripts/seed.ts` | created | Idempotent seed (upsert on natural keys); per-table summary; fail-fast on bad secret key; surfaces PostgREST error detail (AC-13, edge case 3). |
-| `scripts/seed-data/taxonomy.ts` | created | 5 brands, 6 categories (1 nested), 6 styles, 8 tags fixtures. |
-| `scripts/seed-data/products.ts` | created | 30 chairs with Spanish names, realistic MXN cents, variants (inherited + override), category/tag links, image URLs. |
-| `scripts/seed-data/content.ts` | created | 4 static-page fixtures. |
-| `src/lib/env.test.ts` | created | Env validation tests (missing/blank throws, public vs server). |
-| `src/lib/money.test.ts` | created | Money formatting / conversion tests (integer-cents guard). |
-| `src/lib/seed-invariants.test.ts` | created | Seed fixture invariants — counts, price ranges, referential integrity, variant edge cases. |
-| `next.config.ts` | modified | `images.remotePatterns` for Supabase Storage host (derived from URL) + Unsplash seed host (AC-16). |
-| `package.json` | modified | Added `@supabase/supabase-js`, `@supabase/ssr`, `server-only`; dev `supabase`, `tsx`, `dotenv`; scripts `db:seed`/`db:reset`/`db:push`/`db:types`. |
+| `src/i18n/routing.ts` | created | `defineRouting` — locales `["es-MX","en"]`, default `es-MX`, `localePrefix:"as-needed"`, `localeDetection:false`. Exports `Locale` type. |
+| `src/i18n/navigation.ts` | created | `createNavigation(routing)` → locale-aware `Link`/`redirect`/`usePathname`/`useRouter`/`getPathname`. |
+| `src/i18n/request.ts` | created | `getRequestConfig` loading `src/messages/<locale>.json`; falls back to default locale for messages if the segment is invalid. |
+| `src/middleware.ts` | created | `createMiddleware(routing)`, matcher `['/((?!api|_next|_vercel|.*\\..*).*)']`. |
+| `src/messages/es-MX.json` | created | Spanish UI strings (source of truth): nav, toggle, footer, whatsapp, home, notFound, error, metadata. |
+| `src/messages/en.json` | created | English strings — identical key set. |
+| `src/messages/messages.test.ts` | created | AC-4 key-set parity + no-empty-leaf + routing-locale-set tests. |
+| `src/lib/store-settings.ts` | created | `getStoreSettings(): Promise<StoreSettings\|null>` — RLS server client, `server-only`, explicit column select, graceful `null`+warn on absence/error. |
+| `src/lib/store-settings.test.ts` | created | Success / absent-row / Supabase-error / client-throws paths (edge case 2). Mocks `server-only` + supabase server client. |
+| `src/lib/whatsapp.ts` | created | Pure `normalizeWhatsAppPhone` / `isWhatsAppConfigured` / `buildWhatsAppUrl` (URL-encoded, config-guarded). |
+| `src/lib/whatsapp.test.ts` | created | URL builder + guard tests (AC-8, edge case 7). |
+| `src/lib/config.ts` | modified | Added `DEFAULT_LOCALE`, `WHATSAPP_PHONE_E164` (empty placeholder ⇒ disabled), `WHATSAPP_PREFILL_MESSAGE_ES` with swap docs. |
+| `src/app/fonts.ts` | created | The single font (`Inter` → `--font-sans`). Replaces the Geist+Inter tangle. |
+| `src/app/layout.tsx` | modified | Thinned to `import "./globals.css"` + pass-through `children`. `<html>`/metadata/font moved to `[locale]/layout.tsx`. |
+| `src/app/[locale]/layout.tsx` | created | `<html lang={locale}>`, `generateStaticParams`, `setRequestLocale`, `generateMetadata` (localized), `NextIntlClientProvider`, shell (skip-link + header + main + footer + WhatsApp), `notFound()` on invalid locale. |
+| `src/app/[locale]/page.tsx` | created | Minimal localized homepage placeholder (H1 + intro + CTAs). |
+| `src/app/[locale]/not-found.tsx` | created | Localized 404 inside shell + "back home" CTA (AC-10). |
+| `src/app/[locale]/error.tsx` | created | `"use client"` localized error boundary, `reset()`, no stack/message leak, safe `digest` reference (AC-11). |
+| `src/app/[locale]/[...rest]/page.tsx` | created | Catch-all → `notFound()` so dead in-locale links render the shell 404 (AC-10). |
+| `src/app/not-found.tsx` | created | Root fallback 404 for paths that never enter `[locale]` — default-locale copy, minimal own `<html>`. |
+| `src/app/global-error.tsx` | created | Root-layout error boundary (own `<html>`, inline styles, bilingual, no leak). |
+| `src/components/layout/nav-items.ts` | created | Shared `NAV_ITEMS` (key + locale-agnostic href) — DRY across header/drawer. |
+| `src/components/layout/site-header.tsx` | created | Server header: wordmark (home link), inline nav (≥md), toggle, mobile drawer trigger. Sticky, `border-b`. |
+| `src/components/layout/site-footer.tsx` | created | Async server footer: store name, static-page links (real ES slugs), free-shipping line via `formatMXN`, © year. Graceful degrade + no-CLS reserved slot. |
+| `src/components/layout/mobile-nav.tsx` | created | `"use client"` Radix Dialog drawer, `forceMount` + CSS-transition motion, auto-close ≥md. |
+| `src/components/layout/language-toggle.tsx` | created | `"use client"` compact (mobile) / segmented (≥md) toggle; `useTransition`, never disabled, `aria-pressed`. |
+| `src/components/layout/whatsapp-button.tsx` | created | Server FAB, config-guarded, `target=_blank rel=noopener noreferrer`, `aria-label`, pop-in motion. |
+| `src/components/ui/sheet.tsx` | created (shadcn) | shadcn Sheet added to registry (available primitive; drawer uses raw Dialog directly for transition control). |
+| `src/app/globals.css` | modified | Added `--ease-out/--ease-in-out/--ease-drawer`; drawer/FAB/toggle/enter-fade/nav-hover motion classes; `## BRAND TOKENS` doc block. Palette untouched. |
+| `next.config.ts` | modified | Wrapped export with `withNextIntl('./src/i18n/request.ts')`. |
+| `src/app/page.tsx` | deleted | Template splash removed (superseded by `[locale]/page.tsx`). |
+| `public/{next,vercel,file,globe,window}.svg` | deleted | Unused template assets removed. |
+| `package.json` / `package-lock.json` | modified | `next-intl@^4.13.2` (installed 4.13.2). |
 
-## How to Apply Migrations, Generate Types, and Seed
+## Data-Testids Added
 
-The live Supabase instance could not be reached for DDL this session (the CLI
-needs `supabase login` / `SUPABASE_ACCESS_TOKEN`, and the API key is not a DB
-password). The connectivity path IS proven: `npm run db:seed` reaches the live
-PostgREST endpoint and fails only with `Could not find the table 'public.brands'`
-— i.e. everything works, the schema just needs to be pushed. To apply:
+- `header-wordmark` — home-linking store wordmark (site-header)
+- `header-nav-{catalog,brands,styles,contact}` — inline nav links (site-header)
+- `language-toggle` — segmented toggle group (language-toggle)
+- `language-toggle-option-{es-MX,en}` — segmented options (language-toggle)
+- `language-toggle-compact` — mobile compact toggle button (language-toggle)
+- `mobile-nav-trigger` — hamburger (mobile-nav)
+- `mobile-nav-overlay` — scrim (mobile-nav)
+- `mobile-nav-panel` — drawer panel (mobile-nav)
+- `mobile-nav-close` — drawer close button (mobile-nav)
+- `mobile-nav-item-{catalog,brands,styles,contact}` — drawer nav links (mobile-nav)
+- `footer-store-name`, `footer-free-shipping`, `footer-copyright` — footer text (site-footer)
+- `footer-link-{about,shipping,faq,contact}` — footer links (site-footer)
+- `whatsapp-button` — floating FAB anchor (whatsapp-button)
+- `home-cta-catalog`, `home-link-brands` — homepage CTAs ([locale]/page)
+- `not-found-home` — 404 back-home CTA ([locale]/not-found)
+- `error-retry`, `error-digest` — error boundary retry + digest ([locale]/error)
+- `global-error-retry` — global error retry (global-error)
 
-```bash
-# 1. Authenticate the CLI (one-time)
-supabase login                       # or: export SUPABASE_ACCESS_TOKEN=...
+## Brand Tokens (AC-9)
 
-# 2. Link the local project to the remote instance (one-time)
-supabase link --project-ref jyccfctyxstfevwowntn
+All brand-swappable design values are CSS custom properties in
+`src/app/globals.css` `:root` (+ `.dark`). No component hardcodes a color,
+radius, or font family — every visual value flows through a token utility
+(`bg-primary`, `text-foreground`, `border-border`, `rounded-md`, `font-sans`).
+To re-skin PosturPro for a different chair brand, edit ONLY:
 
-# 3. Push migrations 0001 → 0005 (ordered, idempotent)
-npm run db:push                      # supabase db push
+1. **Colors** — `:root` + `.dark`: `--primary`, `--primary-foreground`,
+   `--background`, `--foreground`, `--border`, `--muted*`, `--accent*`,
+   `--ring`, `--destructive`.
+2. **Radius** — `:root`: `--radius` (the whole `--radius-*` scale derives from it).
+3. **Font** — the one `Inter(...)` import in `src/app/fonts.ts` (bound to
+   `--font-sans`); `globals.css` consumes it via `font-sans`.
+4. **Copy / identity** — `src/lib/config.ts`: `SEED_STORE_NAME`,
+   `WHATSAPP_PHONE_E164`, `WHATSAPP_PREFILL_MESSAGE_ES`, `SEED_STORE_CONTACT_EMAIL`.
 
-# 4. Regenerate the typed schema from the live DB (keeps types from drifting)
-npm run db:types                     # -> src/lib/supabase/database.types.ts
+The motion easings (`--ease-out/--ease-in-out/--ease-drawer`) are app-feel, NOT
+brand values — leave them. The neutral OKLCH palette was left unchanged (T2 only
+documents the seam and adds easings).
 
-# 5. Seed realistic catalog data (idempotent — safe to re-run)
-npm run db:seed
-```
+## Placeholder Documentation
 
-Alternative (no CLI link): paste `supabase/migrations/0001…0005.sql` into the
-Supabase Dashboard SQL editor in order, then run `npm run db:seed`.
-
-`database.types.ts` is hand-authored to match the migrations exactly so
-downstream tasks are fully typed even before the DB is linked; `npm run db:types`
-regenerates it identically once linked.
-
-## Centralized Placeholder / Config Values (AC-17)
-
-All non-secret tunables live in `src/lib/config.ts` with unit-suffixed names:
-
-| Constant | Value | Unit / meaning | How to swap |
-|----------|-------|----------------|-------------|
-| `CURRENCY` | `"MXN"` | ISO 4217 | Single-currency in Phase 1; changing needs tax/format work. |
-| `CURRENCY_LOCALE` | `"es-MX"` | BCP-47 for `Intl.NumberFormat` | — |
-| `SHIPPING_FLAT_RATE_CENTS` | `50000` | integer cents (MX$500) | **Seed default only.** Runtime source of truth is the `store_settings` row (admin-editable in T10). Edit the row, not this constant. |
-| `FREE_SHIPPING_THRESHOLD_CENTS` | `1000000` | integer cents (MX$10,000) | Same — seed default; runtime = `store_settings`. |
-| `SUPABASE_STORAGE_BUCKET` | `"product-images"` | Storage bucket name | Must match the bucket in the dashboard; re-seed if renamed. |
-| `SEED_IMAGE_BASE_URL` | Unsplash placeholder | seed image base | Upload real photos to Storage, update image paths in `scripts/seed-data/products.ts`, re-seed. |
-| `SEED_STORE_NAME` / `SEED_STORE_CONTACT_EMAIL` | PosturPro / hola@posturpro.mx | seed store identity | Admin-editable in T10. |
-
-Money convention: **all money is integer cents everywhere**; `formatMXN(cents)`
-in `src/lib/money.ts` is the ONLY cents→display conversion point.
+- **WhatsApp number** (`src/lib/config.ts::WHATSAPP_PHONE_E164`): empty string
+  `""` by design. While empty, the FAB is NOT rendered (`buildWhatsAppUrl`
+  returns `null`; dev logs the absence) — no broken `wa.me/` link. To enable:
+  set the real E.164 digits (no `+`/spaces/dashes, e.g. `5215512345678`). The
+  prefill message is `WHATSAPP_PREFILL_MESSAGE_ES` (Spanish, since the WhatsApp
+  audience is Spanish-speaking regardless of UI locale).
+- **Store settings**: runtime source of truth is the `store_settings` DB row,
+  not config. `SEED_STORE_NAME` is only the fallback used when the row is
+  absent/unreadable.
 
 ## Key Decisions
 
-- **Hand-authored `database.types.ts`** matching migrations, over a blocked
-  `db:types` run: keeps downstream tasks typed now; regenerate once linked.
-- **`cost_price_cents` protected via `REVOKE SELECT (col) ... FROM anon`** rather
-  than a view: simpler, and even `select *` by anon cannot read it.
-- **Orders/customers/discounts have no anon RLS policy** (default-deny) — reached
-  only through the secret-key server client, matching Phase-1 "no accounts".
-- **Seed helpers generic over `keyof Tables`** with a single documented
-  `as never` at the uniform runtime `.upsert` call (the standard Supabase typed-
-  client workaround) — no `any`, no `!`.
-- **Stock authority rule:** when a product has variants, per-variant stock is
-  authoritative; product-level `stock` is the fallback for the no-variant case
-  (documented in `0002_catalog.sql`).
+- **i18n library — next-intl@4.13.2** over homegrown: RSC-native, solves
+  middleware detection, `getTranslations`, and `hreflang` alternates.
+- **Routing — `localePrefix:"as-needed"`**: Spanish unprefixed (`/`), English
+  under `/en`. Distinct crawlable URLs; clean default URLs for the primary market.
+- **`localeDetection:false`** (explicit product decision): `/` always serves
+  Spanish regardless of `Accept-Language`; English is explicit opt-in via the
+  toggle, persisted in `NEXT_LOCALE`. Mexican users often run English OSes;
+  auto-negotiation would wrongly flip them.
+- **Canonical locale tag `es-MX`** everywhere (routing, messages filename,
+  `DEFAULT_LOCALE`, `CURRENCY_LOCALE`). AC-17: the active locale is exposed via
+  next-intl's `useLocale()`/`getLocale()` and the shared `NEXT_LOCALE` cookie —
+  the ONLY locale source of truth. A future T3 content layer reads the same tag;
+  no second cookie/source is introduced.
+- **`<html>` in `[locale]/layout.tsx`** (root stays thin): `lang` reflects the
+  active locale (AC-12). Standard next-intl App Router placement.
+- **Drawer built on raw `radix-ui` Dialog with `forceMount` + CSS transitions**
+  (not the shadcn Sheet's tw-animate-css keyframes) so a mid-open dismiss is
+  interruptible (AC-13) and reduced motion is a clean opacity-only fade. Radix
+  still provides focus trap, Esc, scroll-lock, `role="dialog" aria-modal`. The
+  shadcn Sheet was added to the registry as an available primitive.
+- **Catch-all `[locale]/[...rest]/page.tsx`** to make dead in-locale links
+  render the shell 404 (`[locale]/not-found.tsx`) instead of the shell-less root
+  `not-found.tsx`. Real routes from T3/T13 take precedence as they're added.
+- **`store-settings` explicit column select** (not `*`): documents the
+  dependency, avoids over-fetching.
 
 ## Deviations from Ticket
 
-- **Migrations/seed not applied to the live DB** — CLI auth/DB password
-  unavailable this session. Everything is runnable; step-by-step apply guide
-  above. Connectivity + env + client construction verified against the live
-  PostgREST endpoint.
-- **`0006` (RLS test)** not added as SQL — RLS behavior verification is a QA
-  (Stage 7) concern against a live DB; seed-fixture invariants are covered by
-  `src/lib/seed-invariants.test.ts`.
+- **`global-error.tsx` uses inline literal colors (`#666/#ccc/#111/#fff`)** —
+  deliberate exception. When the root layout itself fails, `global-error`
+  replaces the whole document and the Tailwind/token stylesheet may be
+  unavailable, so it cannot use token utilities. This is the documented Next.js
+  pattern. It is NOT a shell component. All actual shell components use tokens
+  only (AC-9 grep is clean outside this file + the `:root` definitions).
+- **`error.tsx` shows `error.digest`** as a small support reference when present
+  — the ticket explicitly permits this (opaque hash, safe; never the message).
+- **`middleware` deprecation notice**: Next 16.2.9 prints a notice preferring
+  the `proxy` convention. Kept `src/middleware.ts` per the ticket's exact spec;
+  it functions correctly. Migrating to `proxy` is a trivial rename for a later
+  cleanup ticket.
+- **`store_settings` read makes `/[locale]` dynamic** (it uses `cookies()` via
+  the RLS server client). `generateStaticParams` + `setRequestLocale` are still
+  in place (correct per the Next 16 gotcha and useful for future static leaf
+  routes), but the shell route renders on-demand. Expected for a data-reading
+  storefront; no perf concern for T2 (single indexed single-row select).
 
 ## Edge Cases Handled
 
-1. **Missing/blank env var** — `env.ts` throws `MissingEnvVarError: Missing required env var: <NAME>` (tested).
-2. **Secret-key leakage** — `admin.ts` has `import "server-only"`; a client import is a build error. `next build` passes with the guard in place.
-3. **Re-running migrations/seed** — migrations use `create table if not exists` / guarded `DO` blocks; seed upserts on slug/SKU/PK; store_settings uses a fixed id.
-4. **Nested category integrity** — self-ref FK `on delete restrict` + `check (parent_id <> id)`; roots have null parent; seed builds a well-formed tree.
-5. **Variant price override** — `price_override_cents` null = inherit, value = override; seed includes both (asserted in tests).
-6. **Money as float** — integer cents everywhere; `formatMXN` throws on non-integer input (tested).
-7. **Zero vs many variants** — schema supports both; seed has single-variant and multi-variant products (asserted).
-8. **Order references deleted/edited product** — `order_items` snapshot name/SKU/price; product FK `on delete set null`.
+1. **Invalid/unknown locale** (`/fr`, bare `/es`) → `[locale]/layout.tsx` calls
+   `notFound()` → localized 404 inside shell. Verified: `/fr` → HTTP 404, shell + ES copy.
+2. **`store_settings` missing/unreadable** → `getStoreSettings()` returns `null`
+   + logs with context; footer omits free-shipping line, store name falls back
+   to `SEED_STORE_NAME`. Verified live: remote DB lacks the table, footer degraded
+   cleanly, shell intact. Covered by `store-settings.test.ts`.
+3. **English browser, first visit, no cookie** → lands on Spanish `/`
+   (`localeDetection:false`). Opt into EN via toggle; `NEXT_LOCALE` then persists.
+4. **`prefers-reduced-motion`** → drawer opacity-fade only (no slide); FAB/toggle
+   no transform. All motion classes have a `@media (prefers-reduced-motion: reduce)`
+   fallback in `globals.css`.
+5. **Rapid toggle / mid-nav** → `useTransition` + `router.replace`; toggle never
+   disabled; interruptible; last press wins.
+6. **Very long store/nav label** → wordmark `truncate min-w-0 shrink`,
+   controls `shrink-0`; no overflow at 375px.
+7. **WhatsApp number unconfigured** → FAB not rendered (`buildWhatsAppUrl` →
+   `null`); dev-only warning. Verified: `/` renders 0 WhatsApp buttons with the
+   empty placeholder. Covered by `whatsapp.test.ts`.
+8. **Deep link `/en/anything`** → renders EN, toggle reflects EN. Verified:
+   `/en/anything` → English 404 in shell.
 
 ## How to Test
 
-1. `npm run test` — 41 unit tests (env, money, seed invariants) pass.
-2. `npm run lint` and `npx tsc --noEmit` — zero errors.
-3. `npm run build` — compiles, typechecks, `server-only` guard enforced.
-4. After applying migrations (guide above): `npm run db:seed` twice → identical
-   per-table summary, zero duplicates (idempotency).
-
-## Verification Results
-
-- `npm run test` → **4 files / 41 tests passed**.
-- `npx tsc --noEmit` → **exit 0, zero errors**.
-- `npm run lint` → **exit 0, zero warnings**.
-- `npm run build` → **Compiled successfully**, TypeScript check passed.
-- `npm run db:seed` → reaches live DB, fails fast with clear "table not found"
-  (migrations pending) — proves env/alias/client/connectivity all correct.
-
-## Dependencies Added
-
-- `@supabase/supabase-js` ^2.110 — core client (admin path).
-- `@supabase/ssr` ^0.12 — App Router cookie-based browser/server clients.
-- `server-only` ^0.0.1 — build-time secret-client guard.
-- `supabase` (dev) ^2.109 — CLI for migrations + type gen.
-- `tsx` (dev) ^4.23 — run the TypeScript seed script.
-- `dotenv` (dev) ^17.4 — load `.env.local` into the standalone seed script.
+1. `npm run dev`, open `http://localhost:3000/` → Spanish shell (wordmark, nav,
+   footer, copyright with current year), `<html lang="es-MX">`, no URL prefix.
+2. Click the language toggle (compact on mobile, segmented ≥md) → URL becomes
+   `/en`, strings switch to English, no full reload; refresh → stays EN (cookie).
+3. Resize to 375px → nav collapses to hamburger; open drawer → slides in, focus
+   trapped, Esc/scrim/close/nav-click all close it; no horizontal scroll.
+4. Visit `/sillas` (dead link) and `/fr` (invalid locale) → localized 404 inside
+   header+footer with "Volver al inicio"; HTTP 404.
+5. Set `WHATSAPP_PHONE_E164` in `src/lib/config.ts` to real digits → FAB appears
+   bottom-right, opens `wa.me` in a new tab; empty again → FAB gone.
+6. DevTools → enable "reduce motion" → drawer fades (no slide), FAB/toggle static.
+7. Gates: `npm run lint`, `npx tsc --noEmit`, `npm run test`, `npm run build`.
 
 ## Known Limitations
 
-- Placeholder product images use picsum.photos seeded URLs (real, deterministic,
-  render during development). Swap for real Supabase Storage URLs when real
-  photography lands (see the config swap note above).
-- App-layer abuse controls for the public question form (rate limiting / captcha)
-  are deferred to the ticket that ships that form — see
-  `tasks/clean-code-backlog.md`. The DB bounds question length; it cannot
-  rate-limit.
-- (Resolved in Stage 6, previously listed here:) deep category cycles are now
-  blocked by a DB trigger, and per-variant images are now seeded — see the
-  Stage-6 fixes section below.
+- Free-shipping line requires the migrated+seeded `store_settings` row. Against
+  a DB without it, the footer degrades (by design); to see the line, run against
+  a DB with T1 migrations/seed (`npm run db:reset && npm run db:seed`).
+- Nav/footer links point at routes owned by T3 (`/sillas`, `/marcas`, `/estilos`)
+  and T13 (`/sobre-nosotros`, `/contacto`, etc.); they 404 gracefully until built.
+- Integration suite (needs local Docker Supabase) not re-run here — T2 touches no
+  data-layer/migration/seed code it exercises; the unit suite (`npm run test`) is
+  green (86 tests). Run `npm run test:integration` with Docker up to confirm.
 
-## Fixes Applied (Stage 6)
+## Dependencies Added
 
-The schema/RLS/seed layer is now **applied and verified against a live local
-Supabase instance** (Docker), closing the review's central gap. All 5 migrations
-apply cleanly from scratch via `supabase db reset`; the seed ran twice with
-identical, non-duplicating row counts; RLS was smoke-tested with the real local
-publishable key over PostgREST and with `SET ROLE anon` in psql; all new
-constraints/triggers were exercised live.
-
-### Issue Tracker
-
-| ID | Severity | Title | Status | File | Notes |
-|----|----------|-------|--------|------|-------|
-| C-1 | CRITICAL | Fragile cost_price REVOKE | FIXED | `0005_rls_policies.sql` | Structural: `products_public` view omits the column; base `products` never granted to anon. Verified live. |
-| C-2 | CRITICAL | No explicit privilege baseline | FIXED | `0005_rls_policies.sql` | `REVOKE ALL` baseline + narrow grants + explicit `service_role` grant + `is_active_product()` SECURITY DEFINER helper. Verified live. |
-| C-3 | CRITICAL | Nothing run against a DB | FIXED | migrations + `scripts/seed.ts` | `db reset` + seed×2 + RLS/constraint smoke tests against local Docker Supabase. |
-| M-1 | MAJOR | Variant images never seeded | FIXED | `scripts/seed.ts`, `products.ts` | One image per variant (non-null `variant_id`); 69 variant-linked images verified live. |
-| M-2 | MAJOR | Unconstrained currency | FIXED | `0003_commerce.sql` | `orders.currency check (currency = 'MXN')`. |
-| M-3 | MAJOR | No cross-column financial checks | FIXED | `0003_commerce.sql` | line-total identity + discount≤subtotal + total identity. |
-| M-4 | MAJOR | Immutability not enforced | FIXED | `0003_commerce.sql` | `orders_immutable_snapshot` + `order_items_immutable` triggers. |
-| M-5 | MAJOR | `db:reset --linked` foot-gun | FIXED | `package.json` | `db:reset` now local; remote is `db:reset:remote`. |
-| M-6 | MAJOR | Unbounded anon question write | FIXED | `0004`, `0005` | `char_length` CHECKs (table + INSERT policy); rate-limit tracked in backlog. |
-| m-1 | MINOR | Deep category cycles | FIXED | `0002_catalog.sql` | `categories_no_cycle` ancestor-walk trigger. Verified live. |
-| m-2 | MINOR | Stock authority not derivable | SKIPPED | — | Out of scope; documented + backlog item for an `effective_stock` view (T4/T5). |
-| m-3 | MINOR | Inflated image count / swallowed error | FIXED | `scripts/seed.ts` | Returns true row count; no app-level read (DB unique handles idempotency). |
-| m-4 | MINOR | No unique on product_images.url | FIXED | `0002_catalog.sql`, `seed.ts` | `unique (product_id, url)` + real upsert. Verified live (no dupes on re-seed). |
-| m-5 | MINOR | Placeholder URLs 404 | FIXED | `config.ts`, `products.ts`, `next.config.ts` | picsum.photos seeded URLs; remotePatterns updated. |
-| n-1 | NIT | No MX state/postal validation | SKIPPED | — | Belongs to checkout form (T7); backlog. |
-| n-2 | NIT | Discount percentage unbounded | FIXED | `0003_commerce.sql` | `check (discount_type <> 'percentage' or value <= 100)`. Verified live. |
-| n-3 | NIT | dotenv import ordering | SKIPPED | — | Cosmetic; correct (lazy env read) and commented; seed proven working twice. |
-| n-4 | NIT | translations orphan rows | SKIPPED | — | Inherent to polymorphic design; cleanup-job backlog item filed. |
-
-### Summary
-
-- Critical: 3/3 fixed
-- Major: 6/6 fixed, 0 skipped
-- Minor: 4/5 fixed, 1 skipped (m-2, tracked)
-- Nit: 1/4 fixed (n-2), 3 skipped (n-1/n-3/n-4, tracked/cosmetic)
-
-### Live-DB Verification (Docker local Supabase)
-
-- Migrations 0001–0005 apply cleanly from a fresh `supabase db reset`.
-- Seed run twice → identical summaries; post-run counts unchanged: brands 5,
-  categories 6, products 30, variants 69, product_images 99 (69 variant-linked),
-  store_settings 1. **Idempotency demonstrated (AC-13).**
-- RLS (via `SET ROLE anon` and real publishable key over PostgREST):
-  anon CAN read active catalog (`products_public` 30, brands, variants, images,
-  joins, store_settings, static_pages); anon is DENIED on base `products`
-  (so `cost_price_cents` unreachable — `column does not exist` on the view),
-  `orders`, `customers`, `order_items`, `order_status_history`,
-  `discount_codes`. Anon question INSERT: valid → 201, self-published → 401.
-- Constraints/triggers exercised live: bad currency, inconsistent total, bad
-  line-total, 5000% discount, 3000-char question, deep category cycle (A→B→C→A
-  and A↔B), and snapshot/order_items mutation are all rejected; legitimate
-  reparent and order status transition succeed.
-
-### Schema Changes → types
-
-`database.types.ts` updated: added the `products_public` view (Row omits
-`cost_price_cents`) to `Views`, added `is_active_product` to `Functions`, and a
-`Views<T>` helper. `npm run db:types` regenerates equivalently once linked
-(CLI-generated shape confirmed to include the view + function).
-
-### Bug Fixed in QA (Stage 7)
-
-| ID | Severity | Title | Status | File | Notes |
-|----|----------|-------|--------|------|-------|
-| Q-1 | MAJOR | order_items immutability trigger blocked `ON DELETE SET NULL` | FIXED | `0003_commerce.sql` | `order_items_block_update()` rejected ALL updates, including the FK-nulling Postgres performs when a referenced product/variant is deleted. A product referenced by any historical order was therefore **undeletable** — directly defeating edge case 8 ("order history must survive product deletes/edits"). Fixed so the trigger blocks only mutations of snapshot columns and repointing of FKs, while permitting `product_id`/`variant_id` to be cleared to NULL by a cascade. Verified live: deleting a referenced product now succeeds and the order_items row survives with `product_id = null` and snapshot columns intact. |
-
-### Test / Build Status After Fixes
-
-- `npm run lint` → clean (0 warnings).
-- `npx tsc --noEmit` → exit 0.
-- `npm run test` → **44 passed** (41 prior + 3 new seed-image invariant tests).
-- `npm run build` → Compiled successfully, TypeScript check passed.
-
-### Bugs Fixed in Hacker / Chaos (Stage 11)
-
-New migration `supabase/migrations/0006_data_integrity_hardening.sql` closes
-integrity gaps found by chaos testing (no existing guarantee weakened; verified
-0-row violations against current seed before adding each constraint):
-
-| ID | Severity | Title | File |
-|----|----------|-------|------|
-| H-1 | MAJOR | `store_settings` singleton not enforced (a 2nd row was insertable) → partial unique index `store_settings_singleton` | `0006` |
-| H-2 | MAJOR | Blank/whitespace slugs + case/whitespace near-duplicate slugs (`'   '`, `ErgoVita`, `ergovita `) accepted → `*_slug_format` CHECK (canonical lowercase-hyphen slug) on brands/categories/styles/tags/products/static_pages | `0006` |
-| H-3 | MAJOR | Whitespace-only / blank display names accepted → `*_name_nonblank` CHECK (btrim length ≥ 1) across catalog + customers + store_settings | `0006` |
-| H-4 | MAJOR | Unbounded free text (a 5 MB `products.description` was accepted) → `*_len` CHECKs on descriptions, materials, static-page body, translation value | `0006` |
-| H-5 | MINOR | Garbage i18n locale (`zz-GARBAGE-🔥`) accepted → `translations_locale_format` BCP-47-shape CHECK | `0006` |
-| H-6 | MINOR | Whitespace-only Q&A author/question accepted (char_length passed) → non-blank table CHECK + tightened anon INSERT policy | `0006` |
-| H-7 | MINOR | `discount_codes` window ending before it starts accepted → `discount_codes_window_valid` CHECK | `0006` |
-
-Regression tests: `tests/integration/hardening.integration.test.ts` (15 tests —
-each chaos vector rejected + a companion valid-write-still-succeeds assertion).
-
-After Stage 11: `npm run lint` clean, `npx tsc --noEmit` exit 0,
-`npm run test` **69 passed**, `npm run test:integration` **64 passed**
-(49 prior + 15 hardening), `npm run build` compiled successfully.
+- `next-intl@^4.13.2` (installed 4.13.2) — App Router RSC-native i18n:
+  middleware locale detection, `getTranslations`, `hreflang` alternates. Peer
+  deps satisfied by Next 16.2.9 / React 19.2.4; `.npmrc legacy-peer-deps=true`.
