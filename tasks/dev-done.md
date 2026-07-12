@@ -145,9 +145,83 @@ in `src/lib/money.ts` is the ONLY cents→display conversion point.
 
 ## Known Limitations
 
-- Deep category cycles (A→B→A) are not blocked at the DB level (only the trivial
-  self-parent is); acceptable in Phase 1 since seed builds well-formed trees and
-  the admin UI (T10) will enforce it. Noted for arch review.
-- Seed product images use a single placeholder URL per product; per-variant
-  images are supported by the schema but not seeded (real photography is a later
-  content task).
+- Placeholder product images use picsum.photos seeded URLs (real, deterministic,
+  render during development). Swap for real Supabase Storage URLs when real
+  photography lands (see the config swap note above).
+- App-layer abuse controls for the public question form (rate limiting / captcha)
+  are deferred to the ticket that ships that form — see
+  `tasks/clean-code-backlog.md`. The DB bounds question length; it cannot
+  rate-limit.
+- (Resolved in Stage 6, previously listed here:) deep category cycles are now
+  blocked by a DB trigger, and per-variant images are now seeded — see the
+  Stage-6 fixes section below.
+
+## Fixes Applied (Stage 6)
+
+The schema/RLS/seed layer is now **applied and verified against a live local
+Supabase instance** (Docker), closing the review's central gap. All 5 migrations
+apply cleanly from scratch via `supabase db reset`; the seed ran twice with
+identical, non-duplicating row counts; RLS was smoke-tested with the real local
+publishable key over PostgREST and with `SET ROLE anon` in psql; all new
+constraints/triggers were exercised live.
+
+### Issue Tracker
+
+| ID | Severity | Title | Status | File | Notes |
+|----|----------|-------|--------|------|-------|
+| C-1 | CRITICAL | Fragile cost_price REVOKE | FIXED | `0005_rls_policies.sql` | Structural: `products_public` view omits the column; base `products` never granted to anon. Verified live. |
+| C-2 | CRITICAL | No explicit privilege baseline | FIXED | `0005_rls_policies.sql` | `REVOKE ALL` baseline + narrow grants + explicit `service_role` grant + `is_active_product()` SECURITY DEFINER helper. Verified live. |
+| C-3 | CRITICAL | Nothing run against a DB | FIXED | migrations + `scripts/seed.ts` | `db reset` + seed×2 + RLS/constraint smoke tests against local Docker Supabase. |
+| M-1 | MAJOR | Variant images never seeded | FIXED | `scripts/seed.ts`, `products.ts` | One image per variant (non-null `variant_id`); 69 variant-linked images verified live. |
+| M-2 | MAJOR | Unconstrained currency | FIXED | `0003_commerce.sql` | `orders.currency check (currency = 'MXN')`. |
+| M-3 | MAJOR | No cross-column financial checks | FIXED | `0003_commerce.sql` | line-total identity + discount≤subtotal + total identity. |
+| M-4 | MAJOR | Immutability not enforced | FIXED | `0003_commerce.sql` | `orders_immutable_snapshot` + `order_items_immutable` triggers. |
+| M-5 | MAJOR | `db:reset --linked` foot-gun | FIXED | `package.json` | `db:reset` now local; remote is `db:reset:remote`. |
+| M-6 | MAJOR | Unbounded anon question write | FIXED | `0004`, `0005` | `char_length` CHECKs (table + INSERT policy); rate-limit tracked in backlog. |
+| m-1 | MINOR | Deep category cycles | FIXED | `0002_catalog.sql` | `categories_no_cycle` ancestor-walk trigger. Verified live. |
+| m-2 | MINOR | Stock authority not derivable | SKIPPED | — | Out of scope; documented + backlog item for an `effective_stock` view (T4/T5). |
+| m-3 | MINOR | Inflated image count / swallowed error | FIXED | `scripts/seed.ts` | Returns true row count; no app-level read (DB unique handles idempotency). |
+| m-4 | MINOR | No unique on product_images.url | FIXED | `0002_catalog.sql`, `seed.ts` | `unique (product_id, url)` + real upsert. Verified live (no dupes on re-seed). |
+| m-5 | MINOR | Placeholder URLs 404 | FIXED | `config.ts`, `products.ts`, `next.config.ts` | picsum.photos seeded URLs; remotePatterns updated. |
+| n-1 | NIT | No MX state/postal validation | SKIPPED | — | Belongs to checkout form (T7); backlog. |
+| n-2 | NIT | Discount percentage unbounded | FIXED | `0003_commerce.sql` | `check (discount_type <> 'percentage' or value <= 100)`. Verified live. |
+| n-3 | NIT | dotenv import ordering | SKIPPED | — | Cosmetic; correct (lazy env read) and commented; seed proven working twice. |
+| n-4 | NIT | translations orphan rows | SKIPPED | — | Inherent to polymorphic design; cleanup-job backlog item filed. |
+
+### Summary
+
+- Critical: 3/3 fixed
+- Major: 6/6 fixed, 0 skipped
+- Minor: 4/5 fixed, 1 skipped (m-2, tracked)
+- Nit: 1/4 fixed (n-2), 3 skipped (n-1/n-3/n-4, tracked/cosmetic)
+
+### Live-DB Verification (Docker local Supabase)
+
+- Migrations 0001–0005 apply cleanly from a fresh `supabase db reset`.
+- Seed run twice → identical summaries; post-run counts unchanged: brands 5,
+  categories 6, products 30, variants 69, product_images 99 (69 variant-linked),
+  store_settings 1. **Idempotency demonstrated (AC-13).**
+- RLS (via `SET ROLE anon` and real publishable key over PostgREST):
+  anon CAN read active catalog (`products_public` 30, brands, variants, images,
+  joins, store_settings, static_pages); anon is DENIED on base `products`
+  (so `cost_price_cents` unreachable — `column does not exist` on the view),
+  `orders`, `customers`, `order_items`, `order_status_history`,
+  `discount_codes`. Anon question INSERT: valid → 201, self-published → 401.
+- Constraints/triggers exercised live: bad currency, inconsistent total, bad
+  line-total, 5000% discount, 3000-char question, deep category cycle (A→B→C→A
+  and A↔B), and snapshot/order_items mutation are all rejected; legitimate
+  reparent and order status transition succeed.
+
+### Schema Changes → types
+
+`database.types.ts` updated: added the `products_public` view (Row omits
+`cost_price_cents`) to `Views`, added `is_active_product` to `Functions`, and a
+`Views<T>` helper. `npm run db:types` regenerates equivalently once linked
+(CLI-generated shape confirmed to include the view + function).
+
+### Test / Build Status After Fixes
+
+- `npm run lint` → clean (0 warnings).
+- `npx tsc --noEmit` → exit 0.
+- `npm run test` → **44 passed** (41 prior + 3 new seed-image invariant tests).
+- `npm run build` → Compiled successfully, TypeScript check passed.

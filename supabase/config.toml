@@ -27,3 +27,9 @@ port = 54323
 
 [auth]
 enabled = false
+
+# The analytics (Logflare) + vector stack is heavy and flaky on ARM Docker; it
+# is not needed for local schema/RLS/seed work. Disabling it lets the core DB +
+# API stack come up reliably.
+[analytics]
+enabled = false

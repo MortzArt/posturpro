@@ -58,10 +58,13 @@ export const SUPABASE_STORAGE_BUCKET = "product-images" as const;
 
 /**
  * Base URL for placeholder product images used by the seed script.
- * Swap for real Storage URLs when real photography is available (see header).
+ *
+ * Uses picsum.photos seeded URLs (`/{slug}-{n}/800/800`) which return a real,
+ * deterministic 800x800 image per seed string — so seeded catalog data renders
+ * something during T2–T5 development instead of 404ing. Swap for real Supabase
+ * Storage URLs when real photography is available (see header).
  */
-export const SEED_IMAGE_BASE_URL =
-  "https://images.unsplash.com/photo-office-chair" as const;
+export const SEED_IMAGE_BASE_URL = "https://picsum.photos/seed" as const;
 
 /** Default store identity written by the seed (admin-editable in T10). */
 export const SEED_STORE_NAME = "PosturPro" as const;

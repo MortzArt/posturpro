@@ -10,9 +10,9 @@
 create table if not exists product_questions (
   id            uuid primary key default gen_random_uuid(),
   product_id    uuid not null references products (id) on delete cascade,
-  author_name   text not null,
-  question      text not null,
-  answer        text,
+  author_name   text not null check (char_length(author_name) between 1 and 120),
+  question      text not null check (char_length(question) between 1 and 2000),
+  answer        text check (answer is null or char_length(answer) between 1 and 5000),
   is_published  boolean not null default false,
   answered_at   timestamptz,
   created_at    timestamptz not null default now(),

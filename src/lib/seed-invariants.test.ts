@@ -11,7 +11,7 @@ import {
   STYLES,
   TAGS,
 } from "../../scripts/seed-data/taxonomy";
-import { PRODUCTS } from "../../scripts/seed-data/products";
+import { PRODUCTS, seedImageUrl } from "../../scripts/seed-data/products";
 
 const brandSlugs = new Set(BRANDS.map((b) => b.slug));
 const styleSlugs = new Set(STYLES.map((s) => s.slug));
@@ -123,5 +123,31 @@ describe("variant edge cases", () => {
         expect(v.colorHex).toMatch(/^#[0-9A-Fa-f]{6}$/);
       }
     }
+  });
+});
+
+describe("seed image URLs (AC-7 / AC-16 / m-5)", () => {
+  it("produces a valid, allow-listed https URL", () => {
+    const url = seedImageUrl("silla-x", 1);
+    expect(url).toBe("https://picsum.photos/seed/silla-x-1/800/800");
+    expect(new URL(url).hostname).toBe("picsum.photos");
+  });
+
+  it("produces distinct URLs for product-level vs variant-specific images (M-1)", () => {
+    const product = seedImageUrl("silla-x", 1);
+    const variant = seedImageUrl("silla-x", 1, "1-2");
+    expect(variant).not.toBe(product);
+    expect(variant).toContain("1-2");
+  });
+
+  it("keeps every seeded image URL unique across products + variants (m-4)", () => {
+    const urls: string[] = [];
+    for (const p of PRODUCTS) {
+      urls.push(seedImageUrl(p.slug, 1));
+      p.variants.forEach((v, i) =>
+        urls.push(seedImageUrl(p.slug, i + 1, v.skuSuffix)),
+      );
+    }
+    expect(new Set(urls).size).toBe(urls.length);
   });
 });

@@ -153,6 +153,16 @@ async function seedProducts(db: Db): Promise<{ products: number; variants: numbe
   return { products: PRODUCTS.length, variants: variantCount, images: imageCount };
 }
 
+/** Fetch a variant SKU -> id map so images can link to specific variants. */
+async function variantIdBySku(db: Db): Promise<Map<string, string>> {
+  const { data, error } = await db.from("product_variants").select("id, sku");
+  if (error) fail("Failed reading product_variants", error);
+  const rows = (data ?? []) as unknown as { id: string; sku: string }[];
+  const map = new Map<string, string>();
+  for (const row of rows) map.set(row.sku, row.id);
+  return map;
+}
+
 async function seedProductJoins(db: Db, productIds: Map<string, string>): Promise<void> {
   const categoryIds = await idBySlug(db, "categories");
   const tagIds = await idBySlug(db, "tags");
@@ -197,28 +207,46 @@ async function seedVariants(db: Db, productIds: Map<string, string>): Promise<nu
 }
 
 async function seedImages(db: Db, productIds: Map<string, string>): Promise<number> {
-  // One primary image per product, keyed for idempotency by (product_id, url).
-  const { data: existing } = await db.from("product_images").select("url");
-  const existingUrls = new Set(
-    ((existing ?? []) as { url: string }[]).map((r) => r.url),
-  );
+  const variantIds = await variantIdBySku(db);
 
+  // One primary product-level image per product, plus one variant-specific
+  // image per variant (AC-7/AC-13: variants "link to variant-specific images").
+  // Idempotency is enforced at the DB level by the (product_id, url) unique
+  // constraint, so we upsert rather than pre-filter in app code (m-4).
   const imageRows: TablesInsert<"product_images">[] = [];
   for (const p of PRODUCTS) {
     const productId = productIds.get(p.slug);
-    if (!productId) continue;
-    const url = seedImageUrl(p.slug, 1);
-    if (existingUrls.has(url)) continue;
-    imageRows.push({ product_id: productId, url, alt_text: p.name, sort_order: 0, is_primary: true });
+    if (!productId) fail(`Product id not found for ${p.slug}`);
+
+    // Product-level primary image (variant_id null => shared default).
+    imageRows.push({
+      product_id: productId,
+      variant_id: null,
+      url: seedImageUrl(p.slug, 1),
+      alt_text: p.name,
+      sort_order: 0,
+      is_primary: true,
+    });
+
+    // One image per variant, tied to that variant.
+    p.variants.forEach((v, index) => {
+      const variantSku = `${p.sku}-V${v.skuSuffix}`;
+      const variantId = variantIds.get(variantSku);
+      if (!variantId) fail(`Variant id not found for ${variantSku}`);
+      imageRows.push({
+        product_id: productId,
+        variant_id: variantId,
+        url: seedImageUrl(p.slug, index + 1, v.skuSuffix),
+        alt_text: `${p.name} — ${v.colorName}`,
+        sort_order: index + 1,
+        is_primary: false,
+      });
+    });
   }
-  if (imageRows.length > 0) {
-    const { error } = await db
-      .from("product_images")
-      .insert(imageRows as never);
-    if (error) fail("Failed inserting product_images", error);
-  }
-  // Return the intended total (idempotent count), not just newly inserted.
-  return PRODUCTS.length;
+
+  await upsert(db, "product_images", imageRows, "product_id,url");
+  // Report the true resulting row count, not a fictional PRODUCTS.length (m-3).
+  return imageRows.length;
 }
 
 async function seedContent(db: Db): Promise<void> {

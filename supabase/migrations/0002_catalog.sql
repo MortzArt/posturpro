@@ -31,12 +31,55 @@ create table if not exists categories (
   sort_order  integer not null default 0,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
-  -- A category cannot be its own parent (blocks the trivial 1-node cycle;
-  -- deeper cycles are prevented by only ever seeding well-formed trees and
-  -- are enforced at the app layer when the admin UI ships in T10).
+  -- A category cannot be its own parent (blocks the trivial 1-node cycle).
+  -- Deeper cycles (A->B->A) are blocked by the categories_no_cycle trigger below
+  -- (edge case 4: "a category cannot be its own ancestor").
   constraint categories_no_self_parent check (parent_id is null or parent_id <> id)
 );
 create index if not exists categories_parent_id_idx on categories (parent_id);
+
+-- ---------------------------------------------------------------------------
+-- Deep-cycle prevention (edge case 4): walk the parent chain upward from the
+-- proposed parent; if we reach the row being inserted/updated, the edit would
+-- create a cycle (a category becoming its own ancestor) — reject it. A depth
+-- guard also aborts a pre-existing corrupt chain rather than looping forever.
+-- ---------------------------------------------------------------------------
+create or replace function categories_check_no_cycle()
+returns trigger
+language plpgsql
+as $$
+declare
+  ancestor_id uuid := new.parent_id;
+  depth       integer := 0;
+begin
+  if new.parent_id is null then
+    return new;
+  end if;
+  while ancestor_id is not null loop
+    if ancestor_id = new.id then
+      raise exception 'category % cannot be its own ancestor (cycle via parent_id)', new.id
+        using errcode = 'check_violation';
+    end if;
+    depth := depth + 1;
+    if depth > 100 then
+      raise exception 'category ancestor chain exceeds max depth (possible cycle)'
+        using errcode = 'check_violation';
+    end if;
+    select parent_id into ancestor_id from categories where id = ancestor_id;
+  end loop;
+  return new;
+end;
+$$;
+
+do $$
+begin
+  if not exists (select 1 from pg_trigger where tgname = 'categories_no_cycle') then
+    create trigger categories_no_cycle
+      before insert or update of parent_id on categories
+      for each row execute function categories_check_no_cycle();
+  end if;
+end
+$$;
 
 -- ---------------------------------------------------------------------------
 -- styles (design style facet, e.g. "Ejecutiva", "Ergonómica")
@@ -157,7 +200,11 @@ create table if not exists product_images (
   alt_text   text,
   sort_order integer not null default 0,
   is_primary boolean not null default false,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- URL is unique per product so the seed (and any writer) can upsert on
+  -- (product_id, url) — a real DB-level idempotency guard, not an app-only
+  -- check that a concurrent insert could bypass (m-4).
+  constraint product_images_product_url_unique unique (product_id, url)
 );
 create index if not exists product_images_product_id_idx
   on product_images (product_id);

@@ -49,7 +49,10 @@ create table if not exists orders (
   tax_base_cents          integer not null default 0 check (tax_base_cents >= 0),
   tax_cents               integer not null default 0 check (tax_cents >= 0),
   total_cents             integer not null check (total_cents >= 0),
-  currency                text not null default 'MXN',
+  -- Single-currency in Phase 1. Constrained so a malformed/wrong currency
+  -- (e.g. 'mxn', 'USD', '$') can never enter the immutable financial record
+  -- (M-2). Widen to a real ISO set only when multi-currency is built.
+  currency                text not null default 'MXN' check (currency = 'MXN'),
 
   status                  order_status not null default 'pending_payment',
   payment_method          text,
@@ -61,7 +64,16 @@ create table if not exists orders (
   mp_external_reference   text,
 
   created_at              timestamptz not null default now(),
-  updated_at              timestamptz not null default now()
+  updated_at              timestamptz not null default now(),
+
+  -- Cross-column financial consistency (M-3): a discount can never exceed the
+  -- subtotal, and the total must be the exact sum of its parts. These make the
+  -- "immutable financial snapshot" internally trustworthy at the DB level, not
+  -- only as correct as app code.
+  constraint orders_discount_within_subtotal check (discount_cents <= subtotal_cents),
+  constraint orders_total_identity check (
+    total_cents = subtotal_cents + shipping_cents + tax_cents - discount_cents
+  )
 );
 create index if not exists orders_customer_id_idx on orders (customer_id);
 create index if not exists orders_status_idx on orders (status);
@@ -84,7 +96,12 @@ create table if not exists order_items (
   unit_price_cents integer not null check (unit_price_cents >= 0),
   quantity         integer not null check (quantity > 0),
   line_total_cents integer not null check (line_total_cents >= 0),
-  created_at       timestamptz not null default now()
+  created_at       timestamptz not null default now(),
+  -- The line total must equal unit price * quantity (M-3). Backstops a
+  -- totals-calculation bug in checkout (T7) writing a self-contradictory line.
+  constraint order_items_line_total_identity check (
+    line_total_cents = unit_price_cents * quantity
+  )
 );
 create index if not exists order_items_order_id_idx on order_items (order_id);
 create index if not exists order_items_product_id_idx on order_items (product_id);
@@ -110,8 +127,12 @@ create table if not exists discount_codes (
   id                uuid primary key default gen_random_uuid(),
   code              text not null unique,
   discount_type     discount_type not null,
-  -- percentage: integer basis 0-100; fixed_amount: integer cents
+  -- percentage: integer 0-100; fixed_amount: integer cents (n-2: a percentage
+  -- row is bounded to 100 so a 5000% discount can never be stored).
   value             integer not null check (value >= 0),
+  constraint discount_codes_percentage_bound check (
+    discount_type <> 'percentage' or value <= 100
+  ),
   min_subtotal_cents integer check (min_subtotal_cents >= 0),
   max_redemptions   integer check (max_redemptions >= 0),
   times_redeemed    integer not null default 0 check (times_redeemed >= 0),
@@ -134,6 +155,78 @@ create table if not exists store_settings (
   currency                      text not null default 'MXN',
   updated_at                    timestamptz not null default now()
 );
+
+-- ---------------------------------------------------------------------------
+-- Immutability of the order financial snapshot (M-4, AC-8/AC-9).
+--
+-- An order legitimately transitions status, payment_status, payment_method, and
+-- acquires Mercado Pago references over its lifecycle — those columns are
+-- mutable. But the FINANCIAL SNAPSHOT and the customer/shipping capture are
+-- frozen at creation and must survive any later product edit/delete. This
+-- trigger rejects any UPDATE that changes a frozen column, so "immutable" is
+-- enforced at the DB level and not merely aspirational — even the secret-key
+-- server client (which bypasses RLS) is bound by it.
+-- ---------------------------------------------------------------------------
+create or replace function orders_block_snapshot_update()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.order_number            is distinct from old.order_number
+     or new.customer_id          is distinct from old.customer_id
+     or new.contact_email        is distinct from old.contact_email
+     or new.contact_phone        is distinct from old.contact_phone
+     or new.shipping_full_name   is distinct from old.shipping_full_name
+     or new.shipping_address_line1 is distinct from old.shipping_address_line1
+     or new.shipping_address_line2 is distinct from old.shipping_address_line2
+     or new.shipping_city        is distinct from old.shipping_city
+     or new.shipping_state       is distinct from old.shipping_state
+     or new.shipping_postal_code is distinct from old.shipping_postal_code
+     or new.shipping_country     is distinct from old.shipping_country
+     or new.rfc                  is distinct from old.rfc
+     or new.subtotal_cents       is distinct from old.subtotal_cents
+     or new.shipping_cents       is distinct from old.shipping_cents
+     or new.discount_cents       is distinct from old.discount_cents
+     or new.tax_base_cents       is distinct from old.tax_base_cents
+     or new.tax_cents            is distinct from old.tax_cents
+     or new.total_cents          is distinct from old.total_cents
+     or new.currency             is distinct from old.currency
+     or new.created_at           is distinct from old.created_at
+  then
+    raise exception 'order % financial/contact snapshot is immutable and cannot be updated', old.id
+      using errcode = 'raise_exception';
+  end if;
+  return new;
+end;
+$$;
+
+-- order_items rows are a pure historical snapshot — they are never updated.
+-- Any UPDATE is rejected outright. (DELETE is still permitted so an order can
+-- be removed via the ON DELETE CASCADE from orders.)
+create or replace function order_items_block_update()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception 'order_items are an immutable purchase snapshot and cannot be updated'
+    using errcode = 'raise_exception';
+end;
+$$;
+
+do $$
+begin
+  if not exists (select 1 from pg_trigger where tgname = 'orders_immutable_snapshot') then
+    create trigger orders_immutable_snapshot
+      before update on orders
+      for each row execute function orders_block_snapshot_update();
+  end if;
+  if not exists (select 1 from pg_trigger where tgname = 'order_items_immutable') then
+    create trigger order_items_immutable
+      before update on order_items
+      for each row execute function order_items_block_update();
+  end if;
+end
+$$;
 
 -- updated_at triggers
 do $$

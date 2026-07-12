@@ -45,9 +45,23 @@ export interface ProductSeed {
   variants: VariantSeed[];
 }
 
-/** Deterministic image URL for a product/variant (centralized base URL). */
-export function seedImageUrl(productSlug: string, index: number): string {
-  return `${SEED_IMAGE_BASE_URL}/${productSlug}-${index}.jpg`;
+/**
+ * Deterministic placeholder image URL for a product or variant.
+ *
+ * `seedImageUrl("silla-x", 1)` -> a product-level image;
+ * `seedImageUrl("silla-x", 1, "negro")` -> a distinct variant-specific image.
+ * The seed string is embedded in the path so picsum returns a stable image and
+ * `(product_id, url)` stays unique per (product, variant, index).
+ */
+export function seedImageUrl(
+  productSlug: string,
+  index: number,
+  variantKey?: string,
+): string {
+  const seed = variantKey
+    ? `${productSlug}-${variantKey}-${index}`
+    : `${productSlug}-${index}`;
+  return `${SEED_IMAGE_BASE_URL}/${seed}/800/800`;
 }
 
 const COLORS = {
