@@ -33,6 +33,36 @@ test.describe("mobile drawer at 375px (AC-5)", () => {
     await expect(page.getByTestId("mobile-nav-item-contact")).toBeVisible()
   })
 
+  test("shell is exposed to assistive tech when the drawer is closed, hidden only while open (AC-17 regression)", async ({
+    page,
+  }) => {
+    // Regression for the Radix `forceMount` + modal `hideOthers` leak: a
+    // force-mounted-while-closed dialog kept `aria-hidden="true"` on the shell
+    // wrapper (header, main, footer, EVERY heading) permanently, hiding the
+    // whole page from screen readers on every route. With the closed drawer
+    // unmounted, the shell must be fully in the accessibility tree.
+    await page.goto("/")
+    // Closed: the h1 (and headings generally) are reachable via role.
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+    const shellWrapper = page.locator("main").locator("..")
+    await expect(shellWrapper).not.toHaveAttribute("aria-hidden", "true")
+
+    // Open: Radix's modal correctly hides the background from AT while the
+    // drawer is the active modal layer.
+    await page.getByTestId("mobile-nav-trigger").click()
+    await expect(page.getByTestId("mobile-nav-panel")).toHaveAttribute(
+      "data-state",
+      "open",
+    )
+    await expect(shellWrapper).toHaveAttribute("aria-hidden", "true")
+
+    // Close (Esc): the guard is released — the shell is exposed again.
+    await page.keyboard.press("Escape")
+    await expect(page.getByTestId("mobile-nav-panel")).toHaveCount(0)
+    await expect(shellWrapper).not.toHaveAttribute("aria-hidden", "true")
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+  })
+
   test("traps focus inside the open drawer", async ({ page }) => {
     await page.goto("/")
     await page.getByTestId("mobile-nav-trigger").click()
@@ -101,12 +131,12 @@ test.describe("mobile drawer at 375px (AC-5)", () => {
     await page.goto("/")
     await page.getByTestId("mobile-nav-trigger").click()
     await page.getByTestId("mobile-nav-item-catalog").click()
-    // Navigates to the (dead) catalog route → shell 404, drawer gone.
+    // Navigates to the (now live, T3) catalog route; the drawer closes.
     await expect(page).toHaveURL(/\/sillas$/)
-    await expect(page.getByTestId("mobile-nav-panel")).toHaveAttribute(
-      "data-state",
-      "closed",
-    )
+    // Once fully closed, the drawer portal UNMOUNTS (this is what clears Radix's
+    // modal `hideOthers` guard so the shell is exposed to AT again). So the
+    // panel is detached from the DOM — a stronger guarantee than `data-state`.
+    await expect(page.getByTestId("mobile-nav-panel")).toHaveCount(0)
   })
 
   test("no horizontal scroll with the drawer open (AC-14, edge case 6)", async ({

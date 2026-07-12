@@ -44,10 +44,17 @@ function makeBuilder(table: keyof MockTables) {
     return { data: entry.data, count, error: null };
   };
   const builder: Record<string, unknown> = {};
+  // Captured column→value filters so `categories` lookups can resolve the right
+  // row by `slug` (the initial lookup) vs `id` (each ancestor walk step).
+  const eqFilters: Record<string, unknown> = {};
   const chain = () => builder;
-  for (const method of ["select", "eq", "order"]) {
+  for (const method of ["select", "order"]) {
     builder[method] = vi.fn(chain);
   }
+  builder.eq = vi.fn((column: string, value: unknown) => {
+    eqFilters[column] = value;
+    return builder;
+  });
   builder.in = vi.fn((column: string, ids: string[]) => {
     if (table === "products_public" && column === "id") {
       inIdCalls.push(ids);
@@ -56,9 +63,19 @@ function makeBuilder(table: keyof MockTables) {
   });
   builder.range = vi.fn(async () => result());
   builder.maybeSingle = vi.fn(async () => {
-    const rows = tables[table].data;
-    return { data: rows[0] ?? null, count: null, error: null };
+    const rows = tables[table].data as Array<Record<string, unknown>>;
+    // Resolve by whatever eq filter was applied (id/slug), so a getCategory
+    // slug lookup and each ancestor-by-id walk step get the correct row.
+    let row: unknown = rows[0] ?? null;
+    if ("id" in eqFilters) {
+      row = rows.find((r) => r.id === eqFilters.id) ?? null;
+    } else if ("slug" in eqFilters) {
+      // Exact slug match or null — no fallback, so an unknown slug → 404 path.
+      row = rows.find((r) => r.slug === eqFilters.slug) ?? null;
+    }
+    return { data: row, count: null, error: null };
   });
+  builder.single = builder.maybeSingle;
   // Awaiting the builder directly (e.g. product_categories membership).
   builder.then = (resolve: (value: unknown) => unknown) =>
     Promise.resolve(result()).then(resolve);
@@ -76,6 +93,7 @@ import {
   listProducts,
   listProductsByCategory,
   getBrand,
+  getCategory,
   listCategories,
 } from "./queries";
 
@@ -307,6 +325,84 @@ describe("listCategories tree (AC-3, edge case 4)", () => {
   });
 });
 
+describe("toCard defensive normalization + stock states via the stitch (AC-8)", () => {
+  const baseRow = {
+    id: "p1",
+    slug: "s",
+    name: "N",
+    price_cents: 1000,
+    compare_at_price_cents: null,
+    is_best_seller: false,
+    sales_count: 0,
+    stock: 0,
+  };
+
+  it("normalizes a brands embed returned as an ARRAY to a single brand (firstOrSelf)", async () => {
+    // PostgREST usually returns a to-one embed as an object, but the generated
+    // types can surface it as an array; the stitch must pick the first element.
+    tables.products_public = {
+      count: 1,
+      data: [{ ...baseRow, brands: [{ name: "ErgoVita", slug: "e", logo_url: null }] }],
+    };
+    const page = await listProducts({ rawPage: "1" });
+    expect(page.items[0].brandName).toBe("ErgoVita");
+  });
+
+  it("tolerates a null brands embed (empty brand name, no crash)", async () => {
+    tables.products_public = {
+      count: 1,
+      data: [{ ...baseRow, brands: null }],
+    };
+    const page = await listProducts({ rawPage: "1" });
+    expect(page.items[0].brandName).toBe("");
+  });
+
+  it("produces a 'low' card with lowStockN from summed variants (variant-authoritative, AC-8)", async () => {
+    tables.products_public = {
+      count: 1,
+      data: [{ ...baseRow, stock: 99, brands: { name: "B", slug: "b", logo_url: null } }],
+    };
+    // Product-level stock is a stale 99, but variants sum to 4 → LOW (1..5).
+    tables.product_variants = {
+      data: [
+        { product_id: "p1", stock: 1, color_hex: "#111" },
+        { product_id: "p1", stock: 3, color_hex: "#222" },
+      ],
+    };
+    const page = await listProducts({ rawPage: "1" });
+    expect(page.items[0].stockState).toBe("low");
+    expect(page.items[0].lowStockN).toBe(4);
+    // Two distinct colors → the "N colores" line will render.
+    expect(page.items[0].colorCount).toBe(2);
+  });
+
+  it("dedupes distinct-color count when a color repeats across variants", async () => {
+    tables.products_public = {
+      count: 1,
+      data: [{ ...baseRow, stock: 50, brands: { name: "B", slug: "b", logo_url: null } }],
+    };
+    tables.product_variants = {
+      data: [
+        { product_id: "p1", stock: 10, color_hex: "#111" },
+        { product_id: "p1", stock: 10, color_hex: "#111" }, // same color
+        { product_id: "p1", stock: 10, color_hex: "#222" },
+      ],
+    };
+    const page = await listProducts({ rawPage: "1" });
+    expect(page.items[0].colorCount).toBe(2);
+    expect(page.items[0].stockState).toBe("in");
+  });
+
+  it("returns an empty page (no items) when the view total is 0", async () => {
+    tables.products_public = { count: 0, data: [] };
+    const page = await listProducts({ rawPage: "1" });
+    expect(page.items).toEqual([]);
+    expect(page.total).toBe(0);
+    expect(page.lastPage).toBe(1);
+    expect(page.page).toBe(1);
+  });
+});
+
 describe("listProductsByCategory dedup (AC-2, edge case 8, M-4)", () => {
   it("de-duplicates a duplicated (product_id, category_id) membership row so the total and grid never double-count", async () => {
     // A stray duplicate membership row for the SAME product (data drift or a
@@ -370,5 +466,47 @@ describe("listProductsByCategory dedup (AC-2, edge case 8, M-4)", () => {
     expect(slugs).toEqual([...new Set(slugs)]);
     expect(result.items).toHaveLength(2);
     expect(result.total).toBe(2);
+  });
+});
+
+describe("getCategory ancestor chain (AC-7, edge case 4)", () => {
+  const oficina = {
+    id: "c1",
+    slug: "oficina",
+    name: "Oficina",
+    description: "Sillas de oficina",
+    parent_id: null,
+    sort_order: 1,
+  };
+  const ejecutivas = {
+    id: "c2",
+    slug: "ejecutivas",
+    name: "Ejecutivas",
+    description: null,
+    parent_id: "c1", // nested under oficina
+    sort_order: 1,
+  };
+
+  it("returns the nested category with its root-first ancestor chain (Oficina › Ejecutivas)", async () => {
+    tables.categories = { data: [oficina, ejecutivas] };
+    const result = await getCategory("ejecutivas");
+    expect(result).not.toBeNull();
+    expect(result?.category.slug).toBe("ejecutivas");
+    // Ancestors are root-first so the breadcrumb reads Inicio › Categorías ›
+    // Oficina › Ejecutivas.
+    expect(result?.ancestors.map((a) => a.slug)).toEqual(["oficina"]);
+  });
+
+  it("returns an empty ancestor chain for a top-level category", async () => {
+    tables.categories = { data: [oficina, ejecutivas] };
+    const result = await getCategory("oficina");
+    expect(result?.category.slug).toBe("oficina");
+    expect(result?.ancestors).toEqual([]);
+  });
+
+  it("returns null for an unknown/inactive slug (→ 404, AC-14)", async () => {
+    tables.categories = { data: [oficina, ejecutivas] };
+    const result = await getCategory("no-existe");
+    expect(result).toBeNull();
   });
 });

@@ -67,9 +67,20 @@ test.describe("language toggle (AC-6, AC-17)", () => {
     await switchTo(page, "en")
     await expect(page).toHaveURL(/\/en$/)
 
-    const cookies = await context.cookies()
-    const localeCookie = cookies.find((c) => c.name === "NEXT_LOCALE")
-    expect(localeCookie?.value).toBe("en")
+    // next-intl writes `NEXT_LOCALE` via a middleware round-trip that completes
+    // asynchronously AFTER the client-side URL updates (the toggle navigates via
+    // `router.replace`, so the cookie's `Set-Cookie` lands on the subsequent RSC
+    // request, not synchronously with the URL change). Reading the cookie the
+    // instant `toHaveURL` resolves is therefore a race — which side wins is
+    // nondeterministic across dev/prod and worker scheduling. Poll until the
+    // cookie settles: the assertion still proves the real product guarantee
+    // (the choice IS persisted to `NEXT_LOCALE=en`), just without the race.
+    await expect
+      .poll(async () => {
+        const cookies = await context.cookies()
+        return cookies.find((c) => c.name === "NEXT_LOCALE")?.value
+      })
+      .toBe("en")
   })
 
   test("preserves the current path when switching locale (AC-6)", async ({

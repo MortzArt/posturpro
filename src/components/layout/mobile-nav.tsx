@@ -36,10 +36,53 @@ import { cn } from "@/lib/utils";
 /** Tailwind `md` breakpoint in px — the drawer is mobile-only below this. */
 const MD_BREAKPOINT_PX = 768;
 
+/**
+ * How long the closed panel stays mounted so its slide-out CSS transition can
+ * finish before Radix's Content (and its `hideOthers` guard) unmounts. Matches
+ * the 200ms `.drawer-panel[data-state="closed"]` exit in globals.css, with a
+ * small buffer.
+ */
+const DRAWER_EXIT_MS = 260;
+
 export function MobileNav() {
   const t = useTranslations("nav");
   const [open, setOpen] = useState(false);
+  // Whether the closed panel is still playing its slide-out transition. Combined
+  // with `open` this gates whether the Dialog.Content (portal) is in the DOM:
+  //   mounted = open || closing
+  // Crucially, once fully closed AND the transition has finished, the Content
+  // UNMOUNTS — which is what clears Radix's modal `hideOthers` guard. If the
+  // Content were `forceMount`ed permanently, that guard would keep
+  // `aria-hidden="true"` on the entire shell (header, main, footer, every
+  // heading) forever, hiding it from assistive tech on every page even with the
+  // drawer closed (AC-17 defect). Mounting only when needed preserves the CSS
+  // exit transition AND the modal focus trap / correct while-open hiding.
+  const [closing, setClosing] = useState(false);
+  const mounted = open || closing;
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // Tracks whether the drawer was open on the previous render, so the exit
+  // transition (and its brief mount) only runs after a real open→close — never
+  // on initial mount (which would needlessly re-apply `hideOthers` for 260ms).
+  const wasOpenRef = useRef(false);
+
+  useEffect(() => {
+    // Keep the panel mounted for the exit transition after a real open→close,
+    // then unmount it (clearing `hideOthers`). Opening cancels any pending
+    // unmount. `open` itself already keeps the panel mounted while true, so no
+    // setState is needed on the open branch (avoids set-state-in-effect).
+    if (open) {
+      wasOpenRef.current = true;
+      return;
+    }
+    if (!wasOpenRef.current) {
+      // Never opened yet → nothing to transition out; stay unmounted.
+      return;
+    }
+    wasOpenRef.current = false;
+    setClosing(true);
+    const timer = window.setTimeout(() => setClosing(false), DRAWER_EXIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -80,15 +123,22 @@ export function MobileNav() {
         </button>
       </Dialog.Trigger>
 
-      <Dialog.Portal forceMount>
-        <Dialog.Overlay
-          forceMount
-          data-testid="mobile-nav-overlay"
-          className="drawer-scrim fixed inset-0 z-[60] bg-black/50"
-        />
-        <Dialog.Content
-          forceMount
-          data-testid="mobile-nav-panel"
+      {/* The portal (overlay + panel) is mounted only while open or during the
+          brief close transition (see `mounted`). Once fully closed it unmounts,
+          which clears Radix's modal `hideOthers` guard so the shell is exposed
+          to assistive tech again (AC-17). While mounted, `forceMount` on the
+          layers keeps their open/close driven by CSS transitions off Radix's
+          `data-state`. */}
+      {mounted ? (
+        <Dialog.Portal forceMount>
+          <Dialog.Overlay
+            forceMount
+            data-testid="mobile-nav-overlay"
+            className="drawer-scrim fixed inset-0 z-[60] bg-black/50"
+          />
+          <Dialog.Content
+            forceMount
+            data-testid="mobile-nav-panel"
           onInteractOutside={(event) => {
             // Ignore the trigger's own tap — otherwise the opening pointer is
             // treated as an outside-interaction and dismisses the drawer in the
@@ -120,9 +170,10 @@ export function MobileNav() {
                 />
               </div>
             </FocusScope>
-          ) : null}
-        </Dialog.Content>
-      </Dialog.Portal>
+            ) : null}
+          </Dialog.Content>
+        </Dialog.Portal>
+      ) : null}
     </Dialog.Root>
   );
 }

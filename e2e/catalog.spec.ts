@@ -165,6 +165,167 @@ test.describe("catalog browse + paginate (es-MX)", () => {
     );
     expect(overflow).toBeLessThanOrEqual(1);
   });
+
+  test("page 2 loads a DIFFERENT set of products than page 1 (AC-9)", async ({
+    page,
+  }) => {
+    // Capture page-1 product hrefs (stable identity per product).
+    await page.goto("/sillas");
+    const page1 = await page
+      .getByTestId("product-card-link")
+      .evaluateAll((els) => els.map((el) => el.getAttribute("href")));
+    expect(page1.length).toBeGreaterThan(0);
+
+    await page.goto("/sillas?page=2");
+    await expect(page.getByTestId("product-grid")).toBeVisible();
+    const page2 = await page
+      .getByTestId("product-card-link")
+      .evaluateAll((els) => els.map((el) => el.getAttribute("href")));
+    expect(page2.length).toBeGreaterThan(0);
+
+    // No product appears on both pages — pagination truly advances the window.
+    const overlap = page2.filter((href) => page1.includes(href));
+    expect(overlap).toHaveLength(0);
+  });
+
+  test("page-1 pagination link is the bare canonical path (no ?page=1) — AC-9", async ({
+    page,
+  }) => {
+    // AC-9 "page 1 is canonical without ?page=1" governs the LINK the pagination
+    // builds to page 1: from page 2, the control that returns to page 1 must
+    // target the bare `/sillas`, never `/sillas?page=1`. (The <link rel=canonical>
+    // meta tag itself is deferred to T14 SEO per ui-design.md.)
+    await page.goto("/sillas?page=2");
+    // Previous → bare canonical page-1 path (no ?page=1).
+    await expect(page.getByTestId("pagination-previous")).toHaveAttribute(
+      "href",
+      /\/sillas$/,
+    );
+    // No pagination anchor anywhere carries ?page=1 — the page-1 link is always
+    // the bare path. Collect every hrefable control (prev/next + numbered).
+    const hrefs = await page
+      .getByTestId("pagination")
+      .locator("a[href]")
+      .evaluateAll((els) => els.map((el) => el.getAttribute("href") ?? ""));
+    expect(hrefs.length).toBeGreaterThan(0);
+    expect(hrefs.some((h) => /\?page=1(?:&|$)/.test(h))).toBe(false);
+  });
+
+  test("clamped ?page=999 renders the real last page, not a crash or dead controls (AC-14)", async ({
+    page,
+  }) => {
+    // 30 products / 12 per page → last page is 3. An out-of-range page clamps to
+    // the last valid page and the pagination reflects page 3 as current.
+    const response = await page.goto("/sillas?page=999");
+    expect(response?.status()).toBe(200);
+    await expect(page.getByTestId("product-grid")).toBeVisible();
+    // Current page is the clamped last page (3), marked aria-current.
+    const current = page.getByTestId("pagination-current");
+    if (await current.count()) {
+      await expect(current).toHaveText("3");
+    }
+    // Next is absent/inactive on the last page (never a link to page 4).
+    const nextHref = await page
+      .getByTestId("pagination-next")
+      .evaluateAll((els) => els.map((el) => el.getAttribute("href") ?? ""));
+    expect(nextHref.some((h) => /page=4/.test(h))).toBe(false);
+  });
+
+  test("nested category shows the FULL breadcrumb trail on desktop (AC-7, edge case 4)", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name === "mobile",
+      "full trail is a desktop assertion; mobile collapse is covered separately",
+    );
+    await page.goto("/categorias/ejecutivas");
+    const crumb = page.getByTestId("breadcrumbs");
+    // Inicio › Categorías › Oficina › Ejecutivas — nesting reflected. On desktop
+    // (≥ sm) all four crumbs are present in the trail.
+    await expect(crumb.getByText("Inicio", { exact: true })).toHaveCount(1);
+    await expect(crumb.getByText("Categorías", { exact: true })).toHaveCount(1);
+    await expect(crumb.getByText("Oficina", { exact: true })).toHaveCount(1);
+    // Last crumb is the current page: aria-current, NOT a link.
+    const current = crumb.locator('[aria-current="page"]');
+    await expect(current).toHaveText("Ejecutivas");
+    await expect(crumb.getByRole("link", { name: "Ejecutivas" })).toHaveCount(0);
+    // The nested ancestor (Oficina) IS a link (derived from the ancestor chain).
+    await expect(crumb.getByRole("link", { name: /Oficina/ })).toHaveCount(1);
+  });
+
+  test("brand detail page renders monogram fallback + description + grid (AC-4, edge case 5)", async ({
+    page,
+  }) => {
+    // All 5 seeded brands have logo_url=null → monogram fallback is the path.
+    const response = await page.goto("/marcas/ergovita");
+    expect(response?.status()).toBe(200);
+    // Brand name as a real level-1 heading (never only inside the decorative,
+    // aria-hidden monogram tile).
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/ErgoVita/i);
+    // No broken <img> for the (null) logo — the monogram tile has no <img>.
+    await expect(page.locator("main img[alt*='logo' i]")).toHaveCount(0);
+    // Products render for this brand.
+    await expect(page.getByTestId("product-grid")).toBeVisible();
+    expect(await page.getByTestId("product-card").count()).toBeGreaterThan(0);
+    // Breadcrumb reflects the section (Inicio › Marcas › ErgoVita).
+    await expect(
+      page.getByTestId("breadcrumbs").getByText("Marcas"),
+    ).toHaveCount(1);
+  });
+
+  test("style index lists styles and a style page lists its products (AC-6)", async ({
+    page,
+  }) => {
+    await page.goto("/estilos");
+    const tiles = page.getByTestId("style-tile");
+    expect(await tiles.count()).toBeGreaterThan(0);
+    // ergonomica has 11 seeded products → grid populated.
+    const response = await page.goto("/estilos/ergonomica");
+    expect(response?.status()).toBe(200);
+    // The "Estilos" section crumb is present in the trail (it is a middle crumb,
+    // so it collapses visually on mobile — assert presence, not visibility).
+    await expect(
+      page.getByTestId("breadcrumbs").getByText("Estilos", { exact: true }),
+    ).toHaveCount(1);
+    await expect(page.getByTestId("product-grid")).toBeVisible();
+    expect(await page.getByTestId("product-card").count()).toBeGreaterThan(0);
+  });
+
+  test("empty taxonomy renders the empty state, not a 404 or blank grid (AC-16, edge case 1)", async ({
+    page,
+  }) => {
+    // The `industrial` style is seeded with ZERO active products (real DB) — a
+    // valid entity with no products must show the empty state + catalog CTA,
+    // NOT a 404 and NOT an empty grid.
+    const response = await page.goto("/estilos/industrial");
+    expect(response?.status()).toBe(200);
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await expect(page.getByTestId("product-grid")).toHaveCount(0);
+    // The CTA links back to the full catalog.
+    await expect(page.getByTestId("empty-state-cta")).toHaveAttribute(
+      "href",
+      /\/sillas$/,
+    );
+  });
+
+  test("mobile catalog grid is exactly 2 columns at 375px (UX mobile req)", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "mobile",
+      "column-count assertion is for the 375px mobile viewport",
+    );
+    await page.goto("/sillas");
+    await expect(page.getByTestId("product-grid")).toBeVisible();
+    const columns = await page
+      .getByTestId("product-grid")
+      .evaluate((el) =>
+        getComputedStyle(el as HTMLElement).gridTemplateColumns
+          .split(" ")
+          .filter(Boolean).length,
+      );
+    expect(columns).toBe(2);
+  });
 });
 
 test.describe("catalog under /en (AC-10)", () => {
