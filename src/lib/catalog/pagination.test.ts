@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { MAX_PAGE } from "@/lib/config";
 import {
   PAGINATION_ELLIPSIS,
+  canonicalPageKey,
   lastPageFor,
   paginationWindow,
   parsePageParam,
@@ -58,6 +60,66 @@ describe("parsePageParam (clamp / malformed — edge case 7)", () => {
 
   it("never exceeds a lastPage of 1", () => {
     expect(parsePageParam("5", 1)).toBe(1);
+  });
+});
+
+describe("canonicalPageKey (bounded cache-key cardinality — DoS guard)", () => {
+  it("maps absent / empty / whitespace to 1", () => {
+    expect(canonicalPageKey(undefined)).toBe(1);
+    expect(canonicalPageKey("")).toBe(1);
+    expect(canonicalPageKey("   ")).toBe(1);
+  });
+
+  it("passes through a normal in-bounds page", () => {
+    expect(canonicalPageKey("2")).toBe(2);
+    expect(canonicalPageKey("42")).toBe(42);
+  });
+
+  it("collapses malformed / float / scientific / negative / zero to 1", () => {
+    for (const junk of ["abc", "1.5", "1e9", "-1", "0", "0x10", " 3 x", "٣"]) {
+      expect(canonicalPageKey(junk)).toBe(1);
+    }
+  });
+
+  it("normalizes leading zeros so 00001 and 1 share a key", () => {
+    expect(canonicalPageKey("00001")).toBe(1);
+    expect(canonicalPageKey("007")).toBe(7);
+  });
+
+  it("caps any huge value at MAX_PAGE so the key space stays bounded", () => {
+    expect(canonicalPageKey(String(MAX_PAGE))).toBe(MAX_PAGE);
+    expect(canonicalPageKey(String(MAX_PAGE + 1))).toBe(MAX_PAGE);
+    expect(canonicalPageKey("999999999")).toBe(MAX_PAGE);
+    // Beyond Number.MAX_SAFE_INTEGER — must not overflow into a fresh key.
+    expect(canonicalPageKey("999999999999999999999999")).toBe(MAX_PAGE);
+  });
+
+  it("uses the first entry for a repeated (array) param", () => {
+    expect(canonicalPageKey(["2", "5"])).toBe(2);
+    expect(canonicalPageKey(["junk", "2"])).toBe(1);
+  });
+
+  it("yields at most MAX_PAGE+1 distinct keys across arbitrary junk input", () => {
+    const keys = new Set<number>();
+    const junkInputs = [
+      "abc",
+      "1e9",
+      "-3",
+      "0",
+      "1.5",
+      "999999999",
+      "  17  ",
+      "%00",
+      "null",
+      String(MAX_PAGE + 500),
+    ];
+    for (const input of junkInputs) keys.add(canonicalPageKey(input));
+    // Every junk value collapsed onto either 1, MAX_PAGE, or a real small page.
+    for (const key of keys) {
+      expect(key).toBeGreaterThanOrEqual(1);
+      expect(key).toBeLessThanOrEqual(MAX_PAGE);
+    }
+    expect(keys.size).toBeLessThanOrEqual(3);
   });
 });
 

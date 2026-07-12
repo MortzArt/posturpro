@@ -119,6 +119,22 @@ export const SEED_STORE_CONTACT_EMAIL = "hola@posturpro.mx" as const;
 export const PRODUCTS_PER_PAGE = 12;
 
 /**
+ * Absolute upper bound on the `?page` value that is ever treated as distinct
+ * (T3 security — cache-key cardinality / DoS bound). The `?page` query param is
+ * attacker-controlled and flows into the `unstable_cache` key. Without a ceiling
+ * an attacker could mint an unbounded number of distinct cache entries (and one
+ * DB count+read per distinct value) with `?page=1`, `?page=2`, … `?page=1e9`,
+ * random junk, etc. — unbounded cache growth + amplified DB load.
+ *
+ * The page always clamps to `[1, lastPage]` for the actual read, and no real
+ * catalog will approach this many pages (12 items/page × 100 000 pages = 1.2M
+ * products), so any value above this is functionally identical to "last page"
+ * and is collapsed to a SINGLE cache key. This bounds distinct cache keys per
+ * listing to `MAX_PAGE + 1` regardless of how many junk values are requested.
+ */
+export const MAX_PAGE = 100_000;
+
+/**
  * Inclusive upper bound for the "low stock" badge state (T3 AC-8). Effective
  * stock `1..LOW_STOCK_THRESHOLD` renders "Solo quedan {n}"; `> threshold`
  * renders "En stock"; `0` renders "Agotado".

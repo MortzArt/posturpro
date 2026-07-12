@@ -33,7 +33,12 @@ import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { CATALOG_REVALIDATE_SECONDS, PRODUCTS_PER_PAGE } from "@/lib/config";
 import { effectiveStock, stockState } from "@/lib/catalog/stock";
-import { lastPageFor, parsePageParam, rangeFor } from "@/lib/catalog/pagination";
+import {
+  canonicalPageKey,
+  lastPageFor,
+  parsePageParam,
+  rangeFor,
+} from "@/lib/catalog/pagination";
 import type {
   CatalogBrand,
   CatalogCategory,
@@ -125,13 +130,17 @@ function firstOrSelf<T>(value: T | T[] | null): T | null {
 }
 
 /**
- * Normalize a raw `?page` value into a stable `unstable_cache` key segment.
- * Uses the first array element (repeated param) and a `p:` prefix so a missing
- * page and the literal string "undefined" can never collide.
+ * Normalize a raw `?page` value into a stable, BOUNDED `unstable_cache` key
+ * segment (T3 security — cache-key cardinality / DoS bound). Delegates to
+ * `canonicalPageKey`, which collapses every malformed / out-of-range / huge
+ * value into an integer in `[1, MAX_PAGE]`. This guarantees at most `MAX_PAGE`
+ * distinct cache keys per listing regardless of how much junk an attacker sends
+ * via `?page=<anything>` — `?page=abc`, `?page=1e9`, `?page=-5`, `?page=00001`
+ * all map onto an existing bounded key instead of minting a fresh cache entry
+ * (and a fresh DB count+read) each time.
  */
 function cacheKeyForPage(rawPage: string | string[] | undefined): string {
-  const value = Array.isArray(rawPage) ? rawPage[0] : rawPage;
-  return `p:${value ?? ""}`;
+  return `p:${canonicalPageKey(rawPage)}`;
 }
 
 /**

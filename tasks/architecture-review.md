@@ -1,154 +1,81 @@
-# Architecture Review: T2 — App Shell & Design System
-
-_Stage 10 (lightweight, review-only). Evaluated as the foundation the entire
-Phase 1 storefront (T3 catalog, T4 PDP, T6 cart, T7 checkout, T13 homepage/static
-pages) and the admin surface (T10) will inherit._
+# Architecture Review: T3 — Catalog browsing
 
 ## Summary
 
-A disciplined, well-reasoned shell. The i18n architecture, token seam, and
-server/client split are the right shapes and will carry the storefront without
-rework. The one architectural decision that must be revisited before it hardens
-is the **shell being fully dynamic because `store_settings` is read in the
-`[locale]` layout** — it silently opts every catalog/PDP page out of static
-optimization. That is a routed, absorbable risk (T3/T4), not a blocker for T2.
-
-**Verdict: SOUND (ship, with 2 risks routed to future tasks).**
+The catalog data-read layer is well-factored, correctly type-safe, and closes both routed backlog items cleanly. It is a **sound foundation for T4 (PDP), T6 (cart), and T14 (SEO)** — but the view+stitch read strategy is a **known wall for T5 filters/sorts on variant-level attributes (color/material) and for cross-page ordering by price/newest**, and that limit should be flagged to T5 now so it plans a DB-side (RPC / view) query path rather than trying to extend `queries.ts`.
 
 ## Pattern Compliance
 
 | Pattern | Status | Notes |
 |---------|--------|-------|
-| Separation of concerns | ✅ | Components render (`site-header`, `site-footer`), config in `nav-items.ts`/`config.ts`, data read isolated in `lib/store-settings.ts`, pure logic in `lib/whatsapp.ts`. No business logic in components. |
-| Boundary validation | ✅ | `hasLocale()` guards the locale segment in both `layout.tsx` and `request.ts`; invalid → `notFound()`. `store-settings` uses `.maybeSingle()` + typed Row, never trusts presence. |
-| Typed contracts | ✅ | `NavItem` union-typed keys, `StoreSettings` derived from generated `Database` types, `Locale` derived from `routing.locales`. Public signatures fully typed. |
-| Service/data layer | ✅ | `getStoreSettings` is the single typed read wrapper (views → lib → supabase), RLS client not admin, `server-only`, `cache()`-memoized. Matches T1's `src/lib/` wrapper convention. |
-| Type safety | ✅ | No `any`, no non-null `!` in shell code. `tsc --noEmit` clean. |
-| shadcn / token discipline | ✅ | No hardcoded color/radius/font in any shell component; all via `bg-*`/`text-*`/`rounded-*`/`font-sans`. Drawer built on Radix Dialog primitive (dead `sheet.tsx` correctly removed in Stage 6). `global-error.tsx` inline colors are the documented, justified Next.js exception (stylesheet may be unavailable when the root layout fails). |
-| DRY | ✅ | `NAV_ITEMS` shared by header + drawer; `FOOTER_LINK_CLASS` extracted; `FooterLinkGroup` factored. |
-| File size / function size | ✅ | Largest shell file is `mobile-nav.tsx` at 197 lines; all functions small. |
+| Separation of concerns | ✅ | Textbook. `queries.ts` reads/stitches, `stock.ts`/`pagination.ts` are pure compute, `types.ts` owns view models, components render, pages compose. `ProductCard` is a pure presentational server component with pre-resolved labels (no i18n inside — SRP). |
+| Boundary validation | ✅ | `?page` parsed+clamped in `parsePageParam` (rejects `abc`/`1.5`/`-1`/arrays); slugs go through the parameterized query builder + `notFound()` on miss; stock coerced via `normalizeCount`. No unvalidated input reaches a query. |
+| Typed contracts | ✅ | Public signatures fully typed; `CatalogProductCard`/`CatalogPage<T>` are the only shapes that escape the lib, so no `cost_price_cents`-bearing row leaks. One controlled `as unknown as` at the PostgREST embed boundary (documented). |
+| Service layer | ✅ | Pages → `queries.ts` → `createPublicClient()`. No component touches Supabase; no business logic in components. Matches the `getStoreSettings` wrapper template from T2. |
+| Type safety | ✅ | No `any`, no non-null `!`. `firstOrSelf` defensively normalizes the array/object embed ambiguity instead of asserting. |
+| shadcn / token styling | ✅ | Token classes only (`bg-card`, `text-muted-foreground`, `--ease-out`), `cn()`, `Button asChild` on CTAs, hugeicons single set, motion via `.card-lift`/`.stagger` (transform/opacity, hover+reduced-motion gated). |
+| i18n conventions | ✅ | New `catalog` namespace key-parallel in both dicts (parity enforced by tests); labels resolved once in the grid and passed down; single Spanish path segments per the routing decision. |
 
-## i18n Architecture Review (the load-bearing decision for T3–T14)
+## Data Model Review
 
-**Shape is correct and scales.** `defineRouting` is the single source of truth;
-`navigation.ts`, `request.ts`, and `middleware.ts` all derive from it. `Locale`
-is a derived type, `DEFAULT_LOCALE` in config is kept in lockstep with
-`routing.defaultLocale` (and asserted by a test). This is exactly the
-composition future tasks need.
+**No migration in T3 — correct.** T1 shipped the full schema; deferring `effective_stock` and a catalog-card view was the right call (avoids speculative DB surface on the critical path). Findings:
 
-- **Catalog (T3) / PDP (T4):** `<Link href="/sillas">` with locale-agnostic
-  hrefs + `localePrefix:"as-needed"` means new pages just add routes under
-  `[locale]/` and get correct ES/EN URLs for free. No shell change needed.
-- **Static UI strings vs. DB `translations` table (T1):** the seam is clean and
-  the boundary is documented. Static chrome strings live in
-  `src/messages/<locale>.json` (build-time, `getTranslations`); DB content
-  (product names, category copy) will be read at runtime in T3 keyed by the
-  **same** `es-MX`/`en` tag that `useLocale()`/`getLocale()` resolves. There is
-  exactly one locale source of truth (`NEXT_LOCALE` + next-intl), which is the
-  single most important thing to get right here, and it is right (AC-17). T3
-  should read the active tag via `getLocale()` — **not** re-derive locale from
-  the URL or a second cookie.
-- **Message-file scaling:** `es-MX.json`/`en.json` are flat namespaced objects
-  (`nav`, `footer`, `home`, …). As T3–T13 add sections this file grows. next-intl
-  supports splitting messages per-namespace / lazy loading; **flag for T13** when
-  the dictionaries get large — not now (62 lines each).
-- **Admin (T10) locale routing:** PRODUCT_SPEC says admin is *"fully separate
-  from shopper sessions"* and the operator is a single non-technical owner.
-  Admin almost certainly should **not** live under `[locale]` (no ES/EN toggle,
-  no `hreflang`, no `as-needed` prefixing). The current middleware matcher
-  `/((?!api|_next|_vercel|.*\\..*).*)` **will match `/admin`** and try to
-  locale-route it. This is the composability risk below — routed to T10.
+- **Read strategy is correctly forced by the grants.** `products_public` is the only anon-readable product path; `brands` embeds through the view's forwarded FK; `product_images`/`product_variants`/`product_categories` FK the base table so they are batch-fetched by `.in(product_id, ids)`. The stitch is O(1) queries per page (2 batches regardless of item count), not N+1. Sound.
+- **Effective-stock split (lib vs deferred DB view, backlog m-2) is SAFE for T3, a DRIFT RISK for T6.** `stock.ts` computes variant-authoritative effective stock in the app layer purely for a *display badge*. That is fine — a badge being up to 5 minutes stale (ISR window) harms nothing. **But T6 cart needs *authoritative, race-safe* stock**, and if T6 re-implements "sum variants else product.stock" independently, the two code paths will drift. Route to T6: the cart must not read stock through this display path; the backlogged `effective_stock` view (or the atomic reservation RPC already backlogged for T7) is the single authority. `stock.ts` should be explicitly labeled "display-only, not authoritative."
+- **Indexes are the real T5 gap (see Scalability).** `products` has indexes on `status`, `brand_id`, `style_id`, `is_best_seller`, `is_featured` — good for T3's filters and default sort. There is **no index on `price_cents`, `created_at`, or `sales_count`**, and **variant `color_hex`/`color_name` and product `material_frame/upholstery/finish` are unindexed**. T5's price/newest sorts and color/material filters will table-scan.
 
-## Layout Composition Review
+## API Review
 
-The shell is cleanly extensible. `[locale]/layout.tsx` owns `<html lang>`, the
-font, metadata, and the `header / main(flex-1) / footer + FAB` frame; children
-slot into `main`. Catalog grids, PDP, and static pages drop into `[locale]/…`
-with zero shell edits. Cart drawer (T6) and checkout flow (T7) compose the same
-way the mobile-nav drawer already demonstrates — the Radix Dialog + `forceMount`
-+ CSS-transition + mounted-`FocusScope` pattern is a **reusable template T6
-should copy, not hand-roll** (it already solved the closed-overlay pointer trap
-and self-dismiss bugs that QA caught).
+No REST handlers (server components read directly) — appropriate for a read-only catalog and consistent with the codebase. Data-layer "API" review:
 
-**One thing to watch:** the `[locale]/[...rest]/page.tsx` catch-all → `notFound()`
-is a correct Next.js precedence trick (specific segments win over catch-all), and
-it is well-commented. It is safe as real routes land, but it is subtle. Keep the
-comment; a future dev must understand that adding `[locale]/sillas/page.tsx`
-silently reclaims that path from the catch-all.
-
-## Design-Token / Brand-Swap Seam Review
-
-**Genuinely a one-file swap** (plus `config.ts` for copy). The OKLCH tokens in
-`globals.css :root`/`.dark` are the only color source; the radius scale derives
-from a single `--radius`; the font is one `next/font` import bound to
-`--font-sans`. The `## BRAND TOKENS` block documents the exact edit surface. The
-Stage 6 fixes (C-1 dead `--font-mono` Geist ghost, C-2 wrong doc path) closed the
-only two holes. **Motion tokens are correctly separated** from brand tokens
-(`--ease-*` are app-feel, explicitly "do not touch on a brand swap") — the right
-conceptual line, and documented. Sustainable.
+- **Function surface is clean and composable**: `listProducts`/`listProductsBy{Brand,Style,Category}` all funnel through `readProductPage(filter, rawPage, pageSize)` with a filter closure — a good seam. Adding a new *product-level* eq filter (e.g. availability by product row) is a one-line closure.
+- **Count-then-range (M-2 fix) is the right shape**: a `head:true` count query resolves `lastPage`, clamps, then one `.range()` read. Never 416s, no double full read. Pagination is crawlable (`?page=N` real anchors, page-1-canonical). Good for T14.
+- **Consistent error contract**: `fail()` logs server-side with context and throws an opaque message → route `error.tsx`. No Supabase error object reaches the DOM. `null` on slug miss → `notFound()`. Clean boundary.
 
 ## Scalability Assessment
 
 | Concern | Severity | Recommendation |
 |---------|----------|----------------|
-| Shell layout is **fully dynamic** — `getStoreSettings()` calls `cookies()` via the RLS server client in `[locale]/layout.tsx`, forcing on-demand rendering of every route under the shell. This silently defeats static generation for catalog/PDP pages that would otherwise be prime SSG/ISR candidates. | **Medium** | Route to **T3/T4**. Clean path: read `store_settings` with a **non-cookie client** (it's public, RLS-readable, effectively static config) so the layout is statically renderable; or move the footer's read into a cross-request cache (`unstable_cache` / tag-based revalidation seeded from T10 admin edits). Then catalog pages can be static + ISR. Accepted as a T2 trade-off; must be reopened, not inherited by default. |
-| `store_settings` fetched on **every** shell render — memoized per-request via `cache()` (good) but not cached across requests. | Low | Same fix as above absorbs it — cache the single-row config with tag revalidation once T10 can edit it. |
-| Message dictionary is one whole file per locale. | Low | Fine for T2; revisit lazy/per-namespace loading in T13 as dictionaries grow. |
-| No unbounded fetches, no N+1; single indexed single-row select. | ✅ | Nothing to do. |
+| **T5 variant-attribute filters (color/material) cannot compose on this foundation** | **High (for T5)** | Color lives on `product_variants`, materials on `products` scalar columns — neither is on `products_public`, and a variant-color filter must be applied *before* pagination (you can't page products then discover which have a red variant). The view+stitch model pages products first, so it structurally can't do this. **Flag to T5 now: build a server-side filtered/sorted query — a Postgres RPC or a `products_filterable` view that pre-joins variant color/material aggregates — so filtering + counting + ranging all happen in the DB.** Do not try to extend `queries.ts` client-side stitching for T5 filters. |
+| **T5 price/newest/best-selling sorts need indexes** | **High (for T5)** | Sorting by `price_cents` / `created_at` runs in the DB across the full result set before `.range()`. The current `.order().range()` shape supports it, but there are **no indexes** on `price_cents`, `created_at`, `sales_count`. Add them in a T5 migration; without them every sorted page is a full sort scan. |
+| **Category membership `.in(ids)` ceiling** | **Med (deferred)** | Already mitigated (capped at 1000, de-duped, logged) and backlogged. At 30-product seed it is fine. The correct long-term fix is the same DB-side query path T5 needs — so **T5 and this item should be solved together**, not twice. |
+| **Cache-key cardinality explodes with T5 params** | **Med (for T5)** | Today the `unstable_cache` key includes only `?page` + pageSize + slug — bounded. T5 adds category×brand×style×price×color×material×availability×sort → a combinatorial key space that will thrash the cache (near-zero hit rate) and bloat the cache store. **T5 should NOT keep wrapping every filter combo in `unstable_cache`.** Options to flag: (a) tag-cache only the unfiltered/common views and let filtered queries hit the DB (cheap at this catalog size), or (b) move filtered browsing to client-side fetching against a cached RPC. Decide in T5 planning. |
+| **`count: "exact"` on every read** | **Low** | Fine at 30 products; one extra count query per page. If the catalog grows large *and* filters land, revisit (estimated count, or cache the count under the tag). Note for T5, not T3. |
+| **`?page` pages render `ƒ` dynamic** | **Low** | Honest, documented deviation. Cause is `searchParams`, not `cookies()` — the AC-11 target (kill the cookie taint) is fully met and the shell + index pages are `●` SSG/ISR. Data is tag-cached so no per-request DB storm. Full PPR needs Next 16 `cacheComponents` (bans `unstable_cache`) — correctly deferred. Acceptable long-term for T3; T5 param growth is the thing to watch. |
 
-## System Boundaries
+## Frontend / Component Architecture
 
-- **Frontend/backend seam:** one typed read (`getStoreSettings`), RLS-enforced,
-  `server-only`, graceful `null` degrade — textbook. No mutations, no new
-  endpoints (correct for T2).
-- **Middleware composability (T10):** `createMiddleware(routing)` is the *only*
-  middleware today. When admin auth arrives, Next.js allows **one**
-  `middleware.ts` — the two concerns must be composed in a single chain (locale
-  middleware for storefront paths, auth for `/admin`), or the matcher split so
-  locale routing explicitly **excludes** `/admin`. Clean composition
-  (`pathname.startsWith('/admin')` branch), but a real integration point. Routed
-  to T10.
-- **No circular deps.** `routing.ts` is the leaf everything imports; components
-  import `nav-items` / `i18n/navigation`; `lib` is independent. Clean DAG.
+- **`ProductCard` is a pure server component** — the correct default, but **T6 will need a client "add to cart" affordance on the card**. The seam is clean: the card is already a single `<Link>` wrapper with a self-contained content block. T6 should add cart interactivity as a *nested client island* (e.g. a `<QuickAddButton>` client component slotted into the card), NOT by converting `ProductCard` to `"use client"`. The current structure supports that without refactor. Flag to T6.
+- **`Breadcrumbs` is T14-ready**: the doc comment already notes the ordered `items` array is the single source a future `BreadcrumbList` JSON-LD emitter consumes, and it explicitly does not build JSON-LD itself. Correct forward-planning.
+- **Suspense-isolated `PaginatedProductListing`** keeps the shell static while the `?page` slice streams — good boundary design; the `read` closure prop makes it reusable across all four listing types.
+- File sizes healthy: `queries.ts` at 712 lines is the largest and is approaching the ~400-line guidance. It is cohesive (one concern: catalog reads) but **T5 filter logic must not be piled into it** — that is when it should split (e.g. `queries/products.ts`, `queries/taxonomy.ts`). Note for T5.
 
 ## Tech Debt Ledger
 
-| Item | Type | Impact | Effort | Absorbing task |
-|------|------|--------|--------|----------------|
-| Shell forced dynamic by cookie-based `store_settings` read (blocks catalog static optimization) | Introduced (accepted) | Med | M | T3 / T4 |
-| `store_settings` not cached across requests (no tag revalidation) | Introduced | Low | S | T10 (admin write defines the revalidation trigger) |
-| Middleware not composed for admin auth; matcher will locale-route `/admin` | Latent | Med | S | T10 |
-| `src/middleware.ts` vs. Next 16 `proxy` deprecation notice | Existing | Low | S | any cleanup ticket |
-| Single monolithic message file per locale (will grow) | Latent | Low | S | T13 |
-| Removed create-next-app font tangle, template splash, unused SVGs, dead `sheet.tsx` | **Reduced** | — | — | done in T2 |
+| Item | Type | Impact | Effort to Fix | Owner |
+|------|------|--------|---------------|-------|
+| No DB-side filtered/sorted query path (view/RPC); view+stitch can't filter on variant color/material pre-pagination | Existing (surfaced) | High | L | **T5** |
+| Missing indexes: `price_cents`, `created_at`, `sales_count`, variant `color_*`, product `material_*` | Existing (surfaced) | Med | S | **T5** |
+| `unstable_cache` key cardinality under multi-param filtering | Introduced (latent) | Med | M | **T5** |
+| Effective-stock computed in app layer (display) vs. no authoritative DB view; drift risk when cart reads stock | Existing (backlogged m-2) | Med | M | **T6/T7** |
+| Card is pure server component; needs client-island seam for add-to-cart | Neutral (by design) | Low | S | **T6** |
+| Category `.in(ids)` unbounded pattern (capped, backlogged) | Introduced (mitigated) | Low | M | **T5 (fold into DB query path)** |
+| `queries.ts` size (712 lines) will exceed guidance if T5 logic is added | Neutral | Low | S | **T5** |
 
-No time bombs. Dependency health is good: `next-intl@4.13.2` (current, RSC-native,
-peer deps satisfied), Radix primitives (maintained). No deprecated/unmaintained deps
-introduced.
+Net: T3 **reduced** debt (closed 2 backlog items — PostgREST embedding strategy standardized, cookie taint eliminated) and **introduced** no unmanaged debt — every new limit is documented and routed. No time bombs; the `.in()` cap and the ISR staleness are bounded and logged.
 
 ## Refactors Applied
 
-None. This stage is review-only per the pipeline contract (Stage 9 owns `src/`
-fixes). No `tasks/clean-code-backlog.md` entries added — the items above are
-architectural and routed to their owning tasks rather than the clean-code backlog.
+None. This stage is review-only on `src/` (Stage 9 owns fixes this cycle). No code changed; only this artifact and (append-only) `tasks/clean-code-backlog.md` were written. The findings above are routed to owning tasks rather than fixed here — none are T3 defects (T3 explicitly scopes out filters/sorts/cart).
+
+## System Boundaries
+
+Clean. The cookie-free read client is a distinct, documented boundary (`public.ts`, marked "not for authenticated access"); `server-only` guards the lib; view models are the only cross-boundary shape; error propagation is one-way (log server-side, opaque throw to boundary). No circular deps. The `NEXT_PUBLIC_` publishable key is RLS-gated and correctly the only client-exposed credential.
 
 ## Architecture Score: 8.5/10
 
-Will this make sense to a new dev in 6 months at 2x team size? **Yes.** Every
-non-obvious decision (locale tag choice, `<html>` placement, `forceMount` +
-FocusScope, catch-all precedence, dynamic-render trade-off) is documented at the
-point of use with the *why*, not just the *what*. The seams (i18n, tokens, data
-wrapper, middleware) are the ones the next ten tasks actually need. The 1.5-point
-deduction is entirely the fully-dynamic shell: correct expedient for T2, but it
-quietly constrains the performance ceiling of the catalog, and that constraint is
-invisible unless you read the dev-done footnote — it must be explicitly reopened
-in T3/T4.
+Will this make sense in 6 months with 2× the team? **Yes.** The layering is disciplined, every non-obvious decision carries an evidence-bearing comment, and the forward-looking seams (breadcrumb JSON-LD source, card link wrapper, filter-closure query shape) are real, not decorative. The 1.5-point deduction is entirely about T5: the view+stitch strategy is presented as "the ONE standardized shape every catalog read uses," which is true for T3 but will mislead a T5 developer into extending it for variant-attribute filters — where it hits a hard wall. That expectation should be corrected in the query-layer doc and in T5 planning before T5 starts.
 
-## Recommendation: APPROVE
+## Recommendation: **APPROVE** (sound)
 
-Sound foundation. Two risks routed forward:
-1. **T3/T4** — revisit the dynamic-shell / `store_settings` read so catalog and
-   PDP pages can be statically optimized (read the public config without
-   `cookies()`; add tag-based revalidation).
-2. **T10** — compose admin auth into the single middleware chain and exclude
-   `/admin` from locale routing (admin lives outside `[locale]`).
+Approve T3 as shipped. No changes required in T3 scope. Mandatory follow-ups routed to owning tasks (see `tasks/clean-code-backlog.md`): T5 must adopt a DB-side filtered/sorted query path with supporting indexes and a deliberate cache strategy rather than extending the T3 stitch; T6/T7 must treat `stock.ts` as display-only and read authoritative stock through the deferred DB view / reservation RPC.

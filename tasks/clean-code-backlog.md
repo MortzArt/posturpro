@@ -78,3 +78,51 @@ Open items discovered during the pipeline. Check off when addressed.
 - [ ] **Security response headers (T14).** No CSP / X-Frame-Options /
   Referrer-Policy / HSTS yet — author the CSP against the full asset/script
   inventory during launch hardening. (Ref: T2 security audit SEC-L-1.)
+
+## T3 — Catalog browsing (routed to later tasks)
+
+- [ ] **DB-side filtered/sorted query path for T5 (HIGH).** T3's catalog read is
+  a `products_public` page + client-side stitch of separately-batched
+  images/variants. This is correct for T3 but CANNOT support T5's variant-level
+  filters: color lives on `product_variants` and materials on `products` scalar
+  columns — neither is on the view, and a variant-color filter must be applied
+  BEFORE pagination (you cannot page products then discover which have a red
+  variant). T5 must build a server-side filtered/sorted query — a Postgres RPC
+  or a `products_filterable` view that pre-joins variant color/material
+  aggregates — so filtering + `count` + `.range()` all run in the DB. Do NOT
+  extend `src/lib/catalog/queries.ts` client-side stitching for T5 filters, and
+  fold the category `.in(ids)` membership read (existing M-3 item above) into the
+  same DB-side path rather than solving it twice. (Ref: T3 architecture review,
+  HIGH risk.)
+- [ ] **Filter/sort indexes for T5 (MED).** No indexes exist on `price_cents`,
+  `created_at`, or `sales_count` (needed for price/newest/best-selling sorts) nor
+  on variant `color_hex`/`color_name` or product `material_frame/upholstery/finish`
+  (needed for color/material filters). Add them in the T5 migration; without them
+  each sorted/filtered page is a full scan. (Ref: T3 architecture review, MED.)
+- [ ] **Cache-key cardinality under T5 filtering (MED).** T3 wraps every read in
+  `unstable_cache` with a bounded key (`?page` + slug + pageSize). T5's
+  category×brand×style×price×color×material×availability×sort combinations make
+  that key space combinatorial — it would thrash the cache (near-zero hit rate)
+  and bloat the store. T5 must choose a deliberate strategy: tag-cache only the
+  common/unfiltered views and let filtered queries hit the DB (cheap at this
+  catalog size), OR move filtered browsing to client-side fetching against a
+  cached RPC. Decide in T5 planning; do not keep wrapping every filter combo.
+  (Ref: T3 architecture review, MED risk.)
+- [ ] **Effective-stock is display-only; cart needs authoritative stock (T6/T7).**
+  `src/lib/catalog/stock.ts` computes "sum variants else product.stock" for the
+  card BADGE only — being ISR-stale by up to `CATALOG_REVALIDATE_SECONDS` is
+  harmless there. T6 cart / T7 checkout must NOT read stock through this display
+  path: re-implementing the same rule independently will drift. Read authoritative
+  stock through the deferred `effective_stock` view (existing m-2 item above)
+  and/or the atomic reservation RPC (existing T7 item above). Label `stock.ts`
+  "display-only, not authoritative." (Ref: T3 architecture review, MED.)
+- [ ] **Add-to-cart client island seam on ProductCard (T6).** `ProductCard` is a
+  pure server component (correct default). T6's quick-add affordance must be a
+  NESTED client island (e.g. `<QuickAddButton>` slotted into the card), NOT a
+  conversion of `ProductCard` to `"use client"`. The current single-`<Link>`
+  wrapper supports this without refactor. (Ref: T3 architecture review, LOW.)
+- [ ] **Split `queries.ts` before adding T5 filter logic (LOW).**
+  `src/lib/catalog/queries.ts` is ~712 lines — cohesive today, but piling T5
+  filter/sort logic in will breach the ~400-line guidance. Split into
+  `queries/products.ts` + `queries/taxonomy.ts` when T5 lands. (Ref: T3
+  architecture review, LOW.)

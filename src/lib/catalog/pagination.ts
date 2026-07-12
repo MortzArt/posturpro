@@ -5,7 +5,35 @@
  * pure functions so they can be unit-tested in isolation and reused by every
  * listing page + the `Pagination` component. No React, no DB.
  */
-import { PRODUCTS_PER_PAGE } from "@/lib/config";
+import { MAX_PAGE, PRODUCTS_PER_PAGE } from "@/lib/config";
+
+/**
+ * Canonicalize a raw `?page` value into a bounded integer in `[1, MAX_PAGE]`
+ * WITHOUT knowing `lastPage`. This is the stable, low-cardinality form used as
+ * an `unstable_cache` key segment (T3 security — cache-key DoS bound): any
+ * malformed / out-of-range / huge value collapses deterministically so an
+ * attacker cannot mint unbounded distinct cache entries via `?page=<junk>`.
+ *
+ * - non-digit / empty / negative / zero / float / "1e9" → 1 (clamps to page 1)
+ * - digits above MAX_PAGE (incl. values beyond safe-integer range) → MAX_PAGE
+ *   (any such value clamps to the real last page at read time anyway)
+ *
+ * The ACTUAL page shown is still `parsePageParam(raw, lastPage)`, which clamps
+ * to the true `[1, lastPage]`; this function only bounds the cache-key space.
+ */
+export function canonicalPageKey(raw: string | string[] | undefined): number {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== "string") return 1;
+  const trimmed = value.trim();
+  // Only a pure run of digits is a candidate; everything else clamps to page 1.
+  if (!/^\d+$/.test(trimmed)) return 1;
+  // Compare as digit-string length/value to survive values beyond Number range.
+  const stripped = trimmed.replace(/^0+(?=\d)/, "");
+  if (stripped === "0") return 1;
+  const parsed = Number.parseInt(stripped, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return Math.min(parsed, MAX_PAGE);
+}
 
 /** The compact sentinel a windowed pagination uses in place of skipped pages. */
 export const PAGINATION_ELLIPSIS = "ellipsis" as const;
@@ -38,20 +66,13 @@ export function parsePageParam(
   raw: string | string[] | undefined,
   lastPage: number,
 ): number {
-  const ceiling = Number.isFinite(lastPage) ? Math.max(1, Math.floor(lastPage)) : 1;
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  if (value === undefined || value === null || value.trim() === "") {
-    return 1;
-  }
-  // Reject anything that isn't a run of digits ("1.5", "abc", "-1", "1e3").
-  if (!/^\d+$/.test(value.trim())) {
-    return 1;
-  }
-  const parsed = Number.parseInt(value.trim(), 10);
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return 1;
-  }
-  return Math.min(parsed, ceiling);
+  const ceiling = Number.isFinite(lastPage)
+    ? Math.min(MAX_PAGE, Math.max(1, Math.floor(lastPage)))
+    : 1;
+  // Reuse the bounded canonical form (handles arrays, junk, floats, huge values,
+  // and the MAX_PAGE absolute cap), then clamp to the real last page.
+  const canonical = canonicalPageKey(raw);
+  return Math.min(canonical, ceiling);
 }
 
 /**

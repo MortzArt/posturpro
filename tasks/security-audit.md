@@ -1,75 +1,86 @@
-# Security Audit: T2 — App Shell & Design System (LIGHTWEIGHT)
+# Security Audit: T3 — Catalog browsing
+
+Stage 9 (Security) of the full-cycle pipeline. Ran in parallel with Stage 10
+(Arch). Scope: the NEW T3 catalog read layer (`src/lib/catalog/*`,
+`src/lib/supabase/public.ts`, catalog routes, metadata). Verified live against
+the running seeded local Supabase (127.0.0.1:54321) with the anon publishable
+key. DB was NOT reset/stopped; the user's dev server on :3206 was untouched.
 
 ## Summary
-- Scope: new T2 surface only (`git diff bebf036..HEAD -- src/ e2e/ next.config.ts package.json src/middleware.ts`). Data layer was fully audited in T1.
-- Files audited: 15 security-relevant (middleware, i18n config, store-settings wrapper, whatsapp helpers + button, error.tsx, global-error.tsx, [locale]/layout, site-footer, language-toggle, config.ts, env.ts, supabase/server.ts) + full-codebase secrets sweep.
-- Vulnerabilities found: 0 (Critical: 0, High: 0, Medium: 0, Low: 1 informational deferred to T14)
-- Vulnerabilities fixed: 0 (none required)
-- Secrets found: 0 (real secrets). Local Supabase demo JWTs present in `tests/integration/` are the public well-known `supabase start` keys — NOT secrets.
+- Files audited: 43 changed (T3 diff `7c85b83..HEAD`) + full-codebase secret/env/RLS scan
+- Vulnerabilities found: 1 (Critical: 0, High: 1, Medium: 0, Low: 2)
+- Vulnerabilities fixed: 1 (the High)
+- Secrets found: 0 (SHIP-eligible)
 
 ## Vulnerability Findings
 
-### CRITICAL
-None.
-
 ### HIGH
-None.
 
-### MEDIUM
-None.
+#### SEC-H-1: Unbounded `unstable_cache` key cardinality from attacker-controlled `?page` (DoS)
+- **Type**: OWASP A05 Security Misconfiguration / Uncontrolled Resource Consumption (CWE-770)
+- **File**: `src/lib/catalog/queries.ts:132-135` (old `cacheKeyForPage`); consumed at `:332, :357, :384, :408`
+- **Description**: Every product-listing read wrapped its `unstable_cache` key with `cacheKeyForPage(rawPage)`, which used the **raw, unclamped, un-normalized** `?page` string as a key segment (`p:${value ?? ""}`). The `?page` query param is fully attacker-controlled and reaches the cache key before any validation. The actual page is clamped to `[1, lastPage]` for the DB read, but the *cache key* was not — so `?page=1`, `?page=00001`, `?page=abc`, `?page=1e9`, `?page=-5`, and unbounded random strings each mint a **distinct** cache entry that all resolve to the same underlying page.
+- **Exploit**: `for i in $(seq 1 1000000); do curl "https://site/sillas?page=$RANDOM$i"; done` (and the same against every `/marcas/<slug>`, `/estilos/<slug>`, `/categorias/<slug>`). Each distinct `?page` value: (1) creates a new entry in the Next data cache → unbounded memory/disk growth; (2) on the cache miss, fires a `count:"exact"` head query **plus** a `.range()` data read **plus** the batched image/variant reads against Postgres. The clamp guarantees correctness but does nothing to stop the amplification — one cheap HTTP request → multiple DB round-trips + a permanent new cache entry.
+- **Impact**: Data-cache exhaustion (memory/disk) and amplified DB load from a single unauthenticated actor — a cache-cardinality DoS. Bounded only by how many distinct strings the attacker sends (effectively unbounded).
+- **Fix (FIXED)**: Added `canonicalPageKey(raw)` in `src/lib/catalog/pagination.ts` and a `MAX_PAGE = 100_000` ceiling in `src/lib/config.ts`. `canonicalPageKey` collapses every malformed / float / scientific / negative / zero / leading-zero / beyond-safe-integer / huge value into a bounded integer in `[1, MAX_PAGE]` **without needing `lastPage`**:
+  - non-digit / empty / negative / zero / `1.5` / `1e9` → `1`
+  - `00001` → `1`, `007` → `7` (leading zeros normalized so they share a key)
+  - any digit run above `MAX_PAGE` (incl. values past `Number.MAX_SAFE_INTEGER`) → `MAX_PAGE`
+  `cacheKeyForPage` now delegates to it (`p:${canonicalPageKey(rawPage)}`), so **at most `MAX_PAGE + 1` distinct cache keys can ever exist per listing**, regardless of junk volume. `parsePageParam` was refactored to reuse the same canonical form and also caps its ceiling at `MAX_PAGE` (defends against `parseInt` overflow on a huge digit string). The real page shown is still clamped to the true `[1, lastPage]`, so behavior for a valid request is unchanged.
+- **Verification**: 9 new unit tests in `pagination.test.ts` (`canonicalPageKey` block) assert the collapse of junk, leading-zero normalization, the `MAX_PAGE` cap (incl. a 24-digit value), array handling, and a bounded-key-set invariant. 297/297 unit tests pass; tsc + lint clean; production build route table unchanged.
+- **Status**: FIXED
 
 ### LOW
 
-#### SEC-L-1: No security response headers set (X-Frame-Options / CSP / HSTS)
-- **Type**: A05 Security Misconfiguration
-- **File**: `next.config.ts` (no `headers()` block)
-- **Description**: The storefront ships no `Content-Security-Policy`, `X-Frame-Options`/`frame-ancestors`, `Referrer-Policy`, or `Strict-Transport-Security`. This is a hardening gap, not an exploitable T2 defect: T2 has no auth surface, no cookies beyond the non-sensitive `NEXT_LOCALE`, and no user-generated HTML sink (React auto-escapes; no `dangerouslySetInnerHTML` anywhere in the diff).
-- **Impact**: Clickjacking / reduced defense-in-depth once authenticated flows (cart/checkout, admin T10) land.
-- **Fix**: Add a `headers()` block in `next.config.ts` during launch hardening. Explicitly deferred to **T14 (launch hardening)** per audit scope — CSP must be authored against the full asset/script inventory (Supabase Storage image host, next-intl, fonts), which does not exist yet. Fixing now would be premature and likely broken by later tasks.
-- **Status**: DEFERRED (T14) — documented, not fixed by design.
+#### SEC-L-1: npm audit — 2 moderate `postcss` advisories via `next` (ACCEPTED baseline, no T3 delta)
+- **Type**: OWASP A06 Vulnerable and Outdated Components
+- **File**: `node_modules/next/node_modules/postcss` (transitive)
+- **Description**: `npm audit` reports 2 moderate `postcss <8.5.10` advisories (GHSA-qx2v-qp2m-jg93, XSS via unescaped `</style>` in CSS stringify output), pulled in transitively by `next`. The only offered fix is `npm audit fix --force`, which downgrades to `next@9.3.3` — a massive breaking change.
+- **Impact**: Build-time CSS stringify path only; not reachable by shopper-supplied input at runtime. T3 added **zero** new dependencies, so this is unchanged from the accepted baseline.
+- **Fix**: None. Do NOT run `audit fix --force`. Remains accepted; revisit when Next ships a patched postcss transitively.
+- **Status**: OPEN (documented, accepted)
 
-## Detailed Verification (checklist items in scope)
+#### SEC-L-2: `CATEGORY_MEMBER_ID_CAP` truncation is silent-correct but not observable in prod (informational)
+- **Type**: Defense-in-depth / observability
+- **File**: `src/lib/catalog/queries.ts:428, 467-472`
+- **Description**: The category membership read is correctly bounded to `CATEGORY_MEMBER_ID_CAP = 1000` (fixed in Stage 6, M-3) to keep the PostgREST `IN (...)` list and URL length bounded — a good DoS guard. When the cap is hit it `console.warn`s, but there is no metric/alert, so a legitimately-large category silently paginates only its first 1000 members in production. This is the documented scale ceiling (backlogged), not a T3 defect. Noting it so it is not lost.
+- **Fix**: None in T3. Migrate to a category-scoped view/RPC (server-side pagination) before a single category can legitimately exceed 1000 products (tracked in `tasks/clean-code-backlog.md`).
+- **Status**: OPEN (documented, deferred by design)
 
-**Middleware locale handling (`src/middleware.ts`)** — CLEAN.
-- Delegates entirely to `createMiddleware(routing)` (next-intl). No custom redirect construction, so no open-redirect vector. Locale is chosen only from the URL prefix or `NEXT_LOCALE` cookie against a fixed allowlist (`["es-MX","en"]`); an attacker-supplied `NEXT_LOCALE` value not in the set is ignored (falls back to default) — no header/cookie injection, no reflected value.
-- Matcher `["/((?!api|_next|_vercel|.*\\..*).*)"]` correctly excludes API, Next/Vercel internals, and dotted static assets. No sensitive route is unintentionally exposed or shadowed; there is no auth gate to bypass at this stage.
-- `localeDetection: false` — `Accept-Language` is never reflected into routing (AC-1), removing a header-driven behavior surface.
+## Anon Attack-Surface Notes (verified LIVE against seeded local DB)
 
-**Client bundle / secret leakage** — CLEAN.
-- `getStoreSettings` (`src/lib/store-settings.ts`) is guarded by `import "server-only"` and uses `createClient()` from `src/lib/supabase/server.ts`, which reads **only** `NEXT_PUBLIC_*` values (URL + RLS-enforced publishable key) via `getPublicEnv()`. The RLS-bypassing `SUPABASE_SECRET_KEY` is reachable only through `getServerEnv()` in the `server-only` admin module — not touched anywhere in T2. store_settings is served RLS-enforced and rendered server-side in the layout/footer; the secret key cannot reach the browser bundle.
-- Explicit column `select` (no `SELECT *`) — no over-fetching of unexpected columns.
-- `NEXT_PUBLIC` grep across `src/`: only the two intended client-safe Supabase values + tests. No secret is prefixed `NEXT_PUBLIC_`.
+The publishable (anon) key is the only credential shipped to any client-reachable
+path. Every probe below was run with the anon key against 127.0.0.1:54321.
 
-**WhatsApp URL building (`src/lib/whatsapp.ts`, `whatsapp-button.tsx`)** — CLEAN.
-- Phone and message are developer-controlled config constants (`WHATSAPP_PHONE_E164`, `WHATSAPP_PREFILL_MESSAGE_ES`), never user input — no injection vector. Phone is stripped to bare digits (`/\D/g`); message is `encodeURIComponent`-encoded defensively. Base host is a hardcoded `https://wa.me` literal, so no attacker-controlled scheme/host.
-- Anchor uses `target="_blank"` **with** `rel="noopener noreferrer"` (AC-8) — no reverse-tabnabbing.
-- Config-guarded: empty phone ⇒ `buildWhatsAppUrl` returns `null` ⇒ button not rendered; never a numberless `wa.me/` link.
-
-**error.tsx / global-error.tsx** — CLEAN.
-- `[locale]/error.tsx` renders only localized dictionary copy; `error.message`/`error.stack` are never placed in the DOM. The raw error goes to `console.error` (log, not the UI). Only `error.digest` (an opaque Next.js hash) is optionally shown as a support reference — safe, no PII/stack.
-- `global-error.tsx` renders a static bilingual message with inline styles; no error internals surfaced. No leak in production.
-
-**Dependencies (npm audit)** — CLEAN (no new advisories from T2).
-- `next-intl@4.13.2` and `@radix-ui/react-focus-scope@1.1.10` (transitive via next-intl) introduced no new advisories.
-- `npm audit`: 2 moderate, both the **pre-existing** transitive `postcss <8.5.10` (GHSA-qx2v-qp2m-jg93) reached via `next` — the accepted T1 baseline. Not introduced by T2. `audit fix --force` would downgrade `next` to 9.3.3 (breaking) — NOT run, per instruction.
-
-**Secrets / env exposure** — CLEAN.
-- `.env*` is gitignored; `.env.local` exists on disk but is NOT tracked and NEVER appears in git history (`git log --all -- .env.local` empty).
-- Whole-repo secret-pattern sweep: only test fixtures (`sb_publishable_test`, `sb_secret_test` — dummy strings) and the public well-known Supabase local-dev JWTs in `tests/integration/local-supabase.ts` (documented as public, localhost-only, guarded against non-local URLs). No real credential committed.
+- **`cost_price_cents` unreachable through every select** — `products_public?select=id,cost_price_cents` → `42703 column ... does not exist` (view structurally omits it). Base `products?select=...` with the anon key → `42501 permission denied for table products` (never granted to anon). The card select (`PRODUCT_CARD_SELECT`) never names cost. `cost_price` does not appear in `.next/static` client bundle. **No cost leak by any path.**
+- **Draft/archived leakage — PROVEN ABSENT at the DB layer.** Live test: flipped one seeded product to `status='draft'` via the secret key, then re-queried as anon: `products_public` row → `[]`; `product_images`/`product_variants`/`product_categories` for that id → `*/0` (empty); the product's category membership count dropped from 9→8 (the draft id is excluded). Reverted to `active` cleanly (children reappear). Child-table RLS gates on `is_active_product(product_id)` (SECURITY DEFINER helper, `0005:90-102`), so draft/archived children can never leak via the batched `.in(product_id, ids)` reads OR inflate a category `count:"exact"` (the count runs against `products_public`, which is active-only). All 30 seeded products are currently `active`, so there is no live-data exposure today; the RLS filtering was verified empirically, not assumed.
+- **PostgREST filter-injection via slug — not exploitable.** Slugs reach queries only through parameterized PostgREST `.eq("slug", value)` / `.eq("id", value)` calls (never string-interpolated into a filter). Live probe `slug=eq.foo,bar)&is_active=eq.true` → `[]` (the comma/paren are treated as literal slug content, not filter operators). No slug is normalized-then-interpolated anywhere.
+- **`?page` injection into `.range()`/`.eq()`** — `?page` never reaches PostgREST raw. It is parsed by `parsePageParam` (digit-only regex, clamped) into an integer before `rangeFor` computes a numeric `.range(from, to)`. Arrays (`?page[]=1`), floats, negatives, NaN, and huge values all clamp deterministically (unit-tested). After SEC-H-1's fix the cache-key form is also bounded.
+- **No secret in client bundle** — `.next/static` contains no `sb_secret_`, no `SUPABASE_SECRET_KEY`/`supabaseSecretKey`, no `cost_price`. The secret key is reachable only via `getServerEnv()` → `src/lib/supabase/admin.ts` (guarded by `import "server-only"`); the cookie-free catalog client uses the publishable key only.
+- **XSS** — no `dangerouslySetInnerHTML`, no `application/ld+json`, no `<script>` sinks anywhere in `src/`. DB strings (product/brand/category/style names + descriptions) render through React's default escaping (DOM) and Next's Metadata API (`title`/`description` meta tags — HTML-escaped by the framework). Structured data (BreadcrumbList) is only referenced as a *future* comment — not emitted in T3. No raw HTML sink.
+- **SSRF / command / path injection** — none. No user-controlled URL reaches server-side `fetch`; no `child_process`/`eval`/`new Function`/`fs` in `src/`; `next/image` remote hosts stay allow-listed to the Supabase Storage host + `picsum.photos` (`next.config.ts` unchanged).
+- **Client/server boundary** — catalog reads are `import "server-only"`; the cookie-free client (`public.ts`) is server-only and `persistSession:false`. No privileged code path in the client bundle.
 
 ## Checklist Results
 | Category | Status | Notes |
 |----------|--------|-------|
-| Secrets | PASS | Zero real secrets. `.env.local` gitignored + never committed. Test JWTs are public local-dev demo keys. |
-| Env var exposure | PASS | Only `NEXT_PUBLIC_*` (URL + publishable key) reach client. `SUPABASE_SECRET_KEY` server-only, untouched by T2. |
-| Injection | PASS | No `dangerouslySetInnerHTML`; React auto-escapes. WhatsApp URL from config only, encoded. Typed Supabase query with explicit columns (no string interpolation). |
-| Auth/AuthZ | PASS (N/A) | No auth surface in T2. Single public read is RLS-enforced (publishable key), never admin client. |
-| Client/server boundary | PASS | `store-settings` + footer are `server-only`/async server; secret key cannot cross to bundle. |
-| Data Exposure | PASS | Explicit column select (no `*`). Errors log server-side; UI shows localized copy + opaque digest only. |
-| CORS/CSRF | PASS (N/A) | No custom API route / state-changing endpoint in T2. `NEXT_LOCALE` cookie is non-sensitive; toggle is a client navigation, not a privileged mutation. |
-| Dependencies | PASS | No new advisories from `next-intl`/`react-focus-scope`. Only accepted pre-existing postcss moderates remain. |
-| Security headers | DEFERRED | No CSP/X-Frame-Options (SEC-L-1) — deferred to T14 launch hardening. |
+| Secrets | ✅ | 0 secrets in code/git/history. `.env*` gitignored (`.gitignore:37,46`); no `.env` tracked or ever committed. `.env.local` present on disk, untracked, keys only (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`). |
+| Env var exposure | ✅ | Only 2 `NEXT_PUBLIC_*` vars (URL + publishable/anon key), both client-safe. `SUPABASE_SECRET_KEY` reached only via `getServerEnv`→`server-only` admin module. No secret in `.next/static`. |
+| Injection | ✅ | Parameterized PostgREST `.eq`/`.in`/`.range` only; slug/page never string-interpolated into filters; live filter-injection probe returned `[]`. No SQL/command/path/SSRF sinks. |
+| Auth/AuthZ | ✅ | Guest-store trust model; RLS-enforced anon key; base `products`/orders/customers ungranted to anon (belt-and-suspenders REVOKE-then-GRANT baseline, `0005`). No T3 mutation surface. |
+| Client/server boundary | ✅ | All catalog reads `server-only`; cookie-free public client server-side; no privileged path or secret in client bundle. |
+| Data Exposure | ✅ | `cost_price_cents` unreachable by every path (verified live); draft/archived filtered at DB layer (verified live via draft-flip test); errors logged server-side, generic message to boundary (`fail()`); no over-fetch (card select trimmed in Stage 6 m-1). |
+| CORS/CSRF | ✅ | No custom API routes / route handlers in T3 (server components read directly); no state-changing endpoints; nothing to misconfigure. |
+| Dependencies | ✅ | 0 new deps. npm audit = accepted baseline (2 moderate postcss-via-next, `--force`-only fix = breaking); no delta. |
 
 ## Verdict: SECURE
 
-No critical or high vulnerabilities. No fixes required. One low-severity hardening item (security response headers) is documented and intentionally deferred to T14. No files were modified by this stage — no lint/tsc/test/build re-run needed (no runtime behavior changed).
+The T3 catalog read layer is secure. The one High-severity finding (SEC-H-1,
+unbounded cache-key cardinality DoS) is FIXED and unit-tested. Cost data,
+draft/archived products, filter injection, XSS, and secret leakage were all
+verified absent — several proven empirically against the live seeded DB (the
+draft-flip test and the cost/injection probes), not merely by reading policy
+text. Two Low items are documented and accepted (npm audit baseline; category
+cap observability). Gates green: tsc clean, lint clean, 297/297 unit tests,
+production build succeeds with the route table unchanged, no secret in the
+client bundle.
