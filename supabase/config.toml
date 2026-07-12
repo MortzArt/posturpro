@@ -1,0 +1,29 @@
+# Supabase CLI project configuration for PosturPro.
+# Full reference: https://supabase.com/docs/guides/local-development/cli/config
+
+project_id = "posturpro"
+
+[db]
+# Port used by `supabase start` (local dev database).
+port = 54322
+# Postgres major version (matches Supabase managed default).
+major_version = 17
+
+[db.migrations]
+# Migration files live in supabase/migrations/ and are applied in filename
+# (lexicographic) order: 0001 -> 0005.
+schema_paths = []
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = false
