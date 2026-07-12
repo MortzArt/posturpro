@@ -1,203 +1,174 @@
-# Code Review: T1 — Data Foundation (Supabase + Full Schema)
+# Code Review: T2 — App Shell & Design System
 
 ## Summary
 
-Strong, careful implementation: schema is coherent, money is integer-cents throughout, the env/secret trust model is well-reasoned, and 41 tests pass. However the whole thing is **unverified against a live database** (migrations were never applied), and there are several real correctness and security gaps — most notably an RLS gap that can leak internal `cost_price_cents` under a standard `db:reset`, missing GRANTs that make the anon policies inert-or-fragile, no seeded variant/product images (AC-7 partial), and a currency column with no constraint. Recommendation: **REQUEST CHANGES**.
-
-## Severity Counts
-
-- Critical: 3
-- Major: 6
-- Minor: 5
-- Nit: 4
-
----
+A strong, disciplined implementation: i18n wiring is textbook next-intl v4, the motion layer genuinely clears the craft bar (CSS transitions for interruptibility, `@starting-style` entrances, correct reduced-motion + hover gating), and the server/client split is right. All gates pass (`tsc` strict clean, `eslint` clean, 86 unit tests pass). But there are real defects: a broken font-token reference, a documentation lie in the brand-swap block that AC-9 explicitly grades, dead code shipped (`sheet.tsx`), and two accessibility/spec violations (sub-44px tap targets on the primary CTAs and the mobile toggle) that contradict the ticket's own AC-14/UX table.
 
 ## Critical Issues (MUST FIX)
 
-### C-1: `cost_price_cents` column REVOKE is fragile and likely ineffective after `db:reset` / default grants
+### C-1: `--font-mono` points at a deleted font variable
+- **ID**: C-1
 - **Severity**: CRITICAL
-- **File**: `supabase/migrations/0005_rls_policies.sql:43`
-- **Problem**: Protection of the internal cost price relies solely on `revoke select (cost_price_cents) on products from anon;`. Two problems:
-  1. **No explicit `GRANT` baseline.** The migration never issues `grant select on <tables> to anon`. On Supabase, `anon`/`authenticated` receive table privileges from bootstrap grants (`GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon`) and, critically, from `ALTER DEFAULT PRIVILEGES`. Because these tables are *created by this migration*, whether `anon` ends up with a table-level `SELECT` grant at all depends on the default-privileges state of the creating role — it is not guaranteed by anything in this repo. If `anon` has no table grant, every anon `SELECT` policy is dead (see C-2). If it does, the column revoke below is racing against it.
-  2. **The revoke is order-fragile.** `supabase db reset` re-runs migrations against a fresh DB where Supabase re-applies its default grants; a `GRANT SELECT ON products TO anon` applied by tooling *after* this migration (or a later re-grant) silently re-exposes `cost_price_cents`. Column-level revokes are the first thing lost when someone runs `GRANT SELECT ON products TO anon` for any reason (a very natural thing to do).
-- **Impact**: Internal margin data (`cost_price_cents`, ~55% of retail for every product) can be read by any visitor with the publishable key. This is the exact thing AC-12 and the Error-States table say must never happen, and it is the highest-value data leak in the schema.
-- **Suggested Fix**: Make column protection structural, not a revoke of one column: expose the public catalog through a dedicated view (e.g. `products_public`) that simply omits `cost_price_cents`, grant `anon` SELECT on the view only, and keep the base `products` table ungranted to `anon` (server/service path only). Alternatively, explicitly `grant select (col, col, ...) on products to anon` enumerating every column *except* `cost_price_cents` (positive allow-list), which cannot be undone by a blanket table grant the way a column revoke can. Either way, add an explicit GRANT/REVOKE baseline so the outcome is deterministic and not inherited from ambient default privileges.
-- **Status**: FIXED — Rewrote `0005_rls_policies.sql`. Added a hard baseline `revoke all on all tables in schema public from anon, authenticated;`. The base `products` table is now **never** granted to anon; the public path reads a new `products_public` view that structurally omits `cost_price_cents`. Column protection is now by construction, not a revoke that a later blanket grant could undo. **Verified on a live local DB**: as the `anon` role, `select cost_price_cents from products` and `select * from products` both return `permission denied for table products`; via PostgREST with the real publishable key, `products_public?select=cost_price_cents` returns `column does not exist`, while `products_public` (30 active rows) reads fine.
+- **File**: `src/app/globals.css:11`
+- **Problem**: `--font-mono: var(--font-geist-mono);`. The Geist tangle was removed in this task (AC-12) — `--font-geist-mono` is no longer defined anywhere (grep confirms zero definitions). Any element resolving `font-mono` now gets an unresolved custom property.
+- **Impact**: The `--font-mono` token is silently dead and is a lingering Geist ghost, contradicting AC-12 "single, intentional font wiring (no Geist … tangle)". It will bite the first time any component uses `font-mono` (code blocks in T3+). The token system is meant to be the single source of design truth (AC-9); a token pointing at a non-existent variable is a broken seam.
+- **Suggested Fix**: Either bind a real mono font in `fonts.ts`, or (preferred for T2, mono unused) set a system stack `--font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;`, or remove the `--font-mono` line and its `@theme` `--color`/mono mapping entirely.
+- **Status**: OPEN
 
-### C-2: RLS policies never establish an explicit privilege baseline for `anon` — policies may be entirely inert or silently over-broad
-- **Severity**: CRITICAL
-- **File**: `supabase/migrations/0005_rls_policies.sql:19-43` (whole grant model)
-- **Problem**: RLS policies only *filter* rows/commands for a role that already holds the underlying table privilege. This migration `ENABLE`s RLS and writes `... to anon` policies but never runs a single `GRANT`/explicit `REVOKE ALL` to define what `anon` may touch at the privilege layer. The correct result depends entirely on Supabase's ambient default privileges at migration time, which are not pinned anywhere in this repo. Result is non-deterministic across environments: either (a) `anon` lacks table grants and the storefront reads nothing, or (b) `anon` has broad table grants (INSERT/UPDATE/DELETE included) and RLS is the only thing standing between anon and writes — yet there are no `for insert/update/delete` policies except product_questions, so those would be denied, but you are now depending on RLS default-deny for write protection while the *grant* says writes are allowed. Belt without suspenders.
-- **Impact**: The RLS model described in AC-12 is only *claimed*, never made explicit or verifiable. Because migrations were never applied (see C-3), nobody has observed the actual effective privileges. This is the single most important deliverable of the task and it rests on an unstated assumption.
-- **Suggested Fix**: At the top of `0005`, make the baseline explicit and self-contained: `revoke all on all tables in schema public from anon, authenticated;` then `grant select on <the public catalog tables/views> to anon;` and `grant insert on product_questions to anon;`. This makes the trust model reproducible regardless of ambient defaults and is independently auditable.
-- **Status**: FIXED — `0005` now opens with `revoke all ... from anon, authenticated`, then grants exactly the narrow catalog SELECTs + `insert on product_questions` to anon, and `grant all ... to service_role` (needed because the local test proved service_role otherwise lacked table privileges — the same ambient-default gap the finding warns about, now pinned). Child-table policies gate on a new `is_active_product(uuid)` SECURITY DEFINER helper so they don't require anon to hold SELECT on `products`. **Verified live**: anon can read the full active catalog (brands/categories/variants/images/joins/store_settings/static_pages) and is denied on orders/customers/order_items/order_status_history/discount_codes/base-products.
-
-### C-3: Migrations, RLS, and seed were never executed against a database — zero runtime verification of the task's core deliverable
-- **Severity**: CRITICAL
-- **File**: `tasks/dev-done.md:36-41, 99-107`; all `supabase/migrations/*.sql`; `scripts/seed.ts`
-- **Problem**: By the dev's own account, the schema "could not be applied to the live instance this session" and "RLS behavior verification is a QA concern." So: no migration has been proven to apply, no FK/CHECK/enum has been exercised, the REVOKE in C-1 has never been observed, idempotency of the `DO`/`if not exists` blocks has never been re-run, and the seed's upsert-onConflict behavior (which depends on real unique constraints) has never round-tripped. The 41 passing tests validate *pure fixture data and the env/money helpers only* — not one line of SQL and not one Supabase query.
-- **Impact**: Every SQL-level claim in this task is unverified. A single typo in a policy `using` clause, a wrong `onConflict` target, or a missing unique index would not have been caught. AC-13's "running it twice does not create duplicates" is asserted, never demonstrated.
-- **Suggested Fix**: Stand up the schema (local `supabase start` or the linked remote), run `db:push`, run `db:seed` twice capturing both summaries, and run an RLS smoke test with the publishable key proving: anon cannot read `cost_price_cents`, cannot read `orders`/`customers`/`discount_codes`, cannot read draft products, and *can* read active catalog. This must happen before ship; it cannot be waved to a later stage because it is the acceptance criterion.
-- **Status**: FIXED — Docker was available. Ran `supabase start` (analytics disabled in `config.toml` for ARM reliability), `supabase db reset` (all 5 migrations apply cleanly from scratch), and `db:seed` **twice**. Both runs printed identical summaries and post-run DB row counts were unchanged (brands 5, categories 6, products 30, variants 69, product_images 99 incl. 69 variant-linked, store_settings 1) — **idempotency demonstrated (AC-13)**. RLS smoke tests run both via `SET ROLE anon` in psql and via PostgREST with the real local publishable key (see C-1/C-2). Constraint/trigger tests (M-2/M-3/M-4/m-1/M-6/n-2) all exercised live and pass.
-
----
+### C-2: Brand-swap documentation points to the wrong file for the font
+- **ID**: C-2
+- **Severity**: CRITICAL (AC-9 explicitly grades the brand-token doc)
+- **File**: `src/app/globals.css:159-160` (disagrees with `tasks/dev-done.md` Brand Tokens §3)
+- **Problem**: The `BRAND TOKENS` block in `globals.css` says: "Font: the `--font-sans` binding in `src/app/layout.tsx` (swap the one next/font family)". The font is NOT in `layout.tsx` — that file was thinned to a pass-through (`return children;`). The font lives in `src/app/fonts.ts` (`Inter(...)`). `dev-done.md` correctly says `src/app/fonts.ts`, so the two brand-swap docs disagree, and the authoritative in-code one (the AC-9 seam) is wrong.
+- **Impact**: AC-9 requires the brand-token block to "describe exactly what to edit for a brand swap." It sends the next engineer to a file that no longer contains the font — the exact "shipping it wrong forces expensive rework" risk the ticket's Priority section calls out.
+- **Suggested Fix**: In `globals.css:159-160`, change "`src/app/layout.tsx`" → "`src/app/fonts.ts`".
+- **Status**: OPEN
 
 ## Major Issues (SHOULD FIX)
 
-### M-1: AC-7 partially unmet — variant-specific images are never seeded
+### M-1: `sheet.tsx` shipped as dead code (and it violates the AC-13 motion baseline)
+- **ID**: M-1
 - **Severity**: MAJOR
-- **File**: `scripts/seed.ts:199-222`; `scripts/seed-data/products.ts:49-51`
-- **Problem**: AC-7 requires variants that "link to variant-specific images," and AC-13 requires "≥1 color variant per product **with variant images**." The seed inserts exactly one product-level image per product (`variant_id` implicitly null) and never sets `variant_id` on any image. `seedImageUrl` only ever takes `(slug, 1)`. dev-done.md (Known Limitations) admits per-variant images are "supported by the schema but not seeded."
-- **Impact**: AC-13's "with variant images" clause is FAIL. Downstream T4 variant-image display logic has no seed data to render, defeating the stated purpose of realistic seed data.
-- **Suggested Fix**: Seed at least one `product_images` row with a non-null `variant_id` for multi-variant products (even reusing the placeholder URL with a variant suffix), so the variant→image relationship has coverage.
-- **Status**: FIXED — `seedImages` now inserts one product-level image plus **one image per variant** with a non-null `variant_id` (`seedImageUrl(slug, index, skuSuffix)`). Live seed produced 99 images, **69 variant-linked** (`select count(*) from product_images where variant_id is not null` = 69). New unit tests lock the URL shape and per-variant uniqueness.
+- **File**: `src/components/ui/sheet.tsx` (147 lines, 0 importers)
+- **Problem**: The dev correctly built the drawer on raw Radix Dialog for interruptibility, then also added the shadcn `Sheet` "as an available primitive." Nothing imports it (grep for importers = empty). CLAUDE.md Clean Code: "No dead code … delete unused code (git remembers)." The design spec (§MobileNav) said Sheet **if** addable **otherwise** Radix — an either/or, not both.
+- **Impact**: 147 lines of unmaintained, untested UI. `sheet.tsx` uses `transition-all` and tw-animate-css `animate-in slide-in-from-*` keyframes — both direct AC-13 baseline violations (`transition: all`; non-interruptible keyframes on a drawer). If a future dev reaches for it, they inherit a drawer that fails this task's own motion bar.
+- **Suggested Fix**: Delete `src/components/ui/sheet.tsx`. Re-add via the registry when a real consumer exists.
+- **Status**: OPEN
 
-### M-2: `orders.currency` and `store_settings.currency` are free-text with no constraint
+### M-2: Primary CTAs are 32px tall — fail the ≥44px tap-target requirement
+- **ID**: M-2
 - **Severity**: MAJOR
-- **File**: `supabase/migrations/0003_commerce.sql:52, 134`
-- **Problem**: `currency text not null default 'MXN'` with no CHECK and no enum. Any 3-char (or arbitrary) string can be written. For a financial snapshot table that AC-8 calls "immutable" and single-currency, an unconstrained currency invites silent data corruption (e.g. `'mxn'`, `'USD'`, `'$'`).
-- **Impact**: A bug in T7/T8 order creation could persist a wrong or malformed currency into the immutable financial record with no DB guard. Money-integrity task; this is exactly the class of thing it exists to prevent.
-- **Suggested Fix**: Add `check (currency = 'MXN')` in Phase 1 (or a `currency_code` enum). Tighten to a real ISO set only when multi-currency is actually built.
-- **Status**: FIXED — `orders.currency` now `check (currency = 'MXN')`. (`store_settings.currency` is a single admin-controlled row written only by the seed with `CURRENCY = 'MXN'`, so it is left as-is to keep it trivially widenable later; the order snapshot — the finding's actual concern — is now constrained.) **Verified live**: inserting an order with `currency='USD'` raises `check_violation`.
+- **File**: `src/app/[locale]/not-found.tsx:26`, `src/app/[locale]/error.tsx:46`, `src/app/[locale]/page.tsx:33` (all `<Button size="lg">`)
+- **Problem**: This repo's `Button` primitive defines `size: "lg"` as **`h-8`** (32px) — an unusually compact scale (`button.tsx:28`; default is `h-7`/28px). The UX Requirements → Tablet explicitly require "Comfortable tap targets (≥44px)". These are the primary actions on the error/404/home states and are 32px tall on mobile.
+- **Impact**: WCAG 2.5.5 and the ticket's own ≥44px rule violated on the most important actions of the error and empty states, on a mobile-first Mexican audience. `size="lg"` is misleadingly named here.
+- **Suggested Fix**: Don't trust the primitive's `lg`. Add `min-h-11` (44px) to these CTAs. The compact toggle and hamburger already use `h-11`/`size-11` — mirror that.
+- **Status**: OPEN
 
-### M-3: No cross-column financial consistency constraints on `orders` / `order_items`
+### M-3: Segmented language-toggle options are 32px tall (< 44px) in the drawer
+- **ID**: M-3
 - **Severity**: MAJOR
-- **File**: `supabase/migrations/0003_commerce.sql:46-51, 84-86`
-- **Problem**: Each money column is individually `>= 0`, but nothing enforces the relationships that make a financial snapshot trustworthy: `total_cents` is not constrained to equal `subtotal + shipping + tax - discount`, `discount_cents` is not bounded by `subtotal_cents`, and `order_items.line_total_cents` is not constrained to `unit_price_cents * quantity`. For a table whose entire reason to exist is immutable financial truth (AC-8/AC-9), the DB accepts internally-inconsistent rows.
-- **Impact**: A totals-calculation bug in checkout (T7) writes a self-contradictory order and the DB happily stores it; the "immutable snapshot" is only as correct as the app code, with no backstop.
-- **Suggested Fix**: Add CHECK constraints: `check (line_total_cents = unit_price_cents * quantity)` on `order_items`; `check (discount_cents <= subtotal_cents)` and `check (total_cents = subtotal_cents + shipping_cents + tax_cents - discount_cents)` on `orders`. If Phase-3 tax rules complicate the total identity, at minimum constrain the line-total identity and discount bound now.
-- **Status**: FIXED — Added all three: `order_items_line_total_identity`, `orders_discount_within_subtotal`, and `orders_total_identity` (`total = subtotal + shipping + tax - discount`). **Verified live**: an inconsistent total and a `line_total ≠ unit*qty` are both rejected with `check_violation`; the correct values insert fine.
+- **File**: `src/components/layout/language-toggle.tsx:98` (group `h-9`=36px), `:113` (options `h-8`=32px); used at `mobile-nav.tsx:134`
+- **Problem**: The mobile drawer renders `variant="segmented"` (`mobile-nav.tsx:134`), a touch surface. The design spec LanguageToggle §Layout says "Both are ≥ 44px tall." The segmented option buttons are `h-8` (32px) inside a `h-9` group.
+- **Impact**: Sub-44px tap target for the language switch on mobile, inside the drawer where it's thumb-operated. Contradicts the design spec and accessibility bar.
+- **Suggested Fix**: Give the drawer's toggle a 44px min height (taller segmented variant), or render the `compact` variant inside the drawer.
+- **Status**: OPEN
 
-### M-4: Immutability of orders/order_items is claimed but not enforced
-- **Severity**: MAJOR
-- **File**: `supabase/migrations/0003_commerce.sql:25-88`; AC-8/AC-9
-- **Problem**: AC-8 says orders store an "immutable financial snapshot" and AC-9 says snapshots must "survive product edits/deletes." Nothing in the schema actually prevents mutation of the financial columns — there is an `orders_set_updated_at` UPDATE trigger, which implies UPDATEs are expected, and no rule/trigger locks the snapshot columns after creation. `order_items` has no `updated_at` (good) but also no guard against UPDATE.
-- **Impact**: "Immutable" is aspirational. Any code with the service key (all order access) can silently rewrite a historical order's totals, breaking the accounting guarantee the column-snapshot design was chosen to provide.
-- **Suggested Fix**: Either document explicitly that immutability is enforced at the application layer (and where), or add a trigger that rejects UPDATE/DELETE of the financial snapshot columns on `order_items` and the frozen money columns on `orders` once created. At minimum, state the enforcement boundary — right now it is neither enforced nor scoped.
-- **Status**: FIXED — Added trigger `orders_immutable_snapshot` (BEFORE UPDATE) that rejects any change to the frozen columns (order_number, customer/contact/shipping capture, every money column, currency, created_at) while still allowing legitimate lifecycle updates (status, payment_status, payment_method, mp_* refs, updated_at). Added `order_items_immutable` rejecting all UPDATEs (rows are a pure purchase snapshot). This binds even the secret-key `service_role` path. **Verified live**: mutating `orders.total_cents` and any `order_items` column raises; a `status → 'paid'` transition succeeds.
-
-### M-5: `db:reset` uses `--linked`, pointing destructive reset at the REMOTE database
-- **Severity**: MAJOR
-- **File**: `package.json:14`
-- **Problem**: `"db:reset": "supabase db reset --linked"`. `db reset` drops and recreates the database. With `--linked` this targets the *linked remote project*, not a local dev DB. A developer running `npm run db:reset` expecting a local wipe will destroy the shared remote database (and its real orders/customers once live).
-- **Impact**: Foot-gun with data-loss blast radius on a production-ish instance. Especially dangerous because this is the same instance the seed talks to.
-- **Suggested Fix**: Make `db:reset` target local (`supabase db reset` against `supabase start`), and if a remote reset is ever needed, give it a distinct, obviously-dangerous name (`db:reset:remote`) with a confirmation. Never wire the plain `db:reset` verb to `--linked`.
-- **Status**: FIXED — `package.json`: `db:reset` is now `supabase db reset` (local only); the destructive remote reset moved to an explicitly-named `db:reset:remote` (`supabase db reset --linked`). The plain verb no longer targets the shared remote. Local `db:reset` was exercised repeatedly during verification.
-
-### M-6: `product_questions` anon INSERT policy is an unauthenticated, unbounded write with no length/rate guard
-- **Severity**: MAJOR
-- **File**: `supabase/migrations/0005_rls_policies.sql:151-161`; `0004_content_qa.sql:10-20`
-- **Problem**: Anon can INSERT questions freely. `author_name` and `question` are unbounded `text` with no length CHECK, no per-IP throttle (understood — DB can't rate-limit), and no CAPTCHA hook. Combined with default-deny elsewhere this is the one public write surface and it is wide open to spam/abuse and to multi-megabyte payloads.
-- **Impact**: Storage-exhaustion / spam vector reachable by anyone holding the publishable key (which ships to the browser). Not exploitable for data theft, but a real availability/abuse concern for the only anon write path.
-- **Suggested Fix**: Add length CHECKs (`char_length(question) between 1 and 2000`, `char_length(author_name) between 1 and 120`) at minimum. Note the need for app-layer rate limiting / captcha in T-whatever ships the question form, and record it in the backlog.
-- **Status**: FIXED — Added `char_length` CHECKs on `product_questions.author_name` (1–120), `.question` (1–2000), `.answer` (1–5000) in `0004`, plus the same bounds in the anon INSERT WITH CHECK policy in `0005` (belt + suspenders). App-layer rate-limiting / captcha recorded in `tasks/clean-code-backlog.md`. **Verified live**: a 3000-char question is rejected with `check_violation`.
-
----
+### M-4: `store_settings` read blocks the whole shell and is fetched twice per request
+- **ID**: M-4
+- **Severity**: MAJOR (perf/architecture)
+- **File**: `src/app/[locale]/layout.tsx:66` + `src/components/layout/site-footer.tsx:44`
+- **Problem**: `getStoreSettings()` → `createClient()` → `await cookies()` opts the entire `[locale]` layout (and every page under it) into dynamic rendering. Worse, it's awaited **twice** per request: once in the layout (`:66`, only to derive the header wordmark name) and again in `SiteFooter` (`:44`). Two DB round-trips for the same single row, with no `cache()` dedupe.
+- **Impact**: (1) `generateStaticParams`/`setRequestLocale` are inert for the shell — AC-2's static-render intent isn't realized (dev acknowledges but understates). (2) Duplicate query per page load, avoidable latency for the mobile audience.
+- **Suggested Fix**: Wrap `getStoreSettings` in React `cache()` so layout+footer collapse to one query. Consider using `SEED_STORE_NAME` for the header wordmark to keep the shell static and let only the footer be dynamic.
+- **Status**: OPEN
 
 ## Minor Issues (NICE TO FIX)
 
-### m-1: Deep category cycles (A→B→A) not prevented at the DB level
-- **File**: `supabase/migrations/0002_catalog.sql:37`; dev-done.md:148-150
-- **Problem**: Only the trivial self-parent (`parent_id <> id`) is blocked. Edge case 4 says "a category cannot be its own ancestor" — a 2+ node cycle satisfies the current CHECK. Dev acknowledges this and defers to the T10 admin UI.
-- **Suggested Fix**: Acceptable to defer for Phase 1 since seed builds well-formed trees, but the ticket's edge case is literally "cannot be its own ancestor." Consider a trigger using a recursive ancestor walk, or explicitly downgrade the edge case in the ticket. Track in `tasks/clean-code-backlog.md`.
-- **Status**: FIXED — Added `categories_no_cycle` trigger (BEFORE INSERT/UPDATE OF parent_id) that walks the parent chain from the proposed parent; if it reaches the row being edited it raises `check_violation` (a depth guard also aborts a pre-existing corrupt chain). Edge case 4 ("cannot be its own ancestor") now enforced at the DB. **Verified live**: A→B→C→A and 2-node A↔B cycles are both rejected; a legitimate reparent succeeds.
+### m-1: Dead dictionary keys `nav.home` and `nav.menuDescription`
+- **File**: `src/messages/es-MX.json:8,12` + `src/messages/en.json:8,12`
+- **Suggestion**: Both keys exist in both dictionaries but are referenced nowhere (`aria-describedby={undefined}` at `mobile-nav.tsx:82` deliberately drops the description). Either wire `menuDescription` via an `sr-only` `<Dialog.Description>` and use `nav.home` as the wordmark `aria-label`, or delete both. The parity test passes orphans silently.
 
-### m-2: Stock authority rule is documented but not enforceable/derivable
-- **File**: `supabase/migrations/0002_catalog.sql:66-70`; seed `products.ts:169`
-- **Problem**: "When a product has variants, per-variant stock is authoritative; product-level stock is the fallback." The seed sets product `stock = sum(variant stock)`, so the two agree today, but nothing keeps them consistent and no view/column marks which is authoritative. Downstream code must remember the rule.
-- **Suggested Fix**: Consider a generated/derived read path (view) that resolves effective stock, so consumers can't pick the wrong column. At minimum keep the rule in one canonical doc consumers are pointed to.
-- **Status**: SKIPPED (tracked) — Out of scope for the data-foundation task: a proper `effective_stock` read path belongs with the cart/inventory logic (T4/T5) that actually consumes it. The authority rule stays documented in `0002_catalog.sql`; a backlog item is filed in `tasks/clean-code-backlog.md` to add the resolved view when that logic lands.
+### m-2: `localeLabelKey` is an identity function — needless indirection
+- **File**: `src/components/layout/language-toggle.tsx:46-49`
+- **Suggestion**: `function localeLabelKey(locale: Locale): Locale { return locale; }` returns its argument unchanged. Inline `t(locale)` at `:85` and `:119`; removes ~5 lines and a misleading abstraction.
 
-### m-3: `seedImages` returns an inflated count and swallows the read error
-- **File**: `scripts/seed.ts:201, 220-221`
-- **Problem**: `const { data: existing } = await db.from("product_images").select("url");` ignores the error field (unlike every other read which calls `fail` on error). And the function `return PRODUCTS.length` regardless of how many rows were actually inserted or already existed, so the printed `product_images` count is fictional on a partial run. Contradicts AC-13's "readable per-table summary" and the dev-UX requirement of an accurate summary.
-- **Suggested Fix**: Handle the `error` from the existing-images read via `fail(...)` like the other reads, and report the true resulting row count (existing + newly inserted), not `PRODUCTS.length`.
-- **Status**: FIXED — Rewrote `seedImages`: it no longer does an app-level existing-URL read (the DB unique constraint now handles idempotency via `upsert(onConflict: "product_id,url")`, see m-4), so there is no swallowed error. It returns `imageRows.length` — the true count of rows written (99), not `PRODUCTS.length`.
+### m-3: `enter-fade` `@starting-style` doesn't replay after `reset()`
+- **File**: `src/app/[locale]/error.tsx:34`, `src/app/globals.css:291`
+- **Suggestion**: `@starting-style` runs once on true DOM entry; after `reset()` re-renders the same boundary the fade won't replay. Acceptable (spec calls the mount fade optional) — noted so it isn't mistaken for a bug.
 
-### m-4: `product_images` idempotency keys on URL, but URL is not unique in the schema
-- **File**: `scripts/seed.ts:200-218`; `0002_catalog.sql:152-161`
-- **Problem**: Idempotency for images is done in application code by fetching existing URLs into a Set and skipping. There is no unique constraint on `product_images.url` (or `(product_id, url)`), so a concurrent seed or a direct insert bypasses the guard and creates duplicates. Other tables get real DB-level upsert; images get a weaker app-level check.
-- **Suggested Fix**: Add `unique (product_id, url)` and use a real `upsert(onConflict: "product_id,url")` for images too, matching the pattern used everywhere else.
-- **Status**: FIXED — Added `constraint product_images_product_url_unique unique (product_id, url)` in `0002`; `seedImages` now calls the shared `upsert(..., "product_id,url")` helper, matching every other table. **Verified live**: seeding twice keeps `product_images` at exactly 99 rows (no duplicates).
+### m-4: `will-change: transform` left permanently on the closed drawer panel
+- **File**: `src/app/globals.css:192`
+- **Suggestion**: `forceMount` keeps the panel mounted, so this holds a compositor layer alive for the whole page lifetime even when closed. Scope it to `[data-state="open"]` or drop it (the transition is already GPU-friendly).
 
-### m-5: `SEED_IMAGE_BASE_URL` is not a real Unsplash URL — seeded image URLs will 404
-- **File**: `src/lib/config.ts:63-64`; `scripts/seed-data/products.ts:49-51`
-- **Problem**: `https://images.unsplash.com/photo-office-chair` + `/{slug}-1.jpg` is not a valid Unsplash asset path (Unsplash photos are `photo-<id>?...`). Every seeded image URL will 404. It is allow-listed in `next.config.ts` so `next/image` won't reject the host, but the images won't load.
-- **Suggested Fix**: Fine as an explicit placeholder given the documented swap note, but the URL shape guarantees 404s even as a placeholder. Use a working placeholder host (e.g. `picsum.photos/seed/<slug>/800/800`) so seeded data renders something during T2–T5 development.
-- **Status**: FIXED — `SEED_IMAGE_BASE_URL` is now `https://picsum.photos/seed` and `seedImageUrl` emits `/{seed}/800/800`, which returns a real deterministic image. `next.config.ts` `remotePatterns` updated from `images.unsplash.com` to `picsum.photos`. New unit test asserts the URL shape and host.
+## Animation & Motion Review (AC-13 — Emil Kowalski bar)
 
----
+### Findings table
 
-## Nits
+| Before | After | Why |
+| --- | --- | --- |
+| `sheet.tsx`: `transition-all` + `animate-in slide-in-from-*` keyframes | delete the file | Dead code that violates AC-13 (`transition: all`, non-interruptible keyframes on a drawer); fails this task's own motion bar if reused (M-1) |
+| `will-change: transform` static on `.drawer-panel` (globals.css:192) | scope to `[data-state="open"]` or remove | `will-change` should be transient; a permanent layer on a closed off-screen panel is wasteful (m-4) |
 
-### n-1: `orders.shipping_country` default `'MX'` but no constraint tying it to MXN/Mexican states
-- **File**: `0003_commerce.sql:37-39` — `shipping_state`/`shipping_postal_code` are free text; fine for Phase 1, but note there is no validation of Mexican state values.
-- **Status**: SKIPPED (tracked) — Field-level MX validation belongs with the checkout form (T7) where the value is captured; filed in `tasks/clean-code-backlog.md`.
+### Verdict
 
-### n-2: `discount_codes.value` overloads two meanings (percentage 0-100 vs cents) in one column with only `>= 0`
-- **File**: `0003_commerce.sql:112-114` — a `percentage` row can store `value = 5000` (5000%) with no upper bound. Table-only in Phase 1, but a `check (discount_type <> 'percentage' or value <= 100)` would cost nothing now.
-- **Status**: FIXED — Added `discount_codes_percentage_bound check (discount_type <> 'percentage' or value <= 100)`. **Verified live**: a percentage row with `value = 5000` is rejected.
+**No feel-breaking regressions in the shipped shell motion.** The hand-authored motion layer is above the bar:
 
-### n-3: `import "dotenv"` side-effect ordering in seed relies on hoist behavior
-- **File**: `scripts/seed.ts:19-38` — `loadEnv()` is called at line 22 between two import groups; ES module imports are hoisted above it, so `getServerEnv` is imported before `loadEnv` runs. It works because env is read lazily at call time, but the visual ordering is misleading. A short comment already exists; consider moving all env-dependent work strictly after load, or use `tsx --env-file`.
-- **Status**: SKIPPED — Purely cosmetic. The ordering is correct (env is read lazily inside `getServerEnv` at call time) and already commented; proven by the seed running successfully twice against the live DB. Rewriting the import structure would be churn with no behavior change.
+- **Easing/direction**: enters use `--ease-out`/`--ease-drawer` (strong custom curves, `globals.css:85-87`); no `ease-in` on any UI. ✓
+- **Properties**: `transform`/`opacity`/`box-shadow` only in shell components — no layout-property animation, no `transition: all` (only in the unused `sheet.tsx` and the pre-existing `button.tsx` primitive, an accepted spec exception). ✓
+- **Duration**: drawer enter 300ms / exit 200ms (asymmetric ✓); FAB 180ms; toggle 150ms; press 120ms — all ≤ 300ms. ✓
+- **Physicality**: FAB pops from `scale(0.95)`, never `scale(0)` (`globals.css:233`). ✓
+- **Interruptibility**: drawer uses CSS transitions off Radix `data-state` with `forceMount`, not keyframes — mid-open dismiss retargets. The deliberate reason the dev rejected the shadcn Sheet. ✓
+- **Reduced motion**: every motion class has a `prefers-reduced-motion: reduce` fallback (opacity-only). ✓
+- **Hover gating**: FAB hover-lift and `.nav-hover` behind `@media (hover: hover) and (pointer: fine)`. ✓
 
-### n-4: `translations` has no FK on `entity_id` (by design, polymorphic) — acceptable, but orphan rows are possible
-- **File**: `0004_content_qa.sql:45-55` — polymorphic association can't have a single FK; RLS scopes reads, but deleting a product leaves orphan translation rows. Note for a future cleanup job.
-- **Status**: SKIPPED (tracked) — Inherent to the polymorphic design and acceptable in Phase 1; a cleanup-job backlog item is filed in `tasks/clean-code-backlog.md` for when the i18n runtime lands.
+**Decision: APPROVE the motion**, contingent on deleting `sheet.tsx` so the sub-standard drawer can't be reused.
 
----
+## i18n Correctness Review
+
+- **Middleware matcher** (`middleware.ts:19`): `['/((?!api|_next|_vercel|.*\\..*).*)']` correctly excludes API, Next/Vercel internals, and dotted static-asset paths. Matches AC-2 exactly. ✓
+- **Invalid-locale validation**: two layers — `request.ts:19` falls back to `defaultLocale` for messages (RSC never message-less); `[locale]/layout.tsx:58` `notFound()` on unknown segment → localized 404. `/fr` and bare `/es` handled (edge 1). ✓
+- **`NEXT_LOCALE` cookie**: via next-intl middleware + `router.replace(..., { locale })`; `localeDetection:false` disables Accept-Language (AC-1). ✓
+- **`<html lang>`**: active locale in `[locale]/layout.tsx:70` and `not-found.tsx:23`; `global-error.tsx:24` hardcodes `es-MX` (justified — can't resolve locale). ✓
+- **hreflang**: next-intl auto-emits alternates (relied on, not hand-rolled). Canonical not explicitly set — acceptable for T2 (SEO/sitemap out of scope, T14).
+- **Message parity**: identical key sets asserted by `messages.test.ts` (AC-4). ✓ Two orphaned keys (m-1) but parity holds.
+- **`NextIntlClientProvider` without `messages`** (`layout.tsx:72`): correct for next-intl v4 — a provider rendered inside an RSC auto-inherits `locale`/`messages`/`timeZone` from request config; `error.tsx`'s client `useTranslations` resolves via this. Verified against installed 4.13.2. ✓
+- **No hardcoded UI strings**: grep of `src/components`/`src/app` finds only dictionary calls, hrefs, identifiers — zero literal UI text except `global-error.tsx` (justified bilingual fallback, provider unavailable). AC-3 satisfied. ✓
+
+## Server/Client Split Review
+
+- `"use client"` only on `error.tsx`, `mobile-nav.tsx`, `language-toggle.tsx` (all need interactivity/hooks). ✓
+- Header, footer, WhatsApp, home, 404 are server components with plain anchors — progressive-enhancement contract met. ✓
+- Footer is an async server component reading `store_settings` server-side (no client spinner). ✓
+- `store-settings.ts` uses `"server-only"` + RLS publishable-key server client (not admin) — correct client, no secret leaks. ✓
+- WhatsApp phone is non-secret config, not `NEXT_PUBLIC_`-prefixed. ✓
+
+## React Patterns Review
+
+- **Keys**: all stable IDs (`item.key`, `link.key`, `locale`); no indices. ✓
+- **Effect cleanup**: `mobile-nav.tsx:35-50` `matchMedia` listener has a cleanup return; `error.tsx` log effect needs none. ✓
+- **Stale closures**: `mobile-nav` effect deps `[open]` re-subscribe correctly; `language-toggle` uses `useTransition` + fresh `pathname`/`router`. ✓
+- **Conditional hooks**: none — the `variant === "compact"` early return happens after all hooks are called. ✓
+- **Interruptibility**: toggle never disabled during `isPending` (edge 5). ✓
 
 ## Acceptance Criteria Verification
 
 | # | Criterion | Status | Evidence |
 |---|-----------|--------|----------|
-| AC-1 | Supabase libs in deps | PASS | `package.json:21-22` `@supabase/ssr`, `@supabase/supabase-js` |
-| AC-2 | Typed env module, throws on missing, single source | PASS | `src/lib/env.ts:20-85`; tested in `env.test.ts` |
-| AC-3 | Browser client uses publishable key only | PASS | `src/lib/supabase/client.ts:13-16` |
-| AC-4 | Server client `createServerClient`+`cookies()`; admin `server-only` | PASS | `server.ts:15-38`, `admin.ts:10-24` |
-| AC-5 | All 18 tables incl. self-ref categories + i18n | PASS | migrations 0002/0003/0004; `translations` in 0004 |
-| AC-6 | Full product model | PASS | `0002_catalog.sql:72-99` covers every listed field |
-| AC-7 | Variant SKU/stock/override/color + variant images | PASS | Schema present; **69 variant-linked images seeded and verified live** (M-1 fixed) |
-| AC-8 | Orders full immutable financial snapshot + statuses | PASS | Columns present; immutability trigger enforced (M-4), currency constrained (M-2), cross-column identities constrained (M-3) — all verified live |
-| AC-9 | order_items snapshot name/SKU/price/qty/total | PASS | `0003:76-88`; FK `on delete set null` |
-| AC-10 | order_status_history from/to/note/timestamp | PASS | `0003:95-102` |
-| AC-11 | store_settings single row, correct cents, integer money | PASS (fixture) | seed `seedStoreSettings` fixed id, 50000/1000000; unverified on live DB (C-3) |
-| AC-12 | RLS on every table + guest trust model; no anon cost_price/orders/discounts | PASS | Explicit REVOKE-ALL baseline + narrow grants (C-2), structural cost_price protection via `products_public` view (C-1); **verified live** with `SET ROLE anon` + real publishable key over PostgREST (C-3) |
-| AC-13 | Repeatable seed, correct counts, nested cat, variant images, idempotent | PASS | Counts/nesting/variants correct; **69 variant images seeded (M-1)**; **idempotency demonstrated — two live runs, unchanged row counts (C-3)** |
-| AC-14 | Generated types imported, no `any`/`!` | PASS | `database.types.ts`; clients import `Database`; single `as never` at uniform upsert (documented, not `any`/`!`) |
-| AC-15 | `npm run test` + lint + typecheck pass | PASS (partial scope) | `npm run test` → 41 passed (verified). dev claims lint/build pass; note seed SQL untested |
-| AC-16 | next.config remotePatterns for Supabase host | PASS | `next.config.ts:12-31` |
-| AC-17 | Centralized constants + swap note in dev-done | PASS | `src/lib/config.ts`; dev-done.md table |
+| AC-1 | `/` es-MX unprefixed, no Accept-Language negotiation | PASS | `routing.ts:27` `localeDetection:false` |
+| AC-2 | next-intl ^4.13.x, `withNextIntl`, routing config exact | PASS | 4.13.2; `next.config.ts:8,40`; `routing.ts:23-28` |
+| AC-3 | All UI strings from dictionaries, zero hardcoded | PASS | grep clean; only `global-error.tsx` (justified) |
+| AC-4 | Identical key sets + parity test | PASS | `messages.test.ts:45-58`; 2 orphaned keys (m-1) |
+| AC-5 | Header on every page: wordmark/nav/toggle/hamburger drawer < md | PASS | `site-header.tsx`; `mobile-nav.tsx` |
+| AC-6 | Toggle rewrites segment, preserves path, persists cookie, no reload | PASS | `language-toggle.tsx:61-68` |
+| AC-7 | Footer: name, static slugs, free-shipping via formatMXN, © year | PASS | `site-footer.tsx:27-35,47-53,92` |
+| AC-8 | WhatsApp FAB fixed bottom-right, new tab, noopener, aria-label | PASS | `whatsapp-button.tsx:44-60`; `whatsapp.ts` |
+| AC-9 | Brand values as CSS vars, documented, no hardcoded color/font | **FAIL** | Tokens/grep clean BUT brand-token doc names wrong font file (C-2) and `--font-mono` is broken (C-1) |
+| AC-10 | `not-found.tsx` inside shell, localized, back-home | PASS | `[locale]/not-found.tsx`; catch-all `[...rest]/page.tsx` |
+| AC-11 | `error.tsx` localized, `reset()`, no stack/PII leak | PASS | `error.tsx:24-62` |
+| AC-12 | `<html lang>` active locale, real metadata, single font, splash gone | PASS | `layout.tsx:70`; `fonts.ts`; svgs deleted (Geist ghost in mono = C-1) |
+| AC-13 | Motion: ease-out, transform/opacity, reduced-motion, hover-gated | PASS | `globals.css:177-321`; see Motion verdict |
+| AC-14 | Mobile-first 375/768/≥1024, no h-scroll, no FAB/footer overlap | PARTIAL | Truncation/shrink-0/safe-area correct; but tap targets < 44px (M-2, M-3) violate this AC's own ≥44px UX requirement |
+| AC-15 | Typed server wrapper returning Row, used by footer, degrades gracefully | PASS | `store-settings.ts`; tested |
+| AC-16 | lint, tsc strict, test pass; no any/!; no file > 400 lines | PASS | tsc ✓, eslint ✓, 86 tests ✓; no `any`/`!`; largest file 191 lines |
+| AC-17 | Active locale via single source (NEXT_LOCALE), documented | PASS | `useLocale()`/`getLocale()` + `NEXT_LOCALE` |
 
 ## Edge Case Verification
 
 | # | Edge Case | Status | Evidence |
 |---|-----------|--------|----------|
-| 1 | Missing/blank env throws named error | HANDLED | `env.ts:31-40`; `env.test.ts` |
-| 2 | Secret key leakage → build error | HANDLED | `admin.ts:10` `import "server-only"` |
-| 3 | Re-run migrations/seed idempotent | PARTIAL | `if not exists`/guarded DO + upserts present; **never executed twice against a DB (C-3)**; images use weaker app-level guard (m-4) |
-| 4 | Nested category integrity, no cycle, no orphan | PARTIAL | Self-parent CHECK + `on delete restrict` (`0002:29,37`); **deep cycles not blocked (m-1)** — edge case says "own ancestor" |
-| 5 | Variant price override precedence, both cases seeded | HANDLED | `products.ts:148-149`; asserted in `seed-invariants.test.ts:114-118` |
-| 6 | Money never float; single format boundary | HANDLED | integer cents everywhere; `money.ts` throws on non-integer; tested |
-| 7 | Zero-vs-many variants; stock authority rule | HANDLED (doc-only for authority) | single & multi variant seeded + asserted; authority rule documented not enforced (m-2) |
-| 8 | Order refs deleted/edited product via snapshot | HANDLED | `order_items` snapshot cols + FK `on delete set null` (`0003:79-86`) |
+| 1 | Invalid/unknown locale → localized 404 in shell | HANDLED | `layout.tsx:58`; `request.ts` message fallback |
+| 2 | `store_settings` absent/unreadable → degrade, fallback, logged | HANDLED | `store-settings.ts:38-62`; `site-footer.tsx:46-52`; tested |
+| 3 | English browser, first visit → lands on Spanish | HANDLED | `localeDetection:false` |
+| 4 | `prefers-reduced-motion` → opacity fade only | HANDLED | `globals.css:202-216,246-259,277-285,303-312` |
+| 5 | Rapid toggle / mid-nav → interruptible, last wins | HANDLED | `language-toggle.tsx` `useTransition`, never disabled |
+| 6 | Very long store/nav label → truncate/wrap, no h-scroll 375px | HANDLED | `site-header.tsx:40` `min-w-0 shrink truncate` |
+| 7 | WhatsApp number unconfigured → button not rendered, dev warning | HANDLED | `whatsapp-button.tsx:32-40`; `whatsapp.ts` |
+| 8 | Deep link `/en/anything` → renders EN, toggle reflects EN | HANDLED | `[locale]` routing + `useLocale()` |
 
-## Quality Score: 6.5/10
+## Quality Score: 7.5/10
 
-Clean, well-documented, thoughtfully typed code with genuinely good instincts (integer cents, server-only guard, drop-then-create idempotent policies). Held back by an RLS privilege model that is asserted rather than made explicit/verifiable, the highest-value data (cost price) protected by the most fragile mechanism, financial-integrity constraints left to app code on the very tables designed to be the source of truth, a dangerous `db:reset --linked` foot-gun, and — most importantly — the entire SQL/RLS/seed layer never having touched a database.
+Excellent architecture, i18n rigor, and a motion layer that genuinely clears the craft bar — rare. Docked for one broken token (`--font-mono`), a factually wrong brand-swap doc that AC-9 explicitly grades, dead code shipped as a "deliverable," and two sub-44px tap targets that violate the ticket's own accessibility rule on the primary CTAs and the mobile toggle.
 
-## Recommendation: REQUEST CHANGES → RESOLVED (Stage 6 Fix)
+## Recommendation: REQUEST CHANGES
 
-All blocking findings are now fixed and **verified against a live local Supabase DB** (Docker):
-- **C-3**: All 5 migrations apply cleanly from scratch (`db reset`); seed runs twice with identical, non-duplicating row counts.
-- **C-1/C-2**: Explicit `REVOKE ALL` baseline + narrow grants; `cost_price_cents` protected structurally by the `products_public` view (base table never granted to anon). Verified anon is denied on base products/orders/customers/discount_codes and can read the active catalog — both via `SET ROLE anon` and the real publishable key over PostgREST.
-- **M-1**: 69 variant-linked images seeded.
-- **M-2/M-3/M-4**: currency CHECK, cross-column financial identities, and order/order_items immutability triggers all added and exercised live.
-- **M-5**: `db:reset` targets local; remote reset renamed `db:reset:remote`.
-- **M-6 + minors/nits**: length CHECKs, deep-cycle trigger, image unique constraint + upsert, working placeholder image host, discount percentage bound — all fixed (m-2/n-1/n-3/n-4 skipped with tracked backlog rationale).
-
-Gates: `npm run lint`, `npx tsc --noEmit`, `npm run test` (44 passed), `npm run build` — all green.
-
-**New recommendation: APPROVE.**
+Not a happy-path blocker — every AC's core behavior works and all gates are green. But C-1 (broken font token), C-2 (wrong brand-swap doc — the exact rework risk the ticket flags), M-1 (dead `sheet.tsx` that violates the motion baseline if reused), and M-2/M-3 (< 44px tap targets contradicting AC-14's own UX requirements) must be fixed before ship. M-4 (double `store_settings` read / `cache()`) should be fixed but is not blocking.
