@@ -279,11 +279,23 @@
  * LANGUAGE TOGGLE MOTION (T2 AC-13)
  * ------------------------------------------------------------------------
  * Label crossfade on locale change + press feedback. transform/opacity only.
+ * The label span is keyed to the locale, so switching remounts it; the
+ * `@starting-style` makes that fresh element crossfade in (opacity + a subtle
+ * scale) rather than snap — matching the AC-13 motion table (150ms ease-out,
+ * opacity + optional scale(0.97)). Without the starting style the transition
+ * had no state change to animate and was inert.
  * ======================================================================== */
 .toggle-label {
+  opacity: 1;
+  transform: scale(1);
   transition:
     opacity 150ms var(--ease-out),
     transform 150ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.97);
+  }
 }
 .toggle-press {
   transition: transform 120ms var(--ease-out);
@@ -295,6 +307,11 @@
   .toggle-label {
     transition: opacity 150ms ease;
     transform: none;
+
+    @starting-style {
+      opacity: 0;
+      transform: none;
+    }
   }
   .toggle-press:active {
     transform: none;
@@ -334,5 +351,30 @@
     transition:
       background-color 120ms ease,
       color 120ms ease;
+  }
+}
+
+/* ======================================================================== *
+ * INLINE LINK ARROW NUDGE (home "Marcas →")
+ * ------------------------------------------------------------------------
+ * A directional hint (Apple #8 — hint in the direction of the gesture): the
+ * arrow slides a hair toward its destination on hover. transform-only, gated
+ * behind hover-capable pointers so it never sticks on touch, and dropped under
+ * reduced motion. `.group/brands` is the parent inline link.
+ * ======================================================================== */
+.link-arrow {
+  transition: transform 150ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .group\/brands:hover .link-arrow {
+    transform: translateX(2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .link-arrow {
+    transition: none;
+  }
+  .group\/brands:hover .link-arrow {
+    transform: none;
   }
 }

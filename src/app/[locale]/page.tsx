@@ -38,7 +38,7 @@ export default async function HomePage({ params }: HomePageProps) {
           <Link
             href="/marcas"
             data-testid="home-link-brands"
-            className="nav-hover inline-flex items-center gap-1 rounded-sm text-sm font-medium text-foreground outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="nav-hover group/brands inline-flex items-center gap-1 rounded-sm text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             {t("ctaBrands")}
             <HugeiconsIcon
@@ -46,6 +46,7 @@ export default async function HomePage({ params }: HomePageProps) {
               size={16}
               strokeWidth={2}
               aria-hidden
+              className="link-arrow"
             />
           </Link>
         </div>

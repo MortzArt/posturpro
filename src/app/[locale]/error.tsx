@@ -30,7 +30,11 @@ export default function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
   }, [error]);
 
   return (
-    <section className="mx-auto flex min-h-[60vh] max-w-(--breakpoint-xl) flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+    <section
+      role="alert"
+      aria-live="assertive"
+      className="mx-auto flex min-h-[60vh] max-w-(--breakpoint-xl) flex-col items-center justify-center gap-4 px-4 py-16 text-center"
+    >
       <div className="enter-fade flex flex-col items-center gap-3">
         <HugeiconsIcon
           icon={Alert02Icon}

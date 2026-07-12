@@ -90,7 +90,7 @@ export function LanguageToggle({
       role="group"
       aria-label={t("label")}
       className={cn(
-        "inline-flex h-9 shrink-0 items-center rounded-md border border-border p-0.5",
+        "inline-flex h-9 shrink-0 items-center rounded-md border border-border bg-muted p-0.5",
         // Consumers (e.g. the mobile drawer) may pass `h-11` to raise the group
         // to a ≥44px touch target; the options fill the group height (`h-full`).
         className,
@@ -109,7 +109,7 @@ export function LanguageToggle({
             className={cn(
               "toggle-press inline-flex h-full min-h-8 min-w-9 items-center justify-center rounded-[calc(var(--radius)*0.6)] px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
               isActive
-                ? "bg-accent font-medium text-accent-foreground"
+                ? "bg-background font-medium text-foreground shadow-sm"
                 : "font-normal text-muted-foreground hover:text-foreground",
             )}
           >
