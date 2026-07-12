@@ -219,6 +219,12 @@ constraints/triggers were exercised live.
 `Views<T>` helper. `npm run db:types` regenerates equivalently once linked
 (CLI-generated shape confirmed to include the view + function).
 
+### Bug Fixed in QA (Stage 7)
+
+| ID | Severity | Title | Status | File | Notes |
+|----|----------|-------|--------|------|-------|
+| Q-1 | MAJOR | order_items immutability trigger blocked `ON DELETE SET NULL` | FIXED | `0003_commerce.sql` | `order_items_block_update()` rejected ALL updates, including the FK-nulling Postgres performs when a referenced product/variant is deleted. A product referenced by any historical order was therefore **undeletable** — directly defeating edge case 8 ("order history must survive product deletes/edits"). Fixed so the trigger blocks only mutations of snapshot columns and repointing of FKs, while permitting `product_id`/`variant_id` to be cleared to NULL by a cascade. Verified live: deleting a referenced product now succeeds and the order_items row survives with `product_id = null` and snapshot columns intact. |
+
 ### Test / Build Status After Fixes
 
 - `npm run lint` → clean (0 warnings).

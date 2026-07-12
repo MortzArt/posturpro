@@ -200,16 +200,37 @@ begin
 end;
 $$;
 
--- order_items rows are a pure historical snapshot — they are never updated.
--- Any UPDATE is rejected outright. (DELETE is still permitted so an order can
--- be removed via the ON DELETE CASCADE from orders.)
+-- order_items rows are a pure historical purchase snapshot: their descriptive
+-- and financial columns (name, SKU, unit price, quantity, line total) are
+-- frozen. We reject any UPDATE that mutates a SNAPSHOT column, but we must NOT
+-- reject the reference-nulling that Postgres performs when a referenced product
+-- or variant is deleted (`product_id`/`variant_id` FKs are `on delete set
+-- null`). Blocking those would make a referenced product undeletable and defeat
+-- edge case 8 (order history must survive product deletes/edits). So: allow an
+-- UPDATE whose ONLY change is `product_id`/`variant_id` going NULL; block
+-- everything else. (DELETE is still permitted via the ON DELETE CASCADE from
+-- orders.)
 create or replace function order_items_block_update()
 returns trigger
 language plpgsql
 as $$
 begin
-  raise exception 'order_items are an immutable purchase snapshot and cannot be updated'
-    using errcode = 'raise_exception';
+  if new.order_id         is distinct from old.order_id
+     or new.product_name  is distinct from old.product_name
+     or new.product_sku   is distinct from old.product_sku
+     or new.variant_label is distinct from old.variant_label
+     or new.unit_price_cents is distinct from old.unit_price_cents
+     or new.quantity      is distinct from old.quantity
+     or new.line_total_cents is distinct from old.line_total_cents
+     or new.created_at    is distinct from old.created_at
+     -- FK columns may only be CLEARED (set null by a cascade), never repointed.
+     or (new.product_id is distinct from old.product_id and new.product_id is not null)
+     or (new.variant_id is distinct from old.variant_id and new.variant_id is not null)
+  then
+    raise exception 'order_items are an immutable purchase snapshot and cannot be updated'
+      using errcode = 'raise_exception';
+  end if;
+  return new;
 end;
 $$;
 

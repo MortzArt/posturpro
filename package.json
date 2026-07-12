@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "bash scripts/run-integration.sh",
     "test:e2e": "playwright test",
     "db:seed": "tsx scripts/seed.ts",
     "db:reset": "supabase db reset",
