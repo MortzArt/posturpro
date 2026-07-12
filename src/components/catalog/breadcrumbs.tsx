@@ -41,8 +41,10 @@ export function Breadcrumbs({
   }
 
   const lastIndex = items.length - 1;
-  // Middle crumbs (not first, not last) collapse to `…` on small screens.
+  // Middle crumbs (not first, not last) collapse to a single `…` on mobile.
   const hasCollapsibleMiddle = items.length > 2;
+  // The first middle crumb is where the single mobile `…` placeholder renders.
+  const firstMiddleIndex = hasCollapsibleMiddle ? 1 : -1;
 
   return (
     <nav
@@ -55,17 +57,35 @@ export function Breadcrumbs({
           const isFirst = index === 0;
           const isLast = index === lastIndex;
           const isMiddle = !isFirst && !isLast;
+          const middleCollapses = isMiddle && hasCollapsibleMiddle;
+
+          // A separator precedes every crumb after the first. The separator
+          // before the FIRST collapsed middle stays visible on mobile — it is
+          // the `Inicio ›` chevron leading into the `…`. Separators before any
+          // SUBSEQUENT collapsed middle hide on mobile, otherwise each hidden
+          // middle strands a chevron and they double up (m-2). The last crumb's
+          // separator (`… › Ejecutivas`) always shows. Net mobile trail:
+          // `Inicio › … › Ejecutivas`.
+          const separatorHiddenOnMobile =
+            middleCollapses && index !== firstMiddleIndex;
+          const separator =
+            index > 0 ? (
+              <Separator hiddenOnMobile={separatorHiddenOnMobile} />
+            ) : null;
+          // Render the mobile-only `…` exactly ONCE, before the first middle.
+          const ellipsis =
+            index === firstMiddleIndex ? (
+              <EllipsisPlaceholder moreLabel={moreLabel} />
+            ) : null;
 
           return (
             <Fragment key={`${crumb.label}-${index}`}>
-              {index > 0 ? <Separator /> : null}
-              {isMiddle && hasCollapsibleMiddle ? (
-                <EllipsisPlaceholder moreLabel={moreLabel} />
-              ) : null}
+              {separator}
+              {ellipsis}
               <li
                 className={cn(
                   "inline-flex min-w-0 items-center",
-                  isMiddle && hasCollapsibleMiddle && "hidden sm:inline-flex",
+                  middleCollapses && "hidden sm:inline-flex",
                 )}
               >
                 {crumb.href && !isLast ? (
@@ -97,25 +117,32 @@ export function Breadcrumbs({
   );
 }
 
-function Separator() {
+function Separator({ hiddenOnMobile = false }: { hiddenOnMobile?: boolean }) {
   return (
-    <li aria-hidden className="inline-flex items-center text-muted-foreground">
+    <li
+      aria-hidden
+      className={cn(
+        "items-center text-muted-foreground",
+        hiddenOnMobile ? "hidden sm:inline-flex" : "inline-flex",
+      )}
+      data-testid="breadcrumb-separator"
+    >
       <HugeiconsIcon icon={ArrowRight01Icon} size={14} strokeWidth={2} />
     </li>
   );
 }
 
-/** The `…` shown in place of collapsed middle crumbs on small screens only. */
+/** The single `…` shown in place of the collapsed middle crumbs on mobile. */
 function EllipsisPlaceholder({ moreLabel }: { moreLabel: string }) {
   return (
-    <li className="inline-flex items-center sm:hidden">
+    <li
+      className="inline-flex items-center sm:hidden"
+      data-testid="breadcrumb-ellipsis"
+    >
       <span aria-hidden className="text-muted-foreground">
         …
       </span>
       <span className="sr-only">{moreLabel}</span>
-      <span aria-hidden className="ml-2 inline-flex items-center text-muted-foreground">
-        <HugeiconsIcon icon={ArrowRight01Icon} size={14} strokeWidth={2} />
-      </span>
     </li>
   );
 }

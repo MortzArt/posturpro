@@ -33,7 +33,7 @@ import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { CATALOG_REVALIDATE_SECONDS, PRODUCTS_PER_PAGE } from "@/lib/config";
 import { effectiveStock, stockState } from "@/lib/catalog/stock";
-import { lastPageFor, rangeFor } from "@/lib/catalog/pagination";
+import { lastPageFor, parsePageParam, rangeFor } from "@/lib/catalog/pagination";
 import type {
   CatalogBrand,
   CatalogCategory,
@@ -49,14 +49,30 @@ export const CATALOG_CACHE_TAG = "catalog" as const;
 /** Max ancestor depth walked when building a category breadcrumb (cycle guard). */
 const MAX_CATEGORY_DEPTH = 10;
 
-/** Columns selected from `products_public` for a card (never cost data). */
+/**
+ * Columns selected from `products_public` for a card (never cost data).
+ *
+ * Only what `toCard` actually consumes: the card fields, `stock` (effective-stock
+ * fallback), and the `brands` embed. `is_best_seller`/`sales_count` back the
+ * server-side ORDER BY (PostgREST orders on the column regardless of select).
+ * The `styles` embed and the `brand_id`/`style_id` scalars are intentionally NOT
+ * selected — they were never read on the card, so fetching them was pure
+ * over-fetch on every product query (m-1, m-4).
+ */
 const PRODUCT_CARD_SELECT =
-  "id,slug,name,price_cents,compare_at_price_cents,is_best_seller,sales_count,stock,brand_id,style_id,brands(name,slug,logo_url),styles(name,slug)" as const;
+  "id,slug,name,price_cents,compare_at_price_cents,is_best_seller,sales_count,stock,brands(name,slug,logo_url)" as const;
 
 /** Options accepted by every product-listing read. */
 export interface ListProductsOptions {
-  /** 1-based page (caller clamps to `[1, lastPage]`). Defaults to 1. */
-  page?: number;
+  /**
+   * The RAW `?page` search-param value. The read layer resolves the true
+   * `lastPage` from a count-only query, then clamps this to `[1, lastPage]`
+   * (AC-14, edge case 7) — so an out-of-range/malformed page never triggers a
+   * PostgREST "range not satisfiable" error and never needs a throwaway page-1
+   * read to discover the ceiling (M-2). The clamped page is returned on the
+   * `CatalogPage`.
+   */
+  rawPage?: string | string[];
   pageSize?: number;
 }
 
@@ -69,10 +85,6 @@ interface EmbeddedBrand {
   slug: string | null;
   logo_url: string | null;
 }
-interface EmbeddedStyle {
-  name: string | null;
-  slug: string | null;
-}
 interface ProductCardRow {
   id: string | null;
   slug: string | null;
@@ -82,12 +94,9 @@ interface ProductCardRow {
   is_best_seller: boolean | null;
   sales_count: number | null;
   stock: number | null;
-  brand_id: string | null;
-  style_id: string | null;
   // PostgREST returns an object for a to-one embed, but the generated types can
   // surface it as an array; normalize defensively when stitching.
   brands: EmbeddedBrand | EmbeddedBrand[] | null;
-  styles: EmbeddedStyle | EmbeddedStyle[] | null;
 }
 
 interface ImageRow {
@@ -113,6 +122,16 @@ function fail(context: string, message: string): never {
 function firstOrSelf<T>(value: T | T[] | null): T | null {
   if (value === null) return null;
   return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
+/**
+ * Normalize a raw `?page` value into a stable `unstable_cache` key segment.
+ * Uses the first array element (repeated param) and a `p:` prefix so a missing
+ * page and the literal string "undefined" can never collide.
+ */
+function cacheKeyForPage(rawPage: string | string[] | undefined): string {
+  const value = Array.isArray(rawPage) ? rawPage[0] : rawPage;
+  return `p:${value ?? ""}`;
 }
 
 /**
@@ -237,21 +256,54 @@ function productCardQuery(db: ReturnType<typeof createPublicClient>) {
 /** The exact filter/transform builder type the card query yields. */
 type ProductCardQuery = ReturnType<typeof productCardQuery>;
 
-/** Internal: run a (possibly filtered) product page read + stitch. */
+/**
+ * Count-only read (`head: true, count: "exact"`) for a (possibly filtered)
+ * product query. Fetches ZERO rows — only the total — so the caller can compute
+ * `lastPage` and clamp the requested page BEFORE the single data read (M-2).
+ */
+async function countProducts(
+  filter: (query: ProductCardQuery) => ProductCardQuery,
+): Promise<number> {
+  const db = createPublicClient();
+  const base = db
+    .from("products_public")
+    .select("id", { count: "exact", head: true }) as unknown as ProductCardQuery;
+  const { count, error } = await filter(base);
+  if (error) {
+    fail("products_public count", error.message);
+  }
+  return count ?? 0;
+}
+
+/**
+ * Internal: read a single product page + stitch, clamping the requested page to
+ * `[1, lastPage]`.
+ *
+ * Strategy (M-2): a count-only head query first learns the real `total`, from
+ * which we derive `lastPage` and clamp the requested page. Then ONE `.range()`
+ * data read fetches exactly the clamped page's rows. This replaces the old
+ * "always read page 1 to discover the ceiling" approach (which cost two full
+ * reads for every non-first page) while preserving the never-416 guarantee: the
+ * range is always in-bounds because we clamp before reading.
+ */
 async function readProductPage(
   filter: (query: ProductCardQuery) => ProductCardQuery,
-  page: number,
+  rawPage: string | string[] | undefined,
   pageSize: number,
 ): Promise<CatalogPage<CatalogProductCard>> {
+  const total = await countProducts(filter);
+  const lastPage = lastPageFor(total, pageSize);
+  const page = parsePageParam(rawPage, lastPage);
+
+  if (total === 0) {
+    return { items: [], page, pageSize, total: 0, lastPage };
+  }
+
   const db = createPublicClient();
   const { from, to } = rangeFor(page, pageSize);
+  const query = filter(productCardQuery(db));
 
-  const base = productCardQuery(db);
-
-  // Callers narrow the query (brand/style eq, or id set for category).
-  const query = filter(base);
-
-  const { data, count, error } = await query
+  const { data, error } = await query
     .order("is_best_seller", { ascending: false })
     .order("sales_count", { ascending: false })
     .order("name", { ascending: true })
@@ -261,17 +313,10 @@ async function readProductPage(
     fail("products_public page", error.message);
   }
 
-  const total = count ?? 0;
   const rows = (data ?? []) as unknown as ProductCardRow[];
   const items = await stitchCards(rows);
 
-  return {
-    items,
-    page,
-    pageSize,
-    total,
-    lastPage: lastPageFor(total, pageSize),
-  };
+  return { items, page, pageSize, total, lastPage };
 }
 
 /**
@@ -280,11 +325,11 @@ async function readProductPage(
 export function listProducts(
   opts: ListProductsOptions = {},
 ): Promise<CatalogPage<CatalogProductCard>> {
-  const page = opts.page ?? 1;
+  const rawPage = opts.rawPage;
   const pageSize = opts.pageSize ?? PRODUCTS_PER_PAGE;
   const cached = unstable_cache(
-    () => readProductPage((query) => query, page, pageSize),
-    ["catalog", "products", String(page), String(pageSize)],
+    () => readProductPage((query) => query, rawPage, pageSize),
+    ["catalog", "products", cacheKeyForPage(rawPage), String(pageSize)],
     { tags: [CATALOG_CACHE_TAG], revalidate: CATALOG_REVALIDATE_SECONDS },
   );
   return cached();
@@ -300,16 +345,16 @@ export function listProductsByBrand(
   slug: string,
   opts: ListProductsOptions = {},
 ): Promise<CatalogPage<CatalogProductCard>> {
-  const page = opts.page ?? 1;
+  const rawPage = opts.rawPage;
   const pageSize = opts.pageSize ?? PRODUCTS_PER_PAGE;
   const cached = unstable_cache(
     () =>
       readProductPage(
         (query) => query.eq("brand_id", brandId),
-        page,
+        rawPage,
         pageSize,
       ),
-    ["catalog", "brand-products", slug, String(page), String(pageSize)],
+    ["catalog", "brand-products", slug, cacheKeyForPage(rawPage), String(pageSize)],
     {
       tags: [CATALOG_CACHE_TAG, `brand:${slug}`],
       revalidate: CATALOG_REVALIDATE_SECONDS,
@@ -327,16 +372,16 @@ export function listProductsByStyle(
   slug: string,
   opts: ListProductsOptions = {},
 ): Promise<CatalogPage<CatalogProductCard>> {
-  const page = opts.page ?? 1;
+  const rawPage = opts.rawPage;
   const pageSize = opts.pageSize ?? PRODUCTS_PER_PAGE;
   const cached = unstable_cache(
     () =>
       readProductPage(
         (query) => query.eq("style_id", styleId),
-        page,
+        rawPage,
         pageSize,
       ),
-    ["catalog", "style-products", slug, String(page), String(pageSize)],
+    ["catalog", "style-products", slug, cacheKeyForPage(rawPage), String(pageSize)],
     {
       tags: [CATALOG_CACHE_TAG, `style:${slug}`],
       revalidate: CATALOG_REVALIDATE_SECONDS,
@@ -356,11 +401,11 @@ export function listProductsByCategory(
   slug: string,
   opts: ListProductsOptions = {},
 ): Promise<CatalogPage<CatalogProductCard>> {
-  const page = opts.page ?? 1;
+  const rawPage = opts.rawPage;
   const pageSize = opts.pageSize ?? PRODUCTS_PER_PAGE;
   const cached = unstable_cache(
-    () => readCategoryProductPage(categoryId, page, pageSize),
-    ["catalog", "category-products", slug, String(page), String(pageSize)],
+    () => readCategoryProductPage(categoryId, rawPage, pageSize),
+    ["catalog", "category-products", slug, cacheKeyForPage(rawPage), String(pageSize)],
     {
       tags: [CATALOG_CACHE_TAG, `category:${slug}`],
       revalidate: CATALOG_REVALIDATE_SECONDS,
@@ -370,34 +415,65 @@ export function listProductsByCategory(
 }
 
 /**
+ * Upper bound on the number of category-member product ids loaded into the
+ * `.in(...)` filter (M-3). At seed scale a category has ≤30 members; this cap
+ * keeps the generated PostgREST `IN (...)` list — and its URL length — bounded
+ * as the catalog grows. If a category ever exceeds this, the read is truncated
+ * to the first CATEGORY_MEMBER_ID_CAP ids (still correct for the visible pages)
+ * and the ceiling is logged. SCALE CEILING: when a category can legitimately hold
+ * more than CATEGORY_MEMBER_ID_CAP products, migrate this to a category-scoped
+ * view / RPC so pagination happens server-side (tracked in
+ * tasks/clean-code-backlog.md).
+ */
+const CATEGORY_MEMBER_ID_CAP = 1000;
+
+/**
  * Category products need the member ids first (from the M2M join), then a
  * `products_public` page filtered to those ids. `count: "exact"` on the filtered
  * view query gives the correct per-category total (only active products count).
+ *
+ * The membership ids are de-duplicated (M-4, edge case 8): a defensive guard so
+ * a stray duplicate `(product_id, category_id)` row can never double-count the
+ * `total` nor render a product card twice. The id set is also bounded to
+ * `CATEGORY_MEMBER_ID_CAP` to keep the `.in(...)` list and URL length bounded
+ * (M-3).
  */
 async function readCategoryProductPage(
   categoryId: string,
-  page: number,
+  rawPage: string | string[] | undefined,
   pageSize: number,
 ): Promise<CatalogPage<CatalogProductCard>> {
   const db = createPublicClient();
 
+  // Bound the membership read: at most CATEGORY_MEMBER_ID_CAP rows leave the DB.
   const membership = await db
     .from("product_categories")
     .select("product_id")
-    .eq("category_id", categoryId);
+    .eq("category_id", categoryId)
+    .range(0, CATEGORY_MEMBER_ID_CAP - 1);
 
   if (membership.error) {
     fail("product_categories membership", membership.error.message);
   }
 
-  const memberIds = (membership.data ?? []).map((row) => row.product_id);
+  // De-duplicate defensively — one product must map to at most one filter id
+  // regardless of how many membership rows exist (M-4).
+  const memberIds = [
+    ...new Set((membership.data ?? []).map((row) => row.product_id)),
+  ];
   if (memberIds.length === 0) {
-    return { items: [], page, pageSize, total: 0, lastPage: 1 };
+    return { items: [], page: parsePageParam(rawPage, 1), pageSize, total: 0, lastPage: 1 };
+  }
+  if (memberIds.length >= CATEGORY_MEMBER_ID_CAP) {
+    console.warn(
+      `[catalog] category ${categoryId} membership hit the ${CATEGORY_MEMBER_ID_CAP} id cap; ` +
+        "migrate to a category-scoped view/RPC (see clean-code-backlog.md).",
+    );
   }
 
   return readProductPage(
     (query) => query.in("id", memberIds),
-    page,
+    rawPage,
     pageSize,
   );
 }

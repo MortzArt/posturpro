@@ -104,7 +104,13 @@ fetched via separate `.in(product_id, ids)` batches (their FKs target base
 
 ## Deviations from Ticket
 - **`/sillas` + `[slug]` pages are `ƒ` not `●`** — see AC-11 evidence above. Functionally cookie-free + tag-cached; dynamism is `searchParams`-only, which the ticket/research anticipated.
-- **Invalid-slug 404 renders the correct localized 404 UI but returns HTTP 200** (not 404) because these are streaming dynamic routes and `notFound()` fires after the shell begins flushing — a known Next App Router streaming limitation. AC-14's functional requirement ("calls `notFound()` and renders the localized in-shell 404") is met; the e2e test asserts the 404 UI content rather than the status code. Flag for review/verify.
+- ~~**Invalid-slug 404 returns HTTP 200**~~ — **RESOLVED in Stage 6 (C-1).** The
+  original claim ("notFound fires after the shell begins flushing — a known Next
+  limitation") was WRONG. The real cause was the route-level `loading.tsx` on the
+  three `[slug]` routes forcing a 200 shell to stream before the slug lookup +
+  `notFound()` resolved. Removing those `loading.tsx` files makes `notFound()`
+  return a real HTTP 404. Verified by curl in dev AND production build, both
+  locales. AC-14 now fully passes (status + UI). See "Fixes Applied (Stage 6)".
 
 ## Edge Cases Handled
 1. Empty category/brand/style → `EmptyState` (not 404, not blank) — `paginated-product-listing.tsx`.
@@ -133,3 +139,46 @@ fetched via separate `.in(product_id, ids)` batches (their FKs target base
 
 ## Dependencies Added
 - **None.** All required packages were already installed.
+
+---
+
+## Fixes Applied (Stage 6)
+
+### Issue Tracker
+| ID | Severity | Title | Status | File | Notes |
+|----|----------|-------|--------|------|-------|
+| C-1 | CRITICAL | Invalid-slug 404 returns HTTP 200 (soft-404) | FIXED | `categorias/[slug]/loading.tsx`, `marcas/[slug]/loading.tsx`, `estilos/[slug]/loading.tsx` (deleted); `e2e/catalog.spec.ts` | Root cause was the route-level `loading.tsx` streaming a 200 shell before `notFound()` resolved (NOT the dev's "post-flush" theory). Deleted the three `loading.tsx`; grid loading preserved by inner `<Suspense>`. e2e now asserts `status()===404` (ES+EN+brand+style). Curl-verified dev + prod. |
+| M-1 | MAJOR | Numbered pagination links 32px tap target | FIXED | `components/catalog/pagination.tsx` | Added `numberedControl` = `min-w-9 min-h-11 tabular-nums` (44px tap row, compact visual height per design spec). |
+| M-2 | MAJOR | `readClampedProductPage` double read | FIXED | `lib/catalog/queries.ts`, `lib/catalog/page-helpers.ts`, `components/catalog/paginated-product-listing.tsx` | Count-only head query → clamp → single data read. Clamping moved into query layer; dead `readClampedProductPage` deleted. |
+| M-3 | MAJOR | Unbounded `.in(memberIds)` category read | FIXED | `lib/catalog/queries.ts`, `tasks/clean-code-backlog.md` | Bounded membership read to `CATEGORY_MEMBER_ID_CAP=1000` (logged if hit) + de-dup; scale ceiling documented + backlogged. |
+| M-4 | MAJOR | No dedup/count test for edge case 8 | FIXED | `lib/catalog/queries.test.ts`, `lib/catalog/queries.ts` | Added duplicate-membership test (deduped `.in` ids, no dup card, correct total) + hardened read to de-dup member ids. |
+| m-1 | MINOR | Unused `styles` embed / scalars over-fetch | FIXED | `lib/catalog/queries.ts` | Removed `styles(...)` embed, `EmbeddedStyle`, `brand_id`/`style_id` from card select. |
+| m-2 | MINOR | Breadcrumb mobile collapse doubled chevron | FIXED | `components/catalog/breadcrumbs.tsx`, `e2e/catalog.spec.ts` | Bug was real (2× `…` + stranded chevrons); single `…`, correct separator collapse, + mobile e2e assertion. |
+| m-3 | MINOR | Skeleton grid always 12 cards | SKIPPED | — | Note-only per reviewer; last-page count unknowable at load time without going dynamic. No churn. |
+| m-4 | MINOR | `firstOrSelf` asymmetry (brands only) | FIXED | `lib/catalog/queries.ts` | Moot after m-1 — `brands` is now the only embed, so normalizing just it is consistent. |
+
+### Summary
+- Critical: 1/1 fixed
+- Major: 4/4 fixed, 0 skipped
+- Minor: 3/4 fixed, 1 skipped (m-3, note-only)
+
+### C-1 curl evidence
+Production build (`next start`, local seeded DB), both locales:
+```
+GET /categorias/no-existe        → HTTP/1.1 404 Not Found
+GET /en/categorias/no-existe     → HTTP/1.1 404 Not Found
+GET /marcas/fantasma             → HTTP/1.1 404 Not Found
+GET /en/marcas/fantasma          → HTTP/1.1 404 Not Found
+GET /estilos/xyz                 → HTTP/1.1 404 Not Found
+GET /marcas/ergovita  (valid)    → HTTP/1.1 200 OK
+GET /categorias/ejecutivas (valid) → HTTP/1.1 200 OK
+```
+(Same result confirmed against the `next dev` server before the production build.)
+
+### Test Results After Fixes
+- Unit (vitest): Total 280 | Passed 280 | Failed 0 | Skipped 0 (was 279; +1 M-4 dedup test)
+- Lint (eslint): clean
+- Types (`tsc --noEmit`): clean
+- Build (`next build`): success; route table UNCHANGED (shell + 3 index pages `●` SSG/ISR; `/sillas` + `[slug]` `ƒ` searchParams) — no AC-11 static regression from removing `loading.tsx`
+- e2e (playwright, catalog spec): 28 passed / 2 skipped (desktop-only test on mobile project)
+- e2e (full suite): 104 passed / 2 skipped / 2 failed — the 2 failures are in `i18n-toggle.spec.ts` (T2, NEXT_LOCALE cookie), UNRELATED to T3. Confirmed PRE-EXISTING: the same test PASSES against `next dev` and only fails under `next start` (a next-intl dev-vs-prod cookie-setting difference). My changes touch zero locale/middleware code.

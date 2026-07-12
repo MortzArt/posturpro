@@ -1,9 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { CATALOG_PATH } from "@/lib/config";
-import {
-  makeHrefForPage,
-  readClampedProductPage,
-} from "@/lib/catalog/page-helpers";
+import { makeHrefForPage } from "@/lib/catalog/page-helpers";
 import { ProductGrid } from "@/components/catalog/product-grid";
 import { Pagination } from "@/components/catalog/pagination";
 import { EmptyState } from "@/components/catalog/empty-state";
@@ -27,7 +24,14 @@ interface PaginatedProductListingProps {
   searchParams: Promise<{ page?: string | string[] }>;
   basePath: string;
   emptyMessageKey: EmptyMessageKey;
-  read: (page: number) => Promise<CatalogPage<CatalogProductCard>>;
+  /**
+   * Page-provided reader. Receives the RAW `?page` value; the query layer
+   * resolves `lastPage` from a count-only query and clamps internally (M-2,
+   * AC-14), returning the clamped page on the result.
+   */
+  read: (
+    rawPage: string | string[] | undefined,
+  ) => Promise<CatalogPage<CatalogProductCard>>;
 }
 
 export async function PaginatedProductListing({
@@ -39,7 +43,8 @@ export async function PaginatedProductListing({
   const { page: rawPage } = await searchParams;
   const t = await getTranslations("catalog");
 
-  const { page, result } = await readClampedProductPage(rawPage, read);
+  const result = await read(rawPage);
+  const page = result.page;
 
   if (result.items.length === 0) {
     return (

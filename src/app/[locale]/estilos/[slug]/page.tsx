@@ -88,7 +88,9 @@ export default async function StylePage({
           searchParams={searchParams}
           basePath={stylePath(style.slug)}
           emptyMessageKey="empty.style"
-          read={(page) => listProductsByStyle(style.id, style.slug, { page })}
+          read={(rawPage) =>
+            listProductsByStyle(style.id, style.slug, { rawPage })
+          }
         />
       </Suspense>
     </section>

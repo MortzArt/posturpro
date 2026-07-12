@@ -95,16 +95,28 @@ test.describe("catalog browse + paginate (es-MX)", () => {
     await expect(page.getByTestId("product-grid")).toBeVisible();
   });
 
-  test("unknown slug renders the localized in-shell 404 (AC-14, edge case 6)", async ({
+  test("unknown slug returns a real HTTP 404 + localized in-shell 404 (AC-14, edge case 6, C-1)", async ({
     page,
   }) => {
-    await page.goto("/categorias/no-existe-jamas");
+    const response = await page.goto("/categorias/no-existe-jamas");
+    // C-1: the response STATUS must be a real 404, not a soft-404 (200 body that
+    // merely looks like a 404). Crawlers/monitoring depend on the true status.
+    expect(response?.status()).toBe(404);
     // notFound() renders the localized in-shell 404 (never a blank page, never
     // a leaked Supabase error). The shell header/footer remain.
     await expect(page.getByTestId("not-found-home")).toBeVisible();
     await expect(page.getByTestId("product-grid")).toHaveCount(0);
     // No raw error object / stack leaked to the DOM.
     await expect(page.locator("body")).not.toContainText("cost_price_cents");
+  });
+
+  test("unknown brand + style slugs also return HTTP 404 (C-1)", async ({
+    page,
+  }) => {
+    const brand = await page.goto("/marcas/fantasma");
+    expect(brand?.status()).toBe(404);
+    const style = await page.goto("/estilos/no-existe");
+    expect(style?.status()).toBe(404);
   });
 
   test("brand index lists brands with monogram fallbacks (AC-5)", async ({
@@ -116,6 +128,32 @@ test.describe("catalog browse + paginate (es-MX)", () => {
     await tiles.first().click();
     await expect(page).toHaveURL(/\/marcas\//);
     await expect(page.getByTestId("product-grid")).toBeVisible();
+  });
+
+  test("mobile breadcrumb collapses to a single ellipsis with no doubled chevron (m-2)", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "mobile",
+      "collapse only happens below the sm breakpoint",
+    );
+    // ejecutivas is nested under oficina → 4 crumbs (Inicio › Categorías ›
+    // Oficina › Ejecutivas), the middle two collapse to one `…` on mobile.
+    await page.goto("/categorias/ejecutivas");
+    const crumb = page.getByTestId("breadcrumbs");
+    await expect(crumb).toBeVisible();
+    // Exactly ONE ellipsis placeholder is visible (not one per middle crumb).
+    const ellipsis = crumb.getByTestId("breadcrumb-ellipsis");
+    await expect(ellipsis).toHaveCount(1);
+    await expect(ellipsis).toBeVisible();
+    // Visible separators on mobile: Inicio›…  and  …›Ejecutivas → exactly 2,
+    // never a doubled chevron from a stranded hidden middle.
+    const visibleSeparators = crumb
+      .getByTestId("breadcrumb-separator")
+      .filter({ visible: true });
+    await expect(visibleSeparators).toHaveCount(2);
+    // Current page crumb is present and marked aria-current.
+    await expect(crumb.getByText("Ejecutivas")).toBeVisible();
   });
 
   test("no horizontal scroll on the catalog grid (AC-17)", async ({ page }) => {
@@ -157,5 +195,13 @@ test.describe("catalog under /en (AC-10)", () => {
     await first.click();
     await expect(page).toHaveURL(/\/en\/categorias\//);
     await expect(page.getByTestId("product-grid")).toBeVisible();
+  });
+
+  test("English unknown slug returns a real HTTP 404 (C-1)", async ({
+    page,
+  }) => {
+    const response = await page.goto("/en/categorias/no-existe-jamas");
+    expect(response?.status()).toBe(404);
+    await expect(page.getByTestId("not-found-home")).toBeVisible();
   });
 });

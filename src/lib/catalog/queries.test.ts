@@ -29,6 +29,9 @@ interface MockTables {
 
 let tables: MockTables;
 
+/** Records the id arrays passed to `.in("id", ids)` on `products_public` (M-4). */
+let inIdCalls: string[][];
+
 /**
  * A chainable query-builder mock. Every filter/order method returns `this`;
  * awaiting or `.maybeSingle()`/`.range()` resolves to the table's data. This
@@ -42,9 +45,15 @@ function makeBuilder(table: keyof MockTables) {
   };
   const builder: Record<string, unknown> = {};
   const chain = () => builder;
-  for (const method of ["select", "eq", "in", "order"]) {
+  for (const method of ["select", "eq", "order"]) {
     builder[method] = vi.fn(chain);
   }
+  builder.in = vi.fn((column: string, ids: string[]) => {
+    if (table === "products_public" && column === "id") {
+      inIdCalls.push(ids);
+    }
+    return builder;
+  });
   builder.range = vi.fn(async () => result());
   builder.maybeSingle = vi.fn(async () => {
     const rows = tables[table].data;
@@ -63,10 +72,16 @@ vi.mock("@/lib/supabase/public", () => ({
 }));
 
 // Import AFTER mocks are registered.
-import { listProducts, getBrand, listCategories } from "./queries";
+import {
+  listProducts,
+  listProductsByCategory,
+  getBrand,
+  listCategories,
+} from "./queries";
 
 beforeEach(() => {
   fromMock.mockClear();
+  inIdCalls = [];
   tables = {
     products_public: { data: [], count: 0 },
     product_images: { data: [] },
@@ -117,7 +132,7 @@ describe("listProducts stitch shape (AC-13)", () => {
       ],
     };
 
-    const page = await listProducts({ page: 1 });
+    const page = await listProducts({ rawPage: "1" });
 
     expect(page.total).toBe(1);
     expect(page.lastPage).toBe(1);
@@ -159,7 +174,7 @@ describe("listProducts stitch shape (AC-13)", () => {
       ],
     };
 
-    const page = await listProducts({ page: 1 });
+    const page = await listProducts({ rawPage: "1" });
     expect(JSON.stringify(page.items)).not.toContain("cost_price_cents");
   });
 
@@ -184,7 +199,7 @@ describe("listProducts stitch shape (AC-13)", () => {
       ],
     };
 
-    const page = await listProducts({ page: 1 });
+    const page = await listProducts({ rawPage: "1" });
     expect(page.items[0].compareAtPriceCents).toBeNull();
   });
 
@@ -209,14 +224,14 @@ describe("listProducts stitch shape (AC-13)", () => {
       ],
     };
     // No images, no variants → out of stock, placeholder cover.
-    const page = await listProducts({ page: 1 });
+    const page = await listProducts({ rawPage: "1" });
     expect(page.items[0].coverImageUrl).toBeNull();
     expect(page.items[0].coverAlt).toBe("Sin Imagen");
     expect(page.items[0].stockState).toBe("out");
   });
 
   it("reads products from the view (never the base products table) — AC-13", async () => {
-    await listProducts({ page: 1 });
+    await listProducts({ rawPage: "1" });
     const readTables = fromMock.mock.calls.map((call) => call[0]);
     expect(readTables).toContain("products_public");
     expect(readTables).not.toContain("products");
@@ -289,5 +304,71 @@ describe("listCategories tree (AC-3, edge case 4)", () => {
     expect(oficina?.children?.map((child) => child.slug)).toEqual([
       "ejecutivas",
     ]);
+  });
+});
+
+describe("listProductsByCategory dedup (AC-2, edge case 8, M-4)", () => {
+  it("de-duplicates a duplicated (product_id, category_id) membership row so the total and grid never double-count", async () => {
+    // A stray duplicate membership row for the SAME product (data drift or a
+    // product legitimately in both `oficina` and `ejecutivas` being re-inserted).
+    tables.product_categories = {
+      data: [
+        { product_id: "p1" },
+        { product_id: "p1" }, // duplicate
+        { product_id: "p2" },
+      ],
+    };
+    // The view page returns the two DISTINCT active products once each.
+    tables.products_public = {
+      count: 2,
+      data: [
+        {
+          id: "p1",
+          slug: "silla-a",
+          name: "Silla A",
+          price_cents: 1000,
+          compare_at_price_cents: null,
+          is_best_seller: false,
+          sales_count: 0,
+          stock: 10,
+          brand_id: "b1",
+          style_id: "s1",
+          brands: { name: "B", slug: "b", logo_url: null },
+          styles: { name: "S", slug: "s" },
+        },
+        {
+          id: "p2",
+          slug: "silla-b",
+          name: "Silla B",
+          price_cents: 2000,
+          compare_at_price_cents: null,
+          is_best_seller: false,
+          sales_count: 0,
+          stock: 10,
+          brand_id: "b1",
+          style_id: "s1",
+          brands: { name: "B", slug: "b", logo_url: null },
+          styles: { name: "S", slug: "s" },
+        },
+      ],
+    };
+
+    const result = await listProductsByCategory("cat-1", "oficina", {
+      rawPage: "1",
+    });
+
+    // The `.in("id", ids)` filter received DEDUPED ids (no "p1" twice) — so a
+    // duplicate membership row can never widen the filter or the total.
+    expect(inIdCalls.length).toBeGreaterThan(0);
+    for (const ids of inIdCalls) {
+      expect(ids).toEqual([...new Set(ids)]);
+    }
+    expect(inIdCalls[0]).toEqual(["p1", "p2"]);
+
+    // No duplicate card in the rendered grid.
+    const slugs = result.items.map((item) => item.slug);
+    expect(slugs).toEqual([...new Set(slugs)]);
+    expect(result.items).toHaveLength(2);
+    expect(result.total).toBe(2);
   });
 });

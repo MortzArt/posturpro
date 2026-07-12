@@ -5,8 +5,24 @@ Strong, disciplined implementation. The read strategy (view + batched stitch), t
 
 ## Critical Issues (MUST FIX)
 
-### C-1: Invalid-slug 404 returns HTTP 200 (SEO / crawler defect)
+### C-1: Invalid-slug 404 returns HTTP 200 (SEO / crawler defect) — FIXED
 - **ID**: C-1
+- **Status**: FIXED (verified with real curl, dev + production build, both locales)
+- **Root cause (confirmed)**: The three `[slug]` routes each had a route-level
+  `loading.tsx`. That file creates a Suspense boundary that makes Next stream a
+  200 HTML shell BEFORE the async page component (which awaits the slug lookup
+  and calls `notFound()`) resolves. When `notFound()` then throws, the response
+  status is already committed as 200 — a soft-404. The dev's "notFound fires
+  after JSX" framing was wrong; the trigger was the `loading.tsx` premature flush.
+- **Fix**: Removed `loading.tsx` from `categorias/[slug]`, `marcas/[slug]`,
+  `estilos/[slug]`. The slug lookup now resolves before any response is
+  committed, so `notFound()` yields a real HTTP 404. The product-grid loading
+  experience is preserved by the existing inner `<Suspense fallback={<ProductGridSkeleton/>}>`
+  in `PaginatedProductListing`. The e2e test now asserts `response.status() === 404`
+  (ES + EN + brand + style), strengthening it.
+- **Curl evidence (production `next start`)**:
+  `GET /categorias/no-existe → 404`, `GET /en/marcas/fantasma → 404`,
+  `GET /marcas/ergovita → 200` (valid slug still 200).
 - **Severity**: CRITICAL
 - **File**: `src/app/[locale]/categorias/[slug]/page.tsx:90-93`, `marcas/[slug]/page.tsx:60-63`, `estilos/[slug]/page.tsx:59-62`; corroborated by `e2e/catalog.spec.ts:98-108` (asserts UI, deliberately NOT status) and `tasks/dev-done.md:107`.
 - **Problem**: The dev discloses that `notFound()` on an unknown/inactive slug renders the correct localized 404 UI but responds with **HTTP 200**, not 404. The e2e test was written to assert only the visible UI, sidestepping the status code. AC-14 says the slug "calls `notFound()` and renders the localized in-shell 404" — the functional half passes, but a soft-404 (200 body that looks like a 404) is exactly what Google penalizes: crawlers index the fake page, dilute crawl budget, and never drop the dead URL. T14 (SEO) explicitly depends on this.
@@ -16,32 +32,58 @@ Strong, disciplined implementation. The read strategy (view + batched stitch), t
 
 ## Major Issues (SHOULD FIX)
 
-### M-1: Numbered pagination links are 32px tall — below the 44px tap target
+### M-1: Numbered pagination links are 32px tall — below the 44px tap target — FIXED
 - **ID**: M-1
+- **Status**: FIXED — added a `numberedControl` class (`min-w-9 min-h-11 tabular-nums`)
+  to the numbered link + current-page span in `pagination.tsx`. Per the design
+  spec ("control height h-9 inside a min-h-11 tap row"), `min-h-11` gives a 44px
+  tap target while the button keeps its compact visual height. Kept unconditional
+  (not `sm:min-h-9`) because the numbered set only renders from the tablet
+  breakpoint up, where the pointer can still be touch — so it must be ≥44px there.
 - **Severity**: MAJOR
 - **File**: `src/components/catalog/pagination.tsx:96-98, 107-108` vs `src/components/ui/button.tsx:28`
 - **Problem**: Numbered page links and the current-page span use `buttonVariants({ variant, size: "lg" })` + `min-w-9`. In this repo's custom button scale, `size="lg"` is only `h-8` (32px) — the shadcn defaults were shrunk here. Only Prev/Next get `controlBase` (`min-h-11`). So numbered links are 32px tall, violating AC-17 and the ui-design "≥44px tap targets on pagination" (ui-design.md:92, :107).
 - **Impact**: Sub-minimum touch targets on tablet (768px, touch) where the numbered set is shown. Mobile (Prev/Next/count row) is compliant.
 - **Suggested Fix**: Add `min-h-11 sm:min-h-9` (or reuse `controlBase`'s height rule) to the numbered link + current-span className.
 
-### M-2: `readClampedProductPage` always issues a redundant page-1 read for any page > 1
+### M-2: `readClampedProductPage` always issues a redundant page-1 read for any page > 1 — FIXED
 - **ID**: M-2
+- **Status**: FIXED — replaced the "read page 1 to discover lastPage" approach
+  with a count-only head query (`.select("id", { count: "exact", head: true })`,
+  `countProducts`) that fetches ZERO rows, computes `lastPage`, clamps the raw
+  `?page`, then does ONE `.range()` data read of the clamped page. Non-first
+  pages now cost one count (cheap, no rows) + one data read instead of two full
+  reads. The never-416 guarantee is preserved (range is clamped before reading).
+  `readClampedProductPage` was deleted (dead code); clamping moved into the query
+  layer, which returns the clamped page on the `CatalogPage`.
 - **Severity**: MAJOR
 - **File**: `src/lib/catalog/page-helpers.ts:28-39`
 - **Problem**: To learn `lastPage` for clamping, the helper unconditionally reads page 1 first, then reads the requested page when it isn't 1. For `?page=2` that is two full reads (each = 1 view query + 2 batched image/variant queries = 6 round-trips cold). The clamp only needs `count`, not page 1's rows.
 - **Impact**: 2x DB work for every non-first page on cache miss. Bounded and ISR-cached, so not fatal, but avoidable and scales with taxonomy pages. Design anticipated a single clamped read.
 - **Suggested Fix**: Either read the requested (unclamped) page directly and, on PostgREST 416, fall back to a clamped re-read using returned `count`; or add a count-only query (`head:true, count:"exact"`) to compute `lastPage` before a single row read. The latter is clean and keeps the never-416 guarantee.
 
-### M-3: Category product query loads all member ids into an unbounded `.in()`
+### M-3: Category product query loads all member ids into an unbounded `.in()` — FIXED
 - **ID**: M-3
+- **Status**: FIXED (bounded + documented) — the membership read is now capped
+  with `.range(0, CATEGORY_MEMBER_ID_CAP - 1)` (`CATEGORY_MEMBER_ID_CAP = 1000`),
+  logging a warning if the cap is hit, so the `IN (...)` list and PostgREST URL
+  stay bounded as the catalog grows. The scale ceiling (migrate to a
+  category-scoped view/RPC when a category can legitimately exceed the cap) is
+  documented in code and added to `tasks/clean-code-backlog.md`.
 - **Severity**: MAJOR
 - **File**: `src/lib/catalog/queries.ts:384-402`
 - **Problem**: `readCategoryProductPage` fetches every `product_id` for the category (no limit) then passes the whole array to `.in("id", memberIds)`. Fine for 30 seeded products, but there is no ceiling — a large `oficina` parent aggregating children builds an ever-growing `IN (...)` list and a large PostgREST URL. Latent scale/perf issue; deviates from the "bounded batch" intent.
 - **Impact**: Fine at seed scale; degrades and risks URL-length limits as the catalog grows. Not a correctness bug today.
 - **Suggested Fix**: Push the membership filter server-side (category-scoped view or RPC) so pagination happens in the DB, or cap + document the ceiling. Acceptable to defer with a `clean-code-backlog.md` entry — but flag it, don't leave it silent.
 
-### M-4: No test that per-category `total` equals the distinct active member count (edge case 8)
+### M-4: No test that per-category `total` equals the distinct active member count (edge case 8) — FIXED
 - **ID**: M-4
+- **Status**: FIXED — added a query test (`queries.test.ts`, "listProductsByCategory
+  dedup") that seeds a DUPLICATED `(product_id, category_id)` membership row and
+  asserts (a) the `.in("id", ids)` filter received de-duplicated ids, (b) no
+  duplicate product card, and (c) `total` is not inflated. Also hardened the read
+  itself: `readCategoryProductPage` now de-duplicates member ids
+  (`[...new Set(...)]`) so a stray duplicate membership row can never double-count.
 - **Severity**: MAJOR (verify)
 - **File**: `src/lib/catalog/queries.ts:377-403`
 - **Problem**: Per-category pagination `total` is the `count:"exact"` of `products_public.in("id", memberIds)`. Correct only if `product_categories` has one row per (product, category) and no duplicate active member is double-counted. Edge case 8 (a product in both `oficina` and `ejecutivas`) is handled within a single page, but nothing asserts the count/grid can't double-count if data ever inserts a duplicate membership row.
@@ -50,19 +92,43 @@ Strong, disciplined implementation. The read strategy (view + batched stitch), t
 
 ## Minor Issues (NICE TO FIX)
 
-### m-1: `styles(...)` embed is fetched and never consumed
+### m-1: `styles(...)` embed is fetched and never consumed — FIXED
+- **Status**: FIXED — removed `styles(name,slug)` and the unread `brand_id`/`style_id`
+  scalars from `PRODUCT_CARD_SELECT`; deleted the `EmbeddedStyle` type and the
+  `styles` field from `ProductCardRow`. Eliminates the per-query over-fetch. The
+  `is_best_seller`/`sales_count` columns are kept (they back the server-side
+  ORDER BY; PostgREST orders on the column regardless of select).
 - **File**: `src/lib/catalog/queries.ts:53-54, 90, 188-224`
 - **Suggestion**: `PRODUCT_CARD_SELECT` embeds `styles(name,slug)` and defines `EmbeddedStyle`, but `toCard` never reads `row.styles`. Pure over-fetch on every product-card query. Drop the style embed + type, or use it. Same for `brand_id`/`style_id` scalar columns — selected but unread in `toCard` (brand comes from the embed).
 
-### m-2: Breadcrumb mobile collapse is untested — risk of a doubled chevron
+### m-2: Breadcrumb mobile collapse is untested — risk of a doubled chevron — FIXED
+- **Status**: FIXED — the concern was real: with a 4-crumb trail the old code
+  rendered the `…` placeholder ONCE PER middle crumb (two `…`) plus stranded
+  chevrons from the still-rendered separators around hidden `<li>`s. Rewrote the
+  collapse: exactly ONE `…` placeholder (before the first middle crumb), the
+  separator before the first collapsed middle stays visible on mobile
+  (`Inicio ›`), subsequent middle separators hide on mobile, and the last
+  crumb's separator always shows — net mobile trail `Inicio › … › Ejecutivas`.
+  Removed the ellipsis's own trailing chevron (it was the doubling source). Added
+  a Playwright mobile assertion (Pixel 7) verifying exactly one visible ellipsis
+  and exactly two visible separators. Confirmed live: 1 ellipsis li + 3
+  separators in the full DOM for `/categorias/ejecutivas`.
 - **File**: `src/components/catalog/breadcrumbs.tsx:61-64, 109-120`
 - **Suggestion**: On mobile the collapsed `…` placeholder renders its own chevron (116-119) while the per-item `<Separator/>` (61) still renders around the hidden middle `<li>`s. Trace the 375px output (`Inicio › … › Ejecutivas`) to confirm no doubled chevron, and add a Playwright assertion at 375px — the mobile crumb rendering is currently untested.
 
-### m-3: Skeleton grid renders 12 cards regardless of last-page size
+### m-3: Skeleton grid renders 12 cards regardless of last-page size — SKIPPED
+- **Status**: SKIPPED (note only, by the reviewer's own assessment) — the last-page
+  item count is unknowable at loading time (the count query hasn't run yet), so
+  reserving exactly N skeletons for a short last page is not possible without
+  making the shell dynamic. The common full-grid case is correct and the brief
+  over-reservation on a short LAST page is a minor, acceptable trade-off. No churn.
 - **File**: `src/components/catalog/catalog-skeleton.tsx:27-40`
 - **Suggestion**: A 3-item last page briefly shows 12 skeletons then collapses to 3 — a layout shift contradicting "reserve exact space" for short pages. Count isn't known at loading time so acceptable; the common full-grid case is correct. Note only.
 
-### m-4: `firstOrSelf` defends against an array embed but only for `brands`
+### m-4: `firstOrSelf` defends against an array embed but only for `brands` — FIXED
+- **Status**: FIXED (resolved by m-1) — with the `styles` embed removed, `brands`
+  is the only to-one embed, so `firstOrSelf` normalizing just it is now correct
+  and consistent, not asymmetric.
 - **File**: `src/lib/catalog/queries.ts:113-116, 198`
 - **Suggestion**: Consistent with m-1 — since `styles` is unused, the asymmetry is moot once the embed is removed. If kept, normalize both or neither for clarity.
 
@@ -122,5 +188,25 @@ No animation findings.
 ## Quality Score: 8/10
 Clean, well-tested, convention-following, correct data/security/motion. Held back by one real SEO defect framed as "acceptable" (C-1), a doubled DB read (M-2), and a touch-target miss (M-1).
 
-## Recommendation: REQUEST CHANGES
-Fix C-1 (or convert it to an explicit, ticketed deferral WITH a corrected e2e status assertion) before this feeds T14. Address M-1 and M-2. M-3/M-4 and the minors can be backlogged. Do not ship the soft-404 silently under an "acceptable" label.
+## Recommendation: REQUEST CHANGES → RESOLVED (Stage 6 Fix)
+All findings addressed. C-1 (soft-404) is truly fixed — real HTTP 404 verified by
+curl in dev AND production build, both locales — with a strengthened e2e status
+assertion (ES + EN + brand + style). M-1 (tap target), M-2 (double read → count +
+single read), M-3 (bounded `.in()` + documented ceiling), M-4 (dedup test + read
+hardening) all FIXED. m-1/m-2/m-4 FIXED; m-3 SKIPPED (reviewer note-only, not
+fixable at loading time). Gates: lint clean, tsc clean, 280 unit tests pass, prod
+build route table unchanged (no static regression), catalog e2e 28 pass / 2
+skipped. No soft-404 ships.
+
+### Fix Status Summary
+| ID | Severity | Status |
+|----|----------|--------|
+| C-1 | CRITICAL | FIXED (curl-verified, dev + prod, both locales) |
+| M-1 | MAJOR | FIXED |
+| M-2 | MAJOR | FIXED |
+| M-3 | MAJOR | FIXED (bounded + backlog-documented ceiling) |
+| M-4 | MAJOR | FIXED (test + read hardening) |
+| m-1 | MINOR | FIXED |
+| m-2 | MINOR | FIXED (bug was real; + e2e assertion) |
+| m-3 | MINOR | SKIPPED (note-only; not fixable at load time) |
+| m-4 | MINOR | FIXED (moot after m-1) |

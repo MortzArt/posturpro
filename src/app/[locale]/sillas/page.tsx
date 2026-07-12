@@ -72,7 +72,7 @@ export default async function CatalogListPage({
           searchParams={searchParams}
           basePath={CATALOG_PATH}
           emptyMessageKey="empty.category"
-          read={(page) => listProducts({ page })}
+          read={(rawPage) => listProducts({ rawPage })}
         />
       </Suspense>
     </section>

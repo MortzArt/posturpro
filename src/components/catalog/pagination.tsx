@@ -39,6 +39,16 @@ interface PaginationProps {
 const controlBase =
   "min-w-9 min-h-11 sm:min-h-9 px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
+/**
+ * Numbered page links (rendered from `sm:` up, i.e. the tablet+ set). The repo's
+ * `size="lg"` button is only `h-8` (32px), below the 44px touch minimum. The
+ * numbered set first appears at the 768px tablet breakpoint where the pointer
+ * can still be touch, so the tap target must be ≥44px there. Per the design spec
+ * ("control height h-9 inside a min-h-11 tap row"), `min-h-11` gives the 44px
+ * tap target while the button keeps its compact visual height (M-1, AC-17).
+ */
+const numberedControl = "min-w-9 min-h-11 tabular-nums";
+
 export function Pagination({
   currentPage,
   lastPage,
@@ -94,7 +104,7 @@ export function Pagination({
                   aria-current="page"
                   className={cn(
                     buttonVariants({ variant: "default", size: "lg" }),
-                    "min-w-9 tabular-nums",
+                    numberedControl,
                   )}
                   data-testid="pagination-current"
                 >
@@ -106,7 +116,7 @@ export function Pagination({
                   aria-label={labels.goToPage(item)}
                   className={cn(
                     buttonVariants({ variant: "outline", size: "lg" }),
-                    "min-w-9 tabular-nums",
+                    numberedControl,
                   )}
                   data-testid="pagination-page"
                 >

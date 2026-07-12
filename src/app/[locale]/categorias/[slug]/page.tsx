@@ -121,8 +121,8 @@ export default async function CategoryPage({
           searchParams={searchParams}
           basePath={categoryPath(category.slug)}
           emptyMessageKey="empty.category"
-          read={(page) =>
-            listProductsByCategory(category.id, category.slug, { page })
+          read={(rawPage) =>
+            listProductsByCategory(category.id, category.slug, { rawPage })
           }
         />
       </Suspense>

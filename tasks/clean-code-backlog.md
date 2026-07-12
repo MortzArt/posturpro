@@ -59,6 +59,17 @@ Open items discovered during the pipeline. Check off when addressed.
   dynamic due to `searchParams` (NOT `cookies()`); their data is tag-cached.
   NOTE: full PPR (static shell + dynamic `?page` hole) would need Next 16's
   `cacheComponents` — deferred as too invasive for T3.
+- [ ] **Category product membership uses an unbounded `.in()` (T3 → scale).**
+  `readCategoryProductPage` (`src/lib/catalog/queries.ts`) loads the category's
+  member `product_id`s from `product_categories` and passes them to
+  `.in("id", ids)` on `products_public`. T3 review M-3: fine at seed scale (≤30
+  members) but there is no server-side pagination of the membership — a large
+  parent category would build an ever-growing `IN (...)` list and a long
+  PostgREST URL. MITIGATED in T3: the membership read is bounded to
+  `CATEGORY_MEMBER_ID_CAP = 1000` ids (logged if hit) and de-duplicated. SCALE
+  CEILING: when a category can legitimately exceed the cap, migrate to a
+  category-scoped view / RPC so pagination happens in the DB (count + range
+  window) instead of client-side id sets. (Ref: T3 review M-3.)
 - [ ] **Middleware composability for admin (T10).** The locale matcher will
   locale-route `/admin`, but admin must be fully separate from shopper
   sessions. In T10, keep admin outside `[locale]` and compose admin auth into

@@ -97,7 +97,9 @@ export default async function BrandPage({
           searchParams={searchParams}
           basePath={brandPath(brand.slug)}
           emptyMessageKey="empty.brand"
-          read={(page) => listProductsByBrand(brand.id, brand.slug, { page })}
+          read={(rawPage) =>
+            listProductsByBrand(brand.id, brand.slug, { rawPage })
+          }
         />
       </Suspense>
     </section>

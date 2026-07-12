@@ -1,8 +1,8 @@
 # Pipeline State
 Task: T3 — Catalog browsing
 Tier: full-cycle (auto-classified: complexity=medium → run all stages EXCEPT Stage 11 Hacker)
-Stage: 5
-Agent: ultrareview (Stage 5 — Review). Dev done (~45 files): src/lib/catalog/ (queries via products_public + batched .in() children, stock, pagination, types, page-helpers), src/lib/supabase/public.ts (cookie-free client), 7 catalog routes with loading/metadata/notFound/generateStaticParams, 11 components in src/components/catalog/, catalog i18n namespace. Gates: 279 unit, 23+1skip catalog e2e, lint/tsc/build clean. AC-11: shell + index pages now SSG/ISR (were dynamic); /sillas + [slug] pages remain dynamic due to searchParams only (documented deviation). Deviation 2: invalid-slug 404 renders correct UI but HTTP 200 (Next streaming notFound limitation). Both T3 backlog items resolved+checked off.
+Stage: 6
+Agent: ultrafix (Stage 6 — Fix). Review REQUEST CHANGES (8/10): C-1 invalid-slug 404 returns HTTP 200 (soft-404, SEO defect — e2e deliberately avoids asserting status; needs real 404), M-1 pagination number links 32px (<44px bar), M-2 double DB read in readClampedProductPage (count-only query fixes), M-3 unbounded .in(memberIds), M-4 missing duplicate-membership total test, 4 minors. AC-14 partial fail, AC-17 partial. Prior context: Dev stage (Stage 5 note below) Dev done (~45 files): src/lib/catalog/ (queries via products_public + batched .in() children, stock, pagination, types, page-helpers), src/lib/supabase/public.ts (cookie-free client), 7 catalog routes with loading/metadata/notFound/generateStaticParams, 11 components in src/components/catalog/, catalog i18n namespace. Gates: 279 unit, 23+1skip catalog e2e, lint/tsc/build clean. AC-11: shell + index pages now SSG/ISR (were dynamic); /sillas + [slug] pages remain dynamic due to searchParams only (documented deviation). Deviation 2: invalid-slug 404 renders correct UI but HTTP 200 (Next streaming notFound limitation). Both T3 backlog items resolved+checked off.
 Last Updated: 2026-07-12
 Notes: Stage 1+2 (PlanResearch) COMPLETE. Artifacts written: tasks/next-ticket.md + tasks/research-report.md.
 
