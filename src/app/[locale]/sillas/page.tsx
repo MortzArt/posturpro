@@ -238,10 +238,8 @@ function buildToolbarLabels(
     sortOptions: options,
     filterSheet: {
       trigger: t("filters.trigger"),
-      triggerCount: t("filters.triggerCount", { count: 0 }),
       title: t("filters.title"),
       close: t("filters.close"),
-      apply: t("filters.apply", { count: 0 }),
     },
     filterPanel: {
       title: t("filters.title"),

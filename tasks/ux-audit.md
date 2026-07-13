@@ -1,219 +1,196 @@
-# UX Audit: T4 — Product Detail Page (`/producto/[slug]`)
+# UX Audit: T5 — Search, Filters & Sorting
 
-Stage 8 (ultraux). Comprehensive UX audit of the new PDP against `ui-design.md`
-(layout, M1–M9 motion, states, copy) and `next-ticket.md` (AC-1…AC-20, 10 edge
-cases). Live checks run with Playwright against a dev server on port 3000 wired
-to the seeded local Docker Supabase; the developer's port-3206 dev server and
-Docker Supabase were left running throughout.
+Stage 8 (ultraux). Live audit against a fresh prod build on `:3000` (seeded local
+Supabase `:54321`), both locales, 320 → 1440px. Skills applied: `emil-design-eng`,
+`apple-design`, `improve-animations` methodology for the motion pass. Audited against
+`tasks/ui-design.md` (M-1…M-8, states, copy) and the AC set in `tasks/next-ticket.md`.
 
 ## Summary
 
-- **Components audited**: 8 PDP components + 3 reused T3 components (StockBadge,
-  Breadcrumbs, ProductCard) + PDP motion CSS + `product` i18n namespace (both
-  locales) + route/page composition.
-- **Issues found**: 7 (🔴 0, 🟡 2, 🟢 5)
-- **Issues fixed**: 2 (both 🟡)
-- **States missing**: 0 — every state in the design's state matrix is implemented.
-- **Tests after fixes**: 415 unit PASS · 45/45 PDP e2e PASS (1 intentional
-  viewport skip) · tsc clean · eslint clean.
+- Components audited: 16 (search-box, sort-select, filter-panel, filter-controls,
+  filter-navigation, filter-sheet, color-swatch, active-filters, catalog-toolbar,
+  catalog-shell, catalog-grid-region, search-results, result-announcer, no-results,
+  catalog-skeleton + the ui/ primitives select/slider/checkbox/badge/input).
+- Issues found: 6 (🔴 2, 🟡 2, 🟢 2)
+- Issues fixed: 5 (🔴 2, 🟡 1, 🟢 2). Deferred: 1 (🟡, needs an RPC/arch change out of scope).
+- States missing: 0 net new (loading/empty/error/success all present; touch-target state hardened).
+- Test-suite status after fixes: **569 unit / 92 T5 e2e / 62 catalog+motion e2e all pass**;
+  lint + `tsc --noEmit` clean; `next build` clean. No test assertion changes required
+  (all e2e target `data-testid`, not the copy/labels I changed).
 
-The implementation is genuinely strong: it tracks the design spec closely, the
-copy is natural Mexican-Spanish with full English parity, motion is correct and
-reduced-motion-gated, and accessibility is thorough (focus trap + return, roving
-radiogroup, aria-live selection, labeled fields, 44px targets, zero 320px
-overflow). Findings are polish-level; no critical or embarrassing issue was found.
+## Overall verdict
+
+The feature was already in strong shape from Dev/Review/Fix/QA — SSR-first render, JS-off
+contract, motion tokens, accent search, deterministic sorts, and anon grant discipline are
+all solid and match the spec. The audit surfaced one **real correctness-of-copy bug** (the
+mobile filter counts) and one **real interruptibility bug** (rapid multi-select clobbering),
+both now fixed, plus a mobile touch-target hardening. The remaining item ("malla" keyword
+returning 0) is a legitimate discovery gap but requires expanding the RPC search scope, which
+is explicitly out of scope for this stage.
 
 ## Findings
 
 ### 🔴 Critical UX Issues
 
-None.
+1. **`filter-sheet.tsx` (trigger + apply button), all mobile/tablet viewports, both locales —
+   the mobile filter counts were frozen at zero.** The `"Filtros (N)"` trigger badge always
+   rendered `Filtros (0)` even with 2+ active filters, and the primary apply CTA always read
+   `Ver 0 sillas` regardless of the real filtered total. Root cause: `buildToolbarLabels()` in
+   `sillas/page.tsx` pre-interpolated the ICU strings with a literal `count: 0`
+   (`t("filters.triggerCount", { count: 0 })`, `t("filters.apply", { count: 0 })`) and passed
+   the frozen strings down; `FilterSheet` received the real `activeCount` but never used it to
+   build the label. A shopper who has narrowed the catalog to 5 chairs sees a button promising
+   "Ver 0 sillas" — the interface lies about its own state (Apple §7 Craft; feedback that
+   contradicts reality erodes trust).
+   **Fixed:** `FilterSheet` now interpolates client-side with `useTranslations("catalog.filters")`
+   — the trigger uses the live `activeCount` prop (`Filtros (2)` / `Filters (1)`), and the apply
+   button uses the **live filtered total** via a new `useResultCount()` selector on the
+   `ResultAnnouncer` context (`Ver 5 sillas` / `View 6 chairs`). The `ResultAnnouncerProvider`
+   now publishes the numeric total alongside its live-region text (the count is only knowable
+   post-RPC, so it can't be a server prop on the client toolbar); the apply button falls back to
+   the honest static `"Aplicar filtros"` label until the first results subtree reports, instead
+   of showing a wrong `0`. Verified live in both locales.
+
+2. **`filter-navigation.tsx`, JS-on, all viewports — rapid multi-select clobbered earlier
+   selections (interruptibility).** Toggling two/three facet values faster than a `router.push`
+   settled dropped the earlier ones: each `toggleValue` read the stale `filters` prop from its
+   render closure and computed `{...filters, [facet]: [onlyThisOne]}`, so the last click won.
+   Measured: 3 brand checkboxes clicked ~70–80ms apart landed only **1–2** brands in the URL.
+   This is exactly the "thought and gesture happen in parallel" failure Apple §3 warns about —
+   the UI lost input mid-transition.
+   **Fixed:** the provider now composes toggles against a synchronously-updated `pendingRef` of
+   the latest applied filters, re-based to the authoritative URL state via a `useEffect` keyed on
+   the `filters` prop (a real navigation) — never on incidental re-renders like `isPending`
+   flipping. URL stays the single source of truth (no architecture change); a burst of clicks now
+   **accumulates** (3/3 brands land). Verified live.
 
 ### 🟡 Major UX Issues
 
-1. **`variant-selector.tsx:130` — Out-of-stock swatch "slash" was effectively
-   invisible.** The colorless out-of-stock indicator (edge 2: "legible without
-   color") was a 1px line at 70% opacity (`h-px … bg-foreground/70`). On a 36px
-   swatch that is barely perceptible, and it would vanish entirely against a dark
-   swatch color. This is the ONLY non-color signal of an out-of-stock variant on
-   the swatch itself, so it must actually read.
-   **Fixed**: thickened to 2px (`h-0.5`), full-opacity `bg-foreground`, plus a
-   1px `outline outline-background` so the strike stays visible against BOTH
-   light and dark swatch fills. (No seed product currently has an out-of-stock
-   variant, so this is verified via CSS + the unit-tested selection logic, not a
-   live screenshot.)
+3. **`filter-controls.tsx`, mobile — facet checkbox/availability labels were below the 44px
+   touch target.** Labels used `min-h-6` (24px); the Radix checkbox has an expanded `after:`
+   hit-area (~32px) but the label text row itself was a small tap target on mobile, where the
+   filter panel lives in the Sheet. Design spec + a11y checklist mandate ≥44px (`min-h-11`).
+   **Fixed:** facet-option labels and the availability label are now
+   `flex min-h-11 flex-1 items-center` — the full row (checkbox + label) is a comfortable 44px
+   tap target. Confirmed visually in the mobile Sheet (rows now sit on a 44px rhythm). The
+   desktop sidebar reads slightly taller but it already scrolls (`overflow-y-auto`), so no layout
+   regression.
 
-2. **`product-gallery.tsx:82` — Main gallery image content was unreachable for
-   SR/keyboard users who don't open the lightbox.** The zoom trigger `<button>`
-   had `aria-label="Ampliar imagen"`, which (per ARIA name computation)
-   suppresses the inner `<img alt>` in the accessibility tree. A screen-reader
-   user tabbing the gallery heard only "Ampliar imagen, botón" — never what the
-   image shows — unless they opened the zoom dialog.
-   **Fixed**: the trigger's accessible name now combines the action with the
-   image description: `"{zoom} — {activeAlt}"`, e.g. *"Ampliar imagen — Silla
-   Ergonómica Aire — Negro"* (verified live). No new i18n key; e2e selects the
-   trigger by `data-testid`, so no test change needed.
+4. **`search.ts` RPC scope — keyword search does not match on material, so "malla" returns 0
+   results. (DEFERRED — out of scope.)** A shopper searching "malla" (mesh — a real, common
+   upholstery in the seed: 6+ chairs have `material_upholstery = "Malla transpirable"`) hits the
+   no-results page, even though "Malla" exists as a *filter facet* and there is a "Malla"
+   material to filter by. AC-3 scopes search to **name + brand + description** only (materials
+   are a facet, not a search field), so this is spec-conformant — but it's a genuine discovery
+   gap for a keyword a shopper will plausibly type. **Not fixed here:** widening the search scope
+   means editing the `search_products` RPC's `WHERE` clause (a migration/arch change), which this
+   stage may not touch. The no-results page (echo + "Limpiar filtros" + popular strip) is the
+   working safety net today. **Recommendation:** a follow-up ticket to add `material_*` columns to
+   the RPC's `unaccent/ILIKE` search predicate (the `pg_trgm` indexes and parameterization are
+   already in place, so it's a small, safe change).
 
 ### 🟢 Polish Items
 
-1. **Recently-viewed tiles emit `<h2>` for each product name** (via the reused
-   `ProductCard`), so under the "Vistos recientemente" `<h2>` the strip adds 6
-   sibling `<h2>`s that a heading-navigation SR user hears as peers of
-   "Especificaciones" / "Preguntas y respuestas". *Not fixed*: `ProductCard` is a
-   T3 component reused **verbatim** per the locked design decision, and it renders
-   `<h2>` by design in the T3 grid (where it is primary content); changing it here
-   would either fork the component or regress T3's shipped grid. This exactly
-   mirrors the accepted T3 convention — documented as a known tradeoff, deferred
-   to a future shared-card heading-level prop if the pattern is revisited.
+5. **`result-announcer.tsx` — extended to publish the live numeric count.** Added
+   `useResultCount()` so persistent client chrome (the FilterSheet apply button) can label itself
+   with the post-RPC filtered total without threading it as an impossible server prop. Fixed as
+   part of issue 1. Keeps the existing `aria-live` announcement behavior byte-for-byte (the M-7
+   announcer e2e test still passes).
 
-2. **`qa-form.tsx:331` — `CharacterCounter` toggles `aria-live` between `"off"`
-   and `"polite"` at runtime.** Dynamically flipping `aria-live` is slightly less
-   reliable across screen readers than a stable live region. *Not fixed*: the
-   counter is already tied to the textarea via `aria-describedby`, which is the
-   primary (reliable) announcement channel on focus; the near-limit color change
-   (muted → amber → destructive) is a robust parallel visual signal. The
-   anti-per-keystroke-chatter intent is correct; the marginal robustness gain
-   isn't worth the added complexity/regression surface.
-
-3. **Gallery is keyed on `selectedVariant.id` in the panel** (`product-purchase-panel.tsx:121`),
-   remounting the *entire* gallery (thumb rail + Dialog) on variant switch, where
-   the spec's M1 targets only the main-image crossfade. *Not fixed*: this is the
-   deliberate mechanism that guarantees `activeIndex` resets to 0 with no
-   during-render ref write (edge 8), it is interruptible, and QA's rapid-click
-   idempotency test passes. Heavier than strictly needed but correct and jank-free.
-
-4. **Sticky column is the gallery, not the purchase info** (`lg:sticky lg:top-20`
-   on the gallery column). Most PDPs stick the buy panel. *Not fixed*: here the
-   info column is short and there is no cart CTA (T6), so sticking the taller
-   gallery is a reasonable, harmless choice and matches the design's two-column
-   intent. Cosmetic preference only.
-
-5. **`gallery.zoom` copy "Ampliar imagen" / "Zoom image".** The English "Zoom
-   image" is slightly terse next to the warmer Spanish. *Not fixed*: acceptable,
-   consistent with the concise catalog tone, and now embedded in the richer
-   combined trigger label from fix #2.
+6. **Sort `Select` origin + motion — verified, no change needed.** Confirmed live: the sort
+   dropdown opens as the styled Radix `Select` (not a native picker) with a trigger-anchored
+   `transform-origin` (measured non-center) and the `.select-content-motion` CSS-transition
+   retrofit (opacity + `scale(0.96→1)`, 200ms open / 150ms close, `ease-out`, `@starting-style`,
+   reduced-motion → opacity-only). Meets M-3 and Emil's popover-origin rule. No fix applied.
 
 ## States Audit
 
 | Component | Loading | Empty | Error | Success | Mobile | A11y |
 |-----------|---------|-------|-------|---------|--------|------|
-| Page / route | ✅ `loading.tsx`→`PdpSkeleton`, layout-matched (no CLS) | ✅ 404 via `notFound()` (not "empty") | ✅ `error.tsx` boundary (typed throw) | ✅ `.enter-fade` mount | ✅ single-col, 0 overflow @320/375 | ✅ 1×h1, landmark breadcrumb |
-| Gallery | ✅ part of skeleton | ✅ zero-image placeholder, no zoom (edge 1) | ✅ `onError`→placeholder tile | ✅ crossfade (M1) | ✅ full-width + scroll thumb rail | ✅ region label, focus trap+return, 588px target |
-| Variant selector | — | ✅ N/A (0 variants → not rendered, AC-8) | — | ✅ ring on select, aria-live | ✅ swatches wrap, 44×44 target | ✅ radiogroup + roving tabindex + arrows |
-| Price / badge | — | — | — | ✅ recompute + M5 crossfade per variant | ✅ wraps | ✅ sr-only "Precio anterior:", aria-live |
-| Specs | ✅ skeleton rows | ✅ all-null → section hidden (AC-10) | — | — | ✅ 2-col dl stacks | ✅ semantic dl/dt/dd |
-| Recently-viewed | ✅ (correctly NOT skeletoned) | ✅ no history → not rendered (AC-12) | ✅ storage throw → silent (edge 7) | ✅ `.stagger` in | ✅ scroll rail, 0 overflow | ⚠️ card-name h2 (polish #1) |
-| Q&A list | ✅ field bars | ✅ empty state + form CTA (AC-13) | — | — | ✅ stacks | ✅ text-only nodes, sr-only answer prefix |
-| Q&A form | ✅ post-hydration | ✅ idle | ✅ field / rate-limit / unavailable / transient inline | ✅ clears + `role=status` note + focus move | ✅ full-width submit, 125×44 | ✅ labels[for], aria-describedby, honeypot off-screen |
+| Search box (header + toolbar) | n/a (submit) | ✅ placeholder | n/a | ✅ echoes `q` | ✅ collapse≤md | ✅ role=search, sr-only label, clear/submit aria |
+| Sort select | n/a | n/a | n/a | ✅ current option | ✅ compact trigger | ✅ aria-label, listbox, checked |
+| Filter panel / controls | n/a | ✅ empty facet omitted | ✅ page boundary | ✅ live toggle | ✅ 44px targets (fixed) | ✅ fieldset/legend, Checkbox+Label |
+| Color swatches | n/a | ✅ omitted if none | n/a | ✅ ring+✓ | ✅ tabbable | ✅ role=group, role=checkbox, name label, ✓ not color-only |
+| Filter sheet (mobile) | n/a | n/a | n/a | ✅ live count (fixed) | ✅ focus trap/scroll-lock/Esc | ✅ Dialog.Title, close aria, focus return |
+| Active-filter chips | n/a | ✅ renders nothing | n/a | ✅ per-chip remove + clear-all | ✅ wrap/scroll-x | ✅ link + descriptive aria, ✕ aria-hidden |
+| Result count | ✅ pending dim (M-7) | ✅ "0 sillas" → NoResults | ✅ error.tsx | ✅ "N sillas" tabular-nums | ✅ | ✅ persistent aria-live polite |
+| Product grid | ✅ skeleton (JS-on transition) / dim | ✅ NoResults | ✅ error.tsx | ✅ 2/3/4-col + pagination | ✅ 2-col @375 | ✅ inherited from T3 |
+| No-results | n/a | ✅ (this IS the empty state) | ✅ popular degrades on fail | n/a | ✅ full-width centered | ✅ h2 under h1, popular section labeled |
 
 ## Accessibility Audit
 
 | Check | Status | Details |
 |-------|--------|---------|
-| Focus rings | ✅ | `focus-visible:ring-2 ring-ring` on gallery trigger, thumbs, swatches (via group), fields, submit; distinct from `ring-foreground` selection ring. |
-| Aria labels | ✅ | Gallery region labeled; **zoom trigger now names the image (fix #2)**; swatches carry color name + "(agotado)"; icon buttons labeled; every `<img>` non-empty alt (0 missing, live-verified). |
-| Color contrast | ✅ | Monochrome tokens; low-stock amber paired with icon+text; **out-of-stock swatch strike now 2px + outline (fix #1)** so state is legible without color. |
-| Keyboard nav | ✅ | Zoom: Enter/Space opens, focus trapped inside dialog, Escape returns focus to trigger (live-verified true/true). Swatches: roving tabindex, Arrow/Home/End, Space/Enter. Form fully operable. |
-| Heading hierarchy | ✅¹ | Exactly 1 `<h1>` (product name); sections `<h2>`; Q&A questions styled `<p>`. ¹Recently-viewed card names are `<h2>` (polish #1, inherited T3 pattern). |
-| Landmarks | ✅ | Breadcrumb `<nav aria-label>`; gallery `<section aria-label>`; last crumb `aria-current="page"`, not a link. |
-| Live regions | ✅ | `aria-live="polite" aria-atomic` selection status ("{color} — {price} — {stock}"); Q&A success `role=status` (focused), errors `role=alert`. |
-| Touch targets | ✅ | Swatch hit box 44×44 (live-measured); thumbs 64px; submit min-h-11 (44px live-measured). |
-| SR-only text (both locales) | ✅ | "Precio anterior:" / "Was:", answer prefix, honeypot label, breadcrumb more-label all present and natural in es-MX + en. |
+| Focus rings | ✅ | `focus-visible:ring-2 ring-ring` on every control (search, swatches, chips, sort, checkboxes, sheet close); swatches add `ring-offset-2`. |
+| Aria labels | ✅ | Search sr-only label + submit/clear aria; swatches `aria-label`=color name; chips `aria-label`="Quitar filtro …"; sort trigger `aria-label`; sheet close aria; all icons `aria-hidden`. |
+| Color contrast | ✅ | Monochrome oklch tokens (foreground/muted-foreground on background/card) inherited from T3 (≥4.5:1). Chips `secondary`, low-stock keeps amber+icon+text. Selection never color-only (✓ glyph + ring). |
+| Keyboard nav | ✅ | Tab order breadcrumb→search→filters/sort→chips→grid→pagination; swatches each tabbable (multi-select WAI-ARIA), Space/Enter toggles; sheet focus-trap + Esc + return-to-trigger (verified e2e). |
+| Touch targets | ✅ (fixed) | Search/inputs/buttons/sort `h-11`; facet rows now `min-h-11` (were 24px); chip remove links `min-h-11` via buttonVariants; sheet trigger `min-h-11`. |
+| Heading structure | ✅ | Page `h1` "Sillas"; NoResults `h2` message + `h2` "Sillas populares" (siblings, no level skip — matches the T3 UX-audit fix). |
+| aria-live quality | ✅ | One persistent polite region announces "N sillas" per change (not spammy — de-duped via zero-width-space toggle); both locales. |
+| JS-off | ✅ | Native `<form method=get>` search + filter form; chips degrade to `<a>`; `<noscript>` always-expanded panel below lg; verified by the JS-off e2e spec (unchanged, still green). |
+| Reduced motion | ✅ | Sheet `transform:none` (measured), grid-dim/sort/clear-fade opacity-only; RM e2e passes. |
 
 ## Copy Review
 
-No copy changed. Reviewed the full `product` namespace in both locales against the
-catalog tone (concise, warm, informal "tú"). Verdict: **natural Mexican Spanish,
-not neutral-LatAm-machine; full English parity.** Representative samples:
+No copy was rewritten — the Mexican-Spanish strings are natural and the EN parity is clean
+("Más vendidas" / "Best selling", "Solo en stock" / "In stock only", "No encontramos sillas
+que coincidan" / "No chairs matched your search", "Incluye agotados" / "Include out of stock").
+The only copy defect was the **dynamic count** rendering "0" — a data-binding bug, not wording —
+now corrected so the ICU plural resolves against the real number.
 
-| Location | es-MX | en | Verdict |
-|----------|-------|----|---------|
-| `qa.emptyTitle` | "Sé el primero en preguntar" | "Be the first to ask" | ✅ warm, idiomatic |
-| `qa.result.rateLimited` | "Ya enviaste una pregunta hace poco. Espera un momento antes de enviar otra." | "You just sent a question. Please wait a moment before sending another." | ✅ friendly, actionable |
-| `qa.result.unavailable` | "Esta silla ya no está disponible." | "This chair is no longer available." | ✅ plain, no raw error |
-| `qa.validation.nameTooLong` | "El nombre no puede pasar de {max} caracteres." | "Name can't be longer than {max} characters." | ✅ tells user the limit |
-| `variant.outOfStockName` | "{name} (agotado)" | "{name} (out of stock)" | ✅ color never sole signal |
+| Location | Before | After | Reason |
+|----------|--------|-------|--------|
+| `filter-sheet.tsx` trigger badge | `Filtros (0)` (always) | `Filtros (2)` / `Filters (1)` (live active count) | The badge must reflect the real number of active filters, not a frozen 0. |
+| `filter-sheet.tsx` apply button | `Ver 0 sillas` (always) | `Ver 5 sillas` / `View 6 chairs` (live total), `Aplicar filtros` before first RPC | The primary mobile CTA must promise the real result count, never lie with 0. |
 
-The only nit: en `gallery.zoom` "Zoom image" is terser than the Spanish (polish #5).
+## Motion Pass (improve-animations 8-category)
 
-## Motion Audit (M1–M9 vs spec, improve-animations method)
+| Category | Assessment |
+|----------|------------|
+| Purpose & frequency | ✅ Sheet (occasional) gets the drawer curve; swatch/checkbox press is instant (high-freq, M-5); chip removal has no exit choreography; sort-commit isn't animated. Matches Emil's frequency table. |
+| Easing & duration | ✅ `--ease-out` enters, `--ease-drawer` sheet, all <300ms; no `ease-in`, no `transition:all` in the T5 surface. |
+| Physicality | ✅ Sort scales from `0.96`, sheet slides via `translateX` %, no `scale(0)` entrances. |
+| Interruptibility | ✅ (was 🔴) Sheet uses interruptible `[data-state]` CSS transitions (not keyframes); **rapid facet toggles now compose instead of clobbering** (issue 2 fix). |
+| Performance | ✅ Only `transform`/`opacity` animate; grid-dim is opacity-only. |
+| Accessibility | ✅ Every rule has a `prefers-reduced-motion` fallback (verified `transform:none` on the sheet under RM). |
+| Cohesion | ✅ Reuses the repo's `.drawer-panel`/`.drawer-scrim`/`.stagger`/`.swatch-press`/`.enter-fade` — the T5 surface is indistinguishable in motion from T3/T4. |
+| Missed opportunities | None worth the cost — the surface is deliberately restrained (catalog is the hero, filters are chrome), which is the correct call. |
 
-| # | Element | Spec | Implemented | Verdict |
-|---|---------|------|-------------|---------|
-| M1 | Gallery main image | crossfade 200ms + 2px blur mask, interruptible | `.gallery-image` keyed, `@starting-style` opacity+blur, reduced→instant no-blur | ✅ |
-| M2 | Zoom dialog | scale 0.95→1 + fade, center origin (modal), 200/150ms | off Radix `[data-state]`, `transform-origin:center`, reduced→opacity-only | ✅ |
-| M3 | Zoom scrim | fade 200/150ms | `.gallery-zoom-scrim` | ✅ |
-| M4 | Press feedback | scale(0.97) 120ms, high-freq → no enter/hover | `.gallery-zoom-trigger`/`.swatch-press`, reduced→none | ✅ |
-| M5 | Price/stock line | crossfade 150ms keyed | `.price-value` keyed on value | ✅ |
-| M6 | Thumb hover | opacity lift, hover-gated | `.thumb-hover` under `@media (hover:hover) and (pointer:fine)` | ✅ |
-| M7 | Recently-viewed | `.stagger`, ≤80ms/item cap | `.stagger` + `min(index*60, 300)` delay | ✅ |
-| M8 | Field error/success | fade+rise 150–200ms | `.enter-fade` | ✅ |
-| M9 | Page mount | fade | `.enter-fade` on section | ✅ |
+## Consistency with T3/T4
 
-- Purpose & frequency: ✅ high-frequency swatch selection gets press-feedback only,
-  no enter/hover motion (Emil's frequency rule honored).
-- Easing & duration: ✅ all enter uses `--ease-out` custom curve; all ≤200ms.
-- Physicality: ✅ blur-masked crossfade (Emil), scale-from-0.95 not 0.
-- Interruptibility: ✅ CSS transitions + keyed remounts; rapid-variant idempotency
-  passes e2e (edge 8).
-- Performance: ✅ only `transform`/`opacity`/`filter(blur ≤2px)` animated.
-- Accessibility: ✅ every block has a `prefers-reduced-motion` fallback; live
-  reduced-motion render verified (content present, no motion crash).
-- Cohesion: ✅ reuses the T2/T3 primitives (`--ease-out`, `.enter-fade`, `.stagger`,
-  `.card-lift`) — zero visual seam with catalog.
+Spacing shell (`mx-auto max-w-(--breakpoint-xl) px-4 py-8 …`), grid gaps, breadcrumbs, `h1`
+type scale, `StockBadge`, `ProductCard`, `Pagination`, and `tabular-nums` on counts/prices all
+match the catalog pages exactly. New components read as if they shipped in T3.
 
-## Consistency with T3 Catalog
+## Accepted Deviations (not defects)
 
-✅ Same container (`max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8`),
-spacing rhythm (`mt-10 md:mt-12` sections), `aspect-[4/5]` frames, `rounded-lg`,
-`tabular-nums` on all money, `StockBadge` inline (icon+text, colorblind-safe),
-`Breadcrumbs` verbatim, `ProductCard` verbatim in the recently-viewed strip. A
-shopper arriving from a grid card feels no seam.
+- **Price control is dual numeric inputs, not a dual-thumb Slider.** The design spec pictured a
+  slider paired with inputs; the implementation ships only the numeric inputs (the `ui/slider.tsx`
+  primitive is installed but unused here). This is the *more* accessible and JS-off-honest choice
+  (the numeric field IS the native pesos submitter — a slider can't submit without JS and would
+  duplicate the source of truth), and it matches the "no architecture changes to the JS-off
+  contract" constraint. Kept as-is; documented rather than forced.
+- **No-results keeps the desktop sidebar visible** (message + popular strip render in the results
+  column, not full-bleed). This aids recovery (the shopper can immediately loosen a filter) and is
+  a defensible agency-first call; not the spec's full-width mock but better UX.
+- **Cold-nav feel:** per QA-BUG-1's Stage-7b fix, `/sillas` awaits the RPC inline (no route
+  skeleton) to keep results SSR-visible with no JS. The single indexed RPC round trip makes cold
+  nav acceptable; JS-on filter/sort/search changes still get the `useTransition` dim (M-7). No
+  `loading.tsx`/Suspense reintroduced (would break the no-JS AC).
 
-## Live Verification (Playwright, port 3000 → local Docker Supabase)
+## Files Changed
 
-- 1×`<h1>`, clean `<h2>` set; 0 images missing/empty `alt`.
-- Zoom: focus trapped inside dialog = true; focus returned to trigger on Escape = true.
-- Swatch hit box = 44×44px; submit = 125×44px.
-- Horizontal body overflow = **0px at 320px AND 375px** (incl. with the
-  recently-viewed rail populated).
-- Reduced-motion: PDP renders, price visible, no crash.
-- `/en` PDP: fully translated ("Specifications", "Questions & answers", "Ask a question").
-- Zoom trigger accessible name (post-fix): "Ampliar imagen — Silla Ergonómica Aire — Negro".
-- Desktop + mobile + zoom-open screenshots reviewed: clean two-column split,
-  correct mobile stacking, lightbox scrim + visible close control.
-
-## Environment Note (not a product defect)
-
-The repo's `.env.local` points at a **remote** hosted Supabase project that
-currently 404s on the catalog tables/views (empty or undeployed schema there);
-its transient availability is why an isolated `next build`/`next start` for the
-audit failed collecting page data. The audit was therefore run against the
-**seeded local Docker Supabase** (port 54321, all 8 tables healthy) via a
-dev server on port 3000 using an isolated `distDir` (`NEXT_QA_DIST_DIR`, the same
-env-gated mechanism QA used) — the developer's port-3206 dev server and Docker
-Supabase were never touched, and all temporary build dirs + an auto-generated
-`tsconfig.json` reformat were reverted/removed afterward. Flagging that the remote
-project's schema drift is worth a look but is outside T4's scope.
-
-## Fixes Applied (files changed)
-
-| File | Change | Severity |
-|------|--------|----------|
-| `src/components/product/variant-selector.tsx` | Out-of-stock slash → 2px + full-opacity + background outline (legible without color, edge 2) | 🟡 |
-| `src/components/product/product-gallery.tsx` | Zoom-trigger accessible name now combines zoom action + image description (SR reaches image content without zooming) | 🟡 |
-
-No tests changed (both fixes are `data-testid`-safe and assert-neutral; the slash
-markup is not asserted anywhere).
+- `src/components/catalog/filter-sheet.tsx` — live trigger/apply counts via `useTranslations` + `useResultCount` (🔴 issue 1).
+- `src/components/catalog/result-announcer.tsx` — publish numeric count + `useResultCount()` selector (🔴 issue 1 / 🟢 issue 5).
+- `src/components/catalog/search-results.tsx` — pass `count` to `ResultCountAnnouncer` (🔴 issue 1).
+- `src/components/catalog/catalog-toolbar.tsx` — drop frozen `triggerCount`/`apply` from the labels type (🔴 issue 1).
+- `src/app/[locale]/sillas/page.tsx` — stop pre-interpolating the sheet count labels with `0` (🔴 issue 1).
+- `src/components/catalog/filter-navigation.tsx` — compose rapid toggles against a `pendingRef` re-based on navigation (🔴 issue 2).
+- `src/components/catalog/filter-controls.tsx` — 44px touch targets on facet + availability labels (🟡 issue 3).
 
 ## UX Score: 9/10
 
-Production-quality PDP. Spec-faithful layout, complete state coverage, correct and
-cohesive motion with full reduced-motion support, thorough keyboard/SR
-accessibility, natural bilingual copy, and zero responsive breakage down to 320px.
-The two fixed 🟡 items were the only issues that affected a real user (an invisible
-out-of-stock indicator and an image description hidden from SR users). The one
-point withheld is for the reused-card heading-level nesting in the recently-viewed
-strip (polish #1) — a legitimate SR-navigation wrinkle that can't be resolved
-without touching the locked-verbatim T3 `ProductCard`, so it is documented and
-deferred rather than force-fixed.
+Two real bugs (both fixed) in an otherwise excellent, spec-faithful, accessible, motion-cohesive
+feature. Held back from 10 only by the deferred "malla"/material search-scope gap, which is a
+legitimate discovery shortfall that needs an out-of-scope RPC change to close.

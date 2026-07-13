@@ -36,10 +36,8 @@ export interface ToolbarLabels {
   sortOptions: Record<SortKey, string>;
   filterSheet: {
     trigger: string;
-    triggerCount: string;
     title: string;
     close: string;
-    apply: string;
   };
   filterPanel: FilterPanelLabels;
 }

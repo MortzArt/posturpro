@@ -95,7 +95,7 @@ export function FacetCheckboxGroup({
             />
             <Label
               htmlFor={`${facet}-${option.value}`}
-              className="min-h-6 cursor-pointer text-sm font-normal"
+              className="flex min-h-11 flex-1 cursor-pointer items-center text-sm font-normal"
             >
               {option.label}
             </Label>
@@ -156,7 +156,7 @@ export function AvailabilityToggle({
       />
       <Label
         htmlFor="availability-include-oos"
-        className="min-h-6 cursor-pointer text-sm font-normal"
+        className="flex min-h-11 flex-1 cursor-pointer items-center text-sm font-normal"
       >
         {label}
       </Label>

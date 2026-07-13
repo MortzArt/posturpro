@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Dialog } from "radix-ui";
 import { FocusScope } from "@radix-ui/react-focus-scope";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { FilterHorizontalIcon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
+import { useResultCount } from "@/components/catalog/result-announcer";
 import { cn } from "@/lib/utils";
 
 /**
@@ -30,16 +32,26 @@ interface FilterSheetProps {
   activeCount: number;
   labels: {
     trigger: string;
-    triggerCount: string; // pre-interpolated "Filtros (3)"
     title: string;
     close: string;
-    apply: string; // pre-interpolated "Ver 24 sillas"
   };
   children: React.ReactNode;
 }
 
 export function FilterSheet({ activeCount, labels, children }: FilterSheetProps) {
+  const t = useTranslations("catalog.filters");
   const [open, setOpen] = useState(false);
+  // The apply button labels itself with the LIVE filtered total, which is only
+  // known after the RPC and is published by ResultAnnouncerProvider. Until the
+  // first results subtree reports (or if the provider is absent), fall back to
+  // the static "apply filters" label instead of lying with a "0" count.
+  const liveCount = useResultCount();
+  // The trigger badge reflects the real active-filter count (known client-side);
+  // the apply button reflects the live result total (post-RPC).
+  const triggerLabel =
+    activeCount > 0 ? t("triggerCount", { count: activeCount }) : labels.trigger;
+  const applyLabel =
+    liveCount === null ? t("applyButton") : t("apply", { count: liveCount });
   const [closing, setClosing] = useState(false);
   const mounted = open || closing;
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -92,7 +104,7 @@ export function FilterSheet({ activeCount, labels, children }: FilterSheetProps)
           data-testid="filter-sheet-trigger"
         >
           <HugeiconsIcon icon={FilterHorizontalIcon} size={18} strokeWidth={2} aria-hidden />
-          {activeCount > 0 ? labels.triggerCount : labels.trigger}
+          {triggerLabel}
         </Button>
       </Dialog.Trigger>
 
@@ -150,7 +162,7 @@ export function FilterSheet({ activeCount, labels, children }: FilterSheetProps)
                       data-testid="filter-sheet-apply"
                       onClick={() => setOpen(false)}
                     >
-                      {labels.apply}
+                      {applyLabel}
                     </Button>
                   </div>
                 </div>

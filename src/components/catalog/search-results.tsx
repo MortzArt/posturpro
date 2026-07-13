@@ -62,7 +62,7 @@ export async function SearchResults({ filters, rawPage }: SearchResultsProps) {
       >
         {countText}
       </p>
-      <ResultCountAnnouncer text={countText} />
+      <ResultCountAnnouncer text={countText} count={result.total} />
     </>
   );
 
