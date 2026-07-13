@@ -1,17 +1,33 @@
 # Pipeline State
-Task: T4 — Product detail page
-Tier: full-cycle (medium — Stage 11 Hacker skipped by classification)
-Stage: COMPLETE
-Agent: — (Stage 12 Verify PASSED → SHIP)
+Task: T5 — Search, filters & sorting
+Tier: full-cycle
+Stage: 3
+Agent: ultradesign
+Complexity: high (all 12 stages run; hacker stage included)
+Feature Type: full-feature
 Last Updated: 2026-07-13
-Notes: T4 SHIPPED. Verdict SHIP, confidence HIGH, quality 9/10. Verifier re-ran ALL gates fresh against a prod build (own server :3000, isolated .next-verify distDir) on seeded local Docker Supabase (user :3206 + Docker untouched, no db reset): lint clean, tsc exit 0, build success — PDP ● SSG 60 prerendered paths (30 slugs × 2 locales, 5m revalidate). 415/415 unit, 78/78 integration (non-destructive), 167/167 e2e + 5 intentional skips = 660 pass / 0 fail. 20/20 ACs + 10/10 edges: variant switch syncs price/stock/aria-live, zoom focus trap, Q&A anon RLS insert live-verified (insert OK then invisible to anon; honeypot + validation green), cost_price_cents 0 hits in HTML+RSC (structurally absent from view), localized 404 both locales, compare-at strikethrough, recently-viewed per-tile stock labels. All prior fixes cross-checked in code: M-1..M-4, BUG-1 (use-server export split to qa-form-state.ts), UX swatch/gallery fixes. Scope clean: no T5/T6/T11/Phase-2 build-ahead. See tasks/ship-decision.md.
+Notes: Stage 1+2 (PlanResearch) COMPLETE — tasks/next-ticket.md + tasks/research-report.md. Complexity=high (reclassified UP from standard): new DB-side query subsystem + migration, anon-reachable RPC, 15+ files, cross-cutting cache/SEO/search concerns. ALL 12 stages run incl. Stage 11 Hacker.
 
-Pipeline history: Stage 1+2 PlanResearch (medium, full-feature) → 3 UI Design (M1-M9 motion spec) → 4 Dev (22 files, 20/20 ACs) → 5 Review (REQUEST CHANGES 8/10: 4 major/6 minor/4 nit) → 6 Fix (4/4 majors; UUID-gated capped rate limiter, Vercel-edge IP trust chain, per-tile stock labels, defaultVariant DRY) → 7 QA (+173 tests → 660; found+fixed CRITICAL BUG-1: "use server" non-function export silently disabled Q&A in prod runtime) → 8 UX (9/10, 2 a11y fixes) → 9 Security SECURE-WITH-NOTES (0 crit/high/med, 9 live adversarial attacks blocked) ∥ 10 Arch SOUND 8.5/10 → 11 skipped (medium) → 12 SHIP.
+Key T5 decisions locked in the ticket (dev MUST honor):
+- DB strategy: SECURITY INVOKER SQL function search_products(...) via supabase.rpc(), reading ONLY products_public + product_variants + product_categories. EXECUTE granted to anon/authenticated only after REVOKE FROM public. Verified live as anon: RPC returns rows while base products SELECT still 42501; cost_price_cents unreachable. Returns page rows + total_count via COUNT(*) OVER () in one round trip. Variant-color filter via EXISTS; availability via COALESCE(SUM(variant.stock), product.stock) > 0 matching effectiveStock().
+- Search: unaccent + pg_trgm extensions (confirmed installable); unaccent(lower(...)) matches ergonomica -> Ergonómica. 80-char query cap + GIN trgm index + LIMIT 12.
+- Caching: free-text search NEVER cached (T3 cardinality discipline). Filter/sort-only MAY use bounded canonicalized unstable_cache key (unknown values dropped, price bucketed, canonicalPageKey); default to NOT caching if bounding gets hard. RPC fully parameterized.
+- Search UX lives on /sillas (no /buscar route). Faceted pages: noindex,follow + canonical -> clean /sillas.
+- Best-selling = sales_count DESC + deterministic tiebreak (stable pre-T7); no-results popular strip uses same order. Availability filter defaults to in-stock.
+- PRE-STEP: extract shared read primitives (fail/firstOrSelf/cache wrapper) into read-primitives.ts as behavior-preserving refactor — 660-test suite must stay green.
 
-Accepted/known items carried forward: 3 dev deviations (messages in src/messages/, MessageQuestionIcon, no route-level revalidate export — ISR via unstable_cache); local next start serves HTTP 200 with correct 404 UI for unknown slugs (Next 16 prerender-cache artifact, correct on CDN); 2 LOW security notes (best-effort in-memory limiter off-Vercel — honeypot + QA_RATE_LIMIT_MAX_KEYS backstop; 2 moderate transitive postcss advisories, report-only); 5 deferred green UX items.
+Open risks: RPC <-> effectiveStock parity (parity test required), 660-suite regression from refactor, PostgREST schema-cache staleness after migration, filter preservation across crawlable pagination hrefs.
 
-Backlog for future tasks (tasks/clean-code-backlog.md T4 section, from arch review): T5 — extract shared read primitives (fail/firstOrSelf/tag boilerplate) before a third read module; T6 — cart must read authoritative per-variant stock (variant seam ready: selectedVariantId + ProductVariantView.id + UNIQUE sku); T8 — do NOT reuse in-memory Map pattern for webhook idempotency (durable ledger required); T10/T11 — admin edits must revalidateTag(product:<slug>) + catalog tags, add composite (product_id, is_published, created_at) index, PDP Q&A pagination; clientIp() header-precedence unit test (next/headers mock) still missing.
+Original scope: keyword search; filters: category, brand, style, price range, color, material, availability (default in-stock); sorting: price asc/desc, newest, best-selling, name; no-results page with popular chairs. BUILD_PLAN scope: keyword search; filters: category, brand, style, price range, color, material, availability (default in-stock); sorting: price asc/desc, newest, best-selling, name; no-results page with popular chairs. blocked by: T3 (COMPLETE/SHIPPED). T4 also SHIPPED 2026-07-13.
 
-ENV NOTE: .env.local points at a dead remote Supabase (404s on catalog tables) — all builds/e2e must run against seeded local Docker Supabase (:54321). QA left env-gated distDir toggle in next.config.ts for isolated builds. User may be browsing dev server on port 3206 — never kill it or the Docker containers.
+Carry-over context (from T3/T4 arch reviews — MUST inform the ticket):
+- T3 arch review REQUIRED: T5 must build a DB-side filtered query — the T3 view+stitch approach (products_public + batched .in() children) cannot filter by variant color pre-pagination. Indexes needed for filter columns.
+- T4 arch review: extract shared read primitives (fail/firstOrSelf/unstable_cache tag boilerplate, duplicated across src/lib/catalog/queries.ts and product-detail.ts) BEFORE T5 mints a third copy. See tasks/clean-code-backlog.md T4 section.
+- Cache-key discipline (T3 HIGH finding, T4 upheld): user-controlled input (search text, filter params, sort, page) must be bounded/canonicalized before entering any unstable_cache key — search text especially is unbounded-cardinality; the ticket must decide whether search results are cached at all.
+- Existing patterns: products_public view (anon never reads base products; cost_price_cents unreachable), src/lib/supabase/public.ts cookie-free client, canonicalPageKey + MAX_PAGE pagination clamping, PRODUCTS_PER_PAGE=12, crawlable ?page=N links, stock rules (effective stock = sum(variant stock) else product.stock, LOW_STOCK_THRESHOLD=5), catalog + product i18n namespaces in src/messages/.
+- "Best-selling" sort: orders/order_items tables exist (T1 schema) but no orders flow yet (T7) — planner must decide the semantics with zero sales data (tie-break/fallback).
+- Availability filter default = in-stock per BUILD_PLAN.
 
-Next task when pipeline resumes: T5 — Search, filters & sorting (blocked by T3 ✓) or T6 — Cart (blocked by T4 ✓); both unblocked. T10 may also run in parallel per BUILD_PLAN rule 1.
+Scope guards: NO cart (T6), NO checkout (T7), NO admin (T10/T11), NO Phase 2 (accounts, discount UI).
+
+ENV NOTE: .env.local points at a dead remote Supabase (404s on catalog tables) — all builds/e2e must run against seeded local Docker Supabase (:54321). QA env-gated distDir toggle available in next.config.ts. User may be browsing dev server on port 3206 — never kill it or the Docker containers; agents use port 3000.
