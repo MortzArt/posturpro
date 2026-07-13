@@ -1,324 +1,121 @@
-# Dev Summary: T5 — Search, Filters & Sorting
+# Dev Summary: T6 — Cart
 
-## Rendering Mode
-
-`/[locale]/sillas` is now **`ƒ` (Dynamic)** — it reads `searchParams` at the
-page level (to parse filters, set canonical/robots metadata, build chips), which
-opts the route into on-demand rendering. AC-10 is still satisfied: the UNFILTERED
-`/sillas` serves entirely from **cached reads** (facet lists + the popular/search
-reads are `unstable_cache`d under the `catalog` tag), so the default catalog
-stays fast ("or an equivalent cached read"). The filtered grid read is isolated
-in `<Suspense>` so the shell/toolbar/chips render immediately.
-
-**Index pages untouched:** `/marcas`, `/estilos`, `/categorias`, and
-`/producto/[slug]` remain `● (SSG)` in the build output — no change to their
-SSG/ISR posture.
+Stage 3 (Dev) of the standard pipeline. Full-feature implementation of a
+persistent guest cart: localStorage lib + pure line/shipping math, a React
+context provider, header badge, PDP add-to-cart island, and the `/carrito` page
+with line rows, quantity steppers, free-shipping progress, order summary, and
+empty state. Zero TODOs, zero placeholders. No new dependencies.
 
 ## Files Changed
 
 | Path | Change | Summary |
 |------|--------|---------|
-| `supabase/migrations/0007_search.sql` | created | `unaccent`+`pg_trgm`; `search_products` RPC (SECURITY INVOKER, revoke-from-public + grant anon/authenticated); 3 GIN trgm + 4 btree indexes |
-| `src/lib/catalog/read-primitives.ts` | created | Extracted `fail`/`firstOrSelf`/`cachedRead` (Constraint 2) |
-| `src/lib/catalog/search.types.ts` | created | `CatalogFilters`, `SortKey`, `FacetOption`, `ColorFacetOption`, `FacetOptions` |
-| `src/lib/catalog/search-params.ts` | created | Pure parse/serialize + canonicalization (drop unknowns, cap `q`, invert-price, sort) |
-| `src/lib/catalog/search-params.test.ts` | created | 17 unit tests for edges 3/4/7 + round-trip |
-| `src/lib/catalog/search.ts` | created | `searchProducts` + `listPopularProducts` via the RPC; caching per Constraint 3 |
-| `src/lib/catalog/facets.ts` | created | Color/material/price facet reads + `loadFacetOptions` composer + known-sets/label lookups |
-| `src/lib/catalog/active-filter-chips.ts` | created | Pure builder for removable-chip view models |
-| `src/components/catalog/search-box.tsx` | created | Header (collapsing) + toolbar search `<form method=get>` |
-| `src/components/catalog/sort-select.tsx` | created | shadcn Select; pushes `orden`, resets page |
-| `src/components/catalog/color-swatch.tsx` | created | Multi-select checkbox-semantics swatches (`.swatch-press`) |
-| `src/components/catalog/filter-controls.tsx` | created | Facet checkbox group, availability toggle, price range, clear button |
-| `src/components/catalog/filter-panel.tsx` | created | One panel (sidebar + sheet); native `<form>` + live client toggles |
-| `src/components/catalog/filter-sheet.tsx` | created | Mobile drawer on Radix Dialog + `.drawer-panel`/`.drawer-scrim` (M-1) |
-| `src/components/catalog/filter-navigation.tsx` | created | Client context: shared `useTransition` + serialize/apply |
-| `src/components/catalog/active-filters.tsx` | created | Removable chips + clear-all (real `<a>`) |
-| `src/components/catalog/no-results.tsx` | created | No-results state + popular strip via `ProductGrid` |
-| `src/components/catalog/catalog-toolbar.tsx` | created | Search echo + filter-sheet trigger + sort composer |
-| `src/components/catalog/catalog-grid-region.tsx` | created | Pending-dim wrapper (M-7) |
-| `src/components/catalog/catalog-shell.tsx` | created | Client shell wrapping toolbar + sidebar + grid region in the provider |
-| `src/components/catalog/search-results.tsx` | created | Suspense child: RPC read → grid+pagination or NoResults + aria-live count |
-| `src/components/ui/{input,checkbox,select,slider,badge,label}.tsx` | created | shadcn (no new npm deps; Select motion retrofitted) |
-| `src/app/[locale]/sillas/page.tsx` | modified | Rewrite: parse filters, load facets, chips, metadata, shell + Suspense |
-| `src/lib/catalog/queries.ts` | modified | Import `fail`/`firstOrSelf` from read-primitives (deleted local copies) |
-| `src/lib/catalog/product-detail.ts` | modified | Same import; deleted local `fail`/`firstOrSelf` |
-| `src/lib/catalog/page-helpers.ts` | modified | `makeHrefForPage(basePath, query?)` — additive filter-query carrier (AC-15) |
-| `src/components/layout/site-header.tsx` | modified | Added header search box (AC-12) |
-| `src/lib/config.ts` | modified | `SEARCH_PARAM_KEYS`, `SORT_KEYS`, `DEFAULT_SORT`, `SEARCH_QUERY_MAX`, `POPULAR_PRODUCTS_MAX`, price-bucket constants |
-| `src/lib/supabase/database.types.ts` | modified | Typed the `search_products` RPC (Args + Returns) |
-| `src/app/globals.css` | modified | `.select-content-motion` (M-3), `.grid-pending`/`.grid-idle` (M-7), `.clear-fade` (M-6) |
-| `src/messages/es-MX.json` + `en.json` | modified | `catalog.search/filters/sort/results/noResults` (ICU plurals) |
-| `src/messages/keys-used.test.ts` | modified | Added all new consumed keys |
+| `src/lib/config.ts` | modified | Added `CART_STORAGE_KEY="posturpro:cart:v1"`, `MAX_CART_ITEM_QUANTITY=99`, `CART_PATH="/carrito"`, `CHECKOUT_PATH="/checkout"`, `ADD_TO_CART_CONFIRM_MS=1500` — each documented (Rule 4). |
+| `src/lib/cart/cart-line.ts` | created | `CartLine`/`CartLineInput` types + pure helpers: `cartLineKey`, `lineKey`, `sanitizeQuantity`, `isDroppableQuantity`, `lineTotalCents`, `subtotalCents`, `totalItemCount`, `addLine` (dedupe+increment+clamp), `setLineQuantity`, `removeLine`. Integer cents only; never formats. |
+| `src/lib/cart/cart-storage.ts` | created | Guarded localStorage `readCart`/`writeCart` mirroring `recently-viewed.ts`: `hasStorage` SSR guard, `isCartLine` shape guard (rejects non-integer/`NaN` `unitPriceCents`), quantity drop/clamp on read, `warnOnce` per session, full try/catch (never throws). |
+| `src/lib/cart/shipping.ts` | created | Pure `computeShipping`, `totalCents`, `freeShippingProgress`. `>=` threshold (edge 7); returns `unavailable`/`null` when settings null (edge 6); never `$NaN`. |
+| `src/components/cart/cart-provider.tsx` | created | `"use client"` context + `useReducer` (functional actions coalesce rapid clicks, edge 9). Hydrates empty→storage on mount (no SSR mismatch), persists after hydration (no `[]` clobber), `storage` listener for cross-tab sync (edge 5). Exposes `useCart()`. |
+| `src/components/cart/cart-count-badge.tsx` | created | Header island: 44×44 icon box, count as an **absolutely-positioned overlay pill** (no layout shift), scale-in motion, `99+` cap, ICU-plural `aria-label` via `t()`. Null count pre-hydration. |
+| `src/components/cart/add-to-cart-button.tsx` | created | PDP island: fixed `h-11 w-full`, blur-masked interruptible label crossfade to "Agregado ✓", disabled when out-of-stock or pre-hydration, functional add. Labels via props (panel keeps no-client-i18n). SR-only `aria-live` add announcement. |
+| `src/components/cart/quantity-stepper.tsx` | created | 44px +/- buttons + readOnly `tabular-nums` field. `−` disables at min, `+` at cap (AC-13). Icon-only buttons carry `aria-label`. Press-only motion. |
+| `src/components/cart/cart-line-row.tsx` | created | `<li>` with thumb, PDP-linked name, variant label, unit price, stepper, ghost remove, `.price-value` line total. `StockBadge state="out"` + dimmed image when out-of-stock. `.stagger` entrance. |
+| `src/components/cart/free-shipping-progress.tsx` | created | `transform: scaleX(pct)` fill (never width) via `.cart-progress-fill`, `role="progressbar"`, achieved tint + 🎉. Returns `null` when progress null (AC-9). |
+| `src/components/cart/order-summary.tsx` | created | Subtotal/shipping/total via `formatMXN`; `free`/`flat`/`unavailable` shipping states (edge 6). Checkout CTA is a plain 44px `Link` to `CHECKOUT_PATH` (no form). |
+| `src/components/cart/cart-empty-state.tsx` | created | Centered message + `Ver sillas` CTA to `/sillas`. `.enter-fade`. Rendered only after hydration confirms empty (AC-10). |
+| `src/components/cart/cart-page-client.tsx` | created | `"use client"` body: `useTranslations("cart")`, derives totals from pure helpers, skeleton→(empty\|populated) crossfade, single page-level `aria-live` region, two-column `[2fr_1fr]` at `lg` with sticky summary. |
+| `src/app/[locale]/carrito/page.tsx` | created | Server route: reads `getStoreSettingsStatic()` → flat/threshold cents (or null), i18n metadata, renders `CartPageClient`. SSG for both locales. |
+| `src/app/[locale]/layout.tsx` | modified | Wrapped shell in `<CartProvider>` inside `NextIntlClientProvider`. |
+| `src/components/layout/site-header.tsx` | modified | Mounted `<CartCountBadge />` in the right cluster before the language toggles. |
+| `src/components/layout/mobile-nav.tsx` | modified | Added `MobileCartLink` (icon + "Carrito (3)") to the drawer nav list. |
+| `src/components/product/product-purchase-panel.tsx` | modified | Renders `AddToCartButton` as the last info-column child; threads `productId`/`slug`/`basePriceCents`/`coverImageUrl` + `addToCartLabels`; snapshot uses `effectivePriceCents(selectedVariant, base)` + current stock state. |
+| `src/app/[locale]/producto/[slug]/page.tsx` | modified | Threads product id/slug/price/cover + resolved `cart` labels into the panel. |
+| `src/messages/es-MX.json`, `src/messages/en.json` | modified | New `cart` namespace (both locales, one edit). ICU plural on `badgeLabel`; `{count}`/`{amount}` templates for interpolation. |
+| `src/messages/keys-used.test.ts` | modified | Added 31 consumed `cart.*` keys to the parity coverage list. |
+| `src/app/globals.css` | modified | Added a T6 cart-motion block: `.cart-badge-pill` (scale-in), `.cart-add-label` (blur-mask crossfade), `.cart-press`/`.cart-step-press` (press feedback), `.cart-progress-fill` (scaleX). All transform/opacity, reduced-motion gated. |
 
-## Open-Question Resolutions (from ui-design.md)
+## Data-Testids Added
+- `cart-count-badge`, `cart-count-pill` — header badge (`cart-count-badge.tsx`)
+- `mobile-nav-cart` — drawer cart link (`mobile-nav.tsx`)
+- `add-to-cart-button`, `add-to-cart-live` — PDP button (`add-to-cart-button.tsx`)
+- `quantity-stepper`, `quantity-decrease`, `quantity-increase`, `quantity-value` — stepper
+- `cart-line-row`, `cart-line-name`, `cart-line-variant`, `cart-line-total`, `cart-line-remove`, `cart-line-image-link`, `cart-line-list` — line row + list
+- `free-shipping-progress` — progress bar (with `data-achieved`)
+- `order-summary`, `summary-subtotal`, `summary-shipping`, `summary-total`, `checkout-cta` — summary
+- `cart-empty-state`, `cart-empty-cta` — empty state
+- `cart-heading`, `cart-skeleton`, `cart-live-region` — page body
 
-1. **Sort JS-off fallback** → chose the spec's recommendation: the filter
-   `<form>` carries a native `<select name="orden">` (the JS-off path); the
-   toolbar `SortSelect` is the JS-on enhancement.
-2. **Grid columns at `lg`** → kept `ProductGrid`'s existing `lg:grid-cols-4`; the
-   16rem sidebar + `1fr` fits 4 cards acceptably at ≥1024px (verified no overflow
-   in the responsive e2e). No `xl:` downgrade needed.
-3. **Filter Sheet side** → `left`, reusing `.drawer-panel` for spatial
-   consistency with MobileNav (spec recommendation).
-4. **Mobile live-apply vs batch** → live-apply (desktop parity); the sheet footer
-   button primarily closes the sheet. RPC is trivial at seed scale.
-5. **Price display domain vs cache buckets** → accepted the two-layer approach:
-   the RPC receives the EXACT price; the filter-only cache key uses a bucketed
-   value (`PRICE_BUCKET_CENTS` = MX$100). Documented in `search.ts`.
-6. **Price chip wording** → `chipPrice` for a full range, `chipPriceFrom`/
-   `chipPriceTo` for open-ended bounds (both via `formatMXN`).
+## Key Decisions
+- **State: React context + `useReducer`** over a new lib — one cart, three consumers, matches the "built-ins first" grain. Functional reducer actions coalesce rapid clicks.
+- **Null-until-hydrated via reducer-driven `hydrated` + a persist-gate ref** — the ref prevents the `lines` effect from writing `[]` over stored data before the mount read runs (would otherwise wipe the cart on every load).
+- **ICU plurals resolve via `t()`, never `interpolate`** — `interpolate` only handles simple `{token}`. `badgeLabel` (plural) uses `t("badgeLabel", { count })` in client components; simple `{count}`/`{amount}` templates use `interpolate`.
+- **PDP add announcement is count-free** (`announce.added` = "Se agregó al carrito") — the panel/button must not call `useTranslations`, so the label is pre-resolved server-side as a prop; a count-bearing plural would need client i18n. The header badge/aria-label carries the running count.
+- **`sku` snapshot is `null`** — `ProductVariantView` carries no SKU; the field is nullable and T7 re-validates against the live DB, so a null snapshot is correct.
+- **Line identity `productId::variantId`** (sentinel `productId` alone when no variant) so a no-variant product and a specific variant never collide (AC-2).
 
-## Migration Details & How Applied
-
-- `0007_search.sql`: `create extension if not exists unaccent/pg_trgm`; the
-  `search_products(...)` RPC (`language sql stable security invoker set
-  search_path = public`); `revoke all ... from public` + `grant execute ... to
-  anon, authenticated`; 3 GIN trgm indexes (products.name, products.description,
-  brands.name) + 4 btree (price_cents, created_at, sales_count, variants.color_hex).
-- **Applied non-destructively** to the running local stack via
-  `docker exec … psql < 0007_search.sql` (idempotent — `if not exists` / `create
-  or replace`), then `NOTIFY pgrst, 'reload schema'`. Seed data (30 products / 69
-  variants) survived intact. Reset-safe: a `supabase db reset` runs 0001→0007 and
-  0007 is fully idempotent.
-- **Verified as anon:** RPC returns rows; `SELECT ... FROM products` (base) still
-  raises `permission denied`; `cost_price_cents` never appears in any response
-  path or the rendered HTML (grep = 0).
-- **AC-6 parity:** a SQL cross-check confirmed `effective_stock` from the RPC ==
-  `COALESCE(SUM(variant.stock), product.stock)` for all 30 products (0 mismatches).
-
-## Caching Decisions (as implemented — Constraint 3)
-
-- Free-text search (`q` present) → **never cached** (`isCacheableFilters` false →
-  direct RPC). `q` capped at `SEARCH_QUERY_MAX = 80` before the call.
-- Filter/sort-only (no `q`) → cached under a **bounded canonical key**: known ids
-  (sorted), closed sort set, price snapped to `PRICE_BUCKET_CENTS` buckets, page
-  via `canonicalPageKey`. Facet lists + popular strip cached under `catalog`.
-
-## Placeholder / Primitive Centralization
-
-`fail()`, `firstOrSelf()`, and a `cachedRead()` wrapper now live once in
-`read-primitives.ts`; `queries.ts`, `product-detail.ts`, `search.ts`, and
-`facets.ts` all import them. No third/fourth copy. Behavior-preserving — the full
-suite stayed green across the extraction (415 → 415 at that step).
-
-## Edge Cases Handled
-
-- **1 contradictory / 6 all-variants-OOS** → NoResults (not error/404).
-- **2 `?page=99999`** → clamp to filtered `lastPage` (count-first in `readSearchPage`).
-- **3 hostile params** → parse lib drops unknown ids/sort, caps `q`; RPC parameterized.
-- **4 inverted price** → both bounds dropped + `priceRangeIgnored` note.
-- **5 variant-less color filter** → RPC `EXISTS` over variants excludes them.
-- **7 accent/case** → `unaccent(lower(...))` on column + term (verified `ergonomica`→Ergonómica).
-- **8 empty popular** → `safePopular()` degrades to empty strip, message still renders.
-- **9 RPC failure** → `fail()` → route error boundary.
-- **10 facet-list failure** → propagates to page boundary (never half-populated).
-- **11 JS-off** → header search + filter `<form method=get>` + chips as `<a>`.
-- **12 long chip row (375px)** → `overflow-x-auto`, no grid push-off.
-
-## How to Test (manual, live)
-
-Local Supabase must be up (`:54321`). Build+start against local keys:
-`NEXT_QA_DIST_DIR=.next-t5-prod NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 …
-npx next build && npx next start -p 3000`.
-1. `/sillas?q=ergonomica` → "6 sillas" (accented match).
-2. `/sillas?color=%23111111` → 26; a "Color: Negro" chip; page links carry `color`.
-3. Default `/sillas` hides OOS; `?disponibilidad=todos` includes them.
-4. Each `?orden=…` reorders; sort change resets `?page`.
-5. `?q=zzzz` → NoResults + "Sillas populares" strip.
-6. Filter `<form>` submits with JS disabled.
-
-## Verification Results
-
-- **tsc**: clean. **lint**: clean. **build**: succeeds (`/sillas` dynamic; index
-  pages SSG). **unit**: 536 passed (27 files). **e2e**: 167 passed, 5 skipped, 0
-  failed (chromium + mobile). Interactive checks (sheet open, swatch/sort URL
-  update, chip clear-all 26→30) verified against the production build.
+## AC-by-AC Status
+- **AC-1** PASS — `AddToCartButton` on the PDP panel adds the selected variant (or product) at qty 1.
+- **AC-2** PASS — `addLine` dedupes/increments by `cartLineKey(productId, variantId)`; two variants are two lines.
+- **AC-3** PASS — `readCart`/`writeCart` persist across refresh and sessions (localStorage); build confirms `/carrito` renders.
+- **AC-4** PASS — `CartCountBadge` reads `itemCount` from shared context; updates on every mutation, every page.
+- **AC-5** PASS — `/carrito` (SSG, `/carrito` + `/en/carrito`) lists image, name, variant label, unit price, stepper, remove, line total.
+- **AC-6** PASS — stepper drives `setQuantity`; line total, subtotal, badge, progress all recompute off one context change.
+- **AC-7** PASS — `−` disabled at 1; dedicated ghost `Eliminar` removes the line.
+- **AC-8** PASS — `OrderSummary` shows subtotal/shipping/total from `computeShipping` reading store-settings cents (props from server; never hardcoded).
+- **AC-9** PASS — `FreeShippingProgress` shows remaining/achieved + `scaleX` bar; returns `null` (hidden) when settings null; never `$NaN`.
+- **AC-10** PASS — `CartEmptyState` (message + `/sillas` CTA) with no summary/progress/checkout when hydrated & empty.
+- **AC-11** PASS — `cart` namespace in both `es-MX.json` + `en.json`; `messages.test.ts` + `keys-used.test.ts` pass (634 unit tests green).
+- **AC-12** PASS — all display via `formatMXN`; all math integer cents; `isCartLine` blocks non-integer prices.
+- **AC-13** PASS — `sanitizeQuantity` clamps `[1, 99]` on read/edit; stepper `+` disables at cap.
+- **AC-14** PASS — corrupt/absent/foreign payload → empty cart + one `warnOnce`; no throw.
+- **AC-15** PASS — checkout CTA (non-empty only) is a `Link` to `CHECKOUT_PATH`; no checkout logic in T6.
+- **AC-16** PASS — keyboard-operable stepper/remove; single page-level `aria-live` for qty/remove; PDP add owns its own SR region; badge `aria-label` carries the count.
+- **AC-17** PASS — cart state lives only in localStorage + context; no query-param coupling (no `useSearchParams` in any cart file).
+- **AC-18** PASS — `AddToCartButton` disabled + "Agotado" when `display.stockState === "out"`; click is a guarded no-op.
 
 ## Deviations from Ticket
+- **No per-row remove collapse animation.** The design's remove-row height/opacity collapse was deferred to the opacity-only fallback the spec explicitly allows (watch-out #10): React unmounts the row on optimistic remove and totals recompute; animating unmount height reliably without a motion library would add complexity for a rare one-off exit. Enter stagger + `.price-value`/`.cart-progress-fill` motion are all present. Flagged for UX (Stage 8) if a collapse is wanted.
+- **`announce.added` dropped its plural count** (see Key Decisions) — deliberate, to preserve the panel's no-client-i18n invariant.
 
-- **FilterSheet built on Radix Dialog + `.drawer-panel`**, not shadcn's `sheet`
-  component. The ticket/design sanctioned `sheet` but MANDATED retrofitting its
-  `tw-animate-css` keyframes to the repo's interruptible `[data-state]` transition
-  pattern. Reusing the already-proven MobileNav drawer motion (identical pattern,
-  same `.drawer-panel`/`.drawer-scrim`, spatial consistency) achieves the exact
-  required behavior with zero keyframe risk and less code — so shadcn `sheet` was
-  not installed. All other sanctioned shadcn components (input, checkbox, select,
-  slider, badge, label) were installed via `npx shadcn add`; the Select's keyframe
-  classes were retrofitted to `.select-content-motion` (M-3) per the design rule.
-- **Result count moved into `SearchResults`** (inside Suspense) rather than
-  `ActiveFilters`, because it must reflect the FILTERED total (known only after
-  the RPC). It remains the `aria-live="polite"` node above the grid.
+## Edge Cases Handled
+1. **Corrupt/foreign localStorage** → `readCart` returns `[]` + one `warnOnce`; page renders empty state (`cart-storage.ts`, AC-14).
+2. **Disabled/quota storage** → `writeCart` swallows with one warn; in-memory context still updates (`cart-provider.tsx` persist effect + `cart-storage.ts`).
+3. **Tampered quantity (0/neg/NaN/>cap)** → `isDroppableQuantity` drops junk lines, `sanitizeQuantity` clamps the rest; missing/`NaN` `unitPriceCents` fails `isCartLine` and drops the line (no `$NaN`).
+4. **Stale snapshot** → cart renders from the client snapshot; documented as a T7 re-validation concern (`cart-line.ts` docstring).
+5. **Two tabs** → `storage` listener re-reads into state, last-write-wins (`cart-provider.tsx`).
+6. **`store_settings` null** → `computeShipping` → `unavailable` (neutral label), `freeShippingProgress` → `null` (bar hidden), total = subtotal (`shipping.ts`, `order-summary.tsx`).
+7. **Subtotal == threshold** → `>=` → free + achieved + 100% bar (`shipping.ts`).
+8. **SSR/pre-hydration** → provider/badge/button render empty/inert until `hydrated`; no `window` at module top or during render.
+9. **Rapid + / add clicks** → functional reducer updates + `sanitizeQuantity` cap.
+10. **Removing last item** → transitions to empty state; badge → 0; summary/progress/checkout unmount.
+
+## How to Test
+1. `npm run dev`, open a PDP (`/producto/silla-ejecutiva-milano`), click "Agregar al carrito" → button confirms "Agregado ✓", header badge shows `1`.
+2. Refresh → cart persists; open a second tab and add → first tab's badge updates.
+3. Go to `/carrito` → adjust quantity (+/−), watch line total, subtotal, total, progress bar, and badge recompute; `−` disables at 1, `+` disables at 99.
+4. Remove the last line → empty state with "Ver sillas".
+5. Add ~MX$10,000 of chairs → free shipping unlocks (achieved state + "Gratis").
+6. Toggle EN → all copy switches (`/en/carrito`). Select an out-of-stock variant on a PDP → button disabled "Agotado".
+7. `localStorage.setItem("posturpro:cart:v1","{bad")` → reload `/carrito` → empty state, one console warn.
+
+## Known Limitations
+- Out-of-stock flag on a cart line is a best-effort snapshot (not re-checked live) — T7 checkout owns authoritative stock/price re-validation (by design).
+- No remove-collapse animation (see Deviations).
 
 ## Dependencies Added
+- **None.** React context, localStorage, existing shadcn `Button`/`Input`, `@hugeicons`, `next-intl`, `formatMXN`/`interpolate`.
 
-- **None.** shadcn components vendor only radix-ui primitives already installed;
-  no new npm packages. DB extensions `unaccent`/`pg_trgm` ship with the Supabase
-  image.
+## Verification Results
+- `npm run lint` — clean (0 warnings/errors).
+- `npx tsc --noEmit` — clean (strict, no `any`/`!`).
+- `npm run build` — green against seeded local Supabase. `/carrito` builds **SSG** (both locales); index pages **SSG**, PDP **SSG**, `/sillas` **Dynamic** — T3/T4/T5 rendering modes unchanged.
+- `npx vitest run` — 634/634 unit tests pass (parity + keys-used include the new `cart` keys).
+- `npm run test:integration` — 110/110 pass.
+- No new tests written (QA/Stage 7 owns that); existing suites unbroken.
 
-## Fixes Applied (Stage 6)
-
-### JS-off strategy chosen (C-1 / C-2 / M-1)
-
-- **C-1 (checkbox facets)** — hidden-input mirroring. Each *selected* facet value
-  (category/brand/style/material), including ones collapsed under "Ver más", renders a
-  real `<input type="hidden" name={param} value={value}>`. The Radix `Checkbox` is left
-  `name`-less (no hydrated `BubbleInput`) so it never double-submits — it stays the JS-on
-  live toggle only. This also preserves any pre-existing `?marca=X` across a native submit.
-- **C-2 (availability + mobile)** — availability is now a NATIVE
-  `<input type="checkbox" name="disponibilidad" value="todos">` with "include out of stock"
-  semantics (label `catalog.filters.includeOutOfStock`): unchecked posts nothing (in-stock
-  default), checked posts `disponibilidad=todos`. Mobile JS-off gets a `<noscript>` block
-  (`catalog-toolbar.tsx`, `lg:hidden`) rendering the same `FilterPanel` form always-expanded.
-- **M-1 (price 100x)** — unified the URL contract on PESOS. `parsePriceBound` reads pesos and
-  converts to internal cents (×100); `serializeFilters` converts cents back to pesos. The
-  visible pesos field is the native submitter under the canonical `precioMin`/`precioMax`
-  names, so JS-on and JS-off carry identical semantics. Internals (chips, RPC params, cache
-  buckets) stay in cents.
-
-### Issue Tracker
-
-| ID | Severity | Title | Status | File | Notes |
-|----|----------|-------|--------|------|-------|
-| C-1 | CRITICAL | Checkbox facets submit nothing JS-off | FIXED | `filter-controls.tsx` (FacetCheckboxGroup) | Hidden-input mirror per selected value; Radix checkbox `name`-less |
-| C-2 | CRITICAL | Availability opt-out inexpressible + no mobile filter UI JS-off | FIXED | `filter-controls.tsx`, `catalog-toolbar.tsx` | Native `disponibilidad=todos` checkbox; `<noscript>` mobile form |
-| M-1 | MAJOR | Price 100x (pesos submitted, cents parsed) | FIXED | `search-params.ts`, `filter-controls.tsx` | URL contract = pesos; parser converts to cents; +unit test |
-| M-2 | MAJOR | `badge.tsx` `transition-all` (AC-18) | FIXED | `ui/badge.tsx:8` | → `transition-[color,box-shadow,border-color]` |
-| M-3 | MAJOR | Locale lost on `/en` native submit | FIXED | `page.tsx`, `site-header.tsx`, `filter-panel.tsx`, shell/toolbar | `getPathname({href,locale})` → `action="/en/sillas"` |
-| M-4 | MAJOR | Controlled inputs never re-sync to URL | FIXED | `filter-controls.tsx` (PriceRange), `search-box.tsx` | "Adjust state during render" (lint forbids setState-in-effect) |
-| M-5 | MAJOR | ✕ clear doesn't clear active query | FIXED | `search-box.tsx` | `requestSubmit()` on clear when a query was active |
-| M-6 | MAJOR | FilterSheet no body scroll-lock | FIXED | `filter-sheet.tsx`, `mobile-nav.tsx` | `body.overflow=hidden` while open (widened to MobileNav) |
-| M-7 | MAJOR | `aria-live` remounts inside Suspense | FIXED | `result-announcer.tsx` (new), `catalog-shell.tsx`, `search-results.tsx` | Persistent live region in shell + announcer bridge |
-| m-1 | MINOR | `fail()` log prefix changed | SKIPPED | — | Intentional consolidation; redacted message; documented |
-| m-2 | MINOR | JS unaccent vs Postgres unaccent divergence | SKIPPED | — | No live bug (Spanish only); future follow-up |
-| m-3 | MINOR | Dead conditional in ActiveFilters | FIXED | `active-filters.tsx` | Removed always-true inner ternary |
-| m-4 | MINOR | Magic string `"q"` | FIXED | `search-box.tsx` | `QUERY_FIELD = SEARCH_PARAM_KEYS.q` |
-| m-5 | MINOR | `preservedParams` could double `q` | FIXED | `search-box.tsx` | Filters out `q`/`page` before emitting hidden inputs |
-| m-6 | MINOR | `.grid-pending` no RM override | FIXED | `globals.css` | RM `transition-duration:0ms`, state kept |
-| m-7 | MINOR | Manual `aria-modal` on forceMount sheet | SKIPPED | — | Same proven MobileNav pattern; Dialog.Title present; verified |
-
-### Summary
-
-- Critical: 2/2 fixed
-- Major: 7/7 fixed, 0 skipped
-- Minor: 5/7 fixed, 2 skipped (justified: no live bug / intentional deviation)
-
-### Files touched (Stage 6)
-
-- `src/components/catalog/filter-controls.tsx` — C-1 hidden mirrors, C-2 native availability, M-1 pesos field, M-4 render-sync
-- `src/components/catalog/filter-panel.tsx` — `action` prop (M-3), `includeOutOfStock` label (C-2), dropped unused `clearHref`
-- `src/components/catalog/catalog-toolbar.tsx` — thread `catalogAction`, `<noscript>` mobile fallback (C-2)
-- `src/components/catalog/catalog-shell.tsx` — thread `catalogAction` (M-3), `ResultAnnouncerProvider` (M-7)
-- `src/components/catalog/search-box.tsx` — m-4/m-5, M-4 render-sync, M-5 clear-submits
-- `src/components/catalog/search-results.tsx` — M-7 announcer, visible count no longer a live region
-- `src/components/catalog/active-filters.tsx` — m-3
-- `src/components/catalog/result-announcer.tsx` — NEW (M-7 persistent live region)
-- `src/components/catalog/filter-sheet.tsx` — M-6 scroll-lock
-- `src/components/layout/mobile-nav.tsx` — M-6 scroll-lock (widened)
-- `src/components/layout/site-header.tsx` — M-3 locale-aware search action
-- `src/components/ui/badge.tsx` — M-2
-- `src/app/[locale]/sillas/page.tsx` — M-3 `catalogAction`, `includeOutOfStock` label
-- `src/lib/catalog/search-params.ts` — M-1 pesos↔cents contract
-- `src/lib/catalog/search-params.test.ts` — M-1 unit test (+1)
-- `src/messages/keys-used.test.ts` — `inStockOnly` → `includeOutOfStock` consumed key
-- `src/app/globals.css` — m-6 RM override
-
-### Test Results After Fixes
-
-- Unit: 537 passed / 0 failed / 0 skipped (was 536; +1 M-1 price-contract test)
-- Integration (read-only, no db reset): 78 passed / 0 failed
-- e2e (chromium + mobile): 167 passed / 5 skipped / 0 failed
-- `tsc --noEmit`: clean
-- `eslint`: clean
-- `next build`: succeeds (`/sillas` = `ƒ` dynamic, 107 static pages generated)
-
-### JS-off verification (curl, fresh prod server on :3000)
-
-- Checkbox facet: `/sillas?marca=<id>` → renders `<input type="hidden" name="marca" value="<id>">`; Radix button has no `name`.
-- Availability: `?disponibilidad=todos` parsed; native `<input type=checkbox name=disponibilidad value=todos>` rendered.
-- Mobile: `<noscript>` block contains a full native filter form (availability checkbox + `<select name=orden>` + price fields).
-- Price: `?precioMin=5000` (pesos) → 13 chairs; `?precioMin=100000` → 0; chip "Precio: desde $5,000.00" (no 100x error).
-- Locale: `/en/sillas` filter form and search form both `action="/en/sillas"`.
-
----
-
-## Stage 7b Fix — QA-BUG-1 (JS-off browser saw a perpetual skeleton)
-
-### Root cause
-`/sillas` is a **dynamic** route (`ƒ`, reads `searchParams`). It combined (a) a
-route-level `src/app/[locale]/sillas/loading.tsx` (`CatalogPageSkeleton`) AND
-(b) a `<Suspense fallback={<ProductGridSkeleton />}>` around `SearchResults`. On a
-dynamic route Next.js streams a suspended subtree into a `<div hidden id="S:N">`
-holder that a client `$RC` script swaps into place on hydration. With JS OFF that
-script never runs, so a no-JS browser was stuck on the skeleton forever — the real
-markup was in the response body (SEO/crawlers fine, AC-11 held) but invisible to a
-no-JS human, breaking the visible halves of AC-10/12/13 and edge 11 ("SSR-first").
-
-### Fix (architectural — constraint 1 satisfied)
-1. **Deleted** `src/app/[locale]/sillas/loading.tsx` — removed the segment-level
-   Suspense boundary that forced the whole page into a hidden holder.
-2. **Removed the `<Suspense>`** around `SearchResults` in `sillas/page.tsx`; the RPC
-   read is now `await`ed **inline**, so shell + toolbar + chips + sidebar + grid all
-   land in the **visible** server-rendered tree. Confirmed **zero** `hidden id="S:"`
-   holders in the served HTML and full visibility in a real `javaScriptEnabled:false`
-   Playwright browser (bbox non-null for grid, cards, result-count, sidebar panel,
-   chips) — screenshot-verified for `/sillas?q=…` and `/sillas?marca=<id>` in **both**
-   `es-MX` and `en`.
-3. Removed the now-dead `CatalogPageSkeleton` export (only `loading.tsx` used it) and
-   the unused `cn` import from `catalog-skeleton.tsx`; refreshed stale "Suspense
-   fallback" doc comments in `search-results.tsx` and `catalog-grid-region.tsx`.
-
-### Why this option over the others evaluated
-- **Delete `loading.tsx` alone** (keep inner Suspense): TESTED with a real no-JS
-  browser — the inner `<Suspense>` still streamed the grid into `hidden id="S:0"`
-  (grid/count/cards bbox `null`). Insufficient. This is why the task's "TEST, don't
-  assume" caveat mattered: the inner-Suspense option has the **same** `$RC` defect.
-- **Inline `await` (chosen)**: the only pattern that puts the results in the visible
-  SSR tree with no `$RC` dependency. Correct for a no-JS human AND still dynamic.
-
-### JS-on loading UX impact
-- The route no longer shows a route/grid **skeleton** on cold navigation; instead the
-  server response now **blocks on the one-round-trip `search_products` RPC** before
-  first byte (against local Supabase this is a single fast round trip; the RPC is
-  `pg_trgm`-indexed and `LIMIT 12`).
-- In-page **pending indication is preserved**: every client-side filter/sort/search
-  change still runs through the `CatalogGridRegion` `useTransition` **dim** (M-7,
-  opacity-only / RM-safe) — the previous results stay visible-but-dimmed until the new
-  RSC payload lands, which is a smoother UX than a skeleton flash on fast local reads
-  (Emil: "prevent jarring changes"). Taxonomy routes (`/marcas`, `/categorias`,
-  `/estilos`) are **unaffected** — they are SSG so their `<Suspense>` resolves at build
-  time (no hidden holder).
-- Trade-off noted: inline rendering makes each `/sillas` request hold its worker for
-  the RPC duration, so under **very high** e2e parallelism on the single shared prod
-  server the pre-existing hydration/contention flake on the chip-nav tests is a touch
-  more visible (green in isolation and at `--workers=2`; see gate note).
-
-### Test contract flipped
-`e2e/search-filter-sort-nojs.spec.ts` — the first `describe` previously **pinned** the
-buggy behavior (`hidden id="S:"` present, skeleton visible). It is now
-`"QA-BUG-1: JS-off results are SSR-visible (no streaming holder)"` and asserts the
-**fixed** contract: `body` has **no** `hidden id="S:"` and **no**
-`product-grid-skeleton`, and `result-count` / `product-grid` / first `product-card` /
-the desktop sidebar `filter-panel` are all `toBeVisible()` with JS off.
-
-### Files changed (Stage 7b)
-| File | Change |
-|------|--------|
-| `src/app/[locale]/sillas/loading.tsx` | **Deleted** (route-level full-page skeleton) |
-| `src/app/[locale]/sillas/page.tsx` | Removed `<Suspense>` + `ProductGridSkeleton`/`Suspense` imports + `suspenseKey`; `SearchResults` awaited inline; rewrote rendering-mode doc (SSR-first / QA-BUG-1) |
-| `src/components/catalog/catalog-skeleton.tsx` | Removed dead `CatalogPageSkeleton` export + unused `cn` import |
-| `src/components/catalog/search-results.tsx` | Doc comment: inline render, not a Suspense fallback |
-| `src/components/catalog/catalog-grid-region.tsx` | Doc comment: transition dim is the sole in-page pending indication |
-| `e2e/search-filter-sort-nojs.spec.ts` | Flipped the QA-BUG-1 pin to assert the fixed (visible, no-holder) behavior; refreshed header |
-
-### Gates After Fix
-- Unit: **569 passed** / 0 failed / 0 skipped
-- Integration (read-only, no db reset): **110 passed** / 0 failed
-- E2E (chromium + mobile, prod server on :3000 vs local Supabase :54321):
-  **259 passed / 5 skipped / 0 failed** (`--workers=2`; the flipped QA-BUG-1 test green
-  on both projects). Full-parallelism runs intermittently trip the pre-existing single-
-  server chip-nav contention flake (green in isolation and at `--workers=2`).
-- `tsc --noEmit`: clean · `eslint .`: clean · `next build`: succeeds (`/sillas` = `ƒ`,
-  107 static pages, **0** `hidden id="S:"` holders).
-- Manual no-JS check: screenshot-verified visible grid + toolbar + chips + sidebar for
-  `/sillas?q=ergonomica&color=#111111` and `/sillas?marca=<id>` in `es-MX` **and** `en`.
+## What ReviewFix should scrutinize
+- **`CartProvider` hydration/persist ordering** — the ref-gated persist effect vs. the reducer-driven `hydrated`. Confirm the `lines` effect can never write `[]` before the mount read (the ref guards this) and that the `storage` re-read cannot loop.
+- **ICU plural vs. `interpolate` boundary** — verify no `t.raw(pluralKey)` is fed to `interpolate` anywhere (badge/mobile link now use `t()`).
+- **No-layout-shift contract** on `CartCountBadge` (overlay pill) and the skeleton→content crossfade (identical box sizes).
+- **`formatMXN` never reaches a non-integer** — `isCartLine` enforces integer `unitPriceCents`; `lineTotalCents`/`subtotalCents`/`totalCents` stay integer.
+- **44px targets** on stepper buttons, remove, add-to-cart, checkout CTA, header badge, empty CTA.
+- **Reduced-motion coverage** of the new `globals.css` cart-motion classes.

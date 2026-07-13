@@ -4,6 +4,7 @@ import { NAV_ITEMS } from "@/components/layout/nav-items";
 import { LanguageToggle } from "@/components/layout/language-toggle";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { SearchBox } from "@/components/catalog/search-box";
+import { CartCountBadge } from "@/components/cart/cart-count-badge";
 import { CATALOG_PATH } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
@@ -92,6 +93,7 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
             submitLabel={tSearch("submit")}
             openLabel={tSearch("open")}
           />
+          <CartCountBadge />
           <LanguageToggle variant="compact" className="md:hidden" />
           <LanguageToggle variant="segmented" className="hidden md:inline-flex" />
         </div>

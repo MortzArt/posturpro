@@ -9,6 +9,7 @@ import { sans } from "@/app/fonts";
 import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { WhatsAppButton } from "@/components/layout/whatsapp-button";
+import { CartProvider } from "@/components/cart/cart-provider";
 import { cn } from "@/lib/utils";
 
 /**
@@ -72,20 +73,22 @@ export default async function LocaleLayout({
     <html lang={locale} className={cn("h-full", sans.variable)}>
       <body className="min-h-full bg-background font-sans text-foreground antialiased">
         <NextIntlClientProvider>
-          <div className="flex min-h-dvh flex-col">
-            <a
-              href="#main-content"
-              className="sr-only rounded-md bg-background px-4 py-2 text-sm font-medium text-foreground outline-none focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[70] focus:ring-2 focus:ring-ring"
-            >
-              {t("skipToContent")}
-            </a>
-            <SiteHeader storeName={storeName} />
-            <main id="main-content" className="flex-1">
-              {children}
-            </main>
-            <SiteFooter />
-          </div>
-          <WhatsAppButton />
+          <CartProvider>
+            <div className="flex min-h-dvh flex-col">
+              <a
+                href="#main-content"
+                className="sr-only rounded-md bg-background px-4 py-2 text-sm font-medium text-foreground outline-none focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[70] focus:ring-2 focus:ring-ring"
+              >
+                {t("skipToContent")}
+              </a>
+              <SiteHeader storeName={storeName} />
+              <main id="main-content" className="flex-1">
+                {children}
+              </main>
+              <SiteFooter />
+            </div>
+            <WhatsAppButton />
+          </CartProvider>
         </NextIntlClientProvider>
       </body>
     </html>

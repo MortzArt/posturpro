@@ -250,5 +250,51 @@
         "errorRetry": "No pudimos enviar tu pregunta. Inténtalo de nuevo."
       }
     }
+  },
+  "cart": {
+    "title": "Tu carrito",
+    "titleCount": "Tu carrito ({count})",
+    "metadata": {
+      "title": "Carrito"
+    },
+    "empty": {
+      "title": "Tu carrito está vacío",
+      "subtitle": "Explora nuestras sillas y encuentra la ideal para ti.",
+      "cta": "Ver sillas"
+    },
+    "item": {
+      "remove": "Eliminar",
+      "removeItem": "Eliminar {name}",
+      "increase": "Aumentar cantidad",
+      "decrease": "Disminuir cantidad",
+      "quantityLabel": "Cantidad",
+      "unitEach": "c/u",
+      "lineTotalLabel": "Total",
+      "colorLabel": "Color: {name}",
+      "imagePlaceholder": "Imagen no disponible"
+    },
+    "summary": {
+      "heading": "Resumen del pedido",
+      "subtotal": "Subtotal",
+      "shipping": "Envío",
+      "shippingFree": "Gratis",
+      "shippingUnavailable": "Se calcula al pagar",
+      "total": "Total"
+    },
+    "freeShipping": {
+      "remaining": "Te faltan {amount} para envío gratis",
+      "achieved": "¡Tienes envío gratis!"
+    },
+    "checkout": "Proceder al pago",
+    "addToCart": "Agregar al carrito",
+    "added": "Agregado",
+    "outOfStock": "Agotado",
+    "headerLink": "Carrito",
+    "badgeLabel": "Carrito, {count, plural, one {# artículo} other {# artículos}}",
+    "announce": {
+      "added": "Se agregó al carrito",
+      "quantity": "Cantidad actualizada: {count}",
+      "removed": "Producto eliminado del carrito"
+    }
   }
 }

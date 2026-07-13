@@ -250,5 +250,51 @@
         "errorRetry": "We couldn't send your question. Please try again."
       }
     }
+  },
+  "cart": {
+    "title": "Your cart",
+    "titleCount": "Your cart ({count})",
+    "metadata": {
+      "title": "Cart"
+    },
+    "empty": {
+      "title": "Your cart is empty",
+      "subtitle": "Browse our chairs and find the right one for you.",
+      "cta": "Browse chairs"
+    },
+    "item": {
+      "remove": "Remove",
+      "removeItem": "Remove {name}",
+      "increase": "Increase quantity",
+      "decrease": "Decrease quantity",
+      "quantityLabel": "Quantity",
+      "unitEach": "each",
+      "lineTotalLabel": "Total",
+      "colorLabel": "Color: {name}",
+      "imagePlaceholder": "Image not available"
+    },
+    "summary": {
+      "heading": "Order summary",
+      "subtotal": "Subtotal",
+      "shipping": "Shipping",
+      "shippingFree": "Free",
+      "shippingUnavailable": "Calculated at checkout",
+      "total": "Total"
+    },
+    "freeShipping": {
+      "remaining": "You're {amount} away from free shipping",
+      "achieved": "You've unlocked free shipping!"
+    },
+    "checkout": "Proceed to checkout",
+    "addToCart": "Add to cart",
+    "added": "Added",
+    "outOfStock": "Out of stock",
+    "headerLink": "Cart",
+    "badgeLabel": "Cart, {count, plural, one {# item} other {# items}}",
+    "announce": {
+      "added": "Added to cart",
+      "quantity": "Quantity updated: {count}",
+      "removed": "Item removed from cart"
+    }
   }
 }

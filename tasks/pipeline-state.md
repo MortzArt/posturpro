@@ -1,10 +1,28 @@
 # Pipeline State
 Task: T6 — Cart
 Tier: standard
-Stage: 2 COMPLETE → next: Dev (Stage 3)
-Agent: ultradev
+Stage: 3 COMPLETE → next: ReviewFix (Stage 4)
+Agent: ultrareviewfix
 Last Updated: 2026-07-14
-Notes: S2 (UI Design) COMPLETE. tasks/ui-design.md written for T6 — Cart (overwrote T5 version). 8 components speced: CartCountBadge, AddToCartButton, QuantityStepper, CartLineRow, FreeShippingProgress, OrderSummary, CartEmptyState, CartPageClient — each with props/states/responsive/motion + full i18n cart-namespace table (ES+EN). Next stage is Dev (ultradev). Prior T5 pipeline COMPLETE (SHIPPED).
+Notes: S3 (Dev) COMPLETE. Full T6 cart implemented — 14 files created (cart lib x3, cart components x8, /carrito route, ...) + 8 modified (config, layout, header, mobile-nav, purchase panel, PDP page, both message files, keys-used test). See tasks/dev-done.md for the AC-by-AC (all 18 PASS), file table, decisions, deviations. Verification: lint clean, tsc clean, build green (carrito SSG both locales; index SSG, PDP SSG, /sillas Dynamic — T3/T4/T5 modes intact), 634/634 unit + 110/110 integration pass. No new tests (QA owns Stage 7). Build ran against local Docker Supabase via well-known keys + NEXT_QA_DIST_DIR; tsconfig auto-edit reverted, build dir cleaned.
+
+S3 Dev decisions / watch-outs for ReviewFix:
+- CartProvider: useReducer + functional actions (coalesce rapid clicks). Hydrates empty→storage on mount; persist effect is REF-GATED so it never writes [] over stored data pre-hydration. storage listener re-reads for cross-tab sync. Scrutinize this ordering.
+- ICU plural (badgeLabel/announce.added removed its plural to stay count-free for the no-i18n PDP button) resolves via t(), NEVER interpolate. Simple {count}/{amount} use interpolate. Verify no t.raw(pluralKey)→interpolate anywhere.
+- announce.added is count-free by design (panel/button take labels as props, no useTranslations). Header aria-label carries the running count via t("badgeLabel",{count}).
+- Deviation: no remove-row collapse animation (opacity-only fallback the design allows; row just unmounts). Flag to UX if a collapse is wanted.
+- 44px targets on stepper/remove/add/checkout/badge/empty CTA via h-11/size-11 overrides. Badge count is an absolutely-positioned overlay pill (no layout shift). Progress fill is transform:scaleX (never width), reduced-motion gated. FreeShippingProgress returns null when settings null.
+
+S2 design decisions Dev must honor:
+- 44px touch targets: shadcn Button lg is only h-8/32px — override to h-11/size-11 on add-to-cart, stepper +/-, remove, checkout CTA, header badge box.
+- No layout shift: header badge = icon-only fixed 44x44 box, count is an ABSOLUTELY-POSITIONED overlay pill (never a flex sibling); cart page skeleton sized to real layout so skeleton→content is a pure opacity crossfade.
+- FreeShippingProgress fill = transform:scaleX(pct) origin-left, transition transform 400ms --ease-out (NEVER width); reduced-motion swaps to opacity crossfade with transform:none. Component returns null when settings null.
+- PDP AddToCartButton takes labels as PROPS (no useTranslations in the panel — keep panel's no-client-i18n invariant); CartPageClient uses useTranslations("cart") directly.
+- One page-level aria-live="polite" region for add/qty/remove announcements (not per-control).
+- Confirm state ("Agregado ✓") is a CSS-transition crossfade (blur-masked), interruptible, ADD_TO_CART_CONFIRM_MS ~1500. Functional state updates for add/stepper (coalesce rapid clicks, respect cap).
+- Reuse StockBadge (state="out") + opacity-60 image for out-of-stock lines; reuse formatMXN + .price-value + .stagger verbatim. Icons: @hugeicons only (ShoppingCart01Icon, Minus/PlusSignIcon, Delete02Icon, Tick02Icon, ArrowRight01Icon, Image01Icon).
+- Achieved-shipping tint (emerald-*) is the ONLY proposed non-neutral hue — flag for UX; neutral fallback = text-foreground + 🎉 (aria-hidden).
+- ICU plural for badgeLabel/announce.added/titleCount; format cents via formatMXN BEFORE interpolating {amount} into freeShipping.remaining (never pass raw cents to ICU).
 
 S2 design decisions Dev must honor:
 - 44px touch targets: shadcn Button lg is only h-8/32px — override to h-11/size-11 on add-to-cart, stepper +/-, remove, checkout CTA, header badge box.

@@ -5,9 +5,15 @@ import { StockBadge } from "@/components/catalog/stock-badge";
 import { ProductGallery } from "@/components/product/product-gallery";
 import { VariantSelector } from "@/components/product/variant-selector";
 import {
+  AddToCartButton,
+  type AddToCartLabels,
+} from "@/components/cart/add-to-cart-button";
+import {
   defaultVariant,
+  effectivePriceCents,
   imagesForVariant,
 } from "@/lib/catalog/variant-selection";
+import type { CartLineInput } from "@/lib/cart/cart-line";
 import type { StockState } from "@/lib/catalog/types";
 import type {
   ProductImageView,
@@ -60,23 +66,37 @@ export interface PurchasePanelLabels {
 }
 
 interface ProductPurchasePanelProps {
+  productId: string;
+  slug: string;
   productName: string;
   brandName: string | null;
+  /** Product-level `price_cents`; the add-to-cart snapshot uses the EFFECTIVE
+   *  price (variant override ?? this) computed per selection. */
+  basePriceCents: number;
+  /** Primary cover image URL for the cart-line snapshot (null → icon fallback). */
+  coverImageUrl: string | null;
   variants: ProductVariantView[];
   allImages: ProductImageView[];
   variantDisplay: Record<string, VariantDisplay>;
   productDisplay: ProductDisplay;
   labels: PurchasePanelLabels;
+  /** Pre-resolved add-to-cart labels (panel does no client i18n). */
+  addToCartLabels: AddToCartLabels;
 }
 
 export function ProductPurchasePanel({
+  productId,
+  slug,
   productName,
   brandName,
+  basePriceCents,
+  coverImageUrl,
   variants,
   allImages,
   variantDisplay,
   productDisplay,
   labels,
+  addToCartLabels,
 }: ProductPurchasePanelProps) {
   const hasVariants = variants.length > 0;
   const [selectedVariantId, setSelectedVariantId] = useState(
@@ -113,6 +133,31 @@ export function ProductPurchasePanel({
     selectedVariant && variantDisplay[selectedVariant.id]
       ? variantDisplay[selectedVariant.id].liveStatus
       : "";
+
+  // The add-to-cart snapshot follows the SAME selection the shopper sees: the
+  // effective unit price and out-of-stock flag come from the current variant
+  // (or the product when it has none), so "what you see is what you add" (AC-1).
+  const cartOutOfStock = display.stockState === "out";
+  const cartLine = useMemo<CartLineInput>(
+    () => ({
+      productId,
+      slug,
+      name: productName,
+      variantId: selectedVariant?.id ?? null,
+      variantLabel: selectedVariant?.colorName ?? null,
+      unitPriceCents: effectivePriceCents(selectedVariant, basePriceCents),
+      coverImageUrl,
+      sku: null,
+    }),
+    [
+      productId,
+      slug,
+      productName,
+      selectedVariant,
+      basePriceCents,
+      coverImageUrl,
+    ],
+  );
 
   return (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-10">
@@ -180,6 +225,13 @@ export function ProductPurchasePanel({
         >
           {liveStatus}
         </p>
+
+        <AddToCartButton
+          line={cartLine}
+          outOfStock={cartOutOfStock}
+          labels={addToCartLabels}
+          className="mt-2"
+        />
       </div>
     </div>
   );

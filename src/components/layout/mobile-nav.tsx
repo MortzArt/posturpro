@@ -5,10 +5,16 @@ import { Dialog } from "radix-ui";
 import { FocusScope } from "@radix-ui/react-focus-scope";
 import { useTranslations } from "next-intl";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Menu01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
+import {
+  Menu01Icon,
+  Cancel01Icon,
+  ShoppingCart01Icon,
+} from "@hugeicons/core-free-icons";
 import { Link } from "@/i18n/navigation";
 import { NAV_ITEMS } from "@/components/layout/nav-items";
 import { LanguageToggle } from "@/components/layout/language-toggle";
+import { useCart } from "@/components/cart/cart-provider";
+import { CART_PATH } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
 /**
@@ -250,6 +256,7 @@ function MobileNavBody({ t, onNavigate }: MobileNavBodyProps) {
                 {t(`items.${item.key}`)}
               </Link>
             ))}
+            <MobileCartLink onNavigate={onNavigate} />
           </nav>
 
       <div className="shrink-0 border-t border-border p-4">
@@ -258,5 +265,40 @@ function MobileNavBody({ t, onNavigate }: MobileNavBodyProps) {
         <LanguageToggle variant="segmented" className="h-11" />
       </div>
     </>
+  );
+}
+
+/**
+ * Cart link inside the mobile drawer (T6 AC-4): a labeled row with the cart icon
+ * and a live count suffix "Carrito (3)". Reads the shared cart; before hydration
+ * it shows the bare label (no false count), mirroring the header badge. Uses the
+ * `cart` namespace directly (the surrounding body uses `nav`).
+ */
+function MobileCartLink({ onNavigate }: { onNavigate: () => void }) {
+  const tCart = useTranslations("cart");
+  const { itemCount, hydrated } = useCart();
+  const showCount = hydrated && itemCount > 0;
+
+  return (
+    <Link
+      href={CART_PATH}
+      data-testid="mobile-nav-cart"
+      onClick={onNavigate}
+      aria-label={
+        hydrated ? tCart("badgeLabel", { count: itemCount }) : tCart("headerLink")
+      }
+      className={cn(
+        "nav-hover flex items-center gap-2 rounded-md px-3 py-3 text-base font-medium text-foreground outline-none",
+        "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
+      )}
+    >
+      <HugeiconsIcon icon={ShoppingCart01Icon} size={20} strokeWidth={2} aria-hidden />
+      <span>{tCart("headerLink")}</span>
+      {showCount ? (
+        <span className="tabular-nums text-muted-foreground" aria-hidden>
+          ({itemCount})
+        </span>
+      ) : null}
+    </Link>
   );
 }

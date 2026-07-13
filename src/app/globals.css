@@ -667,3 +667,110 @@
     opacity: 0;
   }
 }
+
+/* ======================================================================== *
+ * CART MOTION (T6)
+ * ------------------------------------------------------------------------
+ * All transform/opacity only, < 300ms enter, ease-out, interruptible (CSS
+ * transitions + keyed elements), reduced-motion gated. The line-list entrance
+ * reuses `.stagger`, number crossfades reuse `.price-value`, the empty/skeleton
+ * swap reuses `.enter-fade` — no new motion invented for those. See
+ * ui-design.md components §1, §2, §4, §5, §8.
+ * ======================================================================== */
+
+/* §1 — Header count pill Scale in. Keyed on itemCount, so a change remounts a
+ * fresh pill that scales+fades from scale(0.9) (never scale(0) — emil). Enter
+ * only; the exit is just the pill unmounting (count → 0). Reduced motion:
+ * opacity only, no scale. */
+.cart-badge-pill {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cart-badge-pill {
+    transition: opacity 120ms ease;
+    transform: none;
+
+    @starting-style {
+      opacity: 0;
+      transform: none;
+    }
+  }
+}
+
+/* §2 — Add-to-cart label crossfade with a light blur mask (emil: blur bridges
+ * two overlapping states). Two absolutely-stacked spans inside a fixed-size
+ * button; the inactive span is opacity:0 + blur, the active one opacity:1. CSS
+ * transition (not keyframe) so a re-click during "Agregado ✓" retargets
+ * smoothly — interruptible. Reduced motion: opacity only, no blur. */
+.cart-add-label {
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity 180ms var(--ease-out),
+    filter 180ms var(--ease-out);
+}
+.cart-add-label[data-hidden="true"] {
+  opacity: 0;
+  filter: blur(2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cart-add-label {
+    transition: opacity 150ms ease;
+    filter: none;
+  }
+  .cart-add-label[data-hidden="true"] {
+    filter: none;
+  }
+}
+
+/* Press feedback for the primary cart CTAs (add-to-cart, checkout). scale(0.98)
+ * on :active; instant feedback (Apple §1). Reduced motion drops it. */
+.cart-press {
+  transition: transform 100ms var(--ease-out);
+}
+.cart-press:active {
+  transform: scale(0.98);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cart-press:active {
+    transform: none;
+  }
+}
+
+/* Stepper button press feedback (high-frequency → press only, no enter/hover
+ * motion). scale(0.97) on :active. Reduced motion drops it. */
+.cart-step-press {
+  transition: transform 90ms var(--ease-out);
+}
+.cart-step-press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cart-step-press:active {
+    transform: none;
+  }
+}
+
+/* §5 — Free-shipping progress fill: transform:scaleX ONLY (never width →
+ * compositor-friendly, no layout thrash). origin-left; the fill width is 100%
+ * and scaleX(pct) reveals it. 400ms ease-out. Reduced motion: snap the scale
+ * (transition:none) and let the opacity/color carry comprehension. */
+.cart-progress-fill {
+  transform-origin: left center;
+  transition: transform 400ms var(--ease-out);
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cart-progress-fill {
+    transition: none;
+  }
+}

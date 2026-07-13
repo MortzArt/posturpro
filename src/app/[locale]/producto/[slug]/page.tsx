@@ -91,10 +91,15 @@ export default async function ProductPage({ params }: ProductPageProps) {
   const t = await getTranslations("product");
   const tCatalog = await getTranslations("catalog");
 
+  const tCart = await getTranslations("cart");
   const resolvers = buildResolvers(t, tCatalog);
   const variantDisplay = buildVariantDisplayMap(product, resolvers);
   const productDisplay = buildProductDisplay(product, resolvers);
   const specRows = buildSpecRows(product.specs, buildSpecLabels(t));
+  const primaryImage =
+    product.images.find((image) => image.isPrimary) ??
+    product.images[0] ??
+    null;
 
   return (
     <div className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
@@ -110,8 +115,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
       <section className="enter-fade mt-2">
         <ProductPurchasePanel
+          productId={product.id}
+          slug={product.slug}
           productName={product.name}
           brandName={product.brandName}
+          basePriceCents={product.priceCents}
+          coverImageUrl={primaryImage?.url ?? null}
           variants={product.variants}
           allImages={product.images}
           variantDisplay={variantDisplay}
@@ -124,6 +133,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
             galleryPlaceholder: t("gallery.imagePlaceholder"),
             thumbnailAltTemplate: t.raw("gallery.thumbnailAlt"),
             priceCompareLabel: t("price.comparePrevious"),
+          }}
+          addToCartLabels={{
+            addToCart: tCart("addToCart"),
+            added: tCart("added"),
+            outOfStock: tCart("outOfStock"),
+            announceAdded: tCart("announce.added"),
           }}
         />
 
