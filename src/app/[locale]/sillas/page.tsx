@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { hasLocale } from "next-intl";
 import { routing } from "@/i18n/routing";
+import { getPathname } from "@/i18n/navigation";
 import { CATALOG_PATH, SEARCH_PARAM_KEYS, SORT_KEYS } from "@/lib/config";
 import {
   hasNoFilters,
@@ -111,6 +112,10 @@ export default async function CatalogListPage({
   const active = !hasNoFilters(filters);
   const suspenseKey = `${serializeFilters(filters)}::${firstParam(rawPage) ?? "1"}`;
 
+  // Locale-aware form target so a NATIVE (JS-off) GET submit stays on the
+  // current locale (`/en/sillas` under `/en`), not the unprefixed default (M-3).
+  const catalogAction = getPathname({ href: CATALOG_PATH, locale });
+
   return (
     <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
       <Breadcrumbs
@@ -139,6 +144,7 @@ export default async function CatalogListPage({
         chips={chips}
         clearAllLabel={t("filters.clearAll")}
         toolbarLabels={buildToolbarLabels(t)}
+        catalogAction={catalogAction}
       >
         <Suspense key={suspenseKey} fallback={<ProductGridSkeleton />}>
           <SearchResults filters={filters} rawPage={rawPage} />
@@ -235,7 +241,7 @@ function buildToolbarLabels(
     filterPanel: {
       title: t("filters.title"),
       availability: t("filters.availability"),
-      inStockOnly: t("filters.inStockOnly"),
+      includeOutOfStock: t("filters.includeOutOfStock"),
       category: t("filters.category"),
       brand: t("filters.brand"),
       style: t("filters.style"),

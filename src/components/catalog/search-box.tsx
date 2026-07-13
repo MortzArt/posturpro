@@ -4,6 +4,7 @@ import { useId, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Search01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { Input } from "@/components/ui/input";
+import { SEARCH_PARAM_KEYS } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
 /**
@@ -38,9 +39,9 @@ interface SearchBoxProps {
   className?: string;
 }
 
-/** The `q` param name; single-sourced would import config, but this is the URL
- * key the native form must post, so it stays a literal matched to SEARCH_PARAM_KEYS.q. */
-const QUERY_FIELD = "q";
+/** The `q` param name, single-sourced from config so it never drifts from the
+ * parser's `SEARCH_PARAM_KEYS.q` (config.ts is not `server-only`). */
+const QUERY_FIELD = SEARCH_PARAM_KEYS.q;
 
 export function SearchBox({
   placeholder,
@@ -56,8 +57,20 @@ export function SearchBox({
 }: SearchBoxProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const [value, setValue] = useState(defaultValue);
   const [expanded, setExpanded] = useState(false);
+
+  // Re-sync the controlled field when the active query changes out from under
+  // us (chip removal / Clear-all navigation re-renders with a new defaultValue
+  // but `useState` initializers do not re-run) — M-4. React's recommended
+  // "adjust state during render" pattern (no effect): track the prop we last
+  // synced from and correct `value` in the same render it changes.
+  const [syncedDefault, setSyncedDefault] = useState(defaultValue);
+  if (syncedDefault !== defaultValue) {
+    setSyncedDefault(defaultValue);
+    setValue(defaultValue);
+  }
 
   const isHeader = variant === "header";
   const showInput = !isHeader || expanded;
@@ -69,8 +82,16 @@ export function SearchBox({
   };
 
   const clear = (): void => {
+    const hadActiveQuery = defaultValue.length > 0;
     setValue("");
     inputRef.current?.focus();
+    // If we're on a results page with an active `q`, clearing must also clear
+    // the active search — submit the (now-empty) form so the URL drops `q` and
+    // re-queries (M-5). The empty `q` is dropped by the parser; preserved
+    // filters ride along as hidden inputs. Native submit = works JS-off too.
+    if (hadActiveQuery) {
+      window.requestAnimationFrame(() => formRef.current?.requestSubmit());
+    }
   };
 
   if (isHeader && !expanded) {
@@ -92,6 +113,7 @@ export function SearchBox({
 
   return (
     <form
+      ref={formRef}
       method="get"
       action={action}
       role="search"
@@ -103,9 +125,16 @@ export function SearchBox({
       )}
     >
       {preservedParams
-        ? Object.entries(preservedParams).map(([name, paramValue]) => (
-            <input key={name} type="hidden" name={name} value={paramValue} />
-          ))
+        ? Object.entries(preservedParams)
+            // Never re-emit `q` (the field owns it) or `page` (a new query resets
+            // to page 1) — guards against a caller doubling the query param (m-5).
+            .filter(
+              ([name]) =>
+                name !== SEARCH_PARAM_KEYS.q && name !== SEARCH_PARAM_KEYS.page,
+            )
+            .map(([name, paramValue]) => (
+              <input key={name} type="hidden" name={name} value={paramValue} />
+            ))
         : null}
 
       <label htmlFor={inputId} className="sr-only">

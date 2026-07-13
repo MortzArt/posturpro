@@ -129,7 +129,7 @@ const CONSUMED_KEYS: readonly string[] = [
   "catalog.filters.showMore",
   "catalog.filters.showLess",
   "catalog.filters.availability",
-  "catalog.filters.inStockOnly",
+  "catalog.filters.includeOutOfStock",
   "catalog.filters.category",
   "catalog.filters.brand",
   "catalog.filters.style",

@@ -649,6 +649,15 @@
   transition: opacity 200ms ease;
 }
 
+/* m-6 — Under reduced motion, keep the dim STATE (opacity is a comprehension
+ * cue, not decoration) but drop the transition so nothing animates. */
+@media (prefers-reduced-motion: reduce) {
+  .grid-pending,
+  .grid-idle {
+    transition-duration: 0ms;
+  }
+}
+
 /* M-6 — Search clear button fade-in (opacity only; RM-safe, kept as-is). */
 .clear-fade {
   opacity: 1;

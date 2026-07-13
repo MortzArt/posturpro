@@ -30,7 +30,7 @@ import type { CatalogFilters, FacetOptions, SortKey } from "@/lib/catalog/search
 export interface FilterPanelLabels {
   title: string;
   availability: string;
-  inStockOnly: string;
+  includeOutOfStock: string;
   category: string;
   brand: string;
   style: string;
@@ -53,27 +53,32 @@ interface FilterPanelProps {
   facets: FacetOptions;
   selected: CatalogFilters;
   labels: FilterPanelLabels;
-  /** Clean catalog URL for "Clear all" (page-provided, locale-agnostic). */
-  clearHref: string;
   /** True when ≥1 user filter is active (shows Clear). */
   hasActiveFilters: boolean;
   context: "sidebar" | "sheet";
+  /**
+   * Locale-aware `/sillas` target for the native (JS-off) form GET and the
+   * JS-off "Clear all" link, so submitting on `/en` stays on `/en/sillas` and
+   * never silently switches the shopper's locale (M-3). Defaults to the
+   * locale-agnostic path so tests / non-localized callers still work.
+   */
+  action?: string;
 }
 
 export function FilterPanel({
   facets,
   selected,
   labels,
-  clearHref,
   hasActiveFilters,
   context,
+  action = CATALOG_PATH,
 }: FilterPanelProps) {
   const keys = SEARCH_PARAM_KEYS;
 
   return (
     <form
       method="get"
-      action={CATALOG_PATH}
+      action={action}
       aria-label={labels.title}
       data-testid="filter-panel"
       data-context={context}
@@ -89,7 +94,7 @@ export function FilterPanel({
           paramName={keys.disponibilidad}
           allValue={AVAILABILITY_ALL}
           inStockOnly={selected.inStockOnly}
-          label={labels.inStockOnly}
+          label={labels.includeOutOfStock}
         />
       </FacetGroup>
 
@@ -198,7 +203,7 @@ export function FilterPanel({
           {labels.apply}
         </Button>
         {hasActiveFilters ? (
-          <ClearFiltersButton label={labels.clear} href={clearHref} />
+          <ClearFiltersButton label={labels.clear} href={action} />
         ) : null}
       </div>
     </form>

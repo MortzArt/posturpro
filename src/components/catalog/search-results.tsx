@@ -6,6 +6,7 @@ import { searchProducts, listPopularProducts } from "@/lib/catalog/search";
 import { ProductGrid } from "@/components/catalog/product-grid";
 import { Pagination } from "@/components/catalog/pagination";
 import { NoResults } from "@/components/catalog/no-results";
+import { ResultCountAnnouncer } from "@/components/catalog/result-announcer";
 import type { CatalogFilters } from "@/lib/catalog/search.types";
 import type { CatalogProductCard } from "@/lib/catalog/types";
 
@@ -44,16 +45,22 @@ export async function SearchResults({ filters, rawPage }: SearchResultsProps) {
   const t = await getTranslations("catalog");
   const result = await searchProducts(filters, rawPage);
 
-  // aria-live result count — reflects the FILTERED total, doubles as the
-  // loading→done cue for screen readers (AC-14).
+  const countText = t("results.count", { count: result.total });
+
+  // The VISIBLE count. The SCREEN-READER announcement is delegated to the
+  // persistent live region in the shell via <ResultCountAnnouncer> — a live
+  // region that remounts with this Suspense subtree does not reliably announce
+  // (M-7), so this visible node is NOT itself the live region.
   const countNode = (
-    <p
-      aria-live="polite"
-      className="mb-4 text-sm font-medium tabular-nums text-muted-foreground"
-      data-testid="result-count"
-    >
-      {t("results.count", { count: result.total })}
-    </p>
+    <>
+      <p
+        className="mb-4 text-sm font-medium tabular-nums text-muted-foreground"
+        data-testid="result-count"
+      >
+        {countText}
+      </p>
+      <ResultCountAnnouncer text={countText} />
+    </>
   );
 
   if (result.total === 0) {

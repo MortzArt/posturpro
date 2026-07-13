@@ -84,6 +84,20 @@ export function MobileNav() {
     return () => window.clearTimeout(timer);
   }, [open]);
 
+  // Lock background scroll while the drawer is open (M-6, widened from
+  // FilterSheet). The forceMount + manual-FocusScope pattern bypasses Radix's
+  // automatic modal scroll-lock, so the page behind the drawer would scroll.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   useEffect(() => {
     if (!open) {
       return;

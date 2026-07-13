@@ -57,6 +57,18 @@ export function FilterSheet({ activeCount, labels, children }: FilterSheetProps)
     return () => window.clearTimeout(timer);
   }, [open]);
 
+  // Lock background scroll while the sheet is open (M-6). The forceMount +
+  // manual-FocusScope pattern bypasses Radix's automatic modal scroll-lock, so
+  // the catalog behind the full-height drawer would otherwise scroll on mobile.
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const mediaQuery = window.matchMedia(`(min-width: ${LG_BREAKPOINT_PX}px)`);

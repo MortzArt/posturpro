@@ -67,9 +67,31 @@ describe("parseCatalogFilters", () => {
   it("drops non-numeric / negative price bounds (edge 3)", () => {
     expect(parseCatalogFilters({ precioMax: "abc" }, known).priceMax).toBeNull();
     expect(parseCatalogFilters({ precioMin: "-5" }, known).priceMin).toBeNull();
-    expect(parseCatalogFilters({ precioMin: "200000" }, known).priceMin).toBe(
-      200000,
+    // URL price is PESOS; parser stores internal CENTS (× 100) — M-1.
+    expect(parseCatalogFilters({ precioMin: "4000" }, known).priceMin).toBe(
+      400000,
     );
+  });
+
+  it("price URL contract is PESOS ↔ internal CENTS, round-trips identically (M-1)", () => {
+    // A native JS-off submit sends pesos in the field; the parser reads pesos and
+    // stores cents, so the same bound reaches the RPC whether typed via the form
+    // (JS-off) or pushed as the serialized URL (JS-on).
+    const f = parseCatalogFilters(
+      { precioMin: "4000", precioMax: "9000" },
+      known,
+    );
+    expect(f.priceMin).toBe(400000); // MX$4,000 → 400000 centavos
+    expect(f.priceMax).toBe(900000); // MX$9,000 → 900000 centavos
+    // Serialize emits pesos again (byte-identical to what the field submits).
+    expect(serializeFilters(f)).toBe("precioMin=4000&precioMax=9000");
+    // And re-parsing that string yields the identical internal cents.
+    const reparsed = parseCatalogFilters(
+      Object.fromEntries(new URLSearchParams(serializeFilters(f))),
+      known,
+    );
+    expect(reparsed.priceMin).toBe(f.priceMin);
+    expect(reparsed.priceMax).toBe(f.priceMax);
   });
 
   it("drops BOTH bounds when min > max and flags priceRangeIgnored (edge 4)", () => {

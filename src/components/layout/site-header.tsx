@@ -1,5 +1,5 @@
-import { getTranslations } from "next-intl/server";
-import { Link } from "@/i18n/navigation";
+import { getLocale, getTranslations } from "next-intl/server";
+import { Link, getPathname } from "@/i18n/navigation";
 import { NAV_ITEMS } from "@/components/layout/nav-items";
 import { LanguageToggle } from "@/components/layout/language-toggle";
 import { MobileNav } from "@/components/layout/mobile-nav";
@@ -30,6 +30,10 @@ interface SiteHeaderProps {
 export async function SiteHeader({ storeName }: SiteHeaderProps) {
   const t = await getTranslations("nav");
   const tSearch = await getTranslations("catalog.search");
+  const locale = await getLocale();
+  // Locale-aware target so a native (JS-off) search submit on `/en` stays on
+  // `/en/sillas` rather than the unprefixed default locale (M-3).
+  const catalogAction = getPathname({ href: CATALOG_PATH, locale });
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background">
@@ -69,7 +73,7 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
         <div className="ml-auto hidden max-w-sm flex-1 md:ml-6 md:flex">
           <SearchBox
             variant="toolbar"
-            action={CATALOG_PATH}
+            action={catalogAction}
             placeholder={tSearch("placeholder")}
             ariaLabel={tSearch("label")}
             clearLabel={tSearch("clear")}
@@ -81,7 +85,7 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
         <div className="ml-auto flex shrink-0 items-center gap-1 md:ml-2">
           <SearchBox
             variant="header"
-            action={CATALOG_PATH}
+            action={catalogAction}
             placeholder={tSearch("placeholder")}
             ariaLabel={tSearch("label")}
             clearLabel={tSearch("clear")}

@@ -155,3 +155,87 @@ npx next build && npx next start -p 3000`.
 - **None.** shadcn components vendor only radix-ui primitives already installed;
   no new npm packages. DB extensions `unaccent`/`pg_trgm` ship with the Supabase
   image.
+
+## Fixes Applied (Stage 6)
+
+### JS-off strategy chosen (C-1 / C-2 / M-1)
+
+- **C-1 (checkbox facets)** — hidden-input mirroring. Each *selected* facet value
+  (category/brand/style/material), including ones collapsed under "Ver más", renders a
+  real `<input type="hidden" name={param} value={value}>`. The Radix `Checkbox` is left
+  `name`-less (no hydrated `BubbleInput`) so it never double-submits — it stays the JS-on
+  live toggle only. This also preserves any pre-existing `?marca=X` across a native submit.
+- **C-2 (availability + mobile)** — availability is now a NATIVE
+  `<input type="checkbox" name="disponibilidad" value="todos">` with "include out of stock"
+  semantics (label `catalog.filters.includeOutOfStock`): unchecked posts nothing (in-stock
+  default), checked posts `disponibilidad=todos`. Mobile JS-off gets a `<noscript>` block
+  (`catalog-toolbar.tsx`, `lg:hidden`) rendering the same `FilterPanel` form always-expanded.
+- **M-1 (price 100x)** — unified the URL contract on PESOS. `parsePriceBound` reads pesos and
+  converts to internal cents (×100); `serializeFilters` converts cents back to pesos. The
+  visible pesos field is the native submitter under the canonical `precioMin`/`precioMax`
+  names, so JS-on and JS-off carry identical semantics. Internals (chips, RPC params, cache
+  buckets) stay in cents.
+
+### Issue Tracker
+
+| ID | Severity | Title | Status | File | Notes |
+|----|----------|-------|--------|------|-------|
+| C-1 | CRITICAL | Checkbox facets submit nothing JS-off | FIXED | `filter-controls.tsx` (FacetCheckboxGroup) | Hidden-input mirror per selected value; Radix checkbox `name`-less |
+| C-2 | CRITICAL | Availability opt-out inexpressible + no mobile filter UI JS-off | FIXED | `filter-controls.tsx`, `catalog-toolbar.tsx` | Native `disponibilidad=todos` checkbox; `<noscript>` mobile form |
+| M-1 | MAJOR | Price 100x (pesos submitted, cents parsed) | FIXED | `search-params.ts`, `filter-controls.tsx` | URL contract = pesos; parser converts to cents; +unit test |
+| M-2 | MAJOR | `badge.tsx` `transition-all` (AC-18) | FIXED | `ui/badge.tsx:8` | → `transition-[color,box-shadow,border-color]` |
+| M-3 | MAJOR | Locale lost on `/en` native submit | FIXED | `page.tsx`, `site-header.tsx`, `filter-panel.tsx`, shell/toolbar | `getPathname({href,locale})` → `action="/en/sillas"` |
+| M-4 | MAJOR | Controlled inputs never re-sync to URL | FIXED | `filter-controls.tsx` (PriceRange), `search-box.tsx` | "Adjust state during render" (lint forbids setState-in-effect) |
+| M-5 | MAJOR | ✕ clear doesn't clear active query | FIXED | `search-box.tsx` | `requestSubmit()` on clear when a query was active |
+| M-6 | MAJOR | FilterSheet no body scroll-lock | FIXED | `filter-sheet.tsx`, `mobile-nav.tsx` | `body.overflow=hidden` while open (widened to MobileNav) |
+| M-7 | MAJOR | `aria-live` remounts inside Suspense | FIXED | `result-announcer.tsx` (new), `catalog-shell.tsx`, `search-results.tsx` | Persistent live region in shell + announcer bridge |
+| m-1 | MINOR | `fail()` log prefix changed | SKIPPED | — | Intentional consolidation; redacted message; documented |
+| m-2 | MINOR | JS unaccent vs Postgres unaccent divergence | SKIPPED | — | No live bug (Spanish only); future follow-up |
+| m-3 | MINOR | Dead conditional in ActiveFilters | FIXED | `active-filters.tsx` | Removed always-true inner ternary |
+| m-4 | MINOR | Magic string `"q"` | FIXED | `search-box.tsx` | `QUERY_FIELD = SEARCH_PARAM_KEYS.q` |
+| m-5 | MINOR | `preservedParams` could double `q` | FIXED | `search-box.tsx` | Filters out `q`/`page` before emitting hidden inputs |
+| m-6 | MINOR | `.grid-pending` no RM override | FIXED | `globals.css` | RM `transition-duration:0ms`, state kept |
+| m-7 | MINOR | Manual `aria-modal` on forceMount sheet | SKIPPED | — | Same proven MobileNav pattern; Dialog.Title present; verified |
+
+### Summary
+
+- Critical: 2/2 fixed
+- Major: 7/7 fixed, 0 skipped
+- Minor: 5/7 fixed, 2 skipped (justified: no live bug / intentional deviation)
+
+### Files touched (Stage 6)
+
+- `src/components/catalog/filter-controls.tsx` — C-1 hidden mirrors, C-2 native availability, M-1 pesos field, M-4 render-sync
+- `src/components/catalog/filter-panel.tsx` — `action` prop (M-3), `includeOutOfStock` label (C-2), dropped unused `clearHref`
+- `src/components/catalog/catalog-toolbar.tsx` — thread `catalogAction`, `<noscript>` mobile fallback (C-2)
+- `src/components/catalog/catalog-shell.tsx` — thread `catalogAction` (M-3), `ResultAnnouncerProvider` (M-7)
+- `src/components/catalog/search-box.tsx` — m-4/m-5, M-4 render-sync, M-5 clear-submits
+- `src/components/catalog/search-results.tsx` — M-7 announcer, visible count no longer a live region
+- `src/components/catalog/active-filters.tsx` — m-3
+- `src/components/catalog/result-announcer.tsx` — NEW (M-7 persistent live region)
+- `src/components/catalog/filter-sheet.tsx` — M-6 scroll-lock
+- `src/components/layout/mobile-nav.tsx` — M-6 scroll-lock (widened)
+- `src/components/layout/site-header.tsx` — M-3 locale-aware search action
+- `src/components/ui/badge.tsx` — M-2
+- `src/app/[locale]/sillas/page.tsx` — M-3 `catalogAction`, `includeOutOfStock` label
+- `src/lib/catalog/search-params.ts` — M-1 pesos↔cents contract
+- `src/lib/catalog/search-params.test.ts` — M-1 unit test (+1)
+- `src/messages/keys-used.test.ts` — `inStockOnly` → `includeOutOfStock` consumed key
+- `src/app/globals.css` — m-6 RM override
+
+### Test Results After Fixes
+
+- Unit: 537 passed / 0 failed / 0 skipped (was 536; +1 M-1 price-contract test)
+- Integration (read-only, no db reset): 78 passed / 0 failed
+- e2e (chromium + mobile): 167 passed / 5 skipped / 0 failed
+- `tsc --noEmit`: clean
+- `eslint`: clean
+- `next build`: succeeds (`/sillas` = `ƒ` dynamic, 107 static pages generated)
+
+### JS-off verification (curl, fresh prod server on :3000)
+
+- Checkbox facet: `/sillas?marca=<id>` → renders `<input type="hidden" name="marca" value="<id>">`; Radix button has no `name`.
+- Availability: `?disponibilidad=todos` parsed; native `<input type=checkbox name=disponibilidad value=todos>` rendered.
+- Mobile: `<noscript>` block contains a full native filter form (availability checkbox + `<select name=orden>` + price fields).
+- Price: `?precioMin=5000` (pesos) → 13 chairs; `?precioMin=100000` → 0; chip "Precio: desde $5,000.00" (no 100x error).
+- Locale: `/en/sillas` filter form and search form both `action="/en/sillas"`.

@@ -41,40 +41,38 @@ export function ActiveFilters({
   }
   return (
     <div className="mb-6 flex flex-col gap-3" data-testid="active-filters">
-      {chips.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 overflow-x-auto">
-          {chips.map((chip) => (
-            <Link
-              key={chip.key}
-              href={chip.removeHref}
-              aria-label={chip.removeLabel}
-              data-testid={`chip-${chip.key}`}
-              scroll={false}
-              className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-full"
-            >
-              <Badge
-                variant="secondary"
-                className="gap-1 py-1 pl-3 pr-2 text-sm font-normal"
-              >
-                {chip.label}
-                <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} aria-hidden />
-              </Badge>
-            </Link>
-          ))}
-
+      <div className="flex flex-wrap items-center gap-2 overflow-x-auto">
+        {chips.map((chip) => (
           <Link
-            href={clearAllHref}
-            data-testid="clear-all"
+            key={chip.key}
+            href={chip.removeHref}
+            aria-label={chip.removeLabel}
+            data-testid={`chip-${chip.key}`}
             scroll={false}
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "lg" }),
-              "min-h-11 text-sm",
-            )}
+            className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-full"
           >
-            {clearAllLabel}
+            <Badge
+              variant="secondary"
+              className="gap-1 py-1 pl-3 pr-2 text-sm font-normal"
+            >
+              {chip.label}
+              <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} aria-hidden />
+            </Badge>
           </Link>
-        </div>
-      ) : null}
+        ))}
+
+        <Link
+          href={clearAllHref}
+          data-testid="clear-all"
+          scroll={false}
+          className={cn(
+            buttonVariants({ variant: "ghost", size: "lg" }),
+            "min-h-11 text-sm",
+          )}
+        >
+          {clearAllLabel}
+        </Link>
+      </div>
     </div>
   );
 }

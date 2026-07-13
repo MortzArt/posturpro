@@ -6,7 +6,10 @@
  * - Unknown category/brand/style/color/material values are DROPPED (never sent
  *   to the RPC), so a bad param can never inject or empty the catalog (edge 3).
  * - `q` is trimmed and truncated to `SEARCH_QUERY_MAX` (Constraint 3).
- * - Non-numeric / negative / out-of-range price bounds are dropped (edge 3).
+ * - Price bounds are carried in the URL as PESOS (what the shopper types), and
+ *   converted to internal CENTS on parse / back to pesos on serialize, so the
+ *   native JS-off field submit and the JS-on URL push have identical semantics
+ *   (M-1). Non-numeric / negative / out-of-range bounds are dropped (edge 3).
  * - An inverted price pair (min > max) drops BOTH bounds and flags
  *   `priceRangeIgnored` so the UI can show a subtle note (edge 4).
  * - Sort outside the closed `SORT_KEYS` set falls back to `DEFAULT_SORT` (edge 3).
@@ -64,15 +67,30 @@ function keepKnown(tokens: string[], known: ReadonlySet<string>): string[] {
   return tokens.filter((token) => known.has(token));
 }
 
-/** Parse a price bound: a non-negative integer in `[0, PRICE_BOUND_MAX_CENTS]`. */
+/** Centavos in one peso — the URL price contract is PESOS, internals are cents. */
+const CENTS_PER_PESO = 100;
+
+/**
+ * Parse a price bound. The URL value is in PESOS (the unit the shopper sees and
+ * types in the field), so a native JS-off submit and the JS-on push carry
+ * identical semantics (M-1). Returns INTERNAL cents (pesos × 100) so the rest of
+ * the app — chips, RPC params, cache buckets — keeps working in cents. A
+ * non-negative integer whose cents value is within `[0, PRICE_BOUND_MAX_CENTS]`;
+ * anything else is dropped (edge 3).
+ */
 function parsePriceBound(raw: string | string[] | undefined): number | null {
   const value = firstValue(raw);
   if (!/^\d+$/.test(value)) return null;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > PRICE_BOUND_MAX_CENTS) {
-    return null;
-  }
-  return parsed;
+  const pesos = Number.parseInt(value, 10);
+  if (!Number.isFinite(pesos) || pesos < 0) return null;
+  const cents = pesos * CENTS_PER_PESO;
+  if (cents > PRICE_BOUND_MAX_CENTS) return null;
+  return cents;
+}
+
+/** Internal cents → the whole-pesos string the URL/native field carries (M-1). */
+function centsToPesosParam(cents: number): string {
+  return String(Math.round(cents / CENTS_PER_PESO));
 }
 
 /** Parse `q`: trim, drop whitespace-only, truncate to the cap (AC-3). */
@@ -182,8 +200,11 @@ export function serializeFilters(filters: CatalogFilters): string {
     parts.push([keys.color, [...filters.colors].sort().join(VALUE_SEPARATOR)]);
   if (filters.materials.length > 0)
     parts.push([keys.material, [...filters.materials].sort().join(VALUE_SEPARATOR)]);
-  if (filters.priceMin !== null) parts.push([keys.precioMin, String(filters.priceMin)]);
-  if (filters.priceMax !== null) parts.push([keys.precioMax, String(filters.priceMax)]);
+  // Price serializes back to PESOS (the URL contract), mirroring parsePriceBound.
+  if (filters.priceMin !== null)
+    parts.push([keys.precioMin, centsToPesosParam(filters.priceMin)]);
+  if (filters.priceMax !== null)
+    parts.push([keys.precioMax, centsToPesosParam(filters.priceMax)]);
   if (!filters.inStockOnly) parts.push([keys.disponibilidad, AVAILABILITY_ALL]);
   if (filters.sort !== DEFAULT_SORT) parts.push([keys.orden, filters.sort]);
 
