@@ -1,5 +1,4 @@
 import { PRODUCTS_PER_PAGE } from "@/lib/config";
-import { cn } from "@/lib/utils";
 
 /**
  * Loading skeletons (T3 UX — loading state). Card-shaped placeholders that
@@ -37,36 +36,5 @@ export function ProductGridSkeleton() {
         </li>
       ))}
     </ul>
-  );
-}
-
-/**
- * A full listing-page skeleton: reserves the breadcrumb row + page header +
- * product grid so the whole above-the-fold holds its space during data fetch.
- */
-export function CatalogPageSkeleton({
-  className,
-}: {
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8",
-        className,
-      )}
-    >
-      {/* breadcrumb row */}
-      <div className="flex items-center gap-2 py-3">
-        <div className="h-4 w-12 rounded bg-muted motion-safe:animate-pulse" />
-        <div className="h-4 w-16 rounded bg-muted motion-safe:animate-pulse" />
-      </div>
-      {/* page header */}
-      <div className="mb-6 mt-2 flex flex-col gap-3 md:mb-8">
-        <div className="h-8 w-40 rounded bg-muted motion-safe:animate-pulse" />
-        <div className="h-4 w-64 max-w-full rounded bg-muted motion-safe:animate-pulse" />
-      </div>
-      <ProductGridSkeleton />
-    </div>
   );
 }

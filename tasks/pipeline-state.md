@@ -1,14 +1,14 @@
 # Pipeline State
 Task: T5 — Search, filters & sorting
 Tier: full-cycle
-Stage: 7b (targeted fix of QA-BUG-1)
-Agent: ultrafix
+Stage: 8
+Agent: ultraux
 Complexity: high (all 12 stages run; hacker stage included)
 Feature Type: full-feature
 Last Updated: 2026-07-13
 Notes: Stage 7 (QA) COMPLETE — tasks/qa-report.md. Tests 782 -> 938 (+32 unit=569, +32 integ=110 via search-rpc.integration.test.ts, +92 e2e=259 across JS-on/mobile/JS-off specs). All pass; tsc/lint clean; e2e deterministic 3+ runs; T4 refactor guard holds; DB clean. 14/18 ACs PASS outright; AC-10/12/13 + edge 11 PARTIAL due to QA-BUG-1.
 QA-BUG-1 (MEDIUM/HIGH, NO-SHIP candidate, NOT yet fixed): JS-off BROWSER on /sillas sees perpetual skeleton — route-level loading.tsx on dynamic route makes Next stream real page into <div hidden id="S:0"> requiring client $RC swap. Served HTML IS correct (SEO/crawlers fine, AC-11 holds; JS-on perfect) but invisible to no-JS humans. Fix is architectural: relocate loading.tsx / restructure top-level Suspense. JS-off e2e spec PINS buggy behavior (future fix must flip that test). Source: src/app/[locale]/sillas/loading.tsx.
-ORCHESTRATOR DECISION: running targeted Stage 7b fix now (analyze-and-adjust per rule 8) instead of letting Stage 12 NO-SHIP-loop the whole pipeline.
+Stage 7b COMPLETE — QA-BUG-1 FIXED. Root causes (both proven with javaScriptEnabled:false browser): route-level loading.tsx AND the inner Suspense both stream into hidden $RC holders. Fix: deleted sillas/loading.tsx + removed Suspense around SearchResults (RPC awaited inline — delete-only option tested first and still broke, inner Suspense has the identical defect). 0 hidden id="S:" holders in served HTML; grid/form/chips/pagination VISIBLE no-JS both locales (screenshot-verified). JS-on UX: cold-nav skeleton gone (server blocks on one indexed RPC round trip); useTransition dim preserved for filter changes; taxonomy SSG routes unaffected. Pinning test flipped to assert fixed contract. AC-10/12/13 + edge 11 now PASS in qa-report. Trade-off noted: inline render holds worker during RPC (marginal e2e parallelism contention; green at --workers=2). Gates: lint/tsc/build clean, 569 unit / 110 integ / 259 e2e green.
 QA gaps noted (LOW): edge 9/10 fault-injection untested; facets.ts helpers indirect; search.ts cache keying not runtime-asserted.
 Stage 6 (Fix) COMPLETE. 2/2 CRITICAL + 7/7 MAJOR + 5/7 minor FIXED; 2 minors SKIPPED justified (m-1 fail() log prefix intentional; m-2 JS-vs-Postgres unaccent divergence — no live bug, future flag). JS-off strategy: C-1 hidden-input mirroring (Radix Checkbox left name-less, real hidden inputs submit); C-2 availability = native checkbox disponibilidad=todos opt-in + <noscript> always-expanded FilterPanel below lg (JS Sheet unchanged); M-1 URL price contract unified on PESOS (parsePriceBound pesos->cents, serializeFilters cents->pesos, unit test proves precioMin=4000 -> 400000 centavos round-trip). New file: src/components/catalog/result-announcer.tsx (persistent aria-live). Curl-verified JS-off: facets emit hidden inputs, disponibilidad=todos parses, noscript form complete, precioMin=5000 pesos -> 13 chairs no 100x, /en forms action=/en/sillas. Gates: tsc/lint/build clean, 537 unit (+1), 78 integ, 167 e2e green.
 ENV INCIDENT: user's dev server :3206 wedged mid-run (Supabase-client JSON-parse error on ALL routes incl. untouched ones) — environment instability, NOT a regression; fresh prod build on :3000 works against same DB. 3206 + Docker left untouched. User should restart 3206.

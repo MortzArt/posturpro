@@ -12,8 +12,11 @@ import type { CatalogProductCard } from "@/lib/catalog/types";
 
 /**
  * SearchResults (T5 AC-8, AC-15, AC-16) — the `searchParams`-dependent slice of
- * `/sillas`, isolated in the page's `<Suspense>` so the shell/toolbar/chips
- * render immediately and only this region shows the skeleton while the RPC runs.
+ * `/sillas`. It is `await`ed INLINE by the page (no `<Suspense>` boundary — see
+ * the QA-BUG-1 note in `sillas/page.tsx`) so the RPC read lands in the visible
+ * server-rendered tree and a no-JS browser sees real results, not a skeleton.
+ * JS-on pending feedback is the `CatalogGridRegion` transition dim, not a
+ * streaming fallback.
  *
  * Runs `searchProducts` on the FILTERED set; on ≥1 match renders `ProductGrid` +
  * crawlable pagination whose page links PRESERVE the active filters (AC-15). On

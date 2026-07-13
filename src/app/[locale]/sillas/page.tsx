@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { hasLocale } from "next-intl";
 import { routing } from "@/i18n/routing";
@@ -14,7 +13,6 @@ import {
 import { loadFacetOptions } from "@/lib/catalog/facets";
 import { buildActiveFilterChips } from "@/lib/catalog/active-filter-chips";
 import { Breadcrumbs } from "@/components/catalog/breadcrumbs";
-import { ProductGridSkeleton } from "@/components/catalog/catalog-skeleton";
 import { CatalogShell } from "@/components/catalog/catalog-shell";
 import { SearchResults } from "@/components/catalog/search-results";
 import type { CatalogFilters, SortKey } from "@/lib/catalog/search.types";
@@ -22,12 +20,22 @@ import type { CatalogFilters, SortKey } from "@/lib/catalog/search.types";
 /**
  * /sillas — search / filters / sorting host (T5).
  *
- * RENDERING MODE (AC-10): the page reads `searchParams`, so ANY request with
- * filter/sort/search params renders DYNAMICALLY. The UNFILTERED `/sillas` (no
- * params) reads through cached (`catalog`-tagged) facet + listing reads, so the
- * default catalog stays fast. The filtered grid read is isolated in a
- * `<Suspense>` so the shell/toolbar/chips render immediately and only the grid
- * region shows the 12-card skeleton while the RPC runs.
+ * RENDERING MODE (AC-10, edge 11): the page reads `searchParams`, so ANY
+ * request with filter/sort/search params renders DYNAMICALLY. The UNFILTERED
+ * `/sillas` (no params) reads through cached (`catalog`-tagged) facet + listing
+ * reads, so the default catalog stays fast.
+ *
+ * SSR-FIRST / JS-OFF (QA-BUG-1 fix): the results grid is `await`ed INLINE (no
+ * route-level `loading.tsx`, no `<Suspense>` boundary), so the whole page —
+ * shell, toolbar, chips, sidebar, AND the grid — lands in the VISIBLE server-
+ * rendered tree. A `<Suspense>` boundary (or a segment `loading.tsx`) on a
+ * dynamic route makes Next.js stream the suspended subtree into a `<div hidden
+ * id="S:N">` holder that a client `$RC` script swaps in on hydration — invisible
+ * to a no-JS browser, which is exactly the QA-BUG-1 regression. Rendering the
+ * RPC read synchronously keeps every AC-10/12/13 surface visible without JS. The
+ * cost is that the response waits on the one-round-trip RPC before first byte;
+ * JS-on pending feedback is still covered by the toolbar/sidebar `useTransition`
+ * dim (M-7) that fires on every client-side filter/sort/search change.
  *
  * SEO (AC-11): a filtered/searched/paged request is `noindex, follow` with its
  * canonical pointing at the clean `/sillas` (or the page-N canonical for pure
@@ -110,7 +118,6 @@ export default async function CatalogListPage({
 
   const activeFilterCount = countActiveFilters(filters);
   const active = !hasNoFilters(filters);
-  const suspenseKey = `${serializeFilters(filters)}::${firstParam(rawPage) ?? "1"}`;
 
   // Locale-aware form target so a NATIVE (JS-off) GET submit stays on the
   // current locale (`/en/sillas` under `/en`), not the unprefixed default (M-3).
@@ -146,9 +153,7 @@ export default async function CatalogListPage({
         toolbarLabels={buildToolbarLabels(t)}
         catalogAction={catalogAction}
       >
-        <Suspense key={suspenseKey} fallback={<ProductGridSkeleton />}>
-          <SearchResults filters={filters} rawPage={rawPage} />
-        </Suspense>
+        <SearchResults filters={filters} rawPage={rawPage} />
       </CatalogShell>
     </section>
   );

@@ -98,10 +98,10 @@ e2e suite green. Three consecutive full T5 e2e runs at default parallelism: 92/9
 | AC-7 | Six deterministic sorts; default best-selling | integration sorting block (5 tests) + e2e sort | PASS |
 | AC-8 | Pagination on filtered set; COUNT OVER; clamp; filter→page1 | integration pagination block + e2e sort-resets-page | PASS |
 | AC-9 | Shareable crawlable params; single-sourced names | `search-params` serialize/round-trip + e2e cold-load | PASS |
-| AC-10 | Enhances in place; dynamic w/ params; unfiltered cached | build output (`ƒ /sillas`) + e2e unfiltered/filtered | PASS (see QA-BUG-1) |
+| AC-10 | Enhances in place; dynamic w/ params; unfiltered cached | build output (`ƒ /sillas`) + e2e unfiltered/filtered | PASS (QA-BUG-1 fixed Stage 7b — results now SSR-visible) |
 | AC-11 | canonical→clean; filtered=noindex,follow; unfiltered indexable | e2e SEO block — verified `noindex, follow` + `canonical=/sillas` | PASS |
-| AC-12 | Header search → /sillas?q; keyboard; locale-aware; JS-off native | e2e search + JS-off form contract + `/en` action | PARTIAL (QA-BUG-1) |
-| AC-13 | Filter panel (sidebar ≥lg / Sheet mobile); options from DB | e2e mobile Sheet + desktop sidebar + JS-off `<noscript>` | PARTIAL (QA-BUG-1) |
+| AC-12 | Header search → /sillas?q; keyboard; locale-aware; JS-off native | e2e search + JS-off form contract + `/en` action | PASS (QA-BUG-1 fixed Stage 7b — JS-off surfaces now visible) |
+| AC-13 | Filter panel (sidebar ≥lg / Sheet mobile); options from DB | e2e mobile Sheet + desktop sidebar + JS-off `<noscript>` | PASS (QA-BUG-1 fixed Stage 7b — JS-off surfaces now visible) |
 | AC-14 | Removable chips + Clear-all; filtered count | `active-filter-chips` unit + e2e chip remove/clear-all | PASS |
 | AC-15 | ≥1 match → grid + pagination preserving filters | `page-helpers` unit + e2e pagination-preserves-filters | PASS |
 | AC-16 | 0 match → no-results + popular strip (best-selling, ≤8) | e2e no-results block + integration popular ordering | PASS |
@@ -122,7 +122,7 @@ e2e suite green. Three consecutive full T5 e2e runs at default parallelism: 92/9
 | 8 | Empty catalog / popular strip empty | e2e no-results (popular strip renders ≤8) | PASS (see gap) |
 | 9 | RPC/DB read failure → error boundary | not newly tested (see Untested Areas) | GAP |
 | 10 | Facet lists fail → page boundary | not newly tested (see Untested Areas) | GAP |
-| 11 | JS disabled | JS-off spec (form contract works; **visibility fails — QA-BUG-1**) | PARTIAL |
+| 11 | JS disabled | JS-off spec (form contract + **visibility** — QA-BUG-1 fixed Stage 7b) | PASS |
 | 12 | Long chip row at 375px scrolls | e2e mobile chip-row overflow test | PASS |
 
 ## Bugs Found
@@ -146,16 +146,25 @@ e2e suite green. Three consecutive full T5 e2e runs at default parallelism: 92/9
   But **edge 11 ("results render server-side… SSR-first")** and the *browser-visible* halves of
   **AC-10 / AC-12 / AC-13** FAIL for a no-JS human. Stage 6's "curl-verified JS-off" only exercised
   the response body, never a real no-JS browser — which is why it was marked FIXED.
-- **Fix status**: **NOT fixed in QA.** The fix is architectural (e.g. drop/relocate the route-level
-  `loading.tsx` for the dynamic route, or render the results outside the top-level Suspense so
-  they land in the visible tree) and trades off against the AC "Loading" skeleton UX; that is a
-  dev/verify decision, not a test change. Flagged here for the verify stage. The T3 taxonomy pages
-  (`/marcas` etc.) are **not** affected (still SSG — 0 hidden holders), confirming this is a
-  T5-introduced regression tied to the dynamic route + `loading.tsx`.
-- **Test coverage**: `search-filter-sort-nojs.spec.ts` first test **pins** the buggy behavior
-  (`hidden id="S:"` present, skeleton visible, content correct-but-hidden) so a future fix must
-  deliberately flip it; the remaining JS-off tests assert the served-HTML contract (attributes,
-  names, hrefs, counts on hidden nodes), which is the honest scope of what works today.
+- **Fix status**: **FIXED (Stage 7b).** Resolution — **deleted the route-level `loading.tsx`**
+  AND **removed the `<Suspense>` around `SearchResults`** in `sillas/page.tsx`; the RPC read is now
+  `await`ed **inline** so the whole page (shell, toolbar, chips, sidebar, grid) lands in the
+  **visible** server-rendered tree with **zero** `hidden id="S:"` holders. Both the delete-only and
+  inner-Suspense options were empirically TESTED with a real `javaScriptEnabled:false` browser and
+  **both still hid the grid** in an `S:0` holder ($RC never runs no-JS) — only the fully-inline
+  render satisfies constraint 1. JS-on loading UX is preserved via the existing `CatalogGridRegion`
+  `useTransition` dim (M-7) on every client filter/sort/search change; the cold-nav route skeleton
+  is gone (the RPC is one indexed round trip). T3 taxonomy pages were never affected (SSG). See
+  `tasks/dev-done.md` → "Stage 7b Fix" for the full write-up.
+- **Verification of fix**: `next build` shows `/sillas` still `ƒ` with **0** `hidden id="S:"` in the
+  served HTML; a no-JS Playwright browser reports non-null bounding boxes for `product-grid`,
+  `product-card`, `result-count`, and the desktop sidebar `filter-panel`; screenshot-verified for
+  `/sillas?q=…` and `/sillas?marca=<id>` in **both** `es-MX` and `en`. Full gates green: 569 unit /
+  110 integration / 259 e2e (`--workers=2`, flipped test included) / lint / tsc / build.
+- **Test coverage**: `search-filter-sort-nojs.spec.ts` first test was **flipped** from pinning the
+  buggy behavior to asserting the **fixed** contract — `body` has **no** `hidden id="S:"` and **no**
+  `product-grid-skeleton`, and the results + sidebar are `toBeVisible()` with JS off. The remaining
+  JS-off tests (served-HTML attribute/name/href contracts) are unchanged and still green.
 
 No other bugs found. No security/data-loss defects. Data/RPC/security/sort/parity/i18n layers are
 excellent and fully verified.

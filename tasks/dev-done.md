@@ -239,3 +239,86 @@ npx next build && npx next start -p 3000`.
 - Mobile: `<noscript>` block contains a full native filter form (availability checkbox + `<select name=orden>` + price fields).
 - Price: `?precioMin=5000` (pesos) → 13 chairs; `?precioMin=100000` → 0; chip "Precio: desde $5,000.00" (no 100x error).
 - Locale: `/en/sillas` filter form and search form both `action="/en/sillas"`.
+
+---
+
+## Stage 7b Fix — QA-BUG-1 (JS-off browser saw a perpetual skeleton)
+
+### Root cause
+`/sillas` is a **dynamic** route (`ƒ`, reads `searchParams`). It combined (a) a
+route-level `src/app/[locale]/sillas/loading.tsx` (`CatalogPageSkeleton`) AND
+(b) a `<Suspense fallback={<ProductGridSkeleton />}>` around `SearchResults`. On a
+dynamic route Next.js streams a suspended subtree into a `<div hidden id="S:N">`
+holder that a client `$RC` script swaps into place on hydration. With JS OFF that
+script never runs, so a no-JS browser was stuck on the skeleton forever — the real
+markup was in the response body (SEO/crawlers fine, AC-11 held) but invisible to a
+no-JS human, breaking the visible halves of AC-10/12/13 and edge 11 ("SSR-first").
+
+### Fix (architectural — constraint 1 satisfied)
+1. **Deleted** `src/app/[locale]/sillas/loading.tsx` — removed the segment-level
+   Suspense boundary that forced the whole page into a hidden holder.
+2. **Removed the `<Suspense>`** around `SearchResults` in `sillas/page.tsx`; the RPC
+   read is now `await`ed **inline**, so shell + toolbar + chips + sidebar + grid all
+   land in the **visible** server-rendered tree. Confirmed **zero** `hidden id="S:"`
+   holders in the served HTML and full visibility in a real `javaScriptEnabled:false`
+   Playwright browser (bbox non-null for grid, cards, result-count, sidebar panel,
+   chips) — screenshot-verified for `/sillas?q=…` and `/sillas?marca=<id>` in **both**
+   `es-MX` and `en`.
+3. Removed the now-dead `CatalogPageSkeleton` export (only `loading.tsx` used it) and
+   the unused `cn` import from `catalog-skeleton.tsx`; refreshed stale "Suspense
+   fallback" doc comments in `search-results.tsx` and `catalog-grid-region.tsx`.
+
+### Why this option over the others evaluated
+- **Delete `loading.tsx` alone** (keep inner Suspense): TESTED with a real no-JS
+  browser — the inner `<Suspense>` still streamed the grid into `hidden id="S:0"`
+  (grid/count/cards bbox `null`). Insufficient. This is why the task's "TEST, don't
+  assume" caveat mattered: the inner-Suspense option has the **same** `$RC` defect.
+- **Inline `await` (chosen)**: the only pattern that puts the results in the visible
+  SSR tree with no `$RC` dependency. Correct for a no-JS human AND still dynamic.
+
+### JS-on loading UX impact
+- The route no longer shows a route/grid **skeleton** on cold navigation; instead the
+  server response now **blocks on the one-round-trip `search_products` RPC** before
+  first byte (against local Supabase this is a single fast round trip; the RPC is
+  `pg_trgm`-indexed and `LIMIT 12`).
+- In-page **pending indication is preserved**: every client-side filter/sort/search
+  change still runs through the `CatalogGridRegion` `useTransition` **dim** (M-7,
+  opacity-only / RM-safe) — the previous results stay visible-but-dimmed until the new
+  RSC payload lands, which is a smoother UX than a skeleton flash on fast local reads
+  (Emil: "prevent jarring changes"). Taxonomy routes (`/marcas`, `/categorias`,
+  `/estilos`) are **unaffected** — they are SSG so their `<Suspense>` resolves at build
+  time (no hidden holder).
+- Trade-off noted: inline rendering makes each `/sillas` request hold its worker for
+  the RPC duration, so under **very high** e2e parallelism on the single shared prod
+  server the pre-existing hydration/contention flake on the chip-nav tests is a touch
+  more visible (green in isolation and at `--workers=2`; see gate note).
+
+### Test contract flipped
+`e2e/search-filter-sort-nojs.spec.ts` — the first `describe` previously **pinned** the
+buggy behavior (`hidden id="S:"` present, skeleton visible). It is now
+`"QA-BUG-1: JS-off results are SSR-visible (no streaming holder)"` and asserts the
+**fixed** contract: `body` has **no** `hidden id="S:"` and **no**
+`product-grid-skeleton`, and `result-count` / `product-grid` / first `product-card` /
+the desktop sidebar `filter-panel` are all `toBeVisible()` with JS off.
+
+### Files changed (Stage 7b)
+| File | Change |
+|------|--------|
+| `src/app/[locale]/sillas/loading.tsx` | **Deleted** (route-level full-page skeleton) |
+| `src/app/[locale]/sillas/page.tsx` | Removed `<Suspense>` + `ProductGridSkeleton`/`Suspense` imports + `suspenseKey`; `SearchResults` awaited inline; rewrote rendering-mode doc (SSR-first / QA-BUG-1) |
+| `src/components/catalog/catalog-skeleton.tsx` | Removed dead `CatalogPageSkeleton` export + unused `cn` import |
+| `src/components/catalog/search-results.tsx` | Doc comment: inline render, not a Suspense fallback |
+| `src/components/catalog/catalog-grid-region.tsx` | Doc comment: transition dim is the sole in-page pending indication |
+| `e2e/search-filter-sort-nojs.spec.ts` | Flipped the QA-BUG-1 pin to assert the fixed (visible, no-holder) behavior; refreshed header |
+
+### Gates After Fix
+- Unit: **569 passed** / 0 failed / 0 skipped
+- Integration (read-only, no db reset): **110 passed** / 0 failed
+- E2E (chromium + mobile, prod server on :3000 vs local Supabase :54321):
+  **259 passed / 5 skipped / 0 failed** (`--workers=2`; the flipped QA-BUG-1 test green
+  on both projects). Full-parallelism runs intermittently trip the pre-existing single-
+  server chip-nav contention flake (green in isolation and at `--workers=2`).
+- `tsc --noEmit`: clean · `eslint .`: clean · `next build`: succeeds (`/sillas` = `ƒ`,
+  107 static pages, **0** `hidden id="S:"` holders).
+- Manual no-JS check: screenshot-verified visible grid + toolbar + chips + sidebar for
+  `/sillas?q=ergonomica&color=#111111` and `/sillas?marca=<id>` in `es-MX` **and** `en`.

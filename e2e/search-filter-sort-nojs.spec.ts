@@ -2,41 +2,37 @@ import { expect, test } from "@playwright/test";
 
 /**
  * JS-DISABLED regression proofs (T5 AC-12, AC-13, edge 11) — the Stage-6 fixes
- * (C-1, C-2, M-1, M-3) must be present and correct in the SERVED HTML with no
- * JavaScript.
+ * (C-1, C-2, M-1, M-3) plus the Stage-7b QA-BUG-1 fix must be present, correct,
+ * and VISIBLE in a real no-JS browser.
  *
- * ┌─ QA-BUG-1 (real defect found in QA — see qa-report.md) ────────────────────┐
- * │ `/sillas` is a DYNAMIC route with a route-level `loading.tsx`. Next.js      │
- * │ therefore streams the ENTIRE page: a no-JS browser first paints the         │
- * │ `loading.tsx` full-page skeleton, and the real page (grid, filter sidebar,  │
- * │ toolbar, chips, and even the <noscript> mobile form) is delivered inside a  │
- * │ `<div hidden id="S:0">` holder that a client `$RC` script swaps into view.  │
- * │ With JS OFF that script never runs, so a no-JS BROWSER is stuck on the      │
- * │ skeleton forever. The correct markup IS in the response body (crawlers,     │
- * │ curl, SEO get it — AC-11 indexability holds), but it is not VISIBLE to a    │
- * │ no-JS human. This regresses the JS-off requirement Stage 6 claimed FIXED    │
- * │ ("curl-verified" only covered the response body, not browser visibility).   │
+ * ┌─ QA-BUG-1 (fixed in Stage 7b — see qa-report.md / dev-done.md) ─────────────┐
+ * │ ORIGINAL DEFECT: `/sillas` was a DYNAMIC route with a route-level           │
+ * │ `loading.tsx` AND a `<Suspense>` around the results grid. On a dynamic      │
+ * │ route Next.js streams a suspended subtree into a `<div hidden id="S:N">`    │
+ * │ holder that a client `$RC` script swaps in on hydration. With JS OFF that   │
+ * │ script never runs, so a no-JS browser was stuck on the skeleton forever —   │
+ * │ the real content was in the response body (SEO/crawlers fine) but invisible │
+ * │ to a no-JS human, regressing the visible halves of AC-10/12/13 + edge 11.   │
+ * │ FIX: deleted the route-level `loading.tsx` and removed the results          │
+ * │ `<Suspense>`; the RPC read is now `await`ed INLINE so the whole page —      │
+ * │ shell, toolbar, chips, sidebar, grid — lands in the VISIBLE server-rendered │
+ * │ tree (zero `hidden id="S:` holders). The first test below PINS the FIXED    │
+ * │ (visible, no-holder) behavior so a regression to streaming flips it.        │
  * └─────────────────────────────────────────────────────────────────────────────┘
  *
- * Consequently these tests assert the SERVED-HTML CONTRACT (attributes, names,
- * counts, hrefs — all readable on hidden DOM nodes) rather than driving
- * visibility-gated interactions, which is the honest scope of what works JS-off
- * today. The first test explicitly PINS the QA-BUG-1 behavior so a future fix
- * flips it deliberately.
+ * The remaining tests assert both the SERVED-HTML CONTRACT (attributes, names,
+ * counts, hrefs) and, where relevant, real no-JS VISIBILITY.
  */
 
 // JS disabled file-wide; desktop viewport so sidebar-scoped locators resolve
 // deterministically on both projects (the mobile <noscript> block overrides to
-// 375px within its own describe). All assertions here read attributes / text /
-// counts on the served HTML, which work regardless of element visibility.
+// 375px within its own describe).
 test.use({ javaScriptEnabled: false, viewport: { width: 1280, height: 900 } });
 
 /**
- * Navigate with JS off and wait for the full RSC stream to land. `/sillas` is a
- * dynamic route that streams the real content into a hidden holder; with JS off
- * no `$RC` swap runs, but the holder markup still arrives progressively over the
- * one HTTP response, so `networkidle` is the deterministic signal that the whole
- * body (incl. the hidden results) is present before we read it.
+ * Navigate with JS off and wait for the DOM to settle. `/sillas` renders its
+ * results INLINE (no Suspense/streaming holder post-QA-BUG-1), so `networkidle`
+ * simply confirms the single HTML response has fully arrived before we read it.
  */
 async function gotoStreamed(
   page: import("@playwright/test").Page,
@@ -45,20 +41,27 @@ async function gotoStreamed(
   await page.goto(url, { waitUntil: "networkidle" });
 }
 
-test.describe("QA-BUG-1: JS-off streaming visibility (documents the defect)", () => {
-  test("the served HTML puts the real page in a hidden Suspense holder (skeleton is visible)", async ({
+test.describe("QA-BUG-1: JS-off results are SSR-visible (no streaming holder)", () => {
+  test("the real page renders inline and is VISIBLE with no hidden Suspense holder", async ({
     page,
   }) => {
-    const response = await page.goto("/sillas?q=ergonomica");
+    const response = await page.goto("/sillas?q=ergonomica", {
+      waitUntil: "networkidle",
+    });
     const body = (await response?.text()) ?? "";
-    // The route streams: a hidden holder carries the real content, a $RC script
-    // would swap it in — but not without JS. This assertion PINS the current
-    // (buggy) behavior; when QA-BUG-1 is fixed this test should be updated.
-    expect(body).toContain('hidden id="S:');
-    // The real (hidden) results are nonetheless CORRECT in the body.
-    expect(body).toContain('data-testid="result-count"');
-    // The visible fallback is the skeleton (route loading.tsx / grid skeleton).
-    expect(body).toContain("animate-pulse");
+    // FIXED: the dynamic route no longer streams the results into a hidden
+    // `<div hidden id="S:N">` holder — the whole page is in the visible tree.
+    expect(body).not.toContain('hidden id="S:');
+    // No route-level / grid skeleton is served as a visible fallback anymore.
+    expect(body).not.toContain('data-testid="product-grid-skeleton"');
+    // The results are in the body AND actually visible to a no-JS browser.
+    await expect(page.getByTestId("result-count")).toBeVisible();
+    await expect(page.getByTestId("product-grid").first()).toBeVisible();
+    await expect(page.getByTestId("product-card").first()).toBeVisible();
+    // The desktop filter sidebar (non-noscript copy) is visible JS-off too.
+    await expect(
+      page.locator('aside [data-testid="filter-panel"]'),
+    ).toBeVisible();
   });
 });
 
