@@ -29,28 +29,8 @@ import {
   isHoneypotTripped,
   isValidProductId,
   validateQaSubmission,
-  type QaFieldErrorKey,
 } from "@/lib/qa/submit-guard";
-
-/** The serializable state `useActionState` renders from. */
-export interface QaFormState {
-  status: "idle" | "success" | "invalid" | "rate-limited" | "unavailable" | "error";
-  /** Field → error key (localized in the form); present only when invalid. */
-  fieldErrors?: Partial<Record<"authorName" | "question", QaFieldErrorKey>>;
-  /**
-   * Preserved input so the form stays filled on every failure. Absent on
-   * success (the form clears).
-   */
-  values?: { authorName: string; question: string };
-  /** Increments on every action call so the client can react to repeat results. */
-  submissionId: number;
-}
-
-/** The initial state passed to `useActionState`. */
-export const initialQaFormState: QaFormState = {
-  status: "idle",
-  submissionId: 0,
-};
+import type { QaFormState } from "./qa-form-state";
 
 /** PostgREST code for an RLS `WITH CHECK` / privilege denial. */
 const RLS_DENIAL_CODE = "42501";

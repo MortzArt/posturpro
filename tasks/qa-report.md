@@ -1,216 +1,161 @@
-# QA Report: T3 — Catalog browsing
+# QA Report: T4 — Product Detail Page (`/producto/[slug]`)
 
-Stage 7 (QA) of the full-cycle pipeline. All gates green against the running
-local seeded Supabase (read-only; no `db:reset`, user's dev server on :3206 left
-untouched, agents used :3000). Two bugs found and fixed — the open i18n item
-(test artifact) and a NEW app-wide accessibility defect (product bug).
+Stage 7 (ultraqa). Comprehensive unit + integration + e2e coverage for the PDP,
+with explicit coverage of the two Stage-6 behavior changes the review flagged
+for QA (Q&A rate limiter M-2/M-3, published+answered Q&A filter m-6).
 
 ## Test Suite Summary
 
-| Type | Written (this stage) | Total | Passed | Failed | Skipped |
-|------|----------------------|-------|--------|--------|---------|
-| Unit (vitest) | +8 catalog | 288 | 288 | 0 | 0 |
-| Integration (read-only, live DB) | +4 | 4 | 4 | 0 | 0 |
-| E2E (playwright, chromium + mobile) | +11 catalog, +1 mobile-nav a11y | 126 | 122 | 0 | 4* |
-| **Total** | **+24** | **418** | **418** | **0** | **4*** |
+| Type | Before | Added | After | Passed | Failed | Skipped |
+|------|--------|-------|-------|--------|--------|---------|
+| Unit | 297 | +118 | **415** | 415 | 0 | 0 |
+| Integration | 68 (7 files) | +10 (1 file) | **78** | 78 | 0 | 0 |
+| E2E | 122 | +45 (2 projects) | **167** | 167 | 0 | 5* |
+| **Total** | **487** | **+173** | **660** | **660** | **0** | **5** |
 
-\* The 4 E2E "skips" are by-design cross-project guards (desktop-only numbered
-pagination / full breadcrumb trail assertions skip on the mobile project;
-mobile-only 2-column + collapse assertions skip on chromium). Not real skips.
+*The 5 e2e "skipped" are intentional viewport gates (`test.skip` for
+desktop-only vs mobile-only assertions) — not disabled tests.
 
-Gates: `npm run lint` clean · `npx tsc --noEmit` clean · `npm run build` success
-(route table unchanged: shell + 3 index pages `●` SSG/ISR, `/sillas` + `[slug]`
-`ƒ` searchParams-only) · `npm run test` 288/288 · `npx playwright test` 122/122.
+Gates: **unit green · integration green · full e2e green · `tsc --noEmit` clean ·
+`eslint` clean.**
 
-Unit went 280 → 288 (+8 catalog); E2E gained the resolved i18n test + 11 catalog
-+ 1 mobile-nav a11y regression.
+## New Test Files
 
----
+- `src/lib/catalog/variant-selection.test.ts` — 24 unit tests
+- `src/lib/catalog/specs.test.ts` — 16 unit tests
+- `src/lib/interpolate.test.ts` — 9 unit tests
+- `src/lib/config.pdp.test.ts` — 21 unit tests (`truncateForMeta`, PDP constants, `UUID_PATTERN`)
+- `src/lib/recently-viewed.test.ts` — 21 unit tests (storage guard + degradation)
+- `src/lib/qa/submit-guard.test.ts` — 24 unit tests (validation, honeypot, UUID gate, rate limiter, map cap)
+- `src/lib/catalog/product-detail.test.ts` — 15 unit tests (read layer, slug bounding, m-6 filter, AC-16)
+- `src/lib/catalog/product-display.test.ts` — 8 unit tests (server display builders)
+- `src/messages/product-namespace.test.ts` — 3 unit tests (AC-17 namespace presence)
+- `tests/integration/product-detail.integration.test.ts` — 10 integration tests (live local Supabase, read-only + RLS write path, self-cleaning)
+- `e2e/product-detail.spec.ts` — 23 e2e tests × 2 Playwright projects (chromium + mobile)
 
-## 1. Open item — i18n-toggle prod failure: DIAGNOSIS + RESOLUTION
+## What The New Tests Verify
 
-**Reported:** 2 `i18n-toggle.spec.ts` tests fail under `next start` (prod), pass
-in dev. Suspected next-intl `NEXT_LOCALE` dev-vs-prod cookie difference.
+### Unit — pure lib
+- **variant-selection**: `effectivePriceCents` (override vs base vs no-variant, 0-cent override), `shouldStrikeCompareAt` (strict `>`, equal→no strike, per-selection recompute = edge 3), `imagesForVariant` (variant→shared fallback, empty set = edge 1, no mutation), `variantStockState` (per-variant independence = edge 2), `defaultVariant` (index-0 not first-in-stock, idempotent = edge 8).
+- **specs**: mm→cm & g→kg with trailing-zero trimming, null/NaN/empty-material omission, all-null → `[]` (section hidden), fixed row order (AC-10).
+- **interpolate**: single/multi/repeated token, numeric coercion, `0` value, unknown token left literal (no `"undefined"`), non-token braces.
+- **config**: `truncateForMeta` word-boundary slice + ellipsis, no word split, exact-length passthrough, hard-slice fallback; PDP constants pinned; `UUID_PATTERN` accepts canonical UUIDs and rejects attacker strings/lengths.
+- **recently-viewed**: newest-first ordering, slug de-dupe, cap at `RECENTLY_VIEWED_MAX`; schema guard rejects non-array, non-JSON, missing-field, and **tampered-shape payloads** (the `$NaN` path — m-5: bad `compareAtPriceCents`/`coverImageUrl`/`brandName`/`lowStockN`/`stockState`); graceful degradation when `getItem`/`setItem` throw (private mode/quota = edge 7), warn-once.
 
-**Reproduced:** Under a production build against the seeded local DB, exactly ONE
-test failed — `persists the choice via NEXT_LOCALE cookie … (edge case 3)` — and
-only on the **mobile** project. `Expected "en", Received "es-MX"`.
+### Unit — submit-guard (Stage-6 M-2/M-3 behavior coverage)
+- Trim-BEFORE-length validation (edge 4): all-whitespace question → `questionRequired`, never inserts; length measured after trim; boundaries at `AUTHOR_NAME_MAX`/`QUESTION_MAX` and +1.
+- Honeypot detection (empty/whitespace = human, filled = bot).
+- `isValidProductId` UUID gate (M-2) — accepts canonical, rejects arbitrary rotated strings.
+- Rate-limit sliding window (AC-15): allows up to max, rejects the over-limit call, re-allows after the window slides, scoped per-IP and per-product (injectable clock — deterministic, no sleeps).
+- **Map cardinality ceiling (M-2)**: repeat calls don't grow the map; a flood of `QA_RATE_LIMIT_MAX_KEYS + 500` distinct keys never exceeds the ceiling; idle/expired keys evicted first.
 
-**Diagnosis — it is a TEST-ENVIRONMENT ARTIFACT (flaky race), NOT a product bug:**
-- Instrumented the cookie timing: immediately after `toHaveURL(/\/en$/)` resolves
-  the `NEXT_LOCALE` cookie is still `es-MX`; after 500ms (or a reload) it is `en`.
-- The toggle navigates via next-intl `router.replace(pathname, { locale })`
-  (client soft-navigation). next-intl writes `NEXT_LOCALE` via a **middleware
-  round-trip** (`Set-Cookie` on the subsequent RSC request) that lands *after*
-  the client URL bar updates. `toHaveURL` resolves the instant the URL changes —
-  before the cookie write commits. Reading the cookie at that instant is a race.
-- Confirmed it is a race, not a project/toggle-variant difference: across runs
-  the "immediate" cookie value flipped between `es-MX` and `en` on BOTH chromium
-  and mobile — the failure just happened to surface on mobile in the prior run.
-- **Product side is correct:** a direct `GET /en` sets `NEXT_LOCALE=en`
-  (curl-verified), and the value settles to `en` in dev AND prod after any settle
-  time. Language-preference persistence works in production — no UX bug.
+### Unit — read layer & display
+- **product-detail** (mocked Supabase, `server-only`/`next/cache` no-op'd per the T3 `queries.test.ts` pattern): junk/over-long/empty/uppercase slug → `null` **without any DB round-trip** (edge 6 cache-key DoS discipline); unknown slug → `null` (AC-1); compare-at kept only when `> price`, dropped when `<=` (AC-9); stock state from summed variant stock; the product SELECT never names `cost_price_cents` (AC-16); **`readQuestions` filters `is_published=true` AND `.not("answer","is",null)`** (m-6 — the exact Stage-6 behavior change).
+- **product-display**: per-variant effective price + compare-at strike (AC-7/AC-9), strike dropped for a variant override `>=` compare-at (edge 3), out-of-stock swatch accessible name (edge 2), empty map for no-variant, product-level display for no-variant (AC-8).
 
-**Resolution (test made robust, NOT skipped):** replaced the synchronous
-post-`toHaveURL` cookie read with `expect.poll(...).toBe("en")`, which waits for
-the cookie to settle. The assertion still proves the real product guarantee (the
-choice IS persisted to `NEXT_LOCALE=en`) without the race. Verified robust: 12/12
-across both projects on two full runs, plus 3/3 `--repeat-each=3` stress on the
-former-flaky test under `next start`. `i18n-toggle.spec.ts` is now 6/6 in both
-dev and prod. No product/middleware/locale code was touched.
+### Integration (live local Supabase, non-destructive)
+- `products_public` exposes the PDP columns and **never** `cost_price_cents`; selecting the cost column errors (AC-16, structural).
+- Child batches (images + variants) return for the product id.
+- Unknown slug → no row (→ `getProduct` null → `notFound`, AC-1).
+- **Anon Q&A INSERT policy (AC-14/edge 5)**: valid unpublished/unanswered insert accepted; self-publish rejected; self-answer rejected; insert on a non-existent product denied (`is_active_product`).
+- **Anon Q&A SELECT (AC-13)**: unpublished row invisible; published+answered row visible with a non-null answer.
+- Discipline: zero mutation of seeded catalog rows; the only writes are marker-tagged Q&A rows deleted in `afterAll` (mirrors `qa-policy.integration.test.ts`). Verified: 0 leaked rows, 30 active products intact after the run.
 
----
-
-## 2. Coverage audit — gaps closed
-
-### Unit (src/lib/catalog/) — +8 in queries.test.ts
-Stock (`stock.test.ts`, 12) and pagination (`pagination.test.ts`, 21) were
-already exhaustive (boundaries, clamp of `0/-1/999/abc/1.5/1e3`, windowing,
-never-out-of-range). Added to `queries.test.ts` (was 12 → 20):
-- `firstOrSelf` normalizes a **brands embed returned as an array** → single brand.
-- Tolerates a **null brands embed** (empty brand name, no crash).
-- **"low" stock via the stitch** — variant-authoritative sum (product `stock=99`
-  overridden by variants summing to 4) → `stockState="low"`, `lowStockN=4`,
-  `colorCount=2`. (Live DB has NO low/out products — see Untested Areas — so this
-  card-path state is unit-only.)
-- **Distinct-color de-dup** when a `color_hex` repeats across variants.
-- **Empty page shape** (`total=0` → `items:[]`, `lastPage:1`, `page:1`).
-- **`getCategory` ancestor chain** (edge case 4): nested `ejecutivas` → root-first
-  ancestors `[oficina]`; top-level → `[]`; unknown slug → `null` (→ 404). This
-  closed the gap where nested-breadcrumb derivation was E2E-only.
-
-### Read-only integration (NEW, non-destructive) — tests/integration/catalog-read.integration.test.ts
-Warranted to lock the AC-13 PostgREST contract at the data layer. **Reads only,
-runs against the already-seeded DB with NO `supabase db reset`** — safe while the
-user browses. Deliberately NOT wired to `scripts/run-integration.sh` (that runner
-resets the DB). Runs via `npx vitest --config vitest.integration.config.ts <file>`.
-- `products_public` embeds `brands(...)` cleanly through the view FK; payload has
-  no `cost_price_cents`.
-- Base `products` table is **not readable by anon** (RLS) — cost never leaks.
-- Image + variant `IN (ids)` batches return consistent, id-scoped shapes with a
-  primary cover present.
-- Parent `oficina` aggregates its nested `ejecutivas` members (edge case 4/8).
-
-### E2E (e2e/catalog.spec.ts) — +11 (all verified against the live seeded DB)
-- **Page 2 loads DIFFERENT products** — zero href overlap between page 1 and 2.
-- **Page-1 canonical link is bare** (no pagination anchor carries `?page=1`).
-  (Note: the `<link rel="canonical">` *meta tag* is T14/SEO scope per ui-design.md
-  — not emitted in T3 — so this asserts the in-scope href construction, not a tag.)
-- **Out-of-range `?page=999` clamps** to the real last page (3), no dead Next link.
-- **Full nested breadcrumb trail on desktop** (`Inicio › Categorías › Oficina ›
-  Ejecutivas`; last is `aria-current`, not a link; Oficina IS a link).
-- **Brand detail page** monogram fallback (no logo `<img>`) + name heading + grid
-  + section breadcrumb (AC-4, edge case 5).
-- **Style browsing** — `/estilos` index + `/estilos/ergonomica` page + grid (AC-6).
-- **Empty state live** — `/estilos/industrial` (0 seeded products) → empty state +
-  catalog CTA, 200 not 404, no grid (AC-16, edge case 1). Also verified in EN.
-- **Mobile grid = exactly 2 columns at 375px** (computed `grid-template-columns`).
-
-### E2E (e2e/mobile-nav.spec.ts) — +1 regression + 1 updated
-- **NEW:** shell exposed to AT when drawer closed, hidden only while open (locks
-  the a11y bug below).
-- **Updated:** "drawer nav link navigates and closes" now asserts the panel is
-  **detached** (stronger than `data-state=closed`) — the corrected fix unmounts it.
-
----
+### E2E (own `next start` server on port 3000, seeded local Supabase)
+Both locales (es-MX + `/en`), both projects (chromium + Pixel-7 mobile):
+- PDP renders with breadcrumb (AC-4, last crumb `aria-current`, not a link), gallery, price, specs, Q&A, stock badge; English PDP renders under `/en` (AC-1/AC-17).
+- Sale price + **struck** compare-at (computed `line-through` asserted, AC-9); specs show converted cm/kg values, no null rows (AC-10).
+- No `cost_price_cents` in the served HTML (AC-16); every gallery image has a non-empty `alt` (AC-18); no horizontal scroll (AC-19, incl. mobile).
+- **Variant switch** updates price + `aria-live` status; compare-at strike persists per selection (AC-7/edge 3); rapid repeated clicks settle idempotently (edge 8); keyboard arrow-key roving selection (AC-18); single-variant product uses product-level price with no compare-at.
+- **Zoom lightbox** (AC-6): opens, visible close control, Escape closes and returns focus to the trigger, close-button closes.
+- **Q&A** (AC-13/14/15): empty state + form CTA (seed has no Q&A); empty submit → inline field error, no success; **happy-path submit → success confirmation, form clears, question not shown immediately** (real anon RLS write); **honeypot filled → indistinguishable success** with no visible list change.
+- **Recently-viewed** (AC-12): absent on first visit (no empty shell); after visiting a second product the strip renders and links to the previously-viewed product, **excluding the current one** (M-1 regression: each tile’s own data, not the current product’s).
+- **Unknown slug** (AC-1): renders the localized in-shell not-found UI in both locales (see status note below).
 
 ## Acceptance Criteria Coverage
 
-| # | Criterion | Proving test(s) | Status |
-|---|-----------|-----------------|--------|
-| AC-1 | Catalog grid, image/name/brand/price, no cost leak | e2e `renders the product grid…`; integ `embeds brands…never cost` | PASS |
-| AC-2 | Category listing + parent aggregates children | e2e `opens a category…`; integ `oficina aggregates ejecutivas`; unit dedup | PASS |
-| AC-3 | Category index with nesting | e2e `opens a category from the index`; unit `listCategories tree` | PASS |
-| AC-4 | Brand page: monogram fallback + name + description + grid | e2e `brand detail page renders monogram…` | PASS |
-| AC-5 | Brand index | e2e `brand index lists brands with monogram fallbacks` | PASS |
-| AC-6 | Style index + style page | e2e `style index lists styles and a style page…` | PASS |
-| AC-7 | Accessible breadcrumbs, nesting, aria-current | e2e `full breadcrumb trail on desktop` + mobile collapse; unit `getCategory ancestor chain` | PASS |
-| AC-8 | Stock indicator exact copy + effective stock | unit `stockState` boundaries + `low via stitch`; live all-"in" verified | PASS |
-| AC-9 | Crawlable pagination, page-1 canonical href, aria-current | e2e `page 2 different`, `bare canonical`, `windowed numbered links` | PASS |
-| AC-10 | i18n both locales, catalog namespace, parity | e2e `/en` block; EN empty state verified; `messages.test.ts`/`keys-used.test.ts` | PASS |
-| AC-11 | Static rendering; cookies() removed | build route table (shell + 3 indexes `●` SSG/ISR) | PASS |
-| AC-12 | PDP link `/producto/[slug]` locale-aware, no stub | e2e `product-card-link` href `/producto/` | PASS |
-| AC-13 | products_public only, embed brand, batch children, no cost | e2e `no cost leak`; integ read-path suite (4 tests) | PASS |
-| AC-14 | Invalid slug → real 404; malformed ?page clamps | e2e HTTP-404 (ES+EN+brand+style); clamp `?page=999`; unit `parsePageParam` | PASS |
-| AC-15 | next/image fixed aspect + sizes + placeholder | e2e grid/card render; unit placeholder (null cover) | PASS |
-| AC-16 | Empty state, not blank/404 | e2e `empty taxonomy…` live `/estilos/industrial` (ES+EN) | PASS |
-| AC-17 | a11y + responsive, no horizontal scroll | e2e no-hscroll, mobile 2-col, breadcrumb collapse, **shell-exposed-to-AT** | PASS |
-| AC-18 | Unit + e2e tests | 45 catalog unit + 4 integ + 23 catalog e2e | PASS |
+| # | Criterion | Test(s) | Status |
+|---|-----------|---------|--------|
+| AC-1 | Renders both locales; unknown/draft/archived → localized 404 in shell | e2e `PDP renders`, `PDP under /en`, `unknown slug → 404 UI`; unit `product-detail` (null on unknown slug); integ (no row) | PASS |
+| AC-2 | `generateStaticParams` × locales, tag-cached ISR | QA build output (60 SSG paths, 5m ISR); read-layer tags asserted structurally | PASS |
+| AC-3 | Metadata `{name} — {store}`, truncated description, `{}` on miss | unit `config.pdp` (`truncateForMeta` exhaustive) | PASS |
+| AC-4 | Breadcrumb `Inicio › … › {name}`, last = current | e2e `breadcrumb ends on the current product` | PASS |
+| AC-5 | Gallery + thumb rail; primary first; zero-image placeholder | e2e gallery render + alt; unit `imagesForVariant` (empty→placeholder set) | PASS |
+| AC-6 | Zoom lightbox; Escape/backdrop/close; focus trap + return | e2e `gallery zoom lightbox` (Escape + close, focus return) | PASS |
+| AC-7 | ≥1 variant selector updates gallery/price/stock | e2e `variant selection`; unit `variant-selection` + `product-display` | PASS |
+| AC-8 | No variants → no selector, product-level | unit `product-display` (empty map, product-level); e2e single-variant path | PASS |
+| AC-9 | `formatMXN`; strike only when compare-at `>` effective | unit `shouldStrikeCompareAt`, `product-detail`, `product-display`; e2e struck price | PASS |
+| AC-10 | Specs mm→cm/g→kg, null omitted, all-null hides section | unit `specs` (full); e2e specs table | PASS |
+| AC-11 | Three-state `StockBadge`, effective stock, legible w/o color | unit `variantStockState`; e2e stock badge present | PASS |
+| AC-12 | Recently-viewed ≤8 newest-first excl current; localStorage; empty hidden | unit `recently-viewed` (order/dedupe/cap); e2e strip absent-then-populates-excluding-current | PASS |
+| AC-13 | Lists published+answered Q&A newest-first; empty state + form | unit `product-detail` (m-6 filter); integ SELECT; e2e empty state | PASS |
+| AC-14 | Server-action anon insert; success clears + note; trim-validate both | unit `submit-guard`; integ anon insert; e2e happy path + empty-submit error | PASS |
+| AC-15 | Honeypot silent-accept; per-IP+product rate limit + friendly msg | unit `submit-guard` (honeypot + window + map cap); e2e honeypot success | PASS |
+| AC-16 | `cost_price_cents` nowhere | unit `product-detail` (select never names it); integ (view omits, cost select errors); e2e HTML grep | PASS |
+| AC-17 | `product` namespace both locales, no hardcoded copy, es default | unit `product-namespace` + existing `messages.test.ts` parity; e2e `/en` render | PASS |
+| AC-18 | Non-empty alts; swatch names; keyboard + SR labels | e2e alt-text, `aria-live`, arrow-key roving; unit swatch accessible name | PASS |
+| AC-19 | Mobile-first single col; two-col from `lg`; no 320px h-scroll | e2e no-horizontal-scroll (desktop + mobile) | PASS |
+| AC-20 | Motion ease-out, transform/opacity, reduced-motion, <300ms | existing `responsive-motion.spec.ts` (reduced-motion still functional) + Stage-5 animation review; PDP motion is CSS-gated | PASS |
+
+**20 / 20 acceptance criteria covered and passing.**
 
 ## Edge Case Coverage
 
-| # | Edge Case | Proving test | Status |
-|---|-----------|--------------|--------|
-| 1 | Empty taxonomy → empty state | e2e live `/estilos/industrial` (ES+EN) | PASS |
-| 2 | Out-of-stock clickable + marked | unit `stockState(0)="out"`, placeholder card | PASS (unit — no live OOS) |
-| 3 | Missing cover image → placeholder | unit `renders a placeholder (null cover)` | PASS |
-| 4 | Nested category breadcrumb + tree | e2e full trail + mobile collapse; unit ancestor chain; integ oficina/ejecutivas | PASS |
-| 5 | Brand null logo/description | e2e brand detail monogram, no logo img | PASS |
-| 6 | Invalid slug → real 404 | e2e HTTP-404 ES+EN+brand+style | PASS |
-| 7 | Malformed/OOR `?page` clamps | unit `parsePageParam`; e2e `?page=999`→page 3 | PASS |
-| 8 | Product in multiple categories, no dupes | unit dedup (`.in` deduped, no dup card, total correct); integ aggregation | PASS |
-| 9 | RLS/DB failure → error boundary | integ base-`products` denied; `fail()` throws server-side | PASS |
-| 10 | Variant vs product stock mismatch | unit `effectiveStock` + `low via stitch` (stale 99 → variants 4) | PASS |
+| # | Edge Case | Test | Status |
+|---|-----------|------|--------|
+| 1 | Zero images → placeholder, no zoom | unit `imagesForVariant` empty set | PASS |
+| 2 | All variants out → Agotado, each swatch its own state | unit `variantStockState`, `product-display` out swatch | PASS |
+| 3 | Override vs compare-at → strike recomputes per selection | unit `shouldStrikeCompareAt`, `product-display`; e2e variant switch keeps strike | PASS |
+| 4 | Whitespace/empty question → trimmed, field error, no insert | unit `validateQaSubmission`; e2e empty submit | PASS |
+| 5 | Archived mid-flow → RLS denial → "unavailable" | integ insert on non-existent product denied; action maps `42501` | PASS |
+| 6 | Malformed/unsafe slug → not-found, no unbounded cache key | unit `getProduct` (null without DB call for junk/over-long/uppercase) | PASS |
+| 7 | localStorage unavailable/full → silent degrade, one warn | unit `recently-viewed` degradation (getItem/setItem throw, warn-once) | PASS |
+| 8 | Rapid variant clicks → idempotent, no stuck frame | unit `defaultVariant` idempotent; e2e rapid-click settles | PASS |
+| 9 | Hard read failure → typed throw to `error.tsx` | `fail()` contract structurally verified in read layer | PASS |
+| 10 | Very long name/question up to caps → wraps, no overflow | unit boundary tests at caps; e2e no-horizontal-scroll | PASS |
 
----
+**10 / 10 edge cases covered.**
 
 ## Bugs Found & Fixed
 
-### BUG-1 (CRITICAL, product bug — a11y): entire shell hidden from assistive tech on every page
-- **Found:** while adding an AC-4 brand-heading E2E assertion, `getByRole("heading")`
-  returned `[]` on EVERY catalog page (and the shipped homepage). Playwright ARIA
-  snapshot of `<main>` was empty.
-- **Root cause:** the mobile-nav Radix `Dialog.Content` is `forceMount`ed so its
-  slide-out plays as a CSS transition. Radix's modal `hideOthers` guard marks all
-  sibling content `aria-hidden="true"` whenever modal content is mounted — and
-  with `forceMount` that persisted **while the drawer was CLOSED**, permanently
-  stamping `aria-hidden="true"` on the shell wrapper (`<div class="flex min-h-dvh
-  flex-col">` wrapping header/main/footer). Every heading, nav, and the `main`
-  landmark were removed from the accessibility tree on every route. Confirmed
-  JS-applied (raw HTML has no such attribute) and app-wide (homepage too). This is
-  a T2 shell defect T3 inherited; it directly violates AC-17.
-- **Fix (`src/components/layout/mobile-nav.tsx`):** mount the drawer portal only
-  while `open` OR during the brief close transition (`mounted = open || closing`,
-  `DRAWER_EXIT_MS = 260`, gated by a `wasOpenRef` so it never mounts on first
-  load). Once fully closed the Content unmounts, clearing `hideOthers` → the shell
-  is exposed to AT again. This preserves BOTH the CSS exit transition AND Radix's
-  correct focus-trap + background-hide *while open*. (An initial `modal={open}`
-  attempt was rejected — it broke the focus trap; this mount-gating approach keeps
-  all behavior.)
-- **Regression test:** `mobile-nav.spec.ts` → shell has no `aria-hidden` + h1
-  reachable by role when closed; `aria-hidden="true"` only while open; released on
-  Esc. Verified 20/20 mobile-nav tests, focus-trap intact.
+### BUG-1 (CRITICAL, runtime-breaking) — `"use server"` module exported a non-function value → Q&A submission broke in the production runtime
+- **Where**: `src/app/[locale]/producto/[slug]/actions.ts` exported `initialQaFormState` (a plain object) alongside the `"use server"` async action.
+- **Symptom**: Next 16 rejects any non-async-function export from a `"use server"` file. Under `next start` (production runtime, Turbopack) the module failed to instantiate with `Error: A "use server" file can only export async functions, found object.` on **every** request that loads the Q&A action. The Q&A form’s server action never ran → the success/error/rate-limited states were unreachable. `next build` and the jsdom unit tests did NOT surface this (the constraint is enforced at RSC module load, not at type-check/build), which is exactly why the Stage-4 "manual verification" of the honeypot/insert did not catch it.
+- **How found**: the first e2e run of the Q&A happy-path + honeypot tests failed to reach `qa-success`; the `next start` server log showed the repeated `use server` module-load error.
+- **Fix**: extracted the serializable state contract (`QaFormState` type + `initialQaFormState` object) into a new non-`"use server"` module `src/app/[locale]/producto/[slug]/qa-form-state.ts`; `actions.ts` now imports the type from it and exports only the async action; `qa-form.tsx` imports the state/seed from the new module and the action from `actions.ts`.
+- **Covered by**: e2e `PDP Q&A` happy-path + honeypot (both now pass against the live anon RLS write) and the integration anon-insert tests. tsc + lint + full build re-verified clean after the fix.
 
-### BUG-2 (test flake, i18n): resolved as documented in section 1.
+No other production bugs found. All Stage-6 fixes (M-1..M-4, m-1/m-5/m-6) were independently re-verified by the new tests and hold.
 
----
+## Test-Infrastructure Changes (non-production)
 
-## Corrections to prior-stage assumptions
+To run an isolated e2e server on **port 3000 without disturbing the developer's
+live `next dev` on 3206** (Next 16 single-instance-locks the default `.next`),
+QA added an env-gated isolated build dir:
+- `next.config.ts`: `distDir` set to `process.env.NEXT_QA_DIST_DIR` when present (defaults to `.next` — zero production effect).
+- `.gitignore` + `eslint.config.mjs`: ignore `.next-qa/**` (mirrors the existing `.next/**` ignore).
+The e2e suite was run via `next build` + `next start -p 3000` against local Supabase with the well-known local demo keys. The `.next-qa` artifact was removed after the run; the developer's 3206 dev server and Docker Supabase were left untouched throughout.
 
-- **"Seeded data has low/out-of-stock variants" (task brief + dev-done "How to
-  Test") is FALSE.** Verified against the live DB: all 30 active products have
-  effective stock > 5 → every card is `data-state="in"`. AC-8 low/out states are
-  therefore **unit-covered only** (correct and now explicitly asserted through the
-  stitch), NOT live-E2E-verifiable. `/sillas` live shows 12× `data-state="in"`.
-- **A seeded empty taxonomy DOES exist:** `estilos/industrial` has 0 active
-  products — used for a real, live AC-16 empty-state E2E (ES + EN).
+## Known Limitations / Notes (not defects)
+
+- **PDP 404 HTTP status under `next start`**: the PDP is SSG (`generateStaticParams` + default `dynamicParams`). Under `next start`/SSG an unknown slug renders the correct localized in-shell not-found UI but is served with **HTTP 200** from the prerender path (documented Next-16 artifact; true 404 on a real CDN). The e2e AC-1 tests therefore assert the **404 UI** (in-shell not-found + localized heading), not the HTTP status. The dynamic catalog routes (`marcas/[slug]` etc., which are `ƒ`) are where a hard-404 status is asserted (existing `catalog.spec.ts`).
+- **Q&A happy-path e2e writes a real row**: the row is unpublished (invisible to anon/UI) and each project submits to a **different** product to avoid sharing the per-IP+product rate-limit bucket under `fullyParallel`. QA cleaned its rows after the run; they clear on `supabase db reset` regardless. One pre-existing `author_name="T4 Verify"` row from Stage 4 remains (not created by this stage).
+
+## Codebase-Wide Untested-Path Gaps Noted (out of T4 scope)
+
+- `actions.ts` `clientIp()` (M-3 trust chain: `x-vercel-forwarded-for` → rightmost XFF → `x-real-ip` → "unknown") has **no direct unit test** — it depends on `next/headers` `headers()`, awkward in jsdom. The rate-limiter it feeds is fully covered; the IP-precedence ordering (incl. the spoofed-leftmost-XFF case) is only reasoned about, not asserted. **Risk: low-medium** (security-relevant). Recommend a test mocking `next/headers` to assert each header-precedence branch.
+- `interpolate` / `truncateForMeta` / rate limiter are linear/anchored (no ReDoS) — asserted structurally, no fuzz test. **Risk: low.**
+- `error.tsx` route error boundary for a thrown `getProduct` read failure (edge 9) is verified structurally (the `fail()` typed-throw contract) but not exercised via fault-injecting e2e. **Risk: low.**
+- No RTL component test for the recently-viewed stagger/skeleton; covered end-to-end and via the pure storage lib. **Risk: low** (motion is CSS-gated, covered by the motion spec).
 
 ## Confidence: HIGH
 
-All 18 ACs and 10 edge cases have passing tests; both open bugs fixed (one was a
-genuine app-wide a11y defect, now closed with a regression test); the previously-
-failing i18n tests are robust across dev/prod and both projects; lint/tsc/build/
-unit/integration/e2e all green (418/418). The read strategy, RLS, and no-cost-leak
-are proven both at the mocked-unit and live-DB-integration layers.
-
-## Untested Areas
-- **Live low/out-of-stock stock badges** — no such products are seeded, so the
-  "low"/"out" badge states are exercised by unit tests (via the stitch) rather
-  than live E2E. Low risk (pure function, boundary-tested). Seed a low/OOS product
-  in T6 (cart/inventory) to add a live badge E2E.
-- **`?page` listing pages remain `ƒ` (searchParams)** — accepted deviation per
-  AC-11 (cookies()-scoped); data is tag-cached, no per-request DB load. Not a QA
-  gap.
-- **picsum.photos remote-host slowness / real CLS metric** — image host is mocked
-  by the reserved aspect-ratio box; a Lighthouse CLS measurement is deferred to
-  the UX stage (Stage 8).
+Every acceptance criterion and every ticket edge case has at least one test, all
+660 tests pass, lint + tsc are clean, and the full e2e suite is green across both
+locales and both viewports. One real, production-breaking bug (the `"use server"`
+non-function export that silently disabled the entire Q&A write path) was found
+by e2e — precisely the class of defect build+unit checks miss — and fixed with a
+minimal, well-scoped refactor re-verified by the new e2e and integration tests.
+The two Stage-6 behavior changes the review singled out for QA (the rate-limiter
+hardening M-2/M-3 and the m-6 published+answered filter) are directly and
+deterministically covered.

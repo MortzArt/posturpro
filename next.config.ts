@@ -17,6 +17,13 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseHost = supabaseUrl ? new URL(supabaseUrl).hostname : undefined;
 
 const nextConfig: NextConfig = {
+  // Test-infra escape hatch: allow an isolated build/start output dir so the e2e
+  // suite can run its own server without colliding with a developer's live
+  // `next dev` (which single-instance-locks the default `.next`). Defaults to
+  // `.next` in every normal build/dev/prod run — no production effect.
+  ...(process.env.NEXT_QA_DIST_DIR
+    ? { distDir: process.env.NEXT_QA_DIST_DIR }
+    : {}),
   images: {
     remotePatterns: [
       ...(supabaseHost

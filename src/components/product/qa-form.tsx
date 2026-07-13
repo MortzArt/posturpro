@@ -12,11 +12,11 @@ import { Alert02Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { interpolate } from "@/lib/interpolate";
+import { submitQuestion } from "@/app/[locale]/producto/[slug]/actions";
 import {
-  submitQuestion,
   initialQaFormState,
   type QaFormState,
-} from "@/app/[locale]/producto/[slug]/actions";
+} from "@/app/[locale]/producto/[slug]/qa-form-state";
 
 /**
  * QaForm (T4 AC-14, AC-15, edges 4 & 5) — the ONLY client piece of the Q&A
