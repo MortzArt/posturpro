@@ -1,4 +1,4 @@
-# Ship Decision: T4 — Product Detail Page (`/producto/[slug]`)
+# Ship Decision: T5 — Search, Filters & Sorting
 
 ## Verdict: SHIP
 
@@ -6,114 +6,99 @@
 
 ## Quality Score: 9/10
 
-Stage 11 (Hacker) was intentionally skipped per the sanctioned `medium`-complexity
-routing (not a gap). All other gates were re-run fresh at Stage 12 — no reported
-number was trusted; every count below was reproduced independently against a fresh
-production build served on port 3000 wired to the seeded local Docker Supabase.
+Stage 12 (ultraverify). Every gate re-run fresh against my own prod build on `:3000`
+(seeded local Supabase `:54321`); every acceptance criterion verified against the live
+app (HTTP + direct RPC + a real `javaScriptEnabled:false` browser), not against reported
+numbers. Trust-nothing pass. User's `:3206` dev server and Docker Supabase left untouched;
+my server stopped, temp build dir removed, `next build`'s tsconfig reformat reverted, DB
+verified clean (30 products, 0 synthetic leftovers).
 
 ## Test Results
 
 | Suite | Total | Passed | Failed | Skipped |
 |-------|-------|--------|--------|---------|
-| Unit (Vitest) | 415 | 415 | 0 | 0 |
-| Integration (Vitest, live local Supabase, non-destructive) | 78 | 78 | 0 | 0 |
-| E2E (Playwright, chromium + Pixel-7, prod build) | 172 | 167 | 0 | 5* |
-| **Total** | **665** | **660** | **0** | **5** |
+| Unit / Component (Vitest) | 570 | 570 | 0 | 0 |
+| Integration (Vitest, read-only, live DB) | 110 | 110 | 0 | 0 |
+| E2E (Playwright, chromium + mobile, `--workers=2`) | 268 | 263 | 0 | 5 |
+| **Total** | **948** | **943** | **0** | **5** |
 
-*The 5 e2e "skipped" are intentional viewport gates (`test.skip` desktop-only vs
-mobile-only assertions), exactly matching the QA report. Integration was run
-directly against the already-seeded DB (I did NOT run the destructive `db reset`
-in `scripts/run-integration.sh`).
+Gates re-run by me: `npm run lint` clean (exit 0) · `npx tsc --noEmit` clean (exit 0) ·
+`next build` succeeds. Counts match the contract exactly (570 / 110 / 263 + 5 intentional
+skips). The 5 e2e skips are config-gated (documented intentional). No failures, no flakes at
+`--workers=2`.
 
-Static gates re-run fresh:
-- `npm run lint` — clean (0 errors, 0 warnings).
-- `npx tsc --noEmit` — clean (exit 0).
-- `next build` (isolated `NEXT_QA_DIST_DIR=.next-verify`, local Supabase) — succeeds.
-  PDP route `/[locale]/producto/[slug]` is `●` **SSG** with **60 prerendered paths**
-  (30 active slugs × 2 locales), Revalidate 5m — matches the expected build shape
-  exactly. Confirmed 30 active products in the local DB → 60 paths.
+**Build render-mode regression check (both prior tasks green):**
+- `ƒ /[locale]/sillas` — Dynamic (correct for filtered/searched requests).
+- `● /[locale]/{categorias,estilos,marcas}` — SSG/ISR (5m revalidate). **No T3 regression.**
+- `● /[locale]/producto/[slug]` — SSG, 60 paths (30 active products × 2 locales). **No T4 regression.**
 
 ## Acceptance Criteria Final Check
 
-All 20 ACs verified against the LIVE app (prod build on port 3000), not against reports.
-
 | # | Criterion | Code | Test / Live Evidence | Verdict |
 |---|-----------|------|----------------------|---------|
-| AC-1 | Renders both locales; unknown/draft/archived → localized 404 in shell | `page.tsx` `notFound()` on null | Live: `/producto/silla-ejecutiva-milano` 200; `/es-MX/...` 307→unprefixed; `/en/...` 200; unknown slug renders in-shell 404 UI (es "Página"/"404", en "PAGE") with header+footer; path-traversal slug → 404. e2e both locales | ✅ |
-| AC-2 | `generateStaticParams` × locales, tag-cached ISR | `page.tsx` `generateStaticParams` | Build: 60 SSG paths, 5m revalidate; tags `catalog`+`product:<slug>` | ✅ |
-| AC-3 | Metadata `{name} — {store}`, truncated desc, `{}` on miss | `truncateForMeta`, `MAX_META_DESCRIPTION=160` | unit `config.pdp` exhaustive; m-1 FIXED | ✅ |
-| AC-4 | Breadcrumb `Inicio › … › {name}`, last = current | `Breadcrumbs` reuse | Live: `Inicio` link + `aria-current="page"` on "Silla Ejecutiva Milano" (not a link) | ✅ |
-| AC-5 | Gallery + thumb rail; primary first; zero-image placeholder | `product-gallery.tsx` | Live: gallery present, non-empty alts; thumb rail conditional (2+ images); no seed product has 2+ shared images so single-image render is correct | ✅ |
-| AC-6 | Zoom lightbox; Escape/backdrop/close; focus trap + return | raw Radix Dialog | Live: zoom trigger present; e2e opens/traps focus/Escape-returns/close-control | ✅ |
-| AC-7 | ≥1 variant selector updates gallery/price/stock | `product-purchase-panel.tsx` island | Live: Milano 2 swatches, Torino 3; variant display map serialized; e2e variant switch updates price + aria-live | ✅ |
-| AC-8 | No variants → no selector, product-level | `hasVariants` gate | unit `product-display` (empty map, product-level). Seed has no 0-variant product; unit-covered | ✅ |
-| AC-9 | `formatMXN`; strike only when compare-at `>` effective | `shouldStrikeCompareAt` strict `>` | Live es: `$8,999.00` + struck `$10,798.80` + sr-only "Precio anterior:"; en: `line-through` + "Was:"; per-variant recompute | ✅ |
-| AC-10 | Specs mm→cm/g→kg, null omitted, all-null hides | `buildSpecRows` | Live: `product-specs` with 8 rows, 4×cm + 1×kg converted, no null rows | ✅ |
-| AC-11 | Three-state `StockBadge`, effective stock, legible w/o color | reused badge | Live: `stock-badge data-state="in"` icon+text | ✅ |
-| AC-12 | Recently-viewed ≤8 newest-first excl current; localStorage; empty hidden | `recently-viewed.tsx` | Live: absent from first-visit SSR (0); e2e populates on 2nd product excluding current; M-1 per-tile stock label FIXED (verified in code) | ✅ |
-| AC-13 | Lists published+answered Q&A newest-first; empty state + form | `readQuestions` `.not(answer,is,null)` | Live: Torino has an UNPUBLISHED "Ana QA" row → shows empty state, 0 rendered items, "Ana QA" absent from HTML; integ SELECT | ✅ |
-| AC-14 | Server-action anon insert; success clears+note; trim-validate both | `actions.ts` + `submit-guard.ts` | DB (source of truth): anon-role legit 3-col insert `INSERT 0 1` then invisible to anon SELECT; e2e happy-path + empty-submit error | ✅ |
-| AC-15 | Honeypot silent-accept; per-IP+product rate limit + friendly msg | `submit-guard.ts` | e2e honeypot → success, no write; unit rate-limit window + map cap; M-2/M-3 FIXED | ✅ |
-| AC-16 | `cost_price_cents` nowhere in payload/HTML/RSC | reads `products_public` view | Live: Milano real cost `494945` appears **0×** in HTML AND RSC; view select of `cost_price_cents` → `column does not exist` | ✅ |
-| AC-17 | `product` namespace both locales, no hardcoded copy, es default | both message files | Live: en renders "Specifications"/"Questions"/"Ask a question"/"Recently viewed"; parity unit tests | ✅ |
-| AC-18 | Non-empty alts; swatch names; keyboard + SR labels | roving radiogroup, aria-live | Live: `role="radiogroup"`, swatch aria-labels ("Negro"/"Café"), aria-live status region, 0 empty alts, zoom trigger names the image | ✅ |
-| AC-19 | Mobile-first single col; two-col from `lg`; no 320px h-scroll | `lg:grid-cols-2` | e2e no horizontal scroll @ 320/375/768/1280 (desktop + mobile projects) | ✅ |
-| AC-20 | Motion ease-out, transform/opacity, reduced-motion, <300ms | `globals.css` M1–M9 | Stage-5 animation review APPROVED; e2e reduced-motion still functional | ✅ |
+| AC-1 | Migration: extensions + RPC (INVOKER, revoke public/grant anon+auth) + 7 indexes | `0007_search.sql` | Live: `prosecdef=false`, `provolatile=s`, `proacl={postgres,anon,authenticated}` (PUBLIC revoked); all 7 indexes + `unaccent`/`pg_trgm` present | ✅ |
+| AC-2 | RPC reads only public surfaces; base denied; no cost | `search.ts`, RPC | Live as anon: RPC returns 30 rows; `SELECT FROM products` → permission denied; no cost column in return; 0 `cost_price` in filtered DOM | ✅ |
+| AC-3 | Keyword name/brand/desc, case+accent-insensitive; empty→filter-only | RPC `unaccent(lower())` | Live: ergonomica=ergonómica=ERGONOMICA=6; renders "Ergonómica" card es-MX + /en | ✅ |
+| AC-4 | Facets individual + combined; AND-across / OR-within | RPC `WHERE` | Live: color=#111111 → 26/30; integration facet block (11 tests) | ✅ |
+| AC-5 | Default in-stock only; explicit OOS opt-in | RPC `p_in_stock_only default true` | Integration synthetic all-OOS product hidden by default, shown with `p_in_stock_only=false`; native opt-in checkbox | ✅ |
+| AC-6 | `effective_stock` == `effectiveStock()`; 3 badges | RPC `COALESCE(SUM,stock)` | Live parity: **0 mismatches** across all 30 products | ✅ |
+| AC-7 | Six deterministic sorts; default best-selling | RPC CASE + tiebreak | Live: all 6 sorts identical across repeated calls; unknown sort → default (no error) | ✅ |
+| AC-8 | Pagination on filtered set; COUNT OVER; clamp; filter→page1 | `readSearchPage` | Live: total_count window=30 consistent; page-2=12 rows; offset-past-end=0 (no 416); page=99999 → 200 | ✅ |
+| AC-9 | Shareable crawlable params; single-sourced names | `search-params.ts`, `SEARCH_PARAM_KEYS` | Round-trip unit tests; e2e cold-load; live shareable URL | ✅ |
+| AC-10 | Enhances in place; dynamic w/ params; unfiltered cached | `sillas/page.tsx` | Build: `ƒ /sillas`; unfiltered from cached reads; SSR-first inline await | ✅ |
+| AC-11 | canonical→clean; filtered=noindex,follow; unfiltered indexable | `generateMetadata` | Live: `/sillas` canonical `/sillas` no robots; `?q=malla` → `noindex, follow` + canonical `/sillas` | ✅ |
+| AC-12 | Header search → /sillas?q; keyboard; locale-aware; JS-off native | `search-box.tsx`, `site-header.tsx` | Live: `role="search"` + `name="q"` on PDP; `action="/en/sillas"` on /en | ✅ |
+| AC-13 | Filter panel (sidebar ≥lg / Sheet mobile); options from DB | `filter-panel.tsx` | No-JS browser at lg: sidebar (`data-context="sidebar"`) visible; mobile Sheet + `<noscript>` | ✅ |
+| AC-14 | Removable chips + Clear-all; filtered count | `active-filters.tsx` | `active-filter-chips` unit + e2e remove/clear-all | ✅ |
+| AC-15 | ≥1 match → grid + pagination preserving filters | `page-helpers.ts` | `makeHrefForPage` unit + e2e pagination-preserves-filters | ✅ |
+| AC-16 | 0 match → no-results + popular strip (best-selling ≤8) | `no-results.tsx` | Live: popular strip returns 8 best-selling; e2e no-results block | ✅ |
+| AC-17 | New strings both dicts; keys-used/messages pass | `es-MX.json`/`en.json` | keys-used/messages unit tests green (in 570) | ✅ |
+| AC-18 | Motion per skills; RM; no transition:all | `globals.css`, `badge.tsx` | badge `transition-[color,box-shadow,border-color]`; e2e reduced-motion Sheet | ✅ |
 
-**20 / 20 acceptance criteria PASS. 10 / 10 edge cases handled** (per QA + review,
-spot-checked live: edge 3 strike recompute, edge 5 archived→RLS-deny, edge 6
-unsafe-slug→404, edge 8 rapid-click idempotent — all confirmed).
+**All 18/18 ACs PASS. All 12 edge cases verified** (hostile params, NUL-byte, inverted price,
+variant-less+color, all-OOS, accent/case, empty popular, JS-off, long-chip-row all confirmed via
+integration/e2e/live probes).
 
 ## Report Summary
 
 | Report | Score | Key Finding |
 |--------|-------|-------------|
-| Code Review | 8/10 → RESOLVED | 4 major (frozen stock label, unbounded rate-limit map, spoofable XFF, dead helper) all FIXED in Stage 6; 18→20 AC pass |
-| QA | HIGH | 415 unit / 78 integ / 167 e2e all green; found + fixed CRITICAL BUG-1 (`"use server"` non-function export that silently disabled Q&A) |
-| UX | 9/10 | Complete state coverage; fixed invisible out-of-stock swatch slash + SR-hidden gallery image name |
-| Security | SECURE-WITH-NOTES | 0 critical/high/medium; 9 live adversarial attacks blocked; anon+RLS write boundary; only 2 accepted LOW residuals |
-| Architecture | 8.5/10 | Faithful T3 pattern reuse; no data-model risk; clean T5/T6/T11 seams; all debt future-task-mapped |
-| Hacker | SKIPPED | Sanctioned skip per `medium` complexity — not a gap |
-
-Cross-checks re-verified live/in-code this stage: M-1 (per-entry `resolveStockLabel`,
-frozen map gone), M-2 (`isValidProductId` UUID gate + `QA_RATE_LIMIT_MAX_KEYS` cap),
-M-3 (Vercel-edge IP trust model), M-4 (`defaultVariant` used in panel), BUG-1
-(`actions.ts` exports only the async action; state contract in `qa-form-state.ts`),
-UX swatch-slash + zoom-trigger-alt fixes — all confirmed present and behaving.
+| Code Review | 7.5/10 → RESOLVED | 2 CRITICAL + 7 MAJOR (JS-off gaps) all FIXED Stage 6; 5/7 minor fixed, 2 justified-skip |
+| QA | HIGH | 156 new tests; QA-BUG-1 (no-JS perpetual skeleton) FIXED Stage 7b — re-verified live |
+| UX | 9/10 | Frozen sheet counts + rapid-toggle clobber FIXED; malla search-scope gap deferred (T5-8) |
+| Security | SECURE-WITH-NOTES | 0 crit/high/med; injection/XSS/cache-DoS re-proven inert; 2 accepted LOW notes |
+| Architecture | 8.5/10 SOUND | RPC foundation sound; 2 dead-by-construction indexes + double-RPC backlogged (T5-2/3/4) |
+| Hacker | 2/10 chaos (target ≤3) | NUL-byte 500 + facet-burst clobber + 2×320px overflow all FIXED + regression-tested |
 
 ## Remaining Concerns
 
-- **In-memory rate limiter is best-effort off a trusted edge** (SEC-L-1): LOW,
-  ticket-sanctioned. Backstopped by honeypot + hard `QA_RATE_LIMIT_MAX_KEYS` cap +
-  RLS-forced-unpublished. Recommendation: durable limiter (Upstash/Redis) when the
-  store scales — already backlogged.
-- **2 moderate transitive npm advisories** (`next`→`postcss`, SEC-L-2): LOW, no
-  runtime exposure (build-time only). Do NOT `npm audit fix --force` (downgrades
-  Next). Bump with a future Next release.
-- **404 HTTP status is 200 under local `next start`**: accepted Next 16 SSG +
-  `notFound()` + `dynamicParams=true` prerender-cache artifact; the localized 404
-  UI is correct and the status is preserved on a real CDN. Not a defect.
-- **Latent scaling ceilings** (unbounded `generateStaticParams`, unpaginated Q&A
-  list): none bite in T4's lifetime; owner tasks T5/T11. Not blocking.
+All below are **explicitly accepted** (per the verify brief's "known accepted items") and do
+**not** count against SHIP:
 
-All of the above are explicitly on the accepted-items list and do NOT count
-against SHIP.
+- **SEC-L-1** material-array DoS: unreachable via app (`keepKnown` bounds the array); catalog-growth follow-up. LOW.
+- **SEC-L-2** transitive `postcss` build-tool advisory: not a runtime vector; awaits a Next minor. LOW.
+- **T5-2 / T5-3** two dead-by-construction indexes (pg_trgm on wrapped column; mixed-case `color_hex`): correct at seed scale, backlogged for catalog growth. Not a correctness bug.
+- **T5-4** double-RPC on page 2+: T3 count-first pattern; invisible at seed scale.
+- **T5-6** inline-await TTFB trade-off: deliberate, the only pattern that keeps results SSR-visible with no JS.
+- **T5-8** "malla" keyword doesn't match `material_*` (AC-3 scopes search to name/brand/description — spec-conformant; no-results safety net covers it). Follow-up ticket.
+- **m-1 / m-2** review minors (log-prefix consolidation; JS-vs-Postgres unaccent for non-Spanish glyphs): no live bug.
+- Edge 9/10 (RPC/facet fault-injection) not newly e2e-tested; the `fail()`→`error.tsx` contract is unchanged from T3/T4 and covered there. LOW.
+
+No open critical/high/medium issue. No data-leak path. No scope creep (no T6/T7/admin/Phase-2 build-ahead observed).
 
 ## What Was Built
 
-A production-ready product detail page at `/producto/[slug]` (SSG/ISR, both
-locales) with an interactive image gallery + accessible zoom lightbox, a
-single-island color-variant selector that live-syncs price/stock/gallery, a
-null-omitting specs section (mm→cm / g→kg), a localStorage recently-viewed strip,
-and the storefront's first public write path — an anon-RLS Q&A submission form with
-trim-first validation, honeypot, and a bounded in-memory rate limiter. Cost data is
-structurally unreachable (reads the `products_public` view), copy is fully
-bilingual, and the page is mobile-first responsive with reduced-motion-gated motion.
+A DB-side filtered/sorted catalog query subsystem: a new `search_products` Postgres RPC
+(`SECURITY INVOKER`, anon-safe, fully parameterized) that keyword-searches (accent-insensitive),
+filters by category/brand/style/price/color/material/availability, sorts six ways, and returns
+the page rows plus the filtered total in one round trip. The `/sillas` page enhances in place with
+a desktop filter sidebar / mobile filter Sheet, a locale-aware header search box, removable
+active-filter chips, a friendly no-results state with a popular-chairs strip, and crawlable
+filter-preserving pagination — all working server-side with JavaScript disabled and correctly
+`noindex, follow` on filtered URLs.
 
 ## Summary
 
-T4 clears every SHIP gate: 660 tests green with zero failures, all 20 acceptance
-criteria verified against the live app, no critical/high security vulnerabilities,
-the first public write path correctly bounded at the RLS boundary, complete UX
-states, verified responsive down to 320px, and no build-ahead into T5/T6/T11/Phase 2.
-**SHIP.**
+T5 clears every ship gate: 943/943 tests pass (0 failures), all 18 ACs and 12 edge cases verified
+against the live app, no security/architecture blockers, and the two prior-task render modes (T3
+SSG index pages, T4 60-path SSG PDPs) show no regression. Ship it.

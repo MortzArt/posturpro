@@ -18,7 +18,7 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 - [x] **T4 — Product detail page** (tier: standard)
   Image gallery with zoom, color-variant selector (per-variant images/price/stock), specs display (dimensions, weight, materials), compare-at price display, recently-viewed strip, Q&A display + question submission form. `blocked by: T3`
 
-- [ ] **T5 — Search, filters & sorting** (tier: standard)
+- [x] **T5 — Search, filters & sorting** (tier: standard)
   Keyword search; filters: category, brand, style, price range, color, material, availability (default in-stock); sorting: price asc/desc, newest, best-selling, name; no-results page with popular chairs. `blocked by: T3`
 
 - [ ] **T6 — Cart** (tier: standard)
