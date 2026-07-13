@@ -1,387 +1,320 @@
-# Task: T5 — Search, Filters & Sorting
+# Task: T6 — Cart
 
 ## Priority
 
-**High** — Search/filter/sort is the primary product-discovery surface of a 30+ SKU
-(soon-larger) multi-brand catalog. Without it, shoppers can only browse by taxonomy
-(brand/category/style) — there is no way to combine constraints ("mesh office chair
-under MX$4,000, in stock, black") or to keyword-search. It is explicitly Phase 1 scope
-(PRODUCT_SPEC "Search & filtering") and the last catalog-discovery task before Cart (T6).
-Not Critical because the store is already browsable and the sellable path (cart/checkout)
-does not structurally depend on it.
+**High** — T6 is the direct dependency of T7 (Checkout) and T8 (Payments), the
+revenue path. Catalog, PDP, and search (T3–T5) are shipped; without a cart a
+shopper can find a chair but cannot begin to buy it. It is next in BUILD_PLAN
+order and its only blocker (T4) is satisfied.
 
 ## Complexity
 
-**high** — reclassified UP from the `standard` tier recommendation in BUILD_PLAN.
+**medium** — New client-side feature (persistent guest cart + cart page +
+"add to cart" affordance) but it follows patterns already in the codebase:
 
-Justification against the CLAUDE.md criteria:
-
-- **New subsystem, not a pattern copy.** The existing T3 read path (view + batched `.in()`
-  children stitched in JS) **structurally cannot** filter by variant color or compute
-  availability before pagination (binding T3 arch-review finding). T5 must introduce a
-  brand-new **database-side filtered query path** (a SQL function invoked via
-  `supabase.rpc()`) plus a **new migration** (extensions, indexes, the RPC) — an
-  architectural change to how the catalog is read, not an incremental UI add.
-- **New anon-reachable query surface with security implications** needing the same RLS/grant
-  discipline as `products_public` (verified below).
-- **15+ files touched:** 1 migration, 1 new query module, a shared-read-primitive refactor
-  across 2 existing files, a new filter-URL parse lib, 6+ new shadcn/ui components, 6+ new
-  feature components, the `/sillas` rewrite, a header search box, seed/test updates, two i18n
-  dictionaries.
-- **Cross-cutting concerns:** cache-key cardinality (unbounded user input), SEO
-  canonical/noindex for faceted URLs, and diacritic-insensitive Spanish search all require
-  explicit reasoning.
-
-Per the `/full-cycle` rule, `high` runs **all 12 stages** (including the hacker stage).
+- Guest localStorage persistence mirrors the existing `src/lib/recently-viewed.ts`
+  (guarded read/write, versioned key, SSR guard, shape validation, single warn) — a
+  proven pattern to copy, not invent.
+- No new data model. The `orders`/`order_items` tables (0003_commerce.sql) are the
+  **checkout** snapshot (T7), immutable by DB trigger — the cart writes to neither.
+  Cart state is client-only (localStorage), consistent with the "no accounts in
+  Phase 1" scope and the recently-viewed precedent.
+- Free-shipping threshold + flat rate are already read via `getStoreSettingsStatic()`
+  and seeded in `store_settings`; the cart reuses that read, no new backend.
+- Estimated 10–15 files (a new `/carrito` route, a cart context provider, a
+  localStorage lib + tests, a header cart-count island, an "add to cart" island on
+  PDP, i18n keys in two locales, e2e + unit tests). New state management (a React
+  context provider for cross-component cart access) is the one genuinely new piece,
+  but it is a well-scoped island — hence medium, not high.
 
 ## Feature Type
 
-**full-feature** — new UI (search box, filter panel, sort control, mobile filter sheet,
-no-results page) AND new logic (DB-side RPC query path, filter-URL state parsing, shared
-read-primitive refactor). All pipeline stages run at full depth.
+**full-feature** — Adds both UI (cart page, header cart badge, add-to-cart button,
+free-shipping progress bar) and logic (localStorage persistence lib, cart state
+provider, quantity/line-total math, free-shipping computation). All standard-tier
+stages run at full depth.
 
 ## User Story
 
-As a **shopper on a mobile phone in Mexico**, I want to **search chairs by keyword and narrow
-the catalog by category, brand, style, price, color, material, and availability, then sort
-the results**, so that **I can quickly find a chair that fits my needs without paging through
-the whole catalog** — and when nothing matches, I want a **friendly page that points me at
-popular chairs** instead of a dead end.
+As a **guest shopper in Mexico**, I want **to add chairs to a cart that survives a
+page refresh and a return visit, review and adjust quantities, remove items, see
+per-line and cart totals, and see how much more I need to spend to earn free
+shipping**, so that **I can assemble my order with confidence before checking out**.
 
 ## Background
 
-**What exists today (T1–T4, all SHIPPED):**
+**What exists today:**
 
-- A catalog read layer (`src/lib/catalog/queries.ts`) reading the `products_public` VIEW
-  (anon-safe; omits `cost_price_cents`; `status = 'active'` only) with `brands` embedded, then
-  **batch-fetching images + variants via `.in(product_id, ids)` and stitching in JS**.
-  Pagination is a count-only head query → clamp `?page` → one `.range()` read.
-- `/sillas`, `/marcas/[slug]`, `/categorias/[slug]`, `/estilos/[slug]` — all static/ISR, all
-  using `PaginatedProductListing` + `ProductGrid` + crawlable `?page=N` (`PRODUCTS_PER_PAGE =
-  12`, page-1 canonical via `makeHrefForPage`).
-- Stock rules: `effectiveStock` (sum of variant stock, else product stock),
-  `LOW_STOCK_THRESHOLD = 5`, `StockBadge` (`in`/`low`/`out`).
-- `ProductCard` consuming `CatalogProductCard`; `Breadcrumbs`; i18n `catalog` namespace.
-- The header (`site-header.tsx`) has **no search box**. `radix-ui` is installed but the only
-  shadcn/ui component present is `button.tsx`.
+- Catalog (T3), PDP (T4 — `/producto/[slug]`, `ProductPurchasePanel`), and search
+  (T5) are shipped. The PDP has a variant selector but **no "add to cart" control** —
+  it currently renders gallery + price + stock + variants only.
+- `store_settings` is seeded (flat rate `50_000` cents = MX$500, free-shipping
+  threshold `1_000_000` cents = MX$10,000) and read via `getStoreSettingsStatic()`
+  (`src/lib/store-settings.ts`), which degrades to `null` gracefully. The footer
+  already renders a "free shipping over {threshold}" line.
+- `src/lib/recently-viewed.ts` is a proven guest-persistence pattern: storage key +
+  cap in config, guarded read/write, shape validation via `isEntry`, single-warn-
+  per-session, SSR guard. Its component (`recently-viewed.tsx`) renders `null` until
+  a mount effect hydrates it — no hydration mismatch.
+- Money is integer cents everywhere; `formatMXN()` (`src/lib/money.ts`) is the ONLY
+  cents→string boundary. `interpolate()` fills `{token}` templates client-side.
 
-**What's missing (the T5 gap):**
+**What's missing:** A cart. No way to collect products, no cart page, no
+persistence, no add-to-cart affordance.
 
-The T3/T4 read pattern fetches variants **after** the page is chosen, so it physically cannot
-(a) keyword-search, (b) filter by variant **color**, (c) filter by **availability**
-(effective stock is only known after the variant batch), or (d) filter by **price/material**
-and paginate the **filtered** total. All four require the DB to filter **before** pagination.
-There is also no sort control (results are hard-coded to best-seller → sales → name).
+**Why it matters:** T7 checkout reads the cart to build the order; without T6 the
+store cannot transact. This is the last purely-client feature before the
+server-side order/payment work begins.
 
-**Why this matters:** discovery is the top of the purchase funnel — the last Phase-1
-catalog-discovery feature before Cart (T6) and Checkout (T7).
+**Scope guardrails (from BUILD_PLAN + PRODUCT_SPEC):**
 
-## Binding Architectural Constraints (from prior arch reviews — addressed head-on)
-
-### Constraint 1 — DB-side filtered query is REQUIRED (verified live against local Supabase)
-
-**Decision: a SQL function invoked via `supabase.rpc()`, `SECURITY INVOKER`, reading only
-`products_public` + `product_variants` + `product_categories`.** Proven against the seeded
-local DB:
-
-- A correlated query over `products_public pp` with `EXISTS (SELECT 1 FROM product_variants v
-  WHERE v.product_id = pp.id AND v.color_hex = ANY(...))`, a `COALESCE(SUM(variant.stock),
-  pp.stock)` availability computation, `price_cents BETWEEN`, an `ORDER BY`, and `LIMIT/OFFSET`
-  **returns correct results server-side, pre-pagination**.
-- Run as `SECURITY INVOKER`, granted `EXECUTE` to `anon`, the function returns rows — **and
-  anon still gets `permission denied for table products`** when touching the base table. So
-  the RPC reads through the same anon-safe surface as `products_public`; it **cannot** reach
-  `cost_price_cents` (the view omits it AND the base table is ungranted — belt & suspenders).
-- **Why RPC over a plain view:** the filter needs bind parameters (search text, color array,
-  price range, material array, sort key, limit/offset) and must return **both the page rows
-  and the exact filtered `total`** in one round trip (window `COUNT(*) OVER ()`). A
-  parameter-less view can't take filters; PostgREST client filters can't filter the parent by
-  a child aggregate (availability) nor by an inner-joined variant color, and can't return a
-  filtered count cleanly.
-- **Rejected:** (a) PostgREST embedded filters — can't do availability aggregate / color
-  inner-join / filtered count. (b) Materialized filterable view — refresh/staleness machinery
-  for no benefit at this scale, still can't take runtime price/search params. (c)
-  Fetch-all-then-filter-in-JS — violates the T3 arch ruling, doesn't scale.
-
-**The RPC contract** (`search_products`): returns `TABLE(<card columns>, effective_stock int,
-distinct_color_count int, total_count bigint)` where `total_count = COUNT(*) OVER ()` over the
-filtered set (page rows + filtered total in one call). Card columns match the current
-`PRODUCT_CARD_SELECT` (`id, slug, name, price_cents, compare_at_price_cents, stock`, brand
-name/slug/logo). Availability is `COALESCE((SELECT SUM(v.stock) FROM product_variants v WHERE
-v.product_id = pp.id), pp.stock)` — matching `effectiveStock()` exactly (AC-6). `in-stock`
-filter = `effective_stock > 0`. Category = join `product_categories`; brand/style =
-`brand_id`/`style_id`; material = `unaccent`/`ILIKE` over the three `material_*` columns;
-color = `EXISTS` over `product_variants.color_hex`.
-
-### Constraint 2 — Extract shared read primitives FIRST (pre-step; keeps 660-suite green)
-
-`fail()`, `firstOrSelf()`, and the `unstable_cache`-tag boilerplate are **duplicated** across
-`queries.ts` and `product-detail.ts`. Before any T5 query code, extract them into
-`src/lib/catalog/read-primitives.ts` (`fail(context, message)` → logs server-side + throws a
-redacted error; generic `firstOrSelf<T>`; a `cachedRead(keyParts, tags, fn)` wrapper over
-`unstable_cache` + `CATALOG_REVALIDATE_SECONDS`). Update both modules to import from it. This
-is **behavior-preserving**: the existing characterization tests (`queries.test.ts`,
-`product-detail.test.ts`, and the ~660-test suite) MUST stay green with no assertion changes —
-that is the refactor's acceptance signal. T5's new module imports the same primitives instead
-of minting a third copy.
-
-### Constraint 3 — Cache-key cardinality discipline (bounded / mostly not cached)
-
-Search text, filter combos, sort, and page are **user-controlled and unbounded**. Decision:
-
-- **Free-text search results are NOT cached** (no `unstable_cache`). Free text has unbounded
-  cardinality; caching it is the DoS vector T3 warned about. When `q` is present the RPC is
-  called directly per request. The DB is protected by (a) a hard **search-text length cap**
-  (`SEARCH_QUERY_MAX = 80`) enforced before the call, (b) `pg_trgm` GIN indexes so `ILIKE
-  '%...%'` is index-assisted, and (c) the page always `LIMIT 12`.
-- **Filter/sort-only results (no free text) MAY be cached**, but ONLY under a **canonicalized,
-  bounded key**: filters parse into a fixed enum/id space (unknown brand/category/style/color/
-  material values are dropped, not passed through), sort is one of a fixed set, price snaps to
-  bounded buckets, page uses existing `canonicalPageKey` (`[1, MAX_PAGE]`). Any non-known
-  id/enum is discarded so it can't mint a distinct cache entry. **If bounding is non-trivial,
-  default to NOT caching** — correctness and DoS-safety beat a cache hit here.
-- The RPC is parameterized (no string interpolation) → no SQL injection regardless of input.
-
-### Constraint 4 — "Best-selling" sort semantics with zero real sales (defined now)
-
-Orders/`order_items` exist (T1) but no order flow ships until T7, so `sales_count` is
-seed-only today (all 30 seeded products have `sales_count > 0`). Decision: **best-selling
-sorts by `sales_count DESC`, then deterministic tiebreak `is_best_seller DESC, name ASC, id
-ASC`.** Stable and non-random today; becomes truthful automatically once T7 increments
-`sales_count` on paid orders. Documented in the query module. "Popular chairs" on the
-no-results page uses the **same ordering** (AC-16) so the two never diverge.
+- **NO checkout.** The cart page's primary CTA links toward checkout (`/checkout`,
+  owned by T7) but T6 does **not** build the checkout page, order creation, stock
+  reservation, or discount-code validation. If `/checkout` 404s until T7 ships, that
+  is acceptable (same pattern T3 used linking to the then-unbuilt PDP route).
+- **NO mini-cart / cart drawer.** PRODUCT_SPEC "Confirmed out of scope" explicitly
+  lists **mini-cart** as SKIP. Adding to cart is confirmed via a header badge + inline
+  button confirmation only — no slide-out drawer.
+- **NO customer accounts / server-persisted cart.** Phase 2. Cart is guest-only,
+  localStorage-backed.
+- **NO min/max order quantities.** PRODUCT_SPEC "out of scope" lists this as SKIP.
+  The only quantity ceiling is a UX sanity cap (`MAX_CART_ITEM_QUANTITY`), not a
+  business rule; real overselling protection is enforced server-side at checkout (T7).
+- Placeholder/tunable values (max qty cap, storage key, checkout path, confirm delay)
+  are centralized in `src/lib/config.ts` per BUILD_PLAN rule 4.
 
 ## Acceptance Criteria
 
 Each criterion is binary — PASS or FAIL.
 
-**Query path & data correctness**
-
-- [ ] AC-1: `supabase/migrations/0007_search.sql` adds `unaccent` + `pg_trgm`, the
-  `search_products` RPC (`SECURITY INVOKER`, `EXECUTE` revoked from `public`, granted to
-  `anon` + `authenticated`), and the missing indexes (see Data Model Changes). `supabase db
-  reset` applies cleanly and the app reads through the RPC.
-- [ ] AC-2: The RPC reads exclusively from `products_public` + `product_variants` +
-  `product_categories`. A test **as the `anon` role** proves the RPC returns rows **and** that
-  `SELECT ... FROM products` (base table) still raises `permission denied`. No response path
-  ever includes `cost_price_cents`.
-- [ ] AC-3: Keyword search matches across **name, brand name, and description** (PRODUCT_SPEC),
-  case- **and** accent-insensitively — `"ergonomica"` matches `"Ergonómica"`, `"cafe"` matches
-  `"Café"`. Empty/whitespace-only `q` returns the (filter-only) result set.
-- [ ] AC-4: Filters work individually and **in combination**: category (M2M), brand, style,
-  price range (min/max cents), color (variant `color_hex`, multi-select), material
-  (multi-select over the three `material_*` columns), availability. Distinct facets AND
-  together; multiple values inside one facet OR together.
-- [ ] AC-5: Availability defaults to **in-stock only** (BUILD_PLAN + PRODUCT_SPEC). With no
-  explicit availability param, only `effective_stock > 0` products appear. A shopper can opt to
-  include out-of-stock via an explicit control.
-- [ ] AC-6: RPC `effective_stock` equals `effectiveStock()` in `stock.ts` for every product
-  (sum of variant stock when variants exist, else product stock). The three `StockState`
-  badges render identically to T3.
-- [ ] AC-7: Sorting supports all six spec options, each deterministic (stable tiebreak):
-  `price_cents ASC`, `price_cents DESC`, `created_at DESC` (newest), best-selling (Constraint
-  4), `name ASC`, `name DESC`. Default when unspecified = best-selling (matches current
-  catalog default).
-- [ ] AC-8: Pagination operates on the **filtered** set: `total` from `COUNT(*) OVER ()`,
-  `lastPage = ceil(total/12)`, `?page` clamped to `[1, lastPage]` (never a PostgREST
-  range-not-satisfiable error). Changing any filter/sort/search resets to page 1.
-
-**URL state, SEO & rendering**
-
-- [ ] AC-9: Search/filters/sort/page live in **shareable, crawlable query params** (e.g.
-  `/sillas?q=malla&marca=herman&color=111111,6b7280&precioMin=..&orden=precio-asc&page=2`).
-  Copying the URL reproduces the exact result set. Param names are single-sourced constants.
-- [ ] AC-10: `/sillas` **enhances in place** (no separate `/buscar` route). It reads
-  `searchParams`, so it is **dynamic for any filtered/searched request**; the unfiltered
-  `/sillas` (no params) still renders from the static/ISR path (or an equivalent cached read)
-  so the default catalog stays fast. Rendering mode documented in the page.
-- [ ] AC-11: SEO: the canonical `<link>` for any filtered/searched/paged request points at the
-  clean unfiltered `/sillas` (or the page-N canonical for pagination only), and
-  filtered/searched result pages are **`noindex, follow`** (avoid indexing infinite facet
-  combos, still let crawlers follow product links). Unfiltered `/sillas` + its `?page=N` pages
-  remain indexable exactly as T3 shipped.
-- [ ] AC-12: A header **search box** is added (in `site-header.tsx`): submits to
-  `/sillas?q=...`, keyboard-accessible, locale-aware (next-intl `Link`/`useRouter`), works with
-  JS disabled (native `<form method="get">`).
-
-**UI states & behavior**
-
-- [ ] AC-13: `/sillas` renders a **filter panel** (sidebar at `≥lg`, inside a `Sheet` drawer
-  on mobile/tablet) with category (from `listCategories`), brand (`listBrands`), style
-  (`listStyles`), color (distinct variant colors as swatches), material (distinct materials),
-  price range, availability toggle, and a sort control. Facet options come from real DB values,
-  not hard-coded.
-- [ ] AC-14: **Active filters** show as removable chips above the grid plus a "Clear all"
-  action; removing a chip updates the URL and re-queries. A result count ("N sillas") reflects
-  the filtered total.
-- [ ] AC-15: A filtered/searched request matching **≥1 product** renders the normal
-  `ProductGrid` + crawlable pagination, with the current filters preserved across page links.
-- [ ] AC-16: A request matching **0 products** renders a friendly **no-results state** (not a
-  404, not the generic `EmptyState`): states nothing matched (echoing the query), offers "Clear
-  filters", and shows a **"Popular chairs" strip** of up to 8 products in the best-selling
-  ordering from Constraint 4 (independent of active filters).
-- [ ] AC-17: Every new UI string exists in **both** `es-MX.json` and `en.json` under
-  `catalog.search` / `catalog.filters` / `catalog.sort` / `catalog.noResults`; the
-  `keys-used`/`messages` tests pass. No hard-coded user-facing text.
-- [ ] AC-18: Motion follows the design skills: mobile filter `Sheet` uses the drawer curve
-  (`cubic-bezier(0.32, 0.72, 0, 1)`, ~300ms, `ease-out` on enter); color-swatch/checkbox press
-  feedback is instant; the sort `Select` opens `ease-out` <250ms with trigger-anchored
-  `transform-origin`; **all motion respects `prefers-reduced-motion`** (opacity only). No
-  `transition: all`; only `transform`/`opacity` animate.
+- [ ] **AC-1**: An "Agregar al carrito" / "Add to cart" button appears on the PDP
+      purchase panel. Clicking it adds the currently-selected variant (or the product
+      itself if it has no variants) to the cart at quantity 1.
+- [ ] **AC-2**: Adding the same product+variant again increments its quantity rather
+      than creating a duplicate line. Two different variants of the same product are
+      two distinct lines (keyed by `productId + variantId`).
+- [ ] **AC-3**: The cart persists across a full page refresh AND across closing and
+      reopening the browser (localStorage), for a guest with no account.
+- [ ] **AC-4**: A cart-item-count badge in the site header reflects the total quantity
+      of items in the cart and updates immediately on add/remove/quantity change, on
+      every page, without a full reload.
+- [ ] **AC-5**: A cart page exists at `/carrito` (locale-aware: `/carrito` for ES,
+      `/en/carrito` for EN) listing every cart line with: cover image, product name,
+      variant/color label (when applicable), unit price, a quantity control, a remove
+      control, and a per-line total (`unit price × quantity`).
+- [ ] **AC-6**: The quantity control lets the user increase and decrease a line's
+      quantity; the line total, cart subtotal, header badge, and free-shipping progress
+      all recompute immediately.
+- [ ] **AC-7**: Decreasing quantity below 1 is not possible via the stepper; a
+      dedicated "Eliminar" / "Remove" control removes the line entirely.
+- [ ] **AC-8**: The cart page shows an order summary: subtotal (sum of line totals), a
+      shipping line, and a total. Shipping is **free** when subtotal ≥
+      `store_settings.free_shipping_threshold_cents`; otherwise it shows the flat rate
+      `store_settings.shipping_flat_rate_cents`. **Neither value is hardcoded** — both
+      read from store settings (seed defaults only in config).
+- [ ] **AC-9**: A free-shipping progress element shows how much more the shopper must
+      add to reach the threshold (e.g. "Te faltan $X para envío gratis") with a bar
+      filling toward the threshold. At subtotal ≥ threshold it shows an achieved state
+      ("¡Tienes envío gratis!"). It is hidden entirely if store settings are
+      unavailable (graceful degradation, never `$NaN`).
+- [ ] **AC-10**: An empty cart shows a friendly empty state with a CTA to browse the
+      catalog (`/sillas`); no summary, no checkout button, no progress bar.
+- [ ] **AC-11**: All cart UI copy is present in BOTH `es-MX.json` and `en.json` under a
+      new `cart` namespace; the language toggle switches every string. ES is default.
+      `messages.test.ts`/`keys-used.test.ts` parity tests pass.
+- [ ] **AC-12**: All monetary display goes through `formatMXN()`; all internal cart
+      math is in integer cents. No floating-point money, no `$NaN`.
+- [ ] **AC-13**: Quantity is clamped to `[1, MAX_CART_ITEM_QUANTITY]` per line (config
+      constant). A stored/edited quantity above the cap is clamped on read; the
+      stepper's "+" disables at the cap.
+- [ ] **AC-14**: Corrupt/absent/foreign localStorage data yields an empty cart (never a
+      thrown error, never a broken page); a single guarded `console.warn` per session,
+      mirroring `recently-viewed`.
+- [ ] **AC-15**: A checkout CTA appears when the cart is non-empty and links to the T7
+      checkout route (`CHECKOUT_PATH`); T6 does not implement checkout itself.
+- [ ] **AC-16**: The cart is fully keyboard-operable (tab to stepper/remove, Enter/Space
+      activate), quantity changes announce via an `aria-live` region, and the header
+      badge has an accessible label (e.g. "Carrito, 3 artículos").
+- [ ] **AC-17**: The feature has **no coupling to URL/search-filter state** (T5 carry-
+      over note): cart state lives only in localStorage + context, never in query
+      params; navigating a filtered catalog URL never mutates the cart.
+- [ ] **AC-18**: Adding an out-of-stock variant/product is prevented — the add-to-cart
+      button is disabled (with a clear "Agotado" label) when the selected variant/
+      product stock is 0.
 
 ## Edge Cases
 
-1. **Contradictory filters yield zero rows** (brand A + a color brand A doesn't stock): render
-   the AC-16 no-results state, NOT an error, NOT a 404. URL stays valid/shareable.
-2. **`?page=99999` on a 2-page filtered result:** clamp to the filtered `lastPage`; render it.
-   Never emit a 416 (count-first-then-clamp against `total_count`, per T3).
-3. **Junk/hostile params:** `?orden=DROP%20TABLE`, `?color=<script>`, `?precioMin=-999`,
-   `?precioMax=abc`, `?marca=` (empty), `?marca=nonexistent`, repeated params, a 10KB `q`.
-   Each parsed defensively: unknown sort → default; non-numeric/negative price → dropped bound;
-   unknown brand/category/style/color/material → dropped (never sent to the RPC); `q` truncated
-   to `SEARCH_QUERY_MAX`. RPC is parameterized → no injection. No 500s; a single bad param
-   never empties the catalog (bad params dropped, remaining valid filters apply).
-4. **Price min > max** (`precioMin=500000&precioMax=100000`): **drop the inverted bound pair**
-   (ignore both) so the shopper sees results, with a subtle "rango de precio ignorado" note.
-   Documented in the parse lib.
-5. **Product with NO variants** (color facet): excluded when a color filter is active
-   (no `color_hex`); included (availability from `products.stock`) when no color filter.
-   Verify a variant-less active product behaves this way.
-6. **All variants out of stock but `products.stock > 0`:** effective stock = sum of variant
-   stock = 0 (variants authoritative when present) → **out of stock**, hidden under the default
-   in-stock filter — consistent with `stock.ts`.
-7. **Accent/diacritic & case:** `"OFICINA"`, `"oficína"`, `"oficina"` all match `"Oficina"`
-   (confirm `unaccent(lower(...))` on both column and query term).
-8. **Empty catalog / popular strip also empty:** if even the popular-chairs query returns
-   nothing, the no-results page still renders its message + "Clear filters" CTA without crashing
-   (empty strip, no broken layout).
-9. **RPC/DB read failure** (network, RLS misconfig, migration not applied): query layer throws
-   the redacted `fail()` error; `[locale]/error.tsx` renders the localized panel — never a raw
-   stack or partial grid.
-10. **Facet lists fail to load** (`listBrands` throws): page-level boundary handles it; the
-    filter panel never renders half-populated with a silently-empty facet that looks like "no
-    brands exist".
-11. **JS disabled:** header search `<form method="get">` and the filter `<form>` submit natively
-    to `/sillas?...`; results render server-side; chips degrade to plain links. SSR-first.
-12. **Very long active-filter set on mobile (375px):** the chip row wraps / scrolls
-    horizontally without breaking layout or pushing the grid off-screen.
+At least 5 required; the following MUST be handled:
+
+1. **Corrupt localStorage JSON** (`"posturpro:cart:v1"` = `"{not json"` or an array of
+   the wrong shape) → cart reads as empty, one guarded `console.warn`, page renders the
+   empty state. Mirror the `recently-viewed` `isEntry` shape guard.
+2. **localStorage disabled / private mode / quota exceeded** → adds are swallowed
+   gracefully (in-memory context state still updates for the session; write failure
+   warns once); the page never throws.
+3. **Stored quantity ≤ 0 / non-integer / negative / `NaN` / > cap** (tampered storage)
+   → clamped to `[1, MAX]` on read; a `0`/junk quantity drops the line rather than
+   rendering "0 × price". A missing `unitPriceCents` drops the line (no `$NaN`).
+4. **A cart line references a product/variant that no longer exists or changed price** —
+   the cart stores a client snapshot (name, unit price, image, sku) and renders from
+   it. Re-validation against live prices/stock is a **T7 checkout** concern, explicitly
+   out of scope; documented so the snapshot is never treated as authoritative at pay.
+5. **Two browser tabs open** — adding in tab A reflects in tab B via a `storage` event
+   listener that re-reads localStorage into context; last write wins, no crash on a
+   concurrent-write race.
+6. **store_settings unavailable** (`getStoreSettingsStatic()` returns `null`) → summary
+   shows subtotal only (neutral shipping label), the free-shipping progress bar is
+   hidden, and totals never render `$NaN`.
+7. **Subtotal exactly equal to the threshold** → free shipping (`≥`, not `>`); progress
+   bar at 100%, achieved state shown.
+8. **Add-to-cart / badge during SSR / before hydration** — the add-to-cart island and
+   header badge render an inert/`null` shell until hydrated (mirror `RecentlyViewed`'s
+   mounted-flag pattern) so there is no hydration mismatch and no `window` access on the
+   server.
+9. **Rapid repeated clicks on "+" or "Add to cart"** — increments use functional state
+   updates so they are coalesced correctly, never lost or double-applied, never exceed
+   the cap.
+10. **Removing the last item** → transitions cleanly to the empty state (badge → 0,
+    summary/progress/checkout hidden).
 
 ## Error States Table
 
-| Trigger | User Sees | System Does |
-| --- | --- | --- |
-| RPC/DB read throws (network, RLS, migration missing) | Localized full-page error panel (`[locale]/error.tsx`) | `fail()` logs full detail server-side; throws redacted `Error`; route boundary catches |
-| Facet-list read (`listBrands`/`listCategories`/`listStyles`) throws | Same localized error panel | Same `fail()` contract; page never renders a half-populated filter panel |
-| Zero products match | No-results state: "No encontramos sillas…" + echoed query + "Limpiar filtros" + popular strip | RPC returns `total_count = 0`; page renders `NoResults`, runs a separate popular read |
-| `?page` beyond filtered last page | The clamped (real last) page renders | Count-first (`COUNT(*) OVER ()`), clamp to `[1, lastPage]` before slicing — never a 416 |
-| Malformed/hostile param | Results for the valid remaining filters (or unfiltered if all invalid) | Parse lib drops unknown/invalid values pre-RPC; `q` truncated; RPC parameterized (no injection) |
-| Inverted price range (min > max) | Results with price constraint ignored + subtle "rango de precio ignorado" note | Parse lib discards both bounds |
-| Popular-chairs read also fails on no-results page | No-results message + CTA still render; strip omitted | Popular read wrapped so its failure degrades gracefully (logged, not fatal) |
+| Trigger                                        | User Sees                                                         | System Does                                                                    |
+| ---------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Corrupt/foreign localStorage payload           | Empty cart + empty-state CTA                                     | `readCart()` returns `[]`; one guarded `console.warn`; state initialized empty  |
+| localStorage write fails (quota/private mode)  | Item still appears this session; no error toast                  | In-memory context updated; write swallowed with one `console.warn`; no throw    |
+| `store_settings` read returns `null`           | Subtotal + neutral shipping label; NO free-shipping progress bar | Summary from subtotal only; progress element not rendered; no `$NaN`            |
+| Tampered quantity (0 / negative / NaN / > cap) | Clamped value shown, or line dropped                             | `sanitizeQuantity` clamps to `[1, MAX]`; `0`/junk drops the line on read        |
+| Selected variant is out of stock               | "Agotado" disabled add-to-cart button                            | Button `disabled` + `aria-disabled`; add action guarded/no-op                   |
+| Add-to-cart before hydration (SSR)             | Inert control; no badge-count flash                              | Island renders `null`/inert until `mounted`; no `window` access server-side     |
+| Cross-tab concurrent edit                      | Cart re-syncs to latest                                          | `storage` listener re-reads localStorage into context; last write wins          |
 
 ## UX Requirements
 
-- **Loading**: while the filtered grid streams (Suspense around the grid), show a **skeleton
-  grid of `PRODUCTS_PER_PAGE` card skeletons** at the real card aspect ratio (reuse/extend T3's
-  skeleton). Filter panel + header render immediately. No full-page spinner.
-- **Empty (no results)**: the AC-16 state — heading ("No encontramos sillas que coincidan"),
-  the echoed search/active filters, a prominent **"Limpiar filtros"** button (→ clean `/sillas`),
-  and a **"Sillas populares"** strip below. Never a bare "0 results".
-- **Error**: the existing localized `[locale]/error.tsx` panel with retry — never a raw error,
-  never a partially-rendered grid.
-- **Success**: the filtered `ProductGrid`, a result count ("24 sillas"), active-filter chips,
-  and crawlable pagination that **preserves active filters** in every page link.
-- **Mobile (375px)**: filters behind a **"Filtros" button** opening a full-height `Sheet` with
-  an "Aplicar" / result-count footer; sort is a compact `Select` in the toolbar; chips wrap /
-  scroll horizontally; header search collapses to an icon expanding to a full-width input; grid
-  is 2 columns.
-- **Tablet (768px)**: filters still behind the `Sheet` button (sidebar only at `lg`); grid 3
-  columns; sort `Select` + result count in a toolbar row above the grid.
-- **Desktop (≥1024px)**: persistent **left filter sidebar**, grid (4 columns) on the right;
-  sort `Select` + result count in the top toolbar; active-filter chips above the grid.
-- **Reduced motion**: `prefers-reduced-motion` disables the Sheet slide and all transform-based
-  motion, keeping only short opacity fades (AC-18).
+- **Loading**: The cart page body is a client island reading localStorage; before
+  hydration it shows a minimal skeleton (or the server-rendered empty shell) — never a
+  flash of a wrong count. The header badge renders no number until hydrated, then fades
+  the count in (`enter-fade`, `ease-out`, reduced-motion respected).
+- **Empty**: Centered friendly message ("Tu carrito está vacío" / "Your cart is empty")
+  + a primary CTA button "Ver sillas" → `/sillas`. No summary, no progress, no checkout.
+- **Error**: No user-facing hard error — all failures degrade to empty/inert (see Error
+  States). If storage is unavailable the cart works in-memory for the session and simply
+  does not persist; no scary message.
+- **Success (item added)**: The header badge count increments with a subtle count-change
+  animation; on the PDP the add button briefly confirms ("Agregado ✓" for
+  `ADD_TO_CART_CONFIRM_MS`, then reverts) — inline, NOT a mini-cart drawer. Animation is
+  compositor-friendly (transform/opacity), interruptible, reduced-motion gated.
+- **Populated cart page**: Line rows (image, name, variant, unit price, qty stepper,
+  remove, line total), a sticky-on-desktop order-summary card (subtotal, shipping,
+  total), the free-shipping progress bar, and the checkout CTA.
+- **Mobile (375px)**: Single-column line rows; image thumbnail left, details right, qty
+  stepper + remove below; summary stacks under the list; no horizontal scroll at 320px.
+  Tap targets ≥ 44px (matches the T5 facet fix). Checkout CTA full-width.
+- **Tablet (768px)**: Two-column line row layout; summary in a right rail or below per
+  width; progress bar full-width above the summary.
 
 ## Technical Approach
 
 ### Files to Create
 
-- `supabase/migrations/0007_search.sql` — `create extension unaccent`, `create extension
-  pg_trgm`; the `search_products(...)` RPC (`SECURITY INVOKER`; `revoke execute … from public`;
-  `grant execute` to `anon` + `authenticated`); indexes: `pg_trgm` GIN on `products.name`,
-  `products.description`, `brands.name`; btree on `products (price_cents)`, `products
-  (created_at)`, `products (sales_count)`, `product_variants (color_hex)`.
-- `src/lib/catalog/read-primitives.ts` — extracted `fail()`, `firstOrSelf<T>()`, `cachedRead()`
-  wrapper (Constraint 2).
-- `src/lib/catalog/search.ts` — `searchProducts(filters): Promise<CatalogPage<CatalogProductCard>>`
-  calling `supabase.rpc('search_products', …)`; `listPopularProducts(limit)` for the no-results
-  strip; caching decision from Constraint 3. Imports `read-primitives`.
-- `src/lib/catalog/search-params.ts` — pure, unit-testable parse/serialize of filter URL state
-  ↔ typed `CatalogFilters`; canonicalization + validation (drop unknown/hostile, truncate `q`,
-  handle inverted price; single-sources param-name constants + `SEARCH_QUERY_MAX`).
-- `src/lib/catalog/search.types.ts` — `CatalogFilters`, `SortKey`, `FacetOptions`.
-- `src/components/catalog/search-box.tsx` — header/toolbar search input (`<form method="get">`).
-- `src/components/catalog/filter-panel.tsx` — facet controls (desktop sidebar body, reused in
-  the mobile Sheet).
-- `src/components/catalog/filter-sheet.tsx` — mobile/tablet `Sheet` wrapper (`"use client"`).
-- `src/components/catalog/sort-select.tsx` — sort `Select` (`"use client"`; updates URL).
-- `src/components/catalog/active-filters.tsx` — removable chips + "Clear all".
-- `src/components/catalog/no-results.tsx` — no-results state + popular strip.
-- `src/components/catalog/color-swatch.tsx` — accessible color swatch button.
-- shadcn/ui: `src/components/ui/{input,checkbox,select,sheet,slider,badge,label}.tsx`
-  (install via `npx shadcn add` — do NOT hand-roll; CLAUDE.md "shadcn/ui first").
+- `src/lib/cart/cart-storage.ts` — Guarded localStorage read/write mirroring
+  `recently-viewed.ts`: versioned key (`CART_STORAGE_KEY`), `readCart()`, `writeCart()`,
+  `isCartLine()` shape guard, `sanitizeQuantity()`, single-warn-per-session,
+  `hasStorage()` SSR guard. Pure functions, no React.
+- `src/lib/cart/cart-line.ts` — `CartLine` type + pure helpers: `lineTotalCents`,
+  `subtotalCents`, `totalItemCount`, `addLine` (dedupe by key, increment, clamp),
+  `setLineQuantity`, `removeLine`, and `cartLineKey(productId, variantId)`.
+- `src/lib/cart/shipping.ts` — Pure `computeShipping({ subtotalCents, flatRateCents,
+  freeThresholdCents })` and `freeShippingProgress(...)` → `{ remainingCents, achieved,
+  pct }`; a "settings unavailable" variant when the inputs are null.
+- `src/components/cart/cart-provider.tsx` — `"use client"` context provider holding
+  cart lines in state, hydrating from `readCart()` on mount, persisting on change,
+  listening to the `storage` event for cross-tab sync, exposing `useCart()` (`lines`,
+  `addItem`, `setQuantity`, `removeItem`, `itemCount`, `subtotalCents`, `hydrated`).
+- `src/components/cart/add-to-cart-button.tsx` — `"use client"` PDP island; reads
+  `useCart()`, adds the selected variant, shows the transient "added" confirmation,
+  disables when out of stock or before hydration.
+- `src/components/cart/cart-count-badge.tsx` — `"use client"` header island rendering
+  the item count (null before hydration), accessible label + count animation, links to
+  `/carrito` with a `@hugeicons` cart icon (e.g. `ShoppingCart01Icon`).
+- `src/components/cart/cart-page-client.tsx` — `"use client"` cart page body: line list,
+  summary, progress bar, empty state. Receives store-settings cents (flat rate +
+  threshold) as props from the server page; copy via `useTranslations("cart")`.
+- `src/components/cart/cart-line-row.tsx` — one line row.
+- `src/components/cart/quantity-stepper.tsx` — accessible +/- stepper (shadcn `Button` +
+  `Input`), clamps `[1, MAX]`, disables at bounds.
+- `src/components/cart/free-shipping-progress.tsx` — Tailwind progress bar (transform:
+  scaleX, compositor-friendly) + remaining/achieved copy; hidden when settings null.
+- `src/app/[locale]/carrito/page.tsx` — the `/carrito` route (server component: reads
+  `getStoreSettingsStatic()` for flat-rate/threshold cents, resolves i18n metadata,
+  renders `CartPageClient`). Locale-aware via existing routing.
+- `src/lib/cart/*.test.ts` — unit tests (storage guard, line math, shipping, quantity
+  sanitization), mirroring `recently-viewed.test.ts` / `money.test.ts`.
+- `e2e/cart.spec.ts` — Playwright: add from PDP, persist across reload, qty edit,
+  remove, empty state, free-shipping progress, header badge, ES/EN copy.
 
 ### Files to Modify
 
-- `src/app/[locale]/sillas/page.tsx` — read all filter/sort/search `searchParams`; call
-  `searchProducts`; render toolbar (search + sort + count), filter sidebar/sheet, active-filter
-  chips, grid, pagination, or `NoResults`; set canonical/`noindex` per AC-11; document rendering
-  mode (dynamic when params present).
-- `src/lib/catalog/queries.ts` — import `fail`/`firstOrSelf`/cache wrapper from
-  `read-primitives.ts` (delete local copies); share `PRODUCT_CARD_SELECT`/card mapping if
-  `search.ts` can reuse it (keep the stitched-card view model identical so `ProductCard` is
-  unchanged).
-- `src/lib/catalog/product-detail.ts` — import `fail`/`firstOrSelf` from `read-primitives.ts`.
-- `src/components/layout/site-header.tsx` — add the search box (AC-12), responsive collapse.
-- `src/lib/config.ts` — add `SEARCH_QUERY_MAX`, `POPULAR_PRODUCTS_MAX` (8), price-bucket bounds,
-  the search/filter param-name constants, and the `/sillas` sort default.
-- `src/components/catalog/pagination.tsx` / `page-helpers.ts` — make the href builder carry the
-  current query string (filters/sort/search) so page links preserve state (AC-15); keep
-  page-1-canonical.
-- `src/messages/es-MX.json` + `src/messages/en.json` — add the new keys.
+- `src/lib/config.ts` — Add `CART_STORAGE_KEY = "posturpro:cart:v1"`,
+  `MAX_CART_ITEM_QUANTITY` (e.g. `99`), `CART_PATH = "/carrito"`,
+  `CHECKOUT_PATH = "/checkout"`, `ADD_TO_CART_CONFIRM_MS` (~1500). Document each (Rule 4).
+- `src/app/[locale]/layout.tsx` — Wrap the shell in `<CartProvider>` (inside
+  `NextIntlClientProvider`) so header badge + PDP button + cart page share one cart.
+- `src/components/layout/site-header.tsx` — Add `CartCountBadge` in the right-hand
+  control cluster (`ml-auto flex shrink-0 …`, ~line 85), before/after the language
+  toggle.
+- `src/components/layout/mobile-nav.tsx` — Add a cart link so mobile users reach
+  `/carrito`.
+- `src/components/product/product-purchase-panel.tsx` — Render `AddToCartButton`, passing
+  the selected variant id/label, effective price cents, product snapshot (id, name, slug,
+  cover image, sku), and out-of-stock flag. The panel's existing selection state is the
+  source of truth for which variant is added.
+- `src/app/[locale]/producto/[slug]/page.tsx` — Thread the product snapshot fields (sku,
+  cover image url) the add button needs into `ProductPurchasePanel` props.
+- `src/messages/es-MX.json` + `src/messages/en.json` — Add a `cart` namespace (keys
+  below).
+- `src/messages/keys-used.test.ts` — extend parity coverage for the new keys.
 
 ### Data Model Changes
 
-- **No table/column changes.** `0007_search.sql` adds two extensions, one RPC
-  (`search_products`), and seven indexes (three `pg_trgm` GIN for search; four btree for
-  price/created_at/sales_count/color). Grants: `execute` on the RPC to `anon` + `authenticated`
-  only (revoke from `public` first). Verified installable + anon-safe on the local seeded DB.
+**None.** The cart is client-side (localStorage) per the Phase-1 "persistent guest
+cart" scope and the `recently-viewed` precedent. The `orders`/`order_items` tables
+(0003_commerce.sql) are the immutable **checkout** snapshot written by T7, not by the
+cart. Do NOT write to any table in T6.
 
 ### API Endpoints
 
-- **No new HTTP endpoints.** Access is via the Supabase RPC `search_products`, called
-  server-side from `src/lib/catalog/search.ts` using the existing cookie-free
-  `createPublicClient()`. Request = the RPC's typed parameters; response = card rows +
-  `total_count`.
+**None.** No server writes. The only backend read is the existing
+`getStoreSettingsStatic()` (flat rate + free-shipping threshold), already built.
 
 ### Dependencies
 
-- **No new npm packages.** `radix-ui` (installed) backs the shadcn/ui `Select`/`Sheet`/
-  `Checkbox`/`Slider` primitives; `@hugeicons/react` (installed) supplies filter/search/close
-  icons; `next-intl` (installed) supplies locale-aware navigation. shadcn/ui components are
-  generated into `src/components/ui/`, not added as runtime deps.
-- **DB extensions** `unaccent`, `pg_trgm` — bundled with the Supabase Postgres image (confirmed
-  installable on local Docker Supabase). No external service.
+**None new.** React context (built-in) for state; localStorage for persistence; existing
+shadcn `Button`/`Input`/`Badge`; `@hugeicons/react` + `@hugeicons/core-free-icons` for
+the cart icon; `next-intl` for copy; `formatMXN`/`interpolate` for display. No
+`Sheet`/`Dialog` (mini-cart out of scope). Prefer a plain Tailwind progress bar over the
+`slider` component.
+
+### i18n keys (new `cart` namespace, both locales)
+
+`cart.title`, `cart.empty.title`, `cart.empty.cta`, `cart.item.remove`,
+`cart.item.increase`, `cart.item.decrease`, `cart.item.quantityLabel`,
+`cart.item.lineTotalLabel`, `cart.summary.heading`, `cart.summary.subtotal`,
+`cart.summary.shipping`, `cart.summary.shippingFree`, `cart.summary.total`,
+`cart.freeShipping.remaining` (template `Te faltan {amount}…`),
+`cart.freeShipping.achieved`, `cart.checkout`, `cart.addToCart`, `cart.added`,
+`cart.outOfStock`, `cart.badgeLabel` (template `Carrito, {count} artículos`),
+`cart.headerLink`, `cart.metadata.title`.
 
 ## Out of Scope
 
-- **Search autocomplete / type-ahead** — Phase 2 ("Storefront: … search autocomplete"). T5 is
-  submit-based search only.
-- **Related products** — Phase 2.
-- Any **cart/checkout** behavior (T6/T7) — the card links to the PDP exactly as today.
-- **Admin product search/filter** (T11) — separate surface; do not build against it.
-- **Saved filter presets, filter analytics, per-option faceted result counts ("(23)")** — not
-  Phase 1; keep facets as plain options.
-- **A dedicated `/buscar` route** — rejected in AC-10; search enhances `/sillas`.
-- **Tags as a filter facet** — the Phase-1 filter list is category, brand, style, price, color,
-  material, availability. Tags are not listed; do not add a tag facet.
-- **Changing `products_public` or the base schema** beyond the additive `0007_search.sql`.
+- **Checkout** (T7): the checkout page, order/order-item creation, stock reservation,
+  Mexican postal-code/state validation, discount-code validation, order confirmation.
+- **Payments** (T8): Mercado Pago, any payment capture.
+- **Mini-cart / cart drawer** — explicitly SKIP in PRODUCT_SPEC.
+- **Customer accounts / server-persisted or synced cart** — Phase 2.
+- **Min/max order quantities** — explicitly SKIP in PRODUCT_SPEC (only a UX sanity cap).
+- **Live price/stock re-validation of cart lines** against the DB — a T7 concern; the
+  cart renders from its client snapshot.
+- **Saved-for-later / wishlist** — Phase 2. **Abandoned-cart emails** — Phase 3.
+- **Discount-code entry** on the cart page — the field lives in T7 checkout.
