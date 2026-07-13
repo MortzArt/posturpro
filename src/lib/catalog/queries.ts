@@ -32,6 +32,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { CATALOG_REVALIDATE_SECONDS, PRODUCTS_PER_PAGE } from "@/lib/config";
+import { fail, firstOrSelf } from "@/lib/catalog/read-primitives";
 import { effectiveStock, stockState } from "@/lib/catalog/stock";
 import {
   canonicalPageKey,
@@ -115,18 +116,6 @@ interface VariantRow {
   product_id: string;
   stock: number;
   color_hex: string;
-}
-
-/** Raise a typed error so the caller's boundary shows the localized panel. */
-function fail(context: string, message: string): never {
-  // Full detail logged server-side ONLY; never surfaced to the DOM (edge 9).
-  console.error(`[catalog] ${context}: ${message}`);
-  throw new Error(`Catalog read failed: ${context}`);
-}
-
-function firstOrSelf<T>(value: T | T[] | null): T | null {
-  if (value === null) return null;
-  return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
 /**

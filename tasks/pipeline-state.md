@@ -1,12 +1,14 @@
 # Pipeline State
 Task: T5 — Search, filters & sorting
 Tier: full-cycle
-Stage: 4
-Agent: ultradev
+Stage: 5
+Agent: ultrareview
 Complexity: high (all 12 stages run; hacker stage included)
 Feature Type: full-feature
 Last Updated: 2026-07-13
-Notes: Stage 3 (UI Design) COMPLETE — tasks/ui-design.md. Stage 1+2 artifacts: next-ticket.md + research-report.md.
+Notes: Stage 4 (Dev) COMPLETE — tasks/dev-done.md. Migration supabase/migrations/0007_search.sql (unaccent+pg_trgm, SECURITY INVOKER search_products RPC revoke-public/grant-anon, 7 indexes, applied non-destructively to local DB, seed intact). 13 new lib modules (search.ts, search-params.ts, read-primitives refactor of queries.ts+product-detail.ts) + 15 new components (6 shadcn) + 8 modified. 18/18 ACs. Live-verified as anon: base products denied, cost_price_cents unreachable (grep=0), ergonomica->Ergonómica 6 results, RPC effective_stock == effectiveStock() for all 30 products, OOS product hidden by default / shown via ?disponibilidad=todos (seed restored). Six deterministic sorts, default best-selling. Filtered pages noindex,follow + canonical; pure ?page=N indexable. Gates: tsc/lint/build clean, 536 unit, 167 e2e (0 fail, 5 skip). All 6 design open questions resolved per spec recommendations (in dev-done.md).
+Deviations: FilterSheet on Radix Dialog + proven .drawer-panel motion instead of shadcn sheet (design mandated retrofit anyway; spatial consistency with MobileNav); aria-live result count lives in SearchResults. Zero new npm deps.
+Stage 3 (UI Design) COMPLETE — tasks/ui-design.md. Stage 1+2 artifacts: next-ticket.md + research-report.md.
 
 Stage 3 design decisions (dev must honor): Search = collapsing icon->input in header + always-expanded toolbar field on /sillas echoing q; submit-based native <form method="get"> (works JS-off, no debounce/autocomplete). Filters: >=lg persistent sticky left sidebar (grid-cols-[16rem_1fr]); below lg a left Sheet drawer reusing MobileNav .drawer-panel/.drawer-scrim motion; ONE FilterPanel renders in both. Facets: availability (in-stock default, NOT chipped; opt-out "include agotados" IS chipped), category, brand, style, color swatches (multi-select checkbox variant of T4 VariantSelector), material, dual-thumb price slider + numeric inputs; long lists collapse to 6 + "Ver más". ActiveFilters chips own the aria-live result count, per-chip remove links + "Limpiar todo", scroll-x mobile. NoResults dedicated component: query echo + clear + "Sillas populares" best-selling strip via ProductGrid. Loading: ProductGridSkeleton in Suspense + useTransition pending opacity dim. New components in src/components/catalog/: search-box, sort-select, filter-panel, color-swatch, filter-sheet, active-filters, no-results, catalog-toolbar. shadcn to install: input, checkbox, select, sheet, slider, badge, label (retrofit tw-animate-css keyframes to interruptible [data-state] transitions). Motion M-1..M-8 all transform/opacity, ease-out enters, reduced-motion fallbacks. Copy keys catalog.search/filters/sort/results/noResults (ICU plurals). config.ts: SEARCH_PARAM_KEYS, SORT_KEYS, SEARCH_QUERY_MAX, POPULAR_PRODUCTS_MAX. makeHrefForPage(basePath, query?) additive change. 6 open questions left for dev with recommendations in spec. Complexity=high (reclassified UP from standard): new DB-side query subsystem + migration, anon-reachable RPC, 15+ files, cross-cutting cache/SEO/search concerns. ALL 12 stages run incl. Stage 11 Hacker.
 

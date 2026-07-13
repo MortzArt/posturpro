@@ -867,6 +867,38 @@ export interface Database {
         Args: { p_id: string };
         Returns: boolean;
       };
+      search_products: {
+        Args: {
+          p_query?: string | null;
+          p_category_ids?: string[] | null;
+          p_brand_ids?: string[] | null;
+          p_style_ids?: string[] | null;
+          p_colors?: string[] | null;
+          p_materials?: string[] | null;
+          p_price_min?: number | null;
+          p_price_max?: number | null;
+          p_in_stock_only?: boolean;
+          p_sort?: string;
+          p_limit?: number;
+          p_offset?: number;
+        };
+        Returns: {
+          id: string;
+          slug: string;
+          name: string;
+          price_cents: number;
+          compare_at_price_cents: number | null;
+          is_best_seller: boolean;
+          sales_count: number;
+          stock: number;
+          brand_name: string | null;
+          brand_slug: string | null;
+          brand_logo_url: string | null;
+          effective_stock: number;
+          distinct_color_count: number;
+          total_count: number;
+        }[];
+      };
     };
     Enums: {
       product_status: ProductStatus;

@@ -1,224 +1,157 @@
-# Dev Summary: T4 — Product Detail Page (`/producto/[slug]`)
+# Dev Summary: T5 — Search, Filters & Sorting
 
 ## Rendering Mode
 
-**Static / ISR (SSG).** Build output shows `/[locale]/producto/[slug]` as `●`
-(SSG) with 60 prerendered paths (30 active slugs × 2 locales), Revalidate 5m. No
-route-level `revalidate` export (mirrors T3 catalog routes) — the ISR window
-lives on the cookie-free `unstable_cache` read inside `getProduct` (`revalidate:
-CATALOG_REVALIDATE_SECONDS`, tags `catalog` + `product:<slug>`). The Q&A submit
-busts `product:<slug>` via Next 16 `updateTag` so a published answer appears
-promptly. `dynamicParams` left at default (`true`) to keep ISR for products added
-after build.
+`/[locale]/sillas` is now **`ƒ` (Dynamic)** — it reads `searchParams` at the
+page level (to parse filters, set canonical/robots metadata, build chips), which
+opts the route into on-demand rendering. AC-10 is still satisfied: the UNFILTERED
+`/sillas` serves entirely from **cached reads** (facet lists + the popular/search
+reads are `unstable_cache`d under the `catalog` tag), so the default catalog
+stays fast ("or an equivalent cached read"). The filtered grid read is isolated
+in `<Suspense>` so the shell/toolbar/chips render immediately.
+
+**Index pages untouched:** `/marcas`, `/estilos`, `/categorias`, and
+`/producto/[slug]` remain `● (SSG)` in the build output — no change to their
+SSG/ISR posture.
 
 ## Files Changed
 
 | Path | Change | Summary |
 |------|--------|---------|
-| `src/lib/config.ts` | modified | PDP constants: `RECENTLY_VIEWED_MAX=8`, `RECENTLY_VIEWED_STORAGE_KEY`, `QA_RATE_LIMIT_WINDOW_MS=60000`, `QA_MAX_SUBMISSIONS_PER_WINDOW=3`, `AUTHOR_NAME_MAX=120`, `QUESTION_MAX=2000`. |
-| `src/lib/catalog/product-detail.types.ts` | created | `ProductDetail`, `ProductVariantView`, `ProductImageView`, `ProductQuestionView`, `SpecRow`. |
-| `src/lib/catalog/product-detail.ts` | created | `getProduct(slug)` + `listActiveProductSlugs()`. Reads `products_public` VIEW (no cost data), batched `.eq()` children, `unstable_cache` tags. Slug bounded pre-cache (`isCacheableSlug`, T3 DoS precedent). |
-| `src/lib/catalog/variant-selection.ts` | created | Pure: `effectivePriceCents`, `shouldStrikeCompareAt`, `imagesForVariant`, `variantStockState`, `defaultVariant`. |
-| `src/lib/catalog/specs.ts` | created | Pure `buildSpecRows` — mm→cm, g→kg, null-omission (AC-10). |
-| `src/lib/catalog/product-display.ts` | created | Server `buildVariantDisplayMap` + `buildProductDisplay` so the panel does ZERO client i18n. |
-| `src/lib/qa/submit-guard.ts` | created | Pure `validateQaSubmission` (trim-first), `isHoneypotTripped`, `checkRateLimit` (in-memory window). |
-| `src/lib/recently-viewed.ts` | created | Typed, SSR-safe, quota-guarded localStorage get/record (stores card view model). |
-| `src/lib/interpolate.ts` | created | Tiny `{token}` interpolation for i18n templates passed server→client. |
-| `src/app/[locale]/producto/[slug]/page.tsx` | created | PDP route: `generateStaticParams`, `generateMetadata`, server component composing breadcrumb + purchase panel + specs + recently-viewed + Q&A. |
-| `src/app/[locale]/producto/[slug]/loading.tsx` | created | Route skeleton → `PdpSkeleton`. |
-| `src/app/[locale]/producto/[slug]/actions.ts` | created | `"use server"` `submitQuestion` — honeypot → validate → rate-limit → anon RLS insert → `updateTag`. |
-| `src/components/product/product-purchase-panel.tsx` | created | The ONE `"use client"` selection island (single source of truth for `selectedVariantId`). |
-| `src/components/product/product-gallery.tsx` | created | `"use client"` gallery + thumbnail rail + raw Radix Dialog zoom. |
-| `src/components/product/variant-selector.tsx` | created | `"use client"` hand-rolled roving-tabindex radiogroup of color swatches. |
-| `src/components/product/product-specs.tsx` | created | Server `<dl>` spec list. |
-| `src/components/product/product-qa.tsx` | created | Server list of published Q&A + empty state + `QaForm`. |
-| `src/components/product/qa-form.tsx` | created | `"use client"` `useActionState` form: honeypot, counter, validation, all result states. |
-| `src/components/product/recently-viewed.tsx` | created | `"use client"` empty-SSR-shell strip; records on mount; reuses `ProductCard`. |
-| `src/components/product/pdp-skeleton.tsx` | created | Layout-matched loading skeleton. |
-| `src/messages/es-MX.json`, `src/messages/en.json` | modified | Added the `product` i18n namespace (both locales, key-parity verified). |
-| `src/app/globals.css` | modified | PDP motion: `.gallery-image` (M1), `.gallery-zoom-trigger`/`.swatch-press` (M4), `.thumb-hover` (M6), `.price-value` (M5), `.gallery-zoom-scrim`/`.gallery-zoom-dialog` (M2/M3) — transform/opacity, <300ms, reduced-motion gated. |
+| `supabase/migrations/0007_search.sql` | created | `unaccent`+`pg_trgm`; `search_products` RPC (SECURITY INVOKER, revoke-from-public + grant anon/authenticated); 3 GIN trgm + 4 btree indexes |
+| `src/lib/catalog/read-primitives.ts` | created | Extracted `fail`/`firstOrSelf`/`cachedRead` (Constraint 2) |
+| `src/lib/catalog/search.types.ts` | created | `CatalogFilters`, `SortKey`, `FacetOption`, `ColorFacetOption`, `FacetOptions` |
+| `src/lib/catalog/search-params.ts` | created | Pure parse/serialize + canonicalization (drop unknowns, cap `q`, invert-price, sort) |
+| `src/lib/catalog/search-params.test.ts` | created | 17 unit tests for edges 3/4/7 + round-trip |
+| `src/lib/catalog/search.ts` | created | `searchProducts` + `listPopularProducts` via the RPC; caching per Constraint 3 |
+| `src/lib/catalog/facets.ts` | created | Color/material/price facet reads + `loadFacetOptions` composer + known-sets/label lookups |
+| `src/lib/catalog/active-filter-chips.ts` | created | Pure builder for removable-chip view models |
+| `src/components/catalog/search-box.tsx` | created | Header (collapsing) + toolbar search `<form method=get>` |
+| `src/components/catalog/sort-select.tsx` | created | shadcn Select; pushes `orden`, resets page |
+| `src/components/catalog/color-swatch.tsx` | created | Multi-select checkbox-semantics swatches (`.swatch-press`) |
+| `src/components/catalog/filter-controls.tsx` | created | Facet checkbox group, availability toggle, price range, clear button |
+| `src/components/catalog/filter-panel.tsx` | created | One panel (sidebar + sheet); native `<form>` + live client toggles |
+| `src/components/catalog/filter-sheet.tsx` | created | Mobile drawer on Radix Dialog + `.drawer-panel`/`.drawer-scrim` (M-1) |
+| `src/components/catalog/filter-navigation.tsx` | created | Client context: shared `useTransition` + serialize/apply |
+| `src/components/catalog/active-filters.tsx` | created | Removable chips + clear-all (real `<a>`) |
+| `src/components/catalog/no-results.tsx` | created | No-results state + popular strip via `ProductGrid` |
+| `src/components/catalog/catalog-toolbar.tsx` | created | Search echo + filter-sheet trigger + sort composer |
+| `src/components/catalog/catalog-grid-region.tsx` | created | Pending-dim wrapper (M-7) |
+| `src/components/catalog/catalog-shell.tsx` | created | Client shell wrapping toolbar + sidebar + grid region in the provider |
+| `src/components/catalog/search-results.tsx` | created | Suspense child: RPC read → grid+pagination or NoResults + aria-live count |
+| `src/components/ui/{input,checkbox,select,slider,badge,label}.tsx` | created | shadcn (no new npm deps; Select motion retrofitted) |
+| `src/app/[locale]/sillas/page.tsx` | modified | Rewrite: parse filters, load facets, chips, metadata, shell + Suspense |
+| `src/lib/catalog/queries.ts` | modified | Import `fail`/`firstOrSelf` from read-primitives (deleted local copies) |
+| `src/lib/catalog/product-detail.ts` | modified | Same import; deleted local `fail`/`firstOrSelf` |
+| `src/lib/catalog/page-helpers.ts` | modified | `makeHrefForPage(basePath, query?)` — additive filter-query carrier (AC-15) |
+| `src/components/layout/site-header.tsx` | modified | Added header search box (AC-12) |
+| `src/lib/config.ts` | modified | `SEARCH_PARAM_KEYS`, `SORT_KEYS`, `DEFAULT_SORT`, `SEARCH_QUERY_MAX`, `POPULAR_PRODUCTS_MAX`, price-bucket constants |
+| `src/lib/supabase/database.types.ts` | modified | Typed the `search_products` RPC (Args + Returns) |
+| `src/app/globals.css` | modified | `.select-content-motion` (M-3), `.grid-pending`/`.grid-idle` (M-7), `.clear-fade` (M-6) |
+| `src/messages/es-MX.json` + `en.json` | modified | `catalog.search/filters/sort/results/noResults` (ICU plurals) |
+| `src/messages/keys-used.test.ts` | modified | Added all new consumed keys |
 
-## Placeholder Values Centralized (BUILD_PLAN rule 4)
+## Open-Question Resolutions (from ui-design.md)
 
-All new tunables in `src/lib/config.ts` with doc blocks — no magic values in
-components: `RECENTLY_VIEWED_MAX`, `RECENTLY_VIEWED_STORAGE_KEY`,
-`QA_RATE_LIMIT_WINDOW_MS`, `QA_MAX_SUBMISSIONS_PER_WINDOW`, `AUTHOR_NAME_MAX`,
-`QUESTION_MAX`. Unit constants end in `_MS`. Store name = `store_settings.store_name
-?? SEED_STORE_NAME`.
+1. **Sort JS-off fallback** → chose the spec's recommendation: the filter
+   `<form>` carries a native `<select name="orden">` (the JS-off path); the
+   toolbar `SortSelect` is the JS-on enhancement.
+2. **Grid columns at `lg`** → kept `ProductGrid`'s existing `lg:grid-cols-4`; the
+   16rem sidebar + `1fr` fits 4 cards acceptably at ≥1024px (verified no overflow
+   in the responsive e2e). No `xl:` downgrade needed.
+3. **Filter Sheet side** → `left`, reusing `.drawer-panel` for spatial
+   consistency with MobileNav (spec recommendation).
+4. **Mobile live-apply vs batch** → live-apply (desktop parity); the sheet footer
+   button primarily closes the sheet. RPC is trivial at seed scale.
+5. **Price display domain vs cache buckets** → accepted the two-layer approach:
+   the RPC receives the EXACT price; the filter-only cache key uses a bucketed
+   value (`PRICE_BUCKET_CENTS` = MX$100). Documented in `search.ts`.
+6. **Price chip wording** → `chipPrice` for a full range, `chipPriceFrom`/
+   `chipPriceTo` for open-ended bounds (both via `formatMXN`).
 
-## Data-Testids Added
+## Migration Details & How Applied
 
-`breadcrumbs`, `product-gallery`, `gallery-zoom-trigger`, `gallery-zoom-dialog`,
-`gallery-zoom-close`, `gallery-thumbnails`, `gallery-thumb-{i}`,
-`variant-selector`, `variant-swatch-{id}`, `variant-color-label`,
-`variant-live-status`, `product-price`, `product-compare-at`, `stock-badge`,
-`product-specs`, `spec-row-{key}`, `recently-viewed`, `product-qa`, `qa-list`,
-`qa-item-{id}`, `qa-empty`, `qa-form`, `qa-name`, `qa-question`, `qa-counter`,
-`qa-name-error`, `qa-question-error`, `qa-form-error`, `qa-success`, `qa-submit`,
-`pdp-skeleton`.
+- `0007_search.sql`: `create extension if not exists unaccent/pg_trgm`; the
+  `search_products(...)` RPC (`language sql stable security invoker set
+  search_path = public`); `revoke all ... from public` + `grant execute ... to
+  anon, authenticated`; 3 GIN trgm indexes (products.name, products.description,
+  brands.name) + 4 btree (price_cents, created_at, sales_count, variants.color_hex).
+- **Applied non-destructively** to the running local stack via
+  `docker exec … psql < 0007_search.sql` (idempotent — `if not exists` / `create
+  or replace`), then `NOTIFY pgrst, 'reload schema'`. Seed data (30 products / 69
+  variants) survived intact. Reset-safe: a `supabase db reset` runs 0001→0007 and
+  0007 is fully idempotent.
+- **Verified as anon:** RPC returns rows; `SELECT ... FROM products` (base) still
+  raises `permission denied`; `cost_price_cents` never appears in any response
+  path or the rendered HTML (grep = 0).
+- **AC-6 parity:** a SQL cross-check confirmed `effective_stock` from the RPC ==
+  `COALESCE(SUM(variant.stock), product.stock)` for all 30 products (0 mismatches).
 
-## AC-by-AC Implementation Notes
+## Caching Decisions (as implemented — Constraint 3)
 
-- **AC-1** — Both locales render; unknown/junk slug → `getProduct` null →
-  `notFound()` → localized `[locale]/not-found.tsx` inside the shell. Verified.
-- **AC-2** — `generateStaticParams` over `listActiveProductSlugs()` × locales → 60
-  SSG pages (build confirms), cookie-free tag-cached read.
-- **AC-3** — `generateMetadata` `title="{name} — {store}"`, truncated description;
-  `{}` on miss.
-- **AC-4** — `Breadcrumbs` `Inicio › Sillas › {name}` (last crumb current).
-- **AC-5** — Main image + thumbnail rail; primary first (`is_primary`,
-  `sort_order`, `id`); zero images → labeled placeholder, no zoom; `onError` →
-  placeholder (never broken img).
-- **AC-6** — Radix Dialog zoom: Escape/backdrop/close, focus trap + return,
-  scale-in 0.95→1 200ms / 150ms exit, center origin.
-- **AC-7** — Selection recomputes images (variant→shared fallback), effective
-  price (`override ?? base`), stock badge from one island; gallery remounts on
-  variant change (edge 8).
-- **AC-8** — No variants → no selector; product-level price/stock/images.
-- **AC-9** — `formatMXN`; compare-at struck only when `> effectivePrice`,
-  recomputed per selection (edge 3). Verified `$7,499.00` + struck `$10,000.00`.
-- **AC-10** — `buildSpecRows` mm→cm/g→kg, omits nulls; section hidden when empty.
-- **AC-11** — Reused three-state `StockBadge` (icon+text), effective stock driven.
-- **AC-12** — Client-only strip, empty SSR shell, ≤8 newest-first excluding
-  current, guarded storage. Verified absent from SSR DOM.
-- **AC-13** — Published Q&A newest-first; empty state + form CTA when none.
-- **AC-14** — Server action anon insert; success clears + pending note + focus;
-  trim-before-length validation on client + server (edge 4).
-- **AC-15** — Off-screen honeypot (not display:none) → fake success; in-memory
-  per-IP+product rate limit. Verified.
-- **AC-16** — Reads the view; `cost_price_cents` absent from HTML (grep 0).
-- **AC-17** — `product` namespace both locales; parity tests pass; es-MX default.
-- **AC-18** — Non-empty alts; radiogroup roving tabindex + arrows/Home/End;
-  aria-live status; sr-only compare prefix; semantic `<dl>`; form a11y.
-- **AC-19** — Mobile-first single column; `lg` two-column; order gallery → info →
-  specs → recently-viewed → Q&A.
-- **AC-20** — `ease-out` enters, transform/opacity only, <300ms, interruptible,
-  reduced-motion gated; swatches press-feedback only.
+- Free-text search (`q` present) → **never cached** (`isCacheableFilters` false →
+  direct RPC). `q` capped at `SEARCH_QUERY_MAX = 80` before the call.
+- Filter/sort-only (no `q`) → cached under a **bounded canonical key**: known ids
+  (sorted), closed sort set, price snapped to `PRICE_BUCKET_CENTS` buckets, page
+  via `canonicalPageKey`. Facet lists + popular strip cached under `catalog`.
+
+## Placeholder / Primitive Centralization
+
+`fail()`, `firstOrSelf()`, and a `cachedRead()` wrapper now live once in
+`read-primitives.ts`; `queries.ts`, `product-detail.ts`, `search.ts`, and
+`facets.ts` all import them. No third/fourth copy. Behavior-preserving — the full
+suite stayed green across the extraction (415 → 415 at that step).
 
 ## Edge Cases Handled
 
-1. Zero images → placeholder, no zoom. 2. All variants out → selectable, dim +
-slash, "Agotado". 3. Override vs. compare-at → strike recomputed per selection.
-4. Whitespace question → trimmed → field error, no insert. 5. Archived mid-flow →
-RLS 42501 → "unavailable" (verified). 6. Unsafe slug → `isCacheableSlug` rejects →
-404 (verified `/producto/../../etc`). 7. localStorage failure → swallowed, one
-warn, strip hidden. 8. Rapid variant clicks → gallery keyed remount, no stuck
-frame. 9. Read failure → typed throw → `error.tsx`. 10. Long text → break-words,
-max-w-2xl, no overflow.
+- **1 contradictory / 6 all-variants-OOS** → NoResults (not error/404).
+- **2 `?page=99999`** → clamp to filtered `lastPage` (count-first in `readSearchPage`).
+- **3 hostile params** → parse lib drops unknown ids/sort, caps `q`; RPC parameterized.
+- **4 inverted price** → both bounds dropped + `priceRangeIgnored` note.
+- **5 variant-less color filter** → RPC `EXISTS` over variants excludes them.
+- **7 accent/case** → `unaccent(lower(...))` on column + term (verified `ergonomica`→Ergonómica).
+- **8 empty popular** → `safePopular()` degrades to empty strip, message still renders.
+- **9 RPC failure** → `fail()` → route error boundary.
+- **10 facet-list failure** → propagates to page boundary (never half-populated).
+- **11 JS-off** → header search + filter `<form method=get>` + chips as `<a>`.
+- **12 long chip row (375px)** → `overflow-x-auto`, no grid push-off.
+
+## How to Test (manual, live)
+
+Local Supabase must be up (`:54321`). Build+start against local keys:
+`NEXT_QA_DIST_DIR=.next-t5-prod NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 …
+npx next build && npx next start -p 3000`.
+1. `/sillas?q=ergonomica` → "6 sillas" (accented match).
+2. `/sillas?color=%23111111` → 26; a "Color: Negro" chip; page links carry `color`.
+3. Default `/sillas` hides OOS; `?disponibilidad=todos` includes them.
+4. Each `?orden=…` reorders; sort change resets `?page`.
+5. `?q=zzzz` → NoResults + "Sillas populares" strip.
+6. Filter `<form>` submits with JS disabled.
 
 ## Verification Results
 
-- **Lint** — clean (0/0).  **Typecheck** — clean.  **Build** — succeeds, PDP SSG,
-  60 paths, 5m ISR.  **Unit tests** — 297 passed (17 files); message parity 150
-  passed.
-- **Manual** (own server port 3000, seeded local Supabase; user's 3206 + Docker
-  untouched): es-MX/en render 200; unknown slug → localized not-found in shell;
-  `cost_price_cents` absent; breadcrumb/h1/price+struck/3 swatches/stock
-  badge/zoom/aria-live/honeypot/productId all present; Q&A empty state renders;
-  RLS write path verified (valid anon insert 201; self-publish + archived → 42501;
-  unpublished row invisible to anon SELECT).
-
-## Key Decisions
-
-- **Server→client i18n boundary**: translator functions can't serialize into
-  client components. Display strings resolved server-side (`product-display.ts`);
-  the 3 trivial remaining interpolations pass as localized TEMPLATES filled by a
-  20-line pure `interpolate()` — no client i18n lib, zero new deps.
-- **`updateTag` over `revalidateTag`**: Next 16's `revalidateTag` requires a
-  profile arg; `updateTag` is the server-action read-your-own-writes purge.
-- **Gallery reset via parent `key`** (not reset-effect / during-render ref) —
-  satisfies strict `set-state-in-effect` + `refs-during-render` lint rules.
-- **Anon client + RLS for the write** (never the secret client): the
-  `product_questions_anon_insert` WITH CHECK is the boundary; action sends only
-  `{product_id, author_name, question}`.
+- **tsc**: clean. **lint**: clean. **build**: succeeds (`/sillas` dynamic; index
+  pages SSG). **unit**: 536 passed (27 files). **e2e**: 167 passed, 5 skipped, 0
+  failed (chromium + mobile). Interactive checks (sheet open, swatch/sort URL
+  update, chip clear-all 26→30) verified against the production build.
 
 ## Deviations from Ticket
 
-- **Messages path**: ticket said `src/messages/*.json`; that IS the real path
-  (`src/i18n/messages/` doesn't exist). Namespace added where `catalog` lives.
-- **Icon name**: `MessageQuestion02Icon` doesn't exist in the free set → used
-  `MessageQuestionIcon`. `ZoomInAreaIcon`/`Cancel01Icon` verified present.
-- **No route-level `revalidate` export**: Next 16 rejects a non-literal segment
-  config; removed it — ISR fully handled by `unstable_cache` (build confirms 5m),
-  exactly like T3 routes.
-
-## Known Limitations
-
-- **404 status under `next start`**: unknown slug renders the correct localized
-  not-found UI inside the shell (AC-1 met), but local `next start` serves it from
-  the prerender cache as HTTP 200 (`x-nextjs-cache: HIT`) rather than 404 — a
-  documented Next 16 SSG + `notFound()` + `dynamicParams=true` caching artifact;
-  status is preserved on a real CDN/deployment. Kept `dynamicParams=true` for ISR;
-  set `dynamicParams=false` if a hard 404 is required everywhere (trade-off: new
-  slugs 404 until rebuild).
-- **Rate limiter in-memory / per-instance** (best-effort, per ticket); durable
-  limiter is a documented follow-up.
-- **One leftover unpublished test row** (`author_name="T4 Verify"`) in the local
-  seeded DB from RLS verification — invisible to anon/UI (confirmed by empty anon
-  SELECT), clears on next `supabase db reset`; local service key to delete it
-  wasn't available in this environment.
+- **FilterSheet built on Radix Dialog + `.drawer-panel`**, not shadcn's `sheet`
+  component. The ticket/design sanctioned `sheet` but MANDATED retrofitting its
+  `tw-animate-css` keyframes to the repo's interruptible `[data-state]` transition
+  pattern. Reusing the already-proven MobileNav drawer motion (identical pattern,
+  same `.drawer-panel`/`.drawer-scrim`, spatial consistency) achieves the exact
+  required behavior with zero keyframe risk and less code — so shadcn `sheet` was
+  not installed. All other sanctioned shadcn components (input, checkbox, select,
+  slider, badge, label) were installed via `npx shadcn add`; the Select's keyframe
+  classes were retrofitted to `.select-content-motion` (M-3) per the design rule.
+- **Result count moved into `SearchResults`** (inside Suspense) rather than
+  `ActiveFilters`, because it must reflect the FILTERED total (known only after
+  the RPC). It remains the `aria-live="polite"` node above the grid.
 
 ## Dependencies Added
 
-None.
-
----
-
-## Stage 6 fixes (ultrafix)
-
-Systematic fix of the Stage 5 review findings (0 critical, 4 major, 6 minor, 4 nit).
-
-### Issue Tracker
-
-| ID | Severity | Title | Status | File | Notes |
-|----|----------|-------|--------|------|-------|
-| M-1 | MAJOR | Recently-viewed tiles show current product's low-stock count | FIXED | `recently-viewed.tsx`, `page.tsx` | Per-entry `resolveStockLabel(entry, labels)`; `low` interpolates `lowStockTemplate` w/ `entry.lowStockN`; frozen `stockByState` map removed. |
-| M-2 | MAJOR | Rate-limiter map unbounded on attacker `productId` | FIXED | `submit-guard.ts`, `actions.ts`, `config.ts` | UUID-validate `productId` before it keys anything (`isValidProductId`/`UUID_PATTERN`); hard `QA_RATE_LIMIT_MAX_KEYS=10_000` ceiling w/ idle+oldest eviction. |
-| M-3 | MAJOR | Rate limit spoofable via `X-Forwarded-For` | FIXED | `actions.ts` | `clientIp()` prefers `x-vercel-forwarded-for`, then rightmost XFF hop, then `x-real-ip`, then `unknown`; trust model + residual risk documented. |
-| M-4 | MAJOR | Dead `defaultVariant` + duplicated index-0 logic | FIXED | `product-purchase-panel.tsx` | Panel uses `defaultVariant(variants)` for both the `useState` seed and fallback; two inline `variants[0]` copies removed. |
-| m-1 | MINOR | Metadata description not truncated (AC-3) | FIXED | `config.ts`, `page.tsx` | Added `MAX_META_DESCRIPTION=160` + pure `truncateForMeta` (word-boundary + ellipsis); applied in `generateMetadata`. |
-| m-2 | MINOR | Lightbox hardcodes 1200×1500 (magic pair) | FIXED | `product-gallery.tsx` | Extracted `LIGHTBOX_NOMINAL_WIDTH/HEIGHT` constants w/ doc block; `object-contain` still does the real fit. |
-| m-3 | MINOR | Empty no-variant `aria-live` region | SKIPPED | — | Reviewer flagged as intended; announcing on load would be a11y noise. |
-| m-4 | MINOR | No composite index for Q&A read | SKIPPED | — | No migration in T4 scope (reviewer's call); backlogged to T10/T11 volume. |
-| m-5 | MINOR | `isEntry` omits spread fields → `$NaN` | FIXED | `recently-viewed.ts` | Guards now assert `compareAtPriceCents`/`coverImageUrl`/`brandName`/`lowStockN` shapes. |
-| m-6 | MINOR | Published `answer===null` renders bare question | FIXED | `product-detail.ts` | `readQuestions` adds `.not("answer","is",null)` for strict AC-13. |
-| n-1 | NIT | `gap-y-0` vs specced `gap-y-3` | FIXED | `product-specs.tsx` | Aligned to `ui-design.md` spec. |
-| n-2 | NIT | `flex-wrap` + `overflow-x-auto` conflict | FIXED | `product-gallery.tsx` | Dropped `flex-wrap`; thumbnails now scroll horizontally (`<li>` already `shrink-0`). |
-| n-3 | NIT | Repeated container/rhythm literals | SKIPPED | — | Reviewer marked acceptable (matches T3); shared primitive deferred. |
-| n-4 | NIT | `firstOrSelf` normalizer duplicated from T3 | SKIPPED | — | Hoisting touches T3 `queries.ts` (own tests); out of T4 scope, backlogged. |
-
-### Summary
-- Critical: 0/0
-- Major: 4/4 FIXED, 0 skipped
-- Minor: 4/6 FIXED, 2 SKIPPED (m-3 not-a-defect, m-4 index backlog)
-- Nit: 2/4 FIXED, 2 SKIPPED (n-3/n-4 cross-cutting DRY backlog)
-
-### M-3 trust model (documented residual risk)
-
-The app deploys behind Vercel's edge. `clientIp()` now prefers, in order:
-`x-vercel-forwarded-for` (single value the trusted edge injects and strips from
-any client copy — not spoofable behind Vercel) → the **rightmost** hop of
-`x-forwarded-for` (the address the closest trusted proxy appended; leftmost hops
-are client-forgeable) → `x-real-ip` → the shared `"unknown"` bucket. The former
-`split(",")[0]` (fully client-controlled) is gone.
-
-**Residual risk:** on a deployment with NO trusted edge overwriting/appending
-XFF, the rightmost hop is still whatever the client sent, so the limiter remains
-best-effort (as the ticket accepts). The honeypot and M-2's hard map-size cap are
-the backstops that stop IP/productId spoofing from amplifying into memory growth.
-A durable/global limiter remains the documented follow-up.
-
-### New constants / helpers (single-sourced, Rule 4)
-`QA_RATE_LIMIT_MAX_KEYS`, `UUID_PATTERN`, `MAX_META_DESCRIPTION`, `truncateForMeta`
-in `config.ts`; `isValidProductId`, `rateLimitKeyCount` (test-only), `evictToCeiling`
-(internal) in `submit-guard.ts`; `LIGHTBOX_NOMINAL_WIDTH/HEIGHT` in `product-gallery.tsx`.
-
-### Verification after fixes
-- **Lint** — clean (0/0). **Typecheck** — `tsc --noEmit` clean. **Build** —
-  succeeds; PDP still SSG, 60 prerendered paths, 5m ISR (unchanged).
-- **Unit tests** — 297 passed (17 files), incl. message key-parity. No existing
-  test covered the changed modules, so none required updates; behavior-changing
-  fixes (M-2/M-3 limiter, m-6 query filter) are left for Stage 7 QA to cover.
-- No new npm dependencies. Accepted deviations untouched (messages path, icon
-  substitution, no route-level `revalidate`, local-200-on-unknown-slug). Anon
-  client only for the Q&A write. Motion layer (M1–M9) unchanged.
+- **None.** shadcn components vendor only radix-ui primitives already installed;
+  no new npm packages. DB extensions `unaccent`/`pg_trgm` ship with the Supabase
+  image.

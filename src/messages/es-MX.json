@@ -105,6 +105,69 @@
       "style": "No hay sillas con este estilo todavía.",
       "cta": "Ver todo el catálogo"
     },
+    "search": {
+      "placeholder": "Buscar sillas…",
+      "label": "Buscar en el catálogo",
+      "submit": "Buscar",
+      "clear": "Borrar búsqueda",
+      "open": "Abrir búsqueda"
+    },
+    "filters": {
+      "title": "Filtros",
+      "trigger": "Filtros",
+      "triggerCount": "Filtros ({count})",
+      "close": "Cerrar filtros",
+      "apply": "Ver {count, plural, one {# silla} other {# sillas}}",
+      "applyButton": "Aplicar filtros",
+      "clear": "Limpiar filtros",
+      "clearAll": "Limpiar todo",
+      "showMore": "Ver más",
+      "showLess": "Ver menos",
+      "availability": "Disponibilidad",
+      "inStockOnly": "Solo en stock",
+      "includeOutOfStock": "Incluye agotados",
+      "category": "Categoría",
+      "brand": "Marca",
+      "style": "Estilo",
+      "color": "Color",
+      "colorGroup": "Filtrar por color",
+      "material": "Material",
+      "price": "Precio (MXN)",
+      "priceMin": "Mínimo",
+      "priceMax": "Máximo",
+      "priceIgnored": "Rango de precio ignorado",
+      "removeChip": "Quitar filtro {label}",
+      "chipQuery": "Búsqueda: {value}",
+      "chipCategory": "Categoría: {value}",
+      "chipBrand": "Marca: {value}",
+      "chipStyle": "Estilo: {value}",
+      "chipColor": "Color: {value}",
+      "chipMaterial": "Material: {value}",
+      "chipPrice": "Precio: {min}–{max}",
+      "chipPriceFrom": "Precio: desde {min}",
+      "chipPriceTo": "Precio: hasta {max}",
+      "chipOutOfStock": "Incluye agotados"
+    },
+    "sort": {
+      "label": "Ordenar resultados",
+      "prefix": "Ordenar:",
+      "masVendidas": "Más vendidas",
+      "precioAsc": "Precio: menor a mayor",
+      "precioDesc": "Precio: mayor a menor",
+      "novedades": "Novedades",
+      "nombreAsc": "Nombre: A–Z",
+      "nombreDesc": "Nombre: Z–A"
+    },
+    "results": {
+      "count": "{count, plural, one {# silla} other {# sillas}}"
+    },
+    "noResults": {
+      "heading": "No encontramos sillas que coincidan",
+      "echoQuery": "con “{query}”",
+      "echoFilters": "con los filtros seleccionados",
+      "clear": "Limpiar filtros",
+      "popularHeading": "Sillas populares"
+    },
     "brand": {
       "logoAlt": "Logo de {brand}"
     },

@@ -3,6 +3,8 @@ import { Link } from "@/i18n/navigation";
 import { NAV_ITEMS } from "@/components/layout/nav-items";
 import { LanguageToggle } from "@/components/layout/language-toggle";
 import { MobileNav } from "@/components/layout/mobile-nav";
+import { SearchBox } from "@/components/catalog/search-box";
+import { CATALOG_PATH } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
 /**
@@ -27,6 +29,7 @@ interface SiteHeaderProps {
 
 export async function SiteHeader({ storeName }: SiteHeaderProps) {
   const t = await getTranslations("nav");
+  const tSearch = await getTranslations("catalog.search");
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background">
@@ -44,7 +47,7 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
 
         <nav
           aria-label={t("menuTitle")}
-          className="ml-6 hidden flex-1 items-center gap-1 md:flex"
+          className="ml-6 hidden items-center gap-1 md:flex"
         >
           {NAV_ITEMS.map((item) => (
             <Link
@@ -61,7 +64,30 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
           ))}
         </nav>
 
-        <div className="ml-auto flex shrink-0 items-center">
+        {/* Search box: inline-expanded at md+ (flex-1 so it fills the middle),
+            collapses to an icon below md (AC-12). */}
+        <div className="ml-auto hidden max-w-sm flex-1 md:ml-6 md:flex">
+          <SearchBox
+            variant="toolbar"
+            action={CATALOG_PATH}
+            placeholder={tSearch("placeholder")}
+            ariaLabel={tSearch("label")}
+            clearLabel={tSearch("clear")}
+            submitLabel={tSearch("submit")}
+            openLabel={tSearch("open")}
+          />
+        </div>
+
+        <div className="ml-auto flex shrink-0 items-center gap-1 md:ml-2">
+          <SearchBox
+            variant="header"
+            action={CATALOG_PATH}
+            placeholder={tSearch("placeholder")}
+            ariaLabel={tSearch("label")}
+            clearLabel={tSearch("clear")}
+            submitLabel={tSearch("submit")}
+            openLabel={tSearch("open")}
+          />
           <LanguageToggle variant="compact" className="md:hidden" />
           <LanguageToggle variant="segmented" className="hidden md:inline-flex" />
         </div>

@@ -105,6 +105,69 @@
       "style": "No chairs in this style yet.",
       "cta": "View the full catalog"
     },
+    "search": {
+      "placeholder": "Search chairs…",
+      "label": "Search the catalog",
+      "submit": "Search",
+      "clear": "Clear search",
+      "open": "Open search"
+    },
+    "filters": {
+      "title": "Filters",
+      "trigger": "Filters",
+      "triggerCount": "Filters ({count})",
+      "close": "Close filters",
+      "apply": "View {count, plural, one {# chair} other {# chairs}}",
+      "applyButton": "Apply filters",
+      "clear": "Clear filters",
+      "clearAll": "Clear all",
+      "showMore": "Show more",
+      "showLess": "Show less",
+      "availability": "Availability",
+      "inStockOnly": "In stock only",
+      "includeOutOfStock": "Include out of stock",
+      "category": "Category",
+      "brand": "Brand",
+      "style": "Style",
+      "color": "Color",
+      "colorGroup": "Filter by color",
+      "material": "Material",
+      "price": "Price (MXN)",
+      "priceMin": "Minimum",
+      "priceMax": "Maximum",
+      "priceIgnored": "Price range ignored",
+      "removeChip": "Remove filter {label}",
+      "chipQuery": "Search: {value}",
+      "chipCategory": "Category: {value}",
+      "chipBrand": "Brand: {value}",
+      "chipStyle": "Style: {value}",
+      "chipColor": "Color: {value}",
+      "chipMaterial": "Material: {value}",
+      "chipPrice": "Price: {min}–{max}",
+      "chipPriceFrom": "Price: from {min}",
+      "chipPriceTo": "Price: up to {max}",
+      "chipOutOfStock": "Includes out of stock"
+    },
+    "sort": {
+      "label": "Sort results",
+      "prefix": "Sort:",
+      "masVendidas": "Best selling",
+      "precioAsc": "Price: low to high",
+      "precioDesc": "Price: high to low",
+      "novedades": "Newest",
+      "nombreAsc": "Name: A–Z",
+      "nombreDesc": "Name: Z–A"
+    },
+    "results": {
+      "count": "{count, plural, one {# chair} other {# chairs}}"
+    },
+    "noResults": {
+      "heading": "No chairs matched your search",
+      "echoQuery": "for “{query}”",
+      "echoFilters": "with the selected filters",
+      "clear": "Clear filters",
+      "popularHeading": "Popular chairs"
+    },
     "brand": {
       "logoAlt": "{brand} logo"
     },

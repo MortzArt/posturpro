@@ -22,6 +22,7 @@ import { unstable_cache } from "next/cache";
 import { createPublicClient } from "@/lib/supabase/public";
 import { CATALOG_REVALIDATE_SECONDS } from "@/lib/config";
 import { CATALOG_CACHE_TAG } from "@/lib/catalog/queries";
+import { fail, firstOrSelf } from "@/lib/catalog/read-primitives";
 import { effectiveStock, stockState } from "@/lib/catalog/stock";
 import type {
   ProductDetail,
@@ -54,12 +55,6 @@ function isCacheableSlug(slug: string): boolean {
   return slug.length > 0 && slug.length <= MAX_SLUG_LENGTH && SLUG_PATTERN.test(slug);
 }
 
-/** Raise a typed error so the route boundary shows the localized panel (edge 9). */
-function fail(context: string, message: string): never {
-  console.error(`[product-detail] ${context}: ${message}`);
-  throw new Error(`Product detail read failed: ${context}`);
-}
-
 /** Embedded brand shape (to-one; PostgREST may surface object OR array). */
 interface EmbeddedBrand {
   name: string | null;
@@ -88,11 +83,6 @@ interface ProductDetailRow {
   material_upholstery: string | null;
   material_finish: string | null;
   brands: EmbeddedBrand | EmbeddedBrand[] | null;
-}
-
-function firstOrSelf<T>(value: T | T[] | null): T | null {
-  if (value === null) return null;
-  return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
 /**

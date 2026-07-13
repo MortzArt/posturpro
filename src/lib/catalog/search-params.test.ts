@@ -1,0 +1,171 @@
+/**
+ * Pure parse/serialize tests for the filter URL state (T5 AC-9, edges 3, 4, 7).
+ * No React, no DB — exercises the defensive canonicalization directly.
+ */
+import { describe, expect, it } from "vitest";
+import {
+  hasNoFilters,
+  isCacheableFilters,
+  normalizeColor,
+  parseCatalogFilters,
+  removeFacet,
+  serializeFilters,
+  serializeWithout,
+  type KnownFacetValues,
+} from "./search-params";
+import { SEARCH_QUERY_MAX } from "@/lib/config";
+
+const known: KnownFacetValues = {
+  categoryIds: new Set(["cat-oficina", "cat-gamer"]),
+  brandIds: new Set(["brand-ergovita", "brand-nordika"]),
+  styleIds: new Set(["style-ergonomica"]),
+  colors: new Set(["#111111", "#6b7280"]),
+  materials: new Set(["malla transpirable", "piel sintetica"]),
+};
+
+describe("parseCatalogFilters", () => {
+  it("returns the default state for empty params", () => {
+    const f = parseCatalogFilters({}, known);
+    expect(f.query).toBeNull();
+    expect(f.brandIds).toEqual([]);
+    expect(f.inStockOnly).toBe(true);
+    expect(f.sort).toBe("mas-vendidas");
+    expect(hasNoFilters(f)).toBe(true);
+  });
+
+  it("trims + truncates q to SEARCH_QUERY_MAX; whitespace-only → null (AC-3)", () => {
+    expect(parseCatalogFilters({ q: "  malla  " }, known).query).toBe("malla");
+    expect(parseCatalogFilters({ q: "   " }, known).query).toBeNull();
+    const long = "a".repeat(SEARCH_QUERY_MAX + 50);
+    expect(parseCatalogFilters({ q: long }, known).query?.length).toBe(
+      SEARCH_QUERY_MAX,
+    );
+  });
+
+  it("drops unknown facet values, keeps known (edge 3)", () => {
+    const f = parseCatalogFilters(
+      { marca: "brand-ergovita,brand-nonexistent", categoria: "cat-gamer" },
+      known,
+    );
+    expect(f.brandIds).toEqual(["brand-ergovita"]);
+    expect(f.categoryIds).toEqual(["cat-gamer"]);
+  });
+
+  it("normalizes + validates colors against the catalog", () => {
+    const f = parseCatalogFilters({ color: "111111,#6B7280,abcabc" }, known);
+    expect(f.colors).toEqual(["#111111", "#6b7280"]);
+  });
+
+  it("de-duplicates repeated + comma-listed values", () => {
+    const f = parseCatalogFilters(
+      { marca: ["brand-ergovita", "brand-ergovita,brand-nordika"] },
+      known,
+    );
+    expect(f.brandIds).toEqual(["brand-ergovita", "brand-nordika"]);
+  });
+
+  it("drops non-numeric / negative price bounds (edge 3)", () => {
+    expect(parseCatalogFilters({ precioMax: "abc" }, known).priceMax).toBeNull();
+    expect(parseCatalogFilters({ precioMin: "-5" }, known).priceMin).toBeNull();
+    expect(parseCatalogFilters({ precioMin: "200000" }, known).priceMin).toBe(
+      200000,
+    );
+  });
+
+  it("drops BOTH bounds when min > max and flags priceRangeIgnored (edge 4)", () => {
+    const f = parseCatalogFilters(
+      { precioMin: "500000", precioMax: "100000" },
+      known,
+    );
+    expect(f.priceMin).toBeNull();
+    expect(f.priceMax).toBeNull();
+    expect(f.priceRangeIgnored).toBe(true);
+  });
+
+  it("falls back to default sort on an unknown/hostile orden (edge 3)", () => {
+    expect(parseCatalogFilters({ orden: "DROP TABLE" }, known).sort).toBe(
+      "mas-vendidas",
+    );
+    expect(parseCatalogFilters({ orden: "precio-asc" }, known).sort).toBe(
+      "precio-asc",
+    );
+  });
+
+  it("includes out-of-stock only when disponibilidad=todos (AC-5)", () => {
+    expect(parseCatalogFilters({}, known).inStockOnly).toBe(true);
+    expect(
+      parseCatalogFilters({ disponibilidad: "todos" }, known).inStockOnly,
+    ).toBe(false);
+  });
+});
+
+describe("serializeFilters", () => {
+  it("omits defaults and produces a deterministic string (AC-9)", () => {
+    const f = parseCatalogFilters(
+      { q: "malla", marca: "brand-nordika,brand-ergovita", orden: "precio-asc" },
+      known,
+    );
+    // brands sorted → ergovita before nordika; params in canonical order
+    expect(serializeFilters(f)).toBe(
+      "q=malla&marca=brand-ergovita%2Cbrand-nordika&orden=precio-asc",
+    );
+  });
+
+  it("round-trips through parse (serialize canonicalizes value order)", () => {
+    // Input color order is not canonical; serialize sorts it. Re-serializing the
+    // reparsed result must be a fixed point (stable canonical form).
+    const original = parseCatalogFilters(
+      { color: "#6b7280,#111111", precioMin: "200000", disponibilidad: "todos" },
+      known,
+    );
+    const serialized = serializeFilters(original);
+    const params = Object.fromEntries(new URLSearchParams(serialized));
+    const reparsed = parseCatalogFilters(params, known);
+    expect(serializeFilters(reparsed)).toBe(serialized);
+    expect(reparsed.colors.sort()).toEqual(original.colors.sort());
+    expect(reparsed.priceMin).toBe(original.priceMin);
+    expect(reparsed.inStockOnly).toBe(original.inStockOnly);
+  });
+
+  it("emits nothing for the default state", () => {
+    expect(serializeFilters(parseCatalogFilters({}, known))).toBe("");
+  });
+});
+
+describe("removeFacet / serializeWithout", () => {
+  it("removes one brand value, preserving others", () => {
+    const f = parseCatalogFilters(
+      { marca: "brand-ergovita,brand-nordika" },
+      known,
+    );
+    const next = removeFacet(f, "marca", "brand-ergovita");
+    expect(next.brandIds).toEqual(["brand-nordika"]);
+  });
+
+  it("clears the whole price facet and query", () => {
+    const f = parseCatalogFilters({ q: "x", precioMin: "100000" }, known);
+    expect(removeFacet(f, "precio").priceMin).toBeNull();
+    expect(removeFacet(f, "query").query).toBeNull();
+  });
+
+  it("serializeWithout drops the removed facet from the string", () => {
+    const f = parseCatalogFilters({ q: "malla", marca: "brand-nordika" }, known);
+    expect(serializeWithout(f, "query")).toBe("marca=brand-nordika");
+  });
+});
+
+describe("isCacheableFilters (Constraint 3)", () => {
+  it("is false when q present, true otherwise", () => {
+    expect(isCacheableFilters(parseCatalogFilters({ q: "x" }, known))).toBe(false);
+    expect(
+      isCacheableFilters(parseCatalogFilters({ marca: "brand-nordika" }, known)),
+    ).toBe(true);
+  });
+});
+
+describe("normalizeColor", () => {
+  it("lowercases and ensures a single leading #", () => {
+    expect(normalizeColor("111111")).toBe("#111111");
+    expect(normalizeColor("#6B7280")).toBe("#6b7280");
+  });
+});

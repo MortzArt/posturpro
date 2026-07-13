@@ -585,3 +585,76 @@
     }
   }
 }
+
+/* ======================================================================== *
+ * SEARCH / FILTERS / SORT MOTION (T5)
+ * ------------------------------------------------------------------------
+ * Retrofits the shadcn Select onto the repo's interruptible [data-state] CSS
+ * transition pattern, and adds the client pending-dim. The mobile filter Sheet
+ * reuses `.drawer-panel`/`.drawer-scrim` (spatial consistency with MobileNav),
+ * swatches reuse `.swatch-press`, the grid reuses `.stagger`, and NoResults
+ * reuses `.enter-fade` — no new motion invented for those. All transform/opacity
+ * only, < 300ms, ease-out enter, interruptible, reduced-motion gated (AC-18).
+ * ======================================================================== */
+
+/* M-3 — SortSelect content. Origin-aware Scale in ("Pop in", no bounce): scales
+ * from the trigger via Radix's --radix-select-content-transform-origin (set in
+ * the className). CSS transition (not keyframes) so a mid-open dismiss retargets
+ * smoothly. Open 200ms, close 150ms. Reduced motion: opacity only, no scale. */
+.select-content-motion {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+}
+.select-content-motion[data-state="open"] {
+  will-change: transform;
+}
+.select-content-motion[data-state="closed"] {
+  opacity: 0;
+  transform: scale(0.96);
+  transition-duration: 150ms;
+}
+.select-content-motion[data-state="open"] {
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .select-content-motion,
+  .select-content-motion[data-state="open"],
+  .select-content-motion[data-state="closed"] {
+    transform: none;
+    transition: opacity 150ms ease;
+  }
+  .select-content-motion[data-state="open"] {
+    @starting-style {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* M-7 — Pending dim on the current grid while a client-initiated filter/sort
+ * change re-queries (useTransition isPending). Comprehension aid → opacity only,
+ * kept under reduced motion (opacity is RM-safe). Interruptible by nature. */
+.grid-pending {
+  opacity: 0.6;
+  transition: opacity 200ms ease;
+}
+.grid-idle {
+  opacity: 1;
+  transition: opacity 200ms ease;
+}
+
+/* M-6 — Search clear button fade-in (opacity only; RM-safe, kept as-is). */
+.clear-fade {
+  opacity: 1;
+  transition: opacity 120ms ease;
+
+  @starting-style {
+    opacity: 0;
+  }
+}

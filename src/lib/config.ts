@@ -186,6 +186,82 @@ export function productPath(slug: string): string {
 }
 
 /* ========================================================================= *
+ * SEARCH / FILTERS / SORTING (T5) — non-secret tunables, single-sourced (AC-9).
+ * ========================================================================= */
+
+/**
+ * URL query-param names for search/filter/sort state (AC-9). Spanish, matching
+ * the store's Spanish route paths, single-sourced so pages, links, and the
+ * parse lib never drift. `page` is the existing pagination param (reused).
+ */
+export const SEARCH_PARAM_KEYS = {
+  q: "q",
+  categoria: "categoria",
+  marca: "marca",
+  estilo: "estilo",
+  color: "color",
+  material: "material",
+  precioMin: "precioMin",
+  precioMax: "precioMax",
+  disponibilidad: "disponibilidad", // "todos" opts into out-of-stock
+  orden: "orden",
+  page: "page",
+} as const;
+
+/** A single SEARCH_PARAM_KEYS map type (for typed component props). */
+export type SearchParamKeys = typeof SEARCH_PARAM_KEYS;
+
+/**
+ * The closed set of sort keys (AC-7). Spanish values that appear verbatim in
+ * the URL (`?orden=precio-asc`). Any value outside this set is dropped and the
+ * default is used, so an attacker cannot inject a sort expression (edge 3).
+ */
+export const SORT_KEYS = [
+  "mas-vendidas", // best-selling (default): sales_count DESC + tiebreak
+  "precio-asc",
+  "precio-desc",
+  "novedades", // created_at DESC
+  "nombre-asc",
+  "nombre-desc",
+] as const;
+
+/** Default sort when `?orden` is absent or unknown — matches the T3 default. */
+export const DEFAULT_SORT = "mas-vendidas" as const;
+
+/** The value of `?disponibilidad` that opts into out-of-stock products. */
+export const AVAILABILITY_ALL = "todos" as const;
+
+/**
+ * Hard cap on the free-text `q` length enforced BEFORE the RPC (Constraint 3).
+ * Free-text search is never cached (unbounded key cardinality = cache-key DoS);
+ * capping the length bounds the DB work per request. 80 chars comfortably fits
+ * any real product query.
+ */
+export const SEARCH_QUERY_MAX = 80;
+
+/** Products shown in the no-results "popular chairs" strip (AC-16). */
+export const POPULAR_PRODUCTS_MAX = 8;
+
+/** Facet-list length past which the filter panel collapses to "Ver más". */
+export const FILTER_FACET_COLLAPSE_AFTER = 6;
+
+/**
+ * Absolute ceiling on a price bound (cents) accepted from the URL. Bounds the
+ * cache-key space for the filter-only cache (a price snaps to a bucket within
+ * [0, this]) and rejects absurd values (edge 3). 100_000_000 cents = MX$1,000,000
+ * — far above any real chair price.
+ */
+export const PRICE_BOUND_MAX_CENTS = 100_000_000;
+
+/**
+ * Bucket size (cents) a price bound snaps to for the FILTER-ONLY cache key
+ * (Constraint 3). The slider shows the real catalog price domain for UX, but
+ * the cache key uses the bucketed value so an attacker cannot mint a distinct
+ * cache entry per arbitrary price. 10_000 cents = MX$100 buckets.
+ */
+export const PRICE_BUCKET_CENTS = 10_000;
+
+/* ========================================================================= *
  * PRODUCT DETAIL PAGE (T4) — non-secret tunables, single-sourced here (Rule 4).
  * ========================================================================= */
 
