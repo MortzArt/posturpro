@@ -191,3 +191,120 @@ describe("normalizeColor", () => {
     expect(normalizeColor("#6B7280")).toBe("#6b7280");
   });
 });
+
+describe("hostile / adversarial inputs (edge 3) — never 500, never empty the catalog", () => {
+  it("drops a <script> color token (unknown → not sent to the RPC)", () => {
+    const f = parseCatalogFilters({ color: "<script>alert(1)</script>" }, known);
+    expect(f.colors).toEqual([]);
+  });
+
+  it("drops an injection-shaped sort but keeps valid remaining filters", () => {
+    const f = parseCatalogFilters(
+      { orden: "DROP TABLE products;--", marca: "brand-ergovita" },
+      known,
+    );
+    expect(f.sort).toBe("mas-vendidas"); // unknown → default
+    expect(f.brandIds).toEqual(["brand-ergovita"]); // valid filter survives
+  });
+
+  it("truncates a 10KB query to SEARCH_QUERY_MAX (DoS length cap, Constraint 3)", () => {
+    const huge = "a".repeat(10_000);
+    const f = parseCatalogFilters({ q: huge }, known);
+    expect(f.query?.length).toBe(SEARCH_QUERY_MAX);
+  });
+
+  it("uses only the FIRST value of a repeated scalar param (?orden=a&orden=b)", () => {
+    const f = parseCatalogFilters(
+      { orden: ["precio-asc", "precio-desc"] },
+      known,
+    );
+    expect(f.sort).toBe("precio-asc");
+  });
+
+  it("treats an empty ?marca= as no constraint (not an error)", () => {
+    const f = parseCatalogFilters({ marca: "" }, known);
+    expect(f.brandIds).toEqual([]);
+    expect(hasNoFilters(f)).toBe(true);
+  });
+
+  it("drops every unknown facet value, yielding the unfiltered catalog (never empties)", () => {
+    const f = parseCatalogFilters(
+      {
+        marca: "ghost-a,ghost-b",
+        categoria: "nope",
+        estilo: "nope",
+        color: "#ffffff", // not a catalog color
+        material: "unobtanium",
+      },
+      known,
+    );
+    expect(f.brandIds).toEqual([]);
+    expect(f.categoryIds).toEqual([]);
+    expect(f.styleIds).toEqual([]);
+    expect(f.colors).toEqual([]);
+    expect(f.materials).toEqual([]);
+    // All bad params dropped → behaves like the default catalog view.
+    expect(hasNoFilters(f)).toBe(true);
+  });
+
+  it("preserves unicode/accents in the raw query (unaccenting happens in the RPC)", () => {
+    const f = parseCatalogFilters({ q: "Ergonómica café ñ" }, known);
+    expect(f.query).toBe("Ergonómica café ñ");
+  });
+
+  it("drops a non-numeric price bound but keeps a valid opposite bound", () => {
+    const f = parseCatalogFilters({ precioMin: "abc", precioMax: "5000" }, known);
+    expect(f.priceMin).toBeNull();
+    expect(f.priceMax).toBe(500_000); // 5000 pesos → 500000 cents
+  });
+
+  it("drops a price bound over PRICE_BOUND_MAX_CENTS (absurd value, edge 3)", () => {
+    // PRICE_BOUND_MAX_CENTS = 100_000_000 cents → 1_000_000 pesos. One peso over.
+    const f = parseCatalogFilters({ precioMin: "1000001" }, known);
+    expect(f.priceMin).toBeNull();
+  });
+
+  it("drops a float / decimal price string (only whole-peso integers accepted)", () => {
+    expect(parseCatalogFilters({ precioMin: "40.5" }, known).priceMin).toBeNull();
+    expect(parseCatalogFilters({ precioMin: "4e3" }, known).priceMin).toBeNull();
+  });
+
+  it("does not treat priceMin === priceMax as inverted (exact-match band is valid)", () => {
+    const f = parseCatalogFilters(
+      { precioMin: "5000", precioMax: "5000" },
+      known,
+    );
+    expect(f.priceMin).toBe(500_000);
+    expect(f.priceMax).toBe(500_000);
+    expect(f.priceRangeIgnored).toBe(false);
+  });
+
+  it("only opts into out-of-stock for the exact 'todos' value (anything else = in-stock)", () => {
+    expect(parseCatalogFilters({ disponibilidad: "all" }, known).inStockOnly).toBe(true);
+    expect(parseCatalogFilters({ disponibilidad: "TODOS" }, known).inStockOnly).toBe(true);
+    expect(parseCatalogFilters({ disponibilidad: "todos" }, known).inStockOnly).toBe(false);
+  });
+
+  it("serialize is byte-stable across a parse→serialize→parse→serialize cycle for a hostile mix", () => {
+    const first = serializeFilters(
+      parseCatalogFilters(
+        {
+          q: "  malla  ",
+          marca: ["brand-nordika", "brand-ergovita", "ghost"],
+          color: "#6B7280,#111111,#ffffff",
+          orden: "precio-desc",
+          precioMin: "1000",
+          disponibilidad: "todos",
+        },
+        known,
+      ),
+    );
+    const second = serializeFilters(
+      parseCatalogFilters(
+        Object.fromEntries(new URLSearchParams(first)),
+        known,
+      ),
+    );
+    expect(second).toBe(first);
+  });
+});
