@@ -1,909 +1,897 @@
-# UI Design: T5 — Search, Filters & Sorting
+# UI Design: T6 — Cart
 
-Scope authority: `tasks/next-ticket.md` (AC-1…AC-18, edge cases 1–12). This spec covers
-**only** the UI surfaces the ticket names: the header search box, the in-page `/sillas`
-toolbar (search echo + sort + count), the filter panel (desktop sidebar / mobile-tablet
-Sheet), active-filter chips, the no-results state with a popular strip, the filtered
-grid loading/transition states, and the pagination-preserves-filters change. It does not
-design autocomplete, `/buscar`, per-option facet counts, or a tag facet (all Out of Scope).
-
-All visual values flow through existing tokens (monochrome grayscale oklch) and the three
-motion easing tokens already in `globals.css` (`--ease-out`, `--ease-in-out`,
-`--ease-drawer`). No new color, radius, or easing token is invented.
+> Stage 3 (ui-design) artifact for the standard pipeline. Feeds Dev (Stage 4).
+> Taste authority: `.claude/skills/emil-design-eng`, `.claude/skills/apple-design`.
+> Motion terms use `.claude/skills/animation-vocabulary`.
 
 ---
 
 ## Design Principles for This Feature
 
-- **The catalog is the hero; filters are chrome.** The grid never moves or resizes when the
-  filter UI opens (desktop sidebar reserves its column; mobile filters float in a Sheet over
-  the grid). Emil: "reserve exact space; never pop content in."
-- **SSR-first, JS-enhances.** Every control is a real `<form method="get">` / `<a>` that
-  works with JS off (AC-12, AC-9, edge 11). JS upgrades submit-on-change and removes full
-  page reloads — it is never required for correctness.
-- **Motion earns its place by frequency.** The mobile Sheet (occasional) gets the drawer
-  curve. Checkbox/swatch presses (high-frequency) get instant press feedback only — no
-  enter animation. Chips removed constantly → no exit choreography, just the grid's existing
-  stagger on the new results. Matches Emil's frequency table.
-- **Color is never the only signal.** Swatches carry a text label + checkmark; the low-stock
-  badge keeps its icon+amber+text; active filters read as text chips, not color dots alone.
-- **Match T3/T4 exactly.** Reuse `ProductGrid`, `ProductCard`, `Pagination`, `Breadcrumbs`,
-  `ProductGridSkeleton`, the `.card-lift`/`.stagger`/`.swatch-press` classes, `min-h-11` tap
-  targets, `tabular-nums` on numbers, translucent `backdrop-blur` chrome, and the
-  `buttonVariants` cva. New components look like they shipped in T3.
-- **Bounded, defensive, single-sourced.** Param names + `SEARCH_QUERY_MAX` come from
-  `config.ts`; the parse lib drops unknown/hostile values so a bad param never empties the
-  catalog (edges 3–4).
+1. **Invisible correctness over flourish.** The cart is a utility surface a shopper
+   passes through on the way to buying. It must feel instant, never surprise, and get
+   out of the way. Restraint (Apple §16 Simplicity) beats delight here — the only
+   place delight is earned is the "added ✓" confirmation and the free-shipping unlock.
+2. **No layout shift, ever.** The header badge and the cart page body are
+   null-until-hydrated islands (mirror `RecentlyViewed`). The pre-hydration state
+   reserves exactly the space the hydrated state will occupy, so hydration is a
+   cross-fade of a value, never a reflow.
+3. **Neutral system, not a new theme.** Reuse existing tokens (`bg-card`,
+   `text-muted-foreground`, `border-border`, `--radius`, `--ease-out`) and the
+   existing `StockBadge` / `formatMXN` / `.price-value` patterns verbatim. Invent
+   nothing new visually.
+4. **Money is sacred.** Every peso goes through `formatMXN(cents)`; all math is integer
+   cents. `tabular-nums` on every number so digits never shift (line totals, subtotal,
+   the "you're $X away" copy) — Apple §15, animation-vocabulary "Tabular numbers".
+5. **Touch-first, 44px minimum.** shadcn `Button` defaults are tiny (`lg` = h-8/32px).
+   The cart's interactive controls (stepper buttons, remove, checkout CTA, add-to-cart)
+   override to **≥ 44px** hit targets, matching the T5 facet fix and `mobile-nav`'s
+   `size-11`.
+6. **Motion is purposeful and gated.** Only `transform`/`opacity` animate. Enter uses
+   `ease-out`. Everything respects `prefers-reduced-motion` (already wired in
+   `globals.css`). No animation on high-frequency actions (stepper +/− is instant).
 
 ---
 
-## Design Tokens Used
+## Reused Assets (do not rebuild)
 
-- **Colors:** `background`, `foreground`, `muted`, `muted-foreground`, `card`, `border`,
-  `accent`, `accent-foreground`, `primary`, `primary-foreground`, `input`, `ring`,
-  `secondary`. Amber for low-stock is inherited from `StockBadge` (unchanged). No new colors.
-- **Typography:** existing scale — `text-2xl sm:text-3xl font-semibold tracking-tight` (h1),
-  `text-sm`/`text-xs`, `text-muted-foreground`, `tabular-nums` for counts/prices.
-- **Spacing:** page shell `mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8`
-  (identical to current `/sillas`); grid gaps `gap-x-4 gap-y-8 md:gap-x-6 md:gap-y-10`.
-- **Radius:** `rounded-md` (controls), `rounded-lg` (cards, sheet body), `rounded-full`
-  (swatches, chips).
-- **Shadows:** `--shadow-sm` on card hover (inherited); Sheet uses a heavier shadow (see M-1).
-- **Easing:** `--ease-out` (all enters/exits, press, select), `--ease-drawer` (mobile Sheet
-  slide), `--ease-in-out` (none needed here). Durations per the Emil table (all < 300ms).
-
----
-
-## shadcn/ui Components to Install
-
-Only `button.tsx` exists today. Install via `npx shadcn add` (do NOT hand-roll — CLAUDE.md).
-`radix-ui` is already installed and backs all of these. After generation, each gets its motion
-CSS aligned to the tokens (see "Motion Spec" — the generated `tw-animate-css` keyframe classes
-are replaced/augmented with the transition-based, `[data-state]`-driven pattern this repo uses
-for the mobile nav drawer).
-
-| shadcn component | Used by | Notes |
+| Asset | Path | Use in cart |
 | --- | --- | --- |
-| `input` | `search-box`, price range inputs | native `<input>`; keep `type="search"` semantics |
-| `checkbox` | `filter-panel` (brand/style/material/category multi-select) | Radix Checkbox; instant press |
-| `select` | `sort-select` | Radix Select; trigger-anchored origin, <250ms (AC-18) |
-| `sheet` | `filter-sheet` | Radix Dialog as drawer; **retrofit** the repo drawer-motion pattern (see M-1) |
-| `slider` | price range (dual-thumb) | Radix Slider; paired with numeric inputs |
-| `badge` | `active-filters` chip base, result count pill | cva base for chips |
-| `label` | every facet group + control | associates labels to inputs (a11y) |
+| `StockBadge` | `src/components/catalog/stock-badge.tsx` | Out-of-stock marker on a cart line + reuse its `"out"` styling grammar |
+| `formatMXN(cents)` | `src/lib/money.ts` | Sole cents→string boundary for every price |
+| `Button` | `src/components/ui/button.tsx` | Add-to-cart, remove (ghost), checkout CTA — **with explicit height override for touch** |
+| `Badge` | `src/components/ui/badge.tsx` | Header count pill (`variant="default"`, size override) |
+| `Input` | `src/components/ui/input.tsx` | Stepper numeric field (read-mostly; centered) |
+| `.price-value` | `globals.css` | Crossfade a line total / subtotal when it changes |
+| `.stagger` | `globals.css` | Line-row entrance cascade on the cart page |
+| Null-until-hydrated island | `src/components/product/recently-viewed.tsx` | Pattern for badge + cart body (`useState<T|null>(null)`, mount `useEffect`, `null` return until set) |
+| Locale-aware `Link` | `@/i18n/navigation` | Badge → `/carrito`, empty CTA → `/sillas`, checkout CTA → `CHECKOUT_PATH` |
+| Motion tokens | `--ease-out: cubic-bezier(0.23,1,0.32,1)` | Enter easing for badge count + confirm |
+| `interpolate()` | `src/lib/interpolate.ts` | Fill `{amount}`/`{count}` templates client-side |
 
-**Motion retrofit rule (applies to `sheet` + `select`):** the default shadcn install ships
-`tw-animate-css` keyframe classes (`data-[state=open]:animate-in …`). Keyframes restart from
-zero and are not interruptible. Replace them with the repo's `[data-state]`-driven **CSS
-transition** pattern already proven in `globals.css` (`.drawer-panel`, `.gallery-zoom-*`) so a
-mid-open dismiss retargets smoothly (Emil: "transitions over keyframes for interruptible UI";
-Apple §3). New rules live in `globals.css` under new banners.
+**Tokens available:** `--background --foreground --card --card-foreground --primary
+--primary-foreground --secondary --muted --muted-foreground --accent --border --input
+--ring --destructive`; radii `--radius(-sm/-md/-lg/-xl)`; easings `--ease-out
+--ease-in-out --ease-drawer`. Existing motion helper classes: `.price-value`
+(opacity crossfade), `.stagger` (opacity + translateY entrance), `.card-lift`
+(hover/press), all reduced-motion-gated already.
 
 ---
 
 ## Component Inventory
 
-### 1. SearchBox (`src/components/catalog/search-box.tsx`)
+### 1. CartCountBadge (header island)
 
-**Purpose:** Keyword search entry. Submits to `/sillas?q=…` (AC-12). Two placements: (a) the
-site header (collapsing icon→input below `md`), (b) the `/sillas` in-page toolbar as the
-primary, always-expanded search field echoing the active query.
+**Purpose**: A live count of total items in the cart, linking to `/carrito`. First
+proof the provider works end-to-end.
+**Location**: Header right-cluster (`site-header.tsx`, the `ml-auto flex shrink-0
+items-center gap-1 md:ml-2` div, ~line 85), placed **before** the language toggles so
+order is `[Search] [Cart] [Lang]`. Also linked from `mobile-nav`.
+**shadcn base**: `Badge` (`variant="default"`) for the count pill; a locale-aware
+`Link` wrapping a `@hugeicons` `ShoppingCart01Icon`. No `Button` (it's a link).
 
-**Location:** `site-header.tsx` (all pages) + `/sillas` toolbar.
-
-**shadcn base:** `Input` (`type="search"`), wrapped in a native `<form method="get" action="/sillas">`.
-
-**Layout — header, ≥ md (expanded):**
+**Layout** (ASCII wireframe):
 ```
-┌───────────────────────────────────────────────────────────────┐
-│ [≡]  PosturPro   Sillas Categorías Marcas Estilos              │
-│                  ┌──────────────────────────┐  [ES|EN]         │
-│                  │ 🔍  Buscar sillas…      ✕│                  │
-│                  └──────────────────────────┘                  │
-└───────────────────────────────────────────────────────────────┘
+ Hydrated, count > 0            Hydrated, count = 0        Pre-hydration (SSR)
+┌───────────────┐             ┌───────────────┐          ┌───────────────┐
+│   🛒 ⌈3⌉       │             │      🛒        │          │      🛒        │
+│   └badge┘     │             │  (no badge)   │          │  (no badge)   │
+└───────────────┘             └───────────────┘          └───────────────┘
+ 44x44 tap area                44x44 tap area             44x44, inert*
+```
+\* Pre-hydration renders the **icon only** (no number) inside the same 44×44 box, so
+the box's width never changes when the count fades in. Anti-layout-shift contract:
+the count pill is an **absolutely-positioned overlay** on the icon box, never a flex
+sibling, so it never participates in header flex sizing.
+
+```
+ Icon box (relative, size-11 = 44x44):
+ ┌──────────────┐
+ │           ┌──┐│  ← count pill: absolute -top-0.5 -right-0.5,
+ │      🛒    │3 ││    min-w-[1.25rem] h-5 rounded-full,
+ │           └──┘│    bg-primary text-primary-foreground text-[0.625rem]
+ └──────────────┘    tabular-nums px-1, ring-2 ring-background (cutout look)
 ```
 
-**Layout — header, < md (collapsed → expanded):**
-```
-collapsed:   [≡]  PosturPro …………………………  [🔍] [ES]
-tapped 🔍:   [≡]  ┌──────────────────────────────┐ [ES]
-                  │ 🔍  Buscar sillas…          ✕│
-                  └──────────────────────────────┘   (wordmark hidden while open)
-```
-
-**Layout — /sillas toolbar:** always expanded, full width of the toolbar column.
-
-**Props:**
+**Props**:
 ```typescript
-interface SearchBoxProps {
-  /** Pre-resolved placeholder ("Buscar sillas…"). */
-  placeholder: string;
-  /** Accessible label for the search input ("Buscar en el catálogo"). */
-  ariaLabel: string;
-  /** Accessible label for the clear button ("Borrar búsqueda"). */
-  clearLabel: string;
-  /** Accessible label for the submit button ("Buscar"). */
-  submitLabel: string;
-  /** Current `q` from the URL, so the field echoes on /sillas. */
-  defaultValue?: string;
-  /** Locale-agnostic form action target (CATALOG_PATH). */
-  action: string;
-  /** "header" → collapses to an icon below md; "toolbar" → always expanded. Default "toolbar". */
-  variant?: "header" | "toolbar";
-  /**
-   * Hidden inputs to preserve active filters when submitting a new query from the
-   * toolbar (searching must not drop the user's brand/color filters). `page` is
-   * intentionally omitted — a new query always resets to page 1 (AC-8).
-   */
-  preservedParams?: Record<string, string>;
+interface CartCountBadgeProps {
+  /** Recommended: island uses useTranslations("cart") to stay self-contained
+   *  (matches mobile-nav). No props required. */
+  className?: string;
 }
 ```
-`"use client"` only for the header collapse toggle; the underlying `<form method="get">` still
-submits natively without JS.
+Internally reads `const { itemCount, hydrated } = useCart();`.
 
-**Behavior:**
-- **Submit / URL-state:** submit-based (autocomplete is Out of Scope; AC-12 "submit-based search
-  only"). Enter or the submit button commits → `useRouter().push` with the new `q` (JS on) or
-  native form GET (JS off). **No debounce** by default (no live-search). A `SEARCH_DEBOUNCE_MS`
-  constant is reserved in `config.ts` only if live-search is added later.
-- **Clear affordance:** an `✕` button appears inside the input only when it has a value; clicking
-  clears the field and, on `/sillas`, navigates to the same URL minus `q` (keeping other
-  filters). `type="button"`, `aria-label` = `clearLabel`.
-- **Empty-query state:** submitting empty/whitespace `q` lands on `/sillas` with `q` omitted
-  entirely (not `?q=`) so the URL stays canonical (parse lib treats whitespace-only as absent —
-  AC-3).
-
-**States:**
+**States**:
 | State | Visual | Behavior |
 | --- | --- | --- |
-| Idle (empty) | Placeholder, search icon left, no clear button | Submit lands on clean `/sillas` |
-| Typing | Value shown, clear `✕` fades in (M-6) | Enter commits |
-| Has committed query (/sillas) | Field pre-filled with `q` | Clear removes `q` only |
-| Header collapsed (< md) | Icon button only | Tap expands + autofocuses input |
-| Disabled | n/a — never disabled | — |
+| Pre-hydration | Cart icon only, no pill, 44×44 box | Renders before `hydrated`; `aria-label` = plain "Carrito" (no count claim); inert `Link` to `/carrito` still works |
+| Hydrated, empty (0) | Cart icon, no pill | `aria-label` = "Carrito, 0 artículos"; link active |
+| Hydrated, count 1–99 | Icon + pill with number | Pill **Scale in** (opacity 0→1 + `scale(0.9→1)`, `ease-out`, 160ms) on first appearance; on subsequent count change the number crossfades via `.price-value` keyed on `itemCount` |
+| Total > 99 | Pill shows `99+` | Per-line cap is `MAX_CART_ITEM_QUANTITY`; the summed total can exceed 99 |
+| Hover (pointer:fine) | Subtle `bg-muted` rounded on the box | `nav-hover`-style; gated behind `@media (hover:hover) and (pointer:fine)` |
+| Focus | `focus-visible:ring-2 ring-ring` on the link | Keyboard reachable in header tab order |
+| Active/press | `active:translate-y-px` (button-press feel, from base) | Instant feedback (Apple §1) |
 
-**Responsive:**
-| Breakpoint | Layout |
+**Responsive**:
+| Breakpoint | Layout Change |
 | --- | --- |
-| < 640px | Header: icon → full-width input (wordmark hides while open). Toolbar: full-width, own row |
-| 640–1023px | Header: same collapse. Toolbar: full-width; sort+count on the row below |
-| ≥ 1024px | Header: inline expanded input between nav & toggle. Toolbar: search left, sort+count right |
+| < 640px | Same 44×44 icon+pill; sits in header cluster; also mirrored as a labeled link inside `mobile-nav` (icon + "Carrito (3)") |
+| 640–1024px | Unchanged |
+| > 1024px | Unchanged |
 
-**Animations:** Motion Spec **M-2** (header expand), **M-6** (clear-button fade).
+**Animations**:
+- Mount (first count appears): **Scale in** — pill `opacity: 0; transform: scale(0.9)`
+  → `opacity: 1; transform: scale(1)`, `--ease-out`, **160ms**. Trigger: `itemCount`
+  0→>0 after hydration. (Never `scale(0)` — emil.)
+- Count change (e.g. 2→3): **Crossfade** the number via `.price-value` (keyed on the
+  value), ~150ms opacity, no movement. A full "Number ticker" is intentionally NOT
+  used — the header is seen on every page (emil frequency rule → keep subtle).
+- Exit (count →0): pill **Fade out** opacity 1→0, 120ms (exit faster than enter). Icon
+  stays.
+- Reduced motion: no scale, opacity-only fade at 120ms; count changes swap instantly.
+- Property discipline: `transform`/`opacity` only.
 
----
-
-### 2. SortSelect (`src/components/catalog/sort-select.tsx`)
-
-**Purpose:** Choose result ordering (AC-7). Six options; default best-selling.
-
-**Location:** `/sillas` toolbar (right on desktop; toolbar row on mobile) **and** inside the
-mobile filter Sheet (so mobile users can sort without a separate control).
-
-**shadcn base:** `Select`.
-
-**Layout:**
-```
-┌───────────────────────────┐
-│ Ordenar:  Más vendidas  ▾ │   ← trigger (button variant="outline")
-└───────────────────────────┘
-   opens ↓ (origin = trigger, ease-out < 250ms)
-   ┌───────────────────────────┐
-   │ • Más vendidas            │
-   │   Precio: menor a mayor   │
-   │   Precio: mayor a menor   │
-   │   Novedades               │
-   │   Nombre: A–Z             │
-   │   Nombre: Z–A             │
-   └───────────────────────────┘
-```
-
-**Props:**
-```typescript
-type SortKey =
-  | "mas-vendidas"   // best-selling (default) — sales_count DESC + tiebreak (Constraint 4)
-  | "precio-asc"
-  | "precio-desc"
-  | "novedades"      // created_at DESC
-  | "nombre-asc"
-  | "nombre-desc";
-
-interface SortSelectProps {
-  /** Current sort from the URL (canonicalized; unknown → default). */
-  value: SortKey;
-  /** Pre-resolved option labels keyed by SortKey. */
-  labels: Record<SortKey, string>;
-  /** Accessible label for the trigger ("Ordenar resultados"). */
-  ariaLabel: string;
-  /** URL param name (config: SEARCH_PARAM_KEYS.orden). */
-  paramKey: string;
-}
-```
-`"use client"`. On change → `useRouter().push` with the new `orden`, **resetting `page` to 1**
-(AC-8) and preserving all other params. `SortKey` values are Spanish, single-sourced in
-`config.ts` (`SORT_KEYS`), so they match exactly what the parse lib accepts.
-
-**Behavior (JS off):** sort rides the filter `<form>` as a native `<select name="orden">` that
-submits with the form; the client `Select` hydrates the enhanced overlay on top. (If dual-render
-is too costly, the toolbar `Select` is client-only and the Sheet's in-form native `<select>` is
-the sole JS-off path — see Open Question 1.)
-
-**States:** Idle (shows current label) · Open (listbox, current option checked) · no disabled
-state. Changing sort triggers the grid transition (M-7 → M-4).
-
-**Responsive:** Desktop → inline toolbar right. Mobile → compact trigger (label may hide, leaving
-value + chevron). Also present inside the Sheet.
-
-**Animations:** Motion Spec **M-3** (open/close, trigger-anchored origin).
+**A11y**:
+- The `Link` has `aria-label={interpolate(badgeLabel, { count })}` →
+  "Carrito, 3 artículos". Pre-hydration: plain "Carrito".
+- The pill number and the icon are `aria-hidden` (the label already announces count).
 
 ---
 
-### 3. FilterPanel (`src/components/catalog/filter-panel.tsx`)
+### 2. AddToCartButton (PDP island)
 
-**Purpose:** All facet controls (AC-13). One component rendered **twice**: desktop sidebar body
-and mobile Sheet body. Facet options come from real DB values passed in (never hard-coded).
+**Purpose**: Adds the currently-selected variant (or variant-less product) to the cart
+at qty 1, with an inline transient confirmation. **No mini-cart drawer** (spec SKIP) —
+confirmation is this button's own state + the header badge increment.
+**Location**: Inside `ProductPurchasePanel`'s `flex flex-col gap-4` container, as the
+**last** child (after `VariantSelector` / `StockBadge`). Full width of the panel column.
+**shadcn base**: `Button variant="default"`, **height override to `h-11` (44px)** and
+`w-full`, `text-sm`. (Default `lg` is only 32px — too small for the primary buy action.)
 
-**Location:** desktop left sidebar (`≥ lg`); mobile/tablet inside `FilterSheet`.
-
-**shadcn base:** composes `Checkbox`, `Label`, `Slider`, `Input`, and `ColorSwatchGroup`.
-
-**Layout (sidebar body, desktop):**
+**Layout** (ASCII wireframe):
 ```
-┌──────────────────────────┐
-│ Filtros                  │
-│                          │
-│ Disponibilidad           │
-│  [✓] Solo en stock       │   ← default ON (AC-5); unchecking includes OOS
-│                          │
-│ Categoría                │
-│  [ ] Oficina        (M2M)│
-│  [ ] Gerencial           │
-│  [ ] Ergonómica          │
-│                          │
-│ Marca                    │
-│  [ ] ErgoVita            │
-│  [ ] Herman …            │
-│  ▸ Ver más (if > 6)      │   ← collapse long facet lists to 6 + toggle
-│                          │
-│ Estilo                   │
-│  [ ] Malla   [ ] Piel …  │
-│                          │
-│ Color                    │
-│  ⬤ ⬤ ⬤ ⬤ ⬤ ⬤  (swatches)│
-│                          │
-│ Material                 │
-│  [ ] Malla  [ ] Tela …   │
-│                          │
-│ Precio (MXN)             │
-│  ├──────●────────●──────┤ │   ← dual-thumb Slider
-│  [ min ]      [ max ]    │   ← two numeric inputs, synced to slider
-│  Rango de precio ignorado│   ← subtle note only when min>max dropped (edge 4)
-│                          │
-│  [ Limpiar filtros ]     │   ← ghost, only when ≥1 filter active
-└──────────────────────────┘
+ Idle (in stock)                    Confirming (transient)           Out of stock
+┌─────────────────────────────┐    ┌─────────────────────────────┐  ┌─────────────────────────────┐
+│    Agregar al carrito       │    │        Agregado ✓           │  │          Agotado            │
+└─────────────────────────────┘    └─────────────────────────────┘  └─────────────────────────────┘
+ bg-primary, h-11, w-full           same size, content crossfades      disabled, muted look
 ```
+The button never changes size between states (fixed `h-11 w-full`) — only its inner
+content crossfades, so there is no layout shift on confirm (emil: content swaps, box
+stays; blur-mask the crossfade).
 
-**Props:**
+**Props**:
 ```typescript
-interface FacetOption {
-  value: string;   // stable id/slug sent to the URL (a known value)
-  label: string;   // pre-resolved display label
-}
-interface ColorFacetOption {
-  value: string;   // color_hex, lowercased, e.g. "111111"
-  label: string;   // accessible color name ("Negro")
-  hex: string;     // CSS color ("#111111")
-}
-interface FilterPanelProps {
-  facets: {
-    categories: FacetOption[];
-    brands: FacetOption[];
-    styles: FacetOption[];
-    materials: FacetOption[];
-    colors: ColorFacetOption[];
-  };
-  priceMin: number;   // bounded price domain, cents
-  priceMax: number;
-  selected: CatalogFilters;    // current selection (parsed, canonicalized)
-  labels: FilterPanelLabels;   // headings, availability toggle, "Ver más", etc.
-  paramKeys: SearchParamKeys;  // config.SEARCH_PARAM_KEYS
-  /** URL-mutation callback (client) OR undefined when rendered in the JS-off <form>. */
-  onChange?: (next: CatalogFilters) => void;
-  context: "sidebar" | "sheet";  // affects spacing/scroll only
-}
-```
-Server-renderable as a `<form method="get" action="/sillas">` for JS-off; a thin client wrapper
-adds submit-on-change. Long facet lists (> `FILTER_FACET_COLLAPSE_AFTER`) collapse to a
-"Ver más / Ver menos" disclosure so the panel never becomes an endless scroll.
-
-**States:**
-| State | Visual | Behavior |
-| --- | --- | --- |
-| Default | "Solo en stock" checked; others unchecked; slider at full domain | JS-off: submit button applies; JS-on: each toggle re-queries |
-| Some active | Checked boxes; selected swatches ringed; "Limpiar filtros" visible | Clear → clean `/sillas` |
-| Facet list empty (0 DB options) | The whole facet group is omitted (never an empty heading) | — |
-| Facet-list load error | Handled at page boundary → error panel; panel never renders half-populated (edge 10) | — |
-| Inverted price (min>max) | Both bounds dropped; subtle "Rango de precio ignorado" note under inputs | edge 4 |
-
-**Responsive:** Sidebar and Sheet bodies differ only in outer spacing + scroll container (Sheet
-body scrolls; sidebar is `sticky top-20 self-start` and scrolls with the page). Controls identical.
-
-**Animations:** press feedback only (M-5). The "Ver más" disclosure does NOT animate height
-(never animate layout properties); newly-shown rows may fade (opacity-only, ≤ 6 items).
-
----
-
-### 4. ColorSwatchGroup (`src/components/catalog/color-swatch.tsx`)
-
-**Purpose:** Multi-select color filter as accessible swatch **checkboxes** (AC-4 color
-OR-within-facet). Distinct from T4's single-select `VariantSelector` (a `radiogroup`); this is a
-**multi-select group of checkbox-semantics buttons** that deliberately reuses T4's visual swatch
-+ `.swatch-press` + out-of-stock-strike vocabulary so the two read as siblings.
-
-**Location:** inside `FilterPanel` "Color" group.
-
-**shadcn base:** none (custom, like `VariantSelector`); each swatch is a labeled checkbox-semantics control.
-
-**Layout:**
-```
-Color
- ⬤   ⬤   ⬤   ⬤   ⬤   ⬤
-Negro Gris Azul Café Blanco Rojo    ← each swatch has a text label (SR + visible small caption)
-(selected swatches show a ✓ + ring-2 ring-foreground ring-offset-2)
-```
-
-**Props:**
-```typescript
-interface ColorSwatchGroupProps {
-  colors: ColorFacetOption[];      // value=hex-key, label=name, hex=css
-  selected: string[];              // selected color hex-keys
-  groupLabel: string;              // "Filtrar por color"
-  onToggle: (value: string, next: boolean) => void;
-}
-```
-
-**A11y:** container `role="group" aria-label={groupLabel}`. Each swatch is a
-`<button role="checkbox" aria-checked>` with `aria-label` = the color name (never color alone).
-Selection = `ring-2 ring-foreground ring-offset-2` **plus** a centered `✓` glyph so it's legible
-without relying on ring color. Every swatch is tabbable (multi-select checkboxes are each in the
-tab order per WAI-ARIA — unlike T4's roving radiogroup); `Space`/`Enter` toggles. Light swatches
-(e.g. white) keep the `border border-border` outline so they're visible on the white card; the
-`✓` renders `text-foreground` on light swatches (oklch L > ~0.7) and `text-background` on dark —
-computed from `hex` at build.
-
-**Animations:** `.swatch-press` (reused) — `scale(0.97)` on `:active`, 120ms `--ease-out`,
-reduced-motion drops it. Selection ring appears instantly (high-frequency → no transition).
-
----
-
-### 5. FilterSheet (`src/components/catalog/filter-sheet.tsx`)
-
-**Purpose:** The mobile/tablet (`< lg`) container for `FilterPanel`. A full-height drawer opened
-by a "Filtros" button in the toolbar (AC-13, Mobile UX).
-
-**Location:** `/sillas` toolbar, `< lg` only.
-
-**shadcn base:** `Sheet` (Radix Dialog), **`side="left"`** — mirrors the existing MobileNav
-drawer (spatial consistency: the site's drawers come from the left) and reuses the exact
-`.drawer-panel` motion. A bottom sheet would introduce a competing drawer idiom; if product
-later prefers bottom, the motion pattern is identical (swap `translateX` for `translateY(100%)`
-— Open Question 3).
-
-**Layout:**
-```
-Trigger (in toolbar):   [ ⚙ Filtros (3) ]   ← badge shows active-filter count
-
-Open (drawer from left, scrim dims grid):
-┌──────────────────────────────┐░░░░░
-│ Filtros              [ ✕ ]   │░░░░░  ← header: title + close (focus lands here)
-├──────────────────────────────┤░░░░░
-│  (FilterPanel body, scrolls)  │░░░░░
-│  … Disponibilidad …           │░░░░░
-│  … Categoría, Marca …         │░░░░░
-│  … Color, Material, Precio …  │░░░░░
-├──────────────────────────────┤░░░░░  ← sticky footer (translucent, backdrop-blur)
-│ [ Limpiar ]   [ Ver 24 sillas ]│░░░░  ← "apply" = live result count; closes sheet
-└──────────────────────────────┘░░░░░
-```
-
-**Props:**
-```typescript
-interface FilterSheetProps {
-  activeCount: number;   // for the trigger badge
-  resultCount: number;   // for the "Ver N sillas" footer button (live)
+interface AddToCartButtonProps {
+  /** Snapshot fields threaded from ProductPurchasePanel selection state. */
+  productId: string;
+  slug: string;
+  name: string;
+  variantId: string | null;        // null when product has no variants
+  variantLabel: string | null;     // e.g. "Negro"; null when no variant
+  unitPriceCents: number;          // effectivePriceCents(selectedVariant, base)
+  coverImageUrl: string | null;
+  sku: string | null;
+  /** True when the selected variant/product stock is 0. */
+  outOfStock: boolean;
+  /** Pre-resolved labels (panel keeps its "no client i18n" invariant; pass as props). */
   labels: {
-    trigger: string;     // "Filtros"
-    title: string;       // "Filtros"
-    close: string;       // "Cerrar filtros"
-    clear: string;       // "Limpiar"
-    apply: string;       // ICU: "Ver {count} sillas"
+    addToCart: string;   // "Agregar al carrito"
+    added: string;       // "Agregado ✓"
+    outOfStock: string;  // "Agotado"
   };
-  children: React.ReactNode;  // <FilterPanel context="sheet" />
+  className?: string;
 }
 ```
-`"use client"`.
+Internally: `const { addItem, hydrated } = useCart();` + local `confirming` state with a
+timeout of `ADD_TO_CART_CONFIRM_MS`.
 
-**Interaction model (AC-18; Apple gesture surface):**
-- With JS, filters apply **live** as toggled (desktop parity). The footer "Ver N sillas" button
-  then primarily *closes* the sheet, its label reflecting the running live count (Apple §8: hint
-  the outcome). Count updates as facets change.
-- **Focus trap** while open (Radix); focus moves to the close button on open, returns to the
-  "Filtros" trigger on close; `Esc` closes.
-- **Dismiss:** scrim-tap + `Esc` + close button. Add bespoke swipe-to-close only if MobileNav
-  already implements it (consistency over novelty; do not add a second gesture idiom).
-- **Body scroll lock** while open (Radix).
+**States**:
+| State | Visual | Behavior |
+| --- | --- | --- |
+| Pre-hydration | Button rendered but `disabled` + `aria-disabled`, label = addToCart | No `useCart` write until `hydrated`; prevents SSR add + count flash. Same size as idle (no shift) |
+| Idle / in stock | `bg-primary text-primary-foreground`, "Agregar al carrito" | Click → `addItem(snapshot)` (functional update, coalesces rapid clicks), enter confirming |
+| Confirming | Content crossfades to "Agregado ✓" (`Tick02Icon`/`CheckmarkCircle02Icon`) | Reverts after `ADD_TO_CART_CONFIRM_MS` (~1500ms). Re-click during confirm re-adds (increments) and resets the timer — interruptible |
+| Out of stock | `disabled`, muted look, "Agotado" | `disabled` + `aria-disabled="true"`; click is a guarded no-op |
+| Press (enabled) | `active:scale-[0.98]` | Instant press feedback |
+| Focus | `focus-visible:ring-2 ring-ring` | Enter/Space activate |
 
-**Animations:** Motion Spec **M-1** — reuse `.drawer-panel` / `.drawer-scrim` verbatim (300ms
-`--ease-drawer` enter, 200ms exit, interruptible, reduced-motion → opacity-only). This is the
-feature's most-important motion and it already exists, tested, in the repo.
-
-**Responsive:** rendered only `< lg` (`lg:hidden`). At `≥ lg` the sidebar replaces it.
-
----
-
-### 6. ActiveFilters (`src/components/catalog/active-filters.tsx`)
-
-**Purpose:** Removable chips for every active filter + "Clear all" (AC-14). Above the grid,
-below the toolbar. Also owns the `aria-live` result count.
-
-**Location:** `/sillas`, above `ProductGrid`, all breakpoints.
-
-**shadcn base:** `Badge` (chip base) + a close `✕`.
-
-**Layout (desktop):**
-```
-24 sillas   ● Marca: ErgoVita ✕   ● Color: Negro ✕   ● Precio: $2,000–$4,000 ✕   [ Limpiar todo ]
-```
-**Layout (mobile 375px — wraps / scrolls-x, edge 12):**
-```
-24 sillas
-┌─ chips scroll-x if needed ───────────────────────────▶
-● ErgoVita ✕  ● Negro ✕  ● Malla ✕  ● $2k–$4k ✕  …
-[ Limpiar todo ]
-```
-
-**Props:**
-```typescript
-interface ActiveFilterChip {
-  key: string;          // stable React key + removal id ("marca:ergovita", "precio")
-  label: string;        // pre-resolved chip text ("Marca: ErgoVita", "Precio: $2,000–$4,000")
-  removeHref: string;   // URL with THIS filter removed (others preserved, page→1)
-  removeLabel: string;  // "Quitar filtro Marca: ErgoVita"
-}
-interface ActiveFiltersProps {
-  resultCountLabel: string;  // pre-resolved ICU count ("24 sillas")
-  chips: ActiveFilterChip[];
-  clearAllHref: string;      // clean CATALOG_PATH (page-provided)
-  clearAllLabel: string;     // "Limpiar todo"
-}
-```
-Server component. Each chip's `✕` is a real `<a href={removeHref}>` (works JS off; JS enhances to
-`router.push`). **The default in-stock filter is NOT a removable chip** (it's the baseline, not a
-user-added constraint); only the *opt-in to include out-of-stock* shows a chip ("Incluye
-agotados ✕"). "Limpiar todo" → clean `/sillas` (default in-stock, no `q`, best-selling, page 1).
-
-**A11y:** the result-count node is `aria-live="polite"` so SRs hear "24 sillas" after each change
-(also the loading→done cue). Each chip is a link with a descriptive `aria-label`; the visible `✕`
-is `aria-hidden`; keyboard-operable as links (Tab + Enter).
-
-**States:**
-| State | Visual |
+**Responsive**:
+| Breakpoint | Layout Change |
 | --- | --- |
-| No filters | Renders **only** the result count ("30 sillas"); no chips, no "Limpiar todo" |
-| ≥1 filter | Count + chips + "Limpiar todo" |
-| Many filters (mobile) | Chip row `overflow-x-auto` with a subtle right fade mask; never pushes the grid off-screen (edge 12) |
+| < 640px | Full width of the single column; `h-11`; below variant selector |
+| 640–1024px | Unchanged (panel is right column at `lg`) |
+| > 1024px | Full width of the panel's right column |
 
-**Animations:** none on remove (high-frequency; removal re-queries → the new grid uses its
-existing `.stagger`). Chips do not animate in/out — that would fight the grid transition.
+**Animations**:
+- Confirm transition (idle ⇄ confirming): **Crossfade** the label with a light
+  **blur mask** (emil "blur to mask imperfect transitions"): outgoing
+  `opacity 1→0, filter blur(0→2px)`; incoming `opacity 0→1, blur 2px→0`, both
+  `--ease-out`, **180ms**. Two absolutely-stacked spans inside the fixed button box.
+- Press: `transform: scale(0.98)` on `:active`, `100ms ease-out` (feedback, applies on
+  touch + pointer).
+- No entrance animation (always present on the PDP).
+- Reduced motion: label swaps with opacity-only crossfade (no blur, no press scale)
+  at 150ms.
+- Interruptible: re-click during confirm resets the timer and re-runs the crossfade
+  from the presentation value (CSS transition, not keyframe).
 
----
-
-### 7. CatalogToolbar (`src/components/catalog/catalog-toolbar.tsx`) — small composer
-
-**Purpose:** The row(s) above the grid holding search echo + filters trigger (mobile) + sort +
-count. Keeps `sillas/page.tsx` thin (SRP). May be inlined into the page if the team prefers fewer
-files; documented here for layout clarity.
-
-**Layout — desktop (≥ lg):**
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  [ 🔍 Buscar sillas…            ✕ ]        Ordenar: Más vendidas ▾│
-└─────────────────────────────────────────────────────────────────┘
-(result count + chips render below via ActiveFilters; sidebar is to the left)
-```
-**Layout — tablet (768):**
-```
-[ 🔍 Buscar sillas…                                          ✕ ]
-[ ⚙ Filtros (2) ]                            Ordenar: Más vendidas ▾
-```
-**Layout — mobile (375):**
-```
-[ 🔍 Buscar sillas…                    ✕ ]
-[ ⚙ Filtros (2) ]              [ Más vendidas ▾ ]
-```
+**A11y**:
+- On successful add, announce via the cart's shared page-level `aria-live="polite"`
+  region → "Agregado al carrito. {n} artículos." (On the PDP, if no page-level region
+  exists, the button owns a visually-hidden `aria-live` sibling.)
+- Out-of-stock: `disabled` + "Agotado" text (color is not the only signal).
 
 ---
 
-### 8. NoResults (`src/components/catalog/no-results.tsx`)
+### 3. QuantityStepper
 
-**Purpose:** The zero-match state (AC-16, edges 1, 6, 8). NOT the generic `EmptyState`, NOT a 404.
+**Purpose**: Increase/decrease a line's quantity within `[1, MAX_CART_ITEM_QUANTITY]`.
+**Location**: Inside each `CartLineRow`.
+**shadcn base**: two `Button variant="outline"` icon buttons + a center `Input`
+(read-mostly numeric). Heights overridden to **44px** on touch.
 
-**Location:** `/sillas`, replaces the grid when `total === 0`.
+**Layout** (ASCII wireframe):
+```
+ Mid-range (2..98)          At min (1)                 At cap (99)
+┌────┐┌────┐┌────┐         ┌────┐┌────┐┌────┐          ┌────┐┌────┐┌────┐
+│ −  ││  3 ││ +  │         │ −  ││  1 ││ +  │          │ −  ││ 99 ││ +  │
+└────┘└────┘└────┘         └────┘└────┘└────┘          └────┘└────┘└────┘
+ both enabled               [−] disabled                [+] disabled
+ 44x44   44w   44x44        (use Remove to delete)      (cap reached)
+```
+Group has `rounded-md border border-border overflow-hidden`, buttons share edges.
+Center is a fixed-width (`w-11`) `tabular-nums text-center text-sm`, `readOnly` by
+default. `Minus`/`Plus` icons via `@hugeicons` (`MinusSignIcon`/`PlusSignIcon`).
 
-**shadcn base:** none (composes `Button` + a popular strip via `ProductGrid`).
+**Props**:
+```typescript
+interface QuantityStepperProps {
+  value: number;                    // current line quantity (already 1..MAX)
+  min?: number;                     // default 1
+  max: number;                      // MAX_CART_ITEM_QUANTITY
+  onChange: (next: number) => void; // parent clamps + persists
+  labels: {
+    increase: string;              // "Aumentar cantidad"
+    decrease: string;              // "Disminuir cantidad"
+    quantityLabel: string;         // "Cantidad"
+  };
+  disabled?: boolean;              // e.g. before hydration
+  className?: string;
+}
+```
 
-**Layout:**
+**States**:
+| State | Visual | Behavior |
+| --- | --- | --- |
+| Default | Both buttons enabled | `+` → `onChange(min(value+1, max))`; `−` → `onChange(max(value-1, min))`; coalesced upstream via functional updates |
+| At min (value === min) | `−` `disabled` (`opacity-50`) | Below min impossible via stepper (AC-7); removal is the separate Remove control |
+| At cap (value === max) | `+` `disabled` (`opacity-50`) | AC-13; `aria-disabled` set |
+| Disabled (pre-hydration) | Whole group `opacity-50 pointer-events-none` | No mutation before hydrated |
+| Focus | Each button `focus-visible:ring-2 ring-ring` | Tab reaches `−`, field, `+` in order |
+| Press | `active:scale-[0.97]` on each button | Instant feedback |
+
+**Responsive**:
+| Breakpoint | Layout Change |
+| --- | --- |
+| < 640px | 44×44 buttons + 44px center → ~132px; fits at 320px alongside remove below the row details |
+| 640–1024px | Same control; may sit inline-right of details |
+| > 1024px | Same; inline in the row grid |
+
+**Animations**:
+- **None on +/−.** High-frequency tap/keyboard-repeatable action (emil frequency table
+  → "no animation"). The value swap is instant; the *line total* it drives crossfades
+  via `.price-value` — that is the only motion.
+- Press feedback `scale(0.97)` at 90ms `ease-out` is the sole micro-motion.
+- Reduced motion: press scale removed; everything instant.
+
+**A11y**:
+- Each button is an icon button with a real `aria-label` (`increase`/`decrease`).
+- Center field: `<input readOnly inputMode="numeric" aria-label={quantityLabel}
+  value={value}>`. Quantity changes announced by the page's `aria-live` region, not
+  per-keystroke.
+- If the field is made editable (optional): sanitize on `blur`/`Enter` via
+  `sanitizeQuantity` (clamp `[1,MAX]`, non-integer reverts), never per keystroke.
+
+---
+
+### 4. CartLineRow
+
+**Purpose**: One cart line — image, name, variant/color, unit price, stepper, remove,
+line total.
+**Location**: Inside `CartPageClient`'s line list (`<ul>`).
+**shadcn base**: none for the shell; uses `QuantityStepper`, a ghost `Button` for
+remove, `StockBadge` (`state="out"`) when the snapshot is flagged out of stock.
+
+**Layout — mobile (< 640px)** (ASCII wireframe):
 ```
 ┌───────────────────────────────────────────────┐
-│                    🔍 (search/chair icon)       │
-│                                                 │
-│   No encontramos sillas que coincidan          │
-│   con "malla azul"                             │   ← echoes q and/or active filters
-│                                                 │
-│            [ Limpiar filtros ]                  │   ← → clean /sillas (primary)
-│                                                 │
-│   ─────────  Sillas populares  ─────────        │
-│   ┌────┐ ┌────┐ ┌────┐ ┌────┐                  │
-│   │card│ │card│ │card│ │card│   (up to 8,       │
-│   └────┘ └────┘ └────┘ └────┘    best-selling)  │
-│   (reuses ProductGrid layout / ProductCard)     │
+│ ┌──────┐  Silla Ergonómica Pro                 │  ← name (line-clamp-2), Link to PDP
+│ │      │  Color: Negro                          │  ← variant label (muted)
+│ │ img  │  $4,999.00 c/u                         │  ← unit price (muted, "c/u"=each)
+│ │ 4:5  │                                        │
+│ └──────┘  ┌────┐┌──┐┌────┐        [Eliminar]   │  ← stepper + remove (44px)
+│           │ −  ││ 3││ + │                       │
+│           └────┘└──┘└────┘                      │
+│                           Total: $14,997.00     │  ← line total (right, price-value)
 └───────────────────────────────────────────────┘
+ image w-20 (80px) / w-24 at sm, rounded-lg bg-muted, aspect-[4/5]
 ```
 
-**Props:**
+**Layout — tablet/desktop (≥ 768px)** (ASCII wireframe):
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ ┌──────┐  Silla Ergonómica Pro                                          │
+│ │ img  │  Color: Negro          [− 3 +]      $4,999.00 c/u   $14,997.00  │
+│ │ 4:5  │  (out-of-stock badge)                                [Eliminar]│
+│ └──────┘                                                                 │
+└────────────────────────────────────────────────────────────────────────┘
+ grid: [96px image] [1fr details] [stepper] [unit price] [line total]
+```
+
+**Props**:
 ```typescript
-interface NoResultsProps {
-  heading: string;            // "No encontramos sillas que coincidan"
-  /** Echo of what was searched/filtered ('con "malla azul"'); null when nothing to echo. */
-  queryEcho: string | null;
-  clearLabel: string;         // "Limpiar filtros"
-  clearHref: string;          // clean CATALOG_PATH
-  popular: CatalogProductCard[];  // ≤ POPULAR_PRODUCTS_MAX (8), best-selling order
-  popularHeading: string;     // "Sillas populares"
+interface CartLineRowProps {
+  line: CartLine;                 // { productId, slug, name, variantId, variantLabel,
+                                  //   unitPriceCents, coverImageUrl, sku, quantity }
+  outOfStock?: boolean;           // from snapshot flag if available (best-effort; T7 re-validates)
+  onQuantityChange: (next: number) => void;
+  onRemove: () => void;
+  maxQuantity: number;            // MAX_CART_ITEM_QUANTITY
+  labels: {
+    remove: string;               // "Eliminar"
+    increase: string; decrease: string; quantityLabel: string;
+    unitEach: string;             // "c/u" / "each"
+    lineTotalLabel: string;       // "Total"
+    colorLabel: string;           // template "Color: {name}"
+    outOfStock: string;           // "Agotado"
+  };
 }
 ```
-Server component. Reuses `.enter-fade` for the message block (low-frequency page → entrance
-justified, same as `EmptyState`). The popular strip renders through the **same `ProductGrid`**
-(sliced to ≤ 8) so cards/stagger/badges are pixel-identical to the catalog. If `popular` is empty
-(edge 8), the strip + heading are omitted; message + "Limpiar filtros" still render (never a
-broken layout).
 
-**States:**
-| State | Visual |
+**States**:
+| State | Visual | Behavior |
+| --- | --- | --- |
+| Default | Full row | Interactive stepper + remove |
+| No variant | Omit the "Color: …" line | `variantLabel === null` → no color row |
+| Out of stock (snapshot) | `StockBadge state="out" label="Agotado"` under name; image `opacity-60` (mirror product-card) | Still removable & editable; the "re-checked at checkout" note is NOT shown here (T7 concern) |
+| No image | `Image01Icon` fallback in the `aspect-[4/5] bg-muted` thumb (mirror product-card) | — |
+| Removing | Row collapses: height→0 + `opacity 1→0`, `--ease-in-out`, 200ms, then unmounts | Optimistic remove (Flow C) |
+| Hover (desktop) | Subtle `bg-muted/40` on the row | Gated `@media (hover:hover)`; optional |
+| Focus-within | Controls show own focus rings | Tab order: name link → − → qty → + → remove |
+
+**Responsive**:
+| Breakpoint | Layout Change |
 | --- | --- |
-| Zero results, has popular | Message + echo + Clear + popular strip |
-| Zero results, empty catalog | Message + Clear only (no strip) |
-| Popular read failed | Same as empty-catalog (strip omitted, logged not fatal — error table) |
+| < 640px | Single column; image `w-20` left, details right; stepper + remove on a row below details; line total bottom-right. No horizontal scroll at 320px |
+| 640–768px | Image `w-24`; same stacked control row |
+| ≥ 768px | 5-col grid: image / details / stepper / unit price / line total; remove ghost at far right or under line total |
 
-**Animations:** `.enter-fade` on the message block; popular strip uses `ProductGrid`'s `.stagger`.
-No new motion.
+**Animations**:
+- Enter (page load): **Stagger** via `.stagger` (opacity + `translateY(8px→0)`, ~200ms
+  `ease-out`, 30–60ms between rows, delay capped). Decorative, non-blocking.
+- Line total change (qty edit): **Crossfade** the total via `.price-value` (keyed on
+  `lineTotalCents(line)`), ~150ms. Only motion on qty change.
+- Remove: **Accordion/Collapse** — `height` + `opacity` → 0 over 200ms `--ease-in-out`,
+  then unmount. Deliberate one-off exit (not a hot path). If the reviewer objects to
+  animating `height`, fall back to opacity-only fade at 150ms. Reduced motion:
+  **opacity-only** fade, no height animation.
+- Reduced motion: no stagger translate (opacity only), no collapse height (instant +
+  short opacity fade), price crossfade kept (comprehension).
 
----
-
-### 9. Filtered grid loading state (reuse `ProductGridSkeleton`)
-
-**Purpose:** The transition between a URL change and new server-rendered results (UX "Loading").
-No new component — reuse `ProductGridSkeleton` (already pixel-matches the grid: same 2/3/4-col
-layout, `aspect-[4/5]` box, `motion-safe:animate-pulse`).
-
-**Rendering semantics (App Router):** `/sillas` reads `searchParams` → any request with params is
-**dynamic**. The filtered grid read is isolated in `<Suspense fallback={<ProductGridSkeleton/>}>`
-so the shell (breadcrumb, header, toolbar, sidebar, and the URL-derived active-filter chips)
-renders **immediately** and only the grid region shows the 12-card skeleton while the RPC runs.
-No full-page spinner; the filter panel and toolbar stay interactive during load.
-
-**Pending affordance (client-initiated navigations):** when JS is on and a filter/sort toggle
-uses `router.push`, wrap the mutation in `useTransition` and apply a **pending dim** to the
-current grid (`opacity-60 transition-opacity 200ms ease` while `isPending`) so fast local reads
-don't flash a skeleton — the stale results dim, then swap (Emil: prevent jarring changes). On slow
-reads the Suspense skeleton is the fallback. The dim is a comprehension aid → keep it under
-reduced-motion (opacity-only is RM-safe). Motion Spec **M-7**.
+**A11y**:
+- Row is an `<li>`. Product name is a locale-aware `Link` to `productPath(slug)`.
+- Image `alt` from snapshot; fallback icon `aria-hidden`.
+- Remove: `Button variant="ghost"` with `Delete02Icon` + visible "Eliminar" text on
+  desktop; `aria-label="Eliminar {name}"` always (icon-only on tightest mobile).
+- Line total paired with an `sr-only` "Total" label.
 
 ---
 
-## Page Layout — `/sillas` (rewrite)
+### 5. FreeShippingProgress
 
-### Desktop (≥ 1024px)
-```
-┌───────────────────────────────────────────────────────────────────────┐
-│ HEADER: [≡] PosturPro  Sillas Cat… Marcas Estilos  [🔍 Buscar… ] [ES|EN]│
-├───────────────────────────────────────────────────────────────────────┤
-│ Inicio › Sillas                                                         │  breadcrumb
-│ Sillas                                                                  │  h1
-│ Toda nuestra colección…                                                 │  subtitle
-│                                                                         │
-│ [ 🔍 Buscar sillas…                    ✕ ]      Ordenar: Más vendidas ▾ │  toolbar
-│ 24 sillas  ● Marca: ErgoVita ✕  ● Negro ✕            [ Limpiar todo ]   │  ActiveFilters
-│ ┌─────────────┐ ┌───────────────────────────────────────────────────┐ │
-│ │ FILTROS     │ │  ┌────┐ ┌────┐ ┌────┐ ┌────┐                       │ │
-│ │ (sidebar,   │ │  │card│ │card│ │card│ │card│   ProductGrid          │ │
-│ │  sticky)    │ │  └────┘ └────┘ └────┘ └────┘                       │ │
-│ │ Disponib.   │ │  ┌────┐ ┌────┐ ┌────┐ ┌────┐                       │ │
-│ │ Categoría   │ │  └────┘ └────┘ └────┘ └────┘                       │ │
-│ │ Marca …     │ │                                                     │ │
-│ │ Color …     │ │      ‹ Prev  1 2 [3] 4 … 10  Next ›  (preserves     │ │
-│ │ Precio …    │ │                                        filters)     │ │
-│ └─────────────┘ └───────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────────────────┘
-```
-Outer layout `lg:grid lg:grid-cols-[16rem_1fr] lg:gap-8`. Sidebar is `sticky top-20 self-start
-max-h-[calc(100vh-6rem)] overflow-y-auto`. The `ProductGrid` in the right column keeps its own
-2/3/4 responsive layout; because the right column is narrower than the full page, gate the 4th
-column to `xl:` if 4 cards feel cramped at exactly 1024px (Open Question 2).
+**Purpose**: Progress toward the free-shipping threshold — a filling bar +
+remaining/achieved copy. Hidden entirely when store settings are null (AC-9, edge 6).
+**Location**: In `CartPageClient`, above the order summary (mobile) / top of the right
+rail (desktop).
+**shadcn base**: none — a plain Tailwind bar (`transform: scaleX`,
+compositor-friendly). Do NOT use the `slider` component.
 
-### Tablet (768px)
+**Layout** (ASCII wireframe):
 ```
-HEADER (search collapses to icon)
-Breadcrumb / h1 / subtitle
-[ 🔍 Buscar sillas…                                        ✕ ]
-[ ⚙ Filtros (2) ]                          Ordenar: Más vendidas ▾
-24 sillas  ● chips…                                 [ Limpiar todo ]
-ProductGrid (3 col)
-Pagination
+ Below threshold                              At / above threshold (achieved)
+┌───────────────────────────────────┐        ┌───────────────────────────────────┐
+│ Te faltan $2,500.00 para           │        │ 🎉 ¡Tienes envío gratis!           │
+│ envío gratis                       │        │                                   │
+│ ┌───────────────────────────────┐ │        │ ┌───────────────────────────────┐ │
+│ │██████████████░░░░░░░░░░░░░░░░░│ │        │ │███████████████████████████████│ │
+│ └───────────────────────────────┘ │        │ └───────────────────────────────┘ │
+│   ↑ track (bg-muted), fill scaleX  │        │   fill at 100%, achieved tint      │
+└───────────────────────────────────┘        └───────────────────────────────────┘
 ```
-Filters live in the left `Sheet` (no sidebar until `lg`).
+- Track: `h-2 w-full rounded-full bg-muted overflow-hidden`.
+- Fill: absolutely fills the track; `origin-left transform scaleX(pct)`; `bg-primary`
+  (below) / achieved tint (at 100%); `transition: transform 400ms var(--ease-out)` —
+  **scaleX only, never width**; `will-change: transform`.
+- Copy above the bar: `text-sm text-muted-foreground` (remaining) / `text-sm
+  font-medium text-foreground` (achieved), `tabular-nums` on the amount.
 
-### Mobile (375px)
+**Props**:
+```typescript
+interface FreeShippingProgressProps {
+  /** null when store settings unavailable → component returns null (renders nothing). */
+  progress: { remainingCents: number; achieved: boolean; pct: number } | null;
+  labels: {
+    remaining: string;   // template "Te faltan {amount} para envío gratis"
+    achieved: string;    // "¡Tienes envío gratis!"
+  };
+  className?: string;
+}
 ```
-HEADER: [≡] PosturPro …  [🔍] [ES]
-Breadcrumb / h1 / subtitle
-[ 🔍 Buscar sillas…                    ✕ ]
-[ ⚙ Filtros (2) ]              [ Más vendidas ▾ ]
-30 sillas
-● chips scroll-x →
-ProductGrid (2 col)
-Prev · Página 2 de 5 · Next
+`pct` is clamped `0..1` (fill fraction). `remainingCents` → `formatMXN` → interpolated
+into `remaining`.
+
+**States**:
+| State | Visual | Behavior |
+| --- | --- | --- |
+| Settings null | **Nothing** (`return null`) | Never renders; summary shows subtotal + neutral shipping label only (edge 6) |
+| Below threshold (pct < 1) | Remaining copy + partial bar | Bar `scaleX(pct)`; copy shows `formatMXN(remainingCents)` |
+| Exactly at threshold (`≥`, edge 7) | Achieved copy + full bar | `achieved === true` at subtotal === threshold |
+| Above threshold | Achieved copy + full bar | pct clamped to 1 |
+| Empty cart | Not rendered | Lives inside the populated branch only (AC-10) |
+| pct transition | Bar animates scaleX prev→next | On subtotal change |
+
+**Responsive**:
+| Breakpoint | Layout Change |
+| --- | --- |
+| < 640px | Full-width above summary card |
+| 640–768px | Full-width above summary |
+| ≥ 768px | Full-width at the top of the right-rail summary column |
+
+**Animations**:
+- Fill: **transform scaleX** old→new pct, `400ms --ease-out` (a transform-based
+  "Reveal", NOT a width tween → no layout thrashing).
+- Achieved transition: fill color crossfades primary→achieved-tint (~250ms `ease`);
+  copy crossfades (opacity, keyed on `achieved`). Optional one-shot **Pop** the first
+  time it hits achieved (`scale 1→1.02→1`, ≤ 200ms) — a rare/first-time moment where
+  delight is allowed (emil). Fire once per session-achieve.
+- Reduced motion: fill snaps to new pct with an **opacity** crossfade (`transform:
+  none`); no achieved pop; color change kept.
+
+**A11y**:
+- Wrapper: `role="progressbar" aria-valuemin={0} aria-valuemax={100}
+  aria-valuenow={Math.round(pct*100)}` with `aria-label` = the remaining/achieved copy.
+- The remaining/achieved text is real visible text (not color-only); the emoji is
+  `aria-hidden`.
+
+---
+
+### 6. OrderSummary
+
+**Purpose**: Subtotal, shipping, total; hosts the checkout CTA.
+**Location**: `CartPageClient`, below the line list (mobile), sticky right rail
+(desktop).
+**shadcn base**: a `bg-card border border-border rounded-lg` panel; checkout is a
+`Button`-styled locale-aware `Link` (44px).
+
+**Layout** (ASCII wireframe):
+```
+┌───────────────────────────────┐
+│  Resumen del pedido            │  ← heading, text-sm font-medium
+│  ─────────────────────────     │
+│  Subtotal          $14,997.00  │  ← tabular-nums
+│  Envío                 Gratis  │  ← "Gratis" when free; formatMXN otherwise;
+│                                │    neutral label when settings null
+│  ─────────────────────────     │
+│  Total             $14,997.00  │  ← font-semibold, larger
+│                                │
+│  ┌───────────────────────────┐ │
+│  │   Proceder al pago    →    │ │  ← checkout CTA, h-11, w-full, bg-primary
+│  └───────────────────────────┘ │
+└───────────────────────────────┘
+```
+
+**Props**:
+```typescript
+interface OrderSummaryProps {
+  subtotalCents: number;
+  /** null-settings → "unavailable": hide amount, neutral label, no free logic. */
+  shipping:
+    | { kind: "flat"; cents: number }
+    | { kind: "free" }
+    | { kind: "unavailable" };
+  totalCents: number;            // subtotal + (flat cents | 0); unavailable → = subtotal
+  checkoutHref: string;          // CHECKOUT_PATH (may 404 until T7 — just a link)
+  labels: {
+    heading: string;             // "Resumen del pedido"
+    subtotal: string;            // "Subtotal"
+    shipping: string;            // "Envío"
+    shippingFree: string;        // "Gratis"
+    shippingUnavailable?: string;// "Se calcula al pagar" (neutral)
+    total: string;               // "Total"
+    checkout: string;            // "Proceder al pago"
+  };
+}
+```
+
+**States**:
+| State | Visual | Behavior |
+| --- | --- | --- |
+| Standard (flat shipping) | Subtotal, shipping = `formatMXN(flat)`, total = subtotal+flat | `tabular-nums` |
+| Free shipping | Shipping row "Gratis", total = subtotal | Applies at subtotal ≥ threshold |
+| Settings null | Shipping row neutral label ("Se calcula al pagar"), NO amount, total = subtotal | Never `$NaN` (edge 6) |
+| Empty cart | Not rendered (AC-10) | Populated branch only |
+| Value change | Subtotal/total crossfade via `.price-value` | On qty/remove |
+
+**Responsive**:
+| Breakpoint | Layout Change |
+| --- | --- |
+| < 640px | Full-width card under the line list; checkout CTA full-width |
+| 640–768px | Full-width under list OR right column per width |
+| ≥ 768px | **Sticky** right rail (`lg:sticky lg:top-20`, mirror PDP gallery `sticky top-20`); progress bar above it |
+
+**Animations**:
+- Total/subtotal change: **Crossfade** via `.price-value`, ~150ms.
+- Checkout CTA press: `scale(0.98)` 100ms.
+- No entrance beyond the page-level fade.
+- Reduced motion: number swaps instant; CTA press scale removed.
+
+**A11y**:
+- Checkout CTA is a `Link` styled as a button with a trailing `ArrowRight01Icon`
+  (`aria-hidden`). NOT a form/submit (T6 has no checkout logic) — navigation only.
+- Rows use aligned label/value with `sr-only` context where needed.
+
+---
+
+### 7. CartEmptyState
+
+**Purpose**: Friendly empty message + CTA to the catalog. No summary/progress/checkout.
+**Location**: `CartPageClient` when `hydrated && lines.length === 0`.
+**shadcn base**: `Button variant="default"` styled `Link` (44px) to `/sillas`.
+
+**Layout** (ASCII wireframe):
+```
+┌───────────────────────────────────────────┐
+│                  🛒                          │  ← ShoppingCart01Icon, ~40, muted
+│         Tu carrito está vacío               │  ← text-lg font-medium text-foreground
+│    Explora nuestras sillas y encuentra      │  ← optional subtext, muted
+│         la ideal para ti.                   │
+│        ┌─────────────────────┐              │
+│        │     Ver sillas       │              │  ← CTA → /sillas, h-11
+│        └─────────────────────┘              │
+└───────────────────────────────────────────┘
+ centered, max-w-sm mx-auto, py-16
+```
+
+**Props**:
+```typescript
+interface CartEmptyStateProps {
+  browseHref: string;              // CATALOG_PATH "/sillas"
+  labels: {
+    title: string;                 // "Tu carrito está vacío"
+    cta: string;                   // "Ver sillas"
+    subtitle?: string;             // optional
+  };
+}
+```
+
+**States**: single state. Mounted only after hydration confirms an empty cart — never
+flashes during load (loading shows skeletons instead).
+
+**Responsive**:
+| Breakpoint | Layout Change |
+| --- | --- |
+| < 640px | Centered, `py-16`, CTA `w-full max-w-xs` |
+| ≥ 640px | Centered, `max-w-sm mx-auto`, CTA auto width |
+
+**Animations**:
+- Enter: **Fade in** + `translateY(8px→0)`, `--ease-out`, 250ms (one-time, calm).
+- CTA press `scale(0.98)`.
+- Reduced motion: opacity-only fade.
+
+**A11y**: Icon `aria-hidden`; heading matches page heading order; CTA is a labeled
+`Link`.
+
+---
+
+### 8. CartPageClient (page body island)
+
+**Purpose**: Orchestrates the cart page — reads `useCart()`, computes derived totals,
+renders skeleton → (empty | populated), owns the `aria-live` region.
+**Location**: `/carrito` route, rendered by the server `page.tsx`.
+**shadcn base**: composition of the above.
+
+**Layout — populated, mobile** (ASCII wireframe):
+```
+┌─────────────────────────────────┐
+│  Tu carrito (3)          [h1]    │
+├─────────────────────────────────┤
+│  ▸ CartLineRow                   │
+│  ▸ CartLineRow                   │
+│  ▸ CartLineRow                   │
+├─────────────────────────────────┤
+│  FreeShippingProgress            │
+├─────────────────────────────────┤
+│  OrderSummary (+ checkout CTA)   │
+└─────────────────────────────────┘
+```
+
+**Layout — populated, desktop (≥ 1024px)** (ASCII wireframe):
+```
+┌───────────────────────────────────────────────────────────────┐
+│  Tu carrito (3)                                          [h1]   │
+├──────────────────────────────────────┬────────────────────────┤
+│  ▸ CartLineRow                        │  FreeShippingProgress   │
+│  ▸ CartLineRow                        │  ┌───────────────────┐  │
+│  ▸ CartLineRow                        │  │ OrderSummary      │  │
+│                                       │  │ (sticky top-20)   │  │
+│  (2fr line list)                      │  │ + checkout CTA    │  │
+│                                       │  └───────────────────┘  │
+└──────────────────────────────────────┴────────────────────────┘
+ container: mx-auto max-w-(--breakpoint-xl) px-4 md:px-6 lg:px-8 py-8
+ grid: grid-cols-1 lg:grid-cols-[2fr_1fr] lg:gap-10
+```
+
+**Props**:
+```typescript
+interface CartPageClientProps {
+  /** From getStoreSettingsStatic() on the server; null when unavailable. */
+  flatRateCents: number | null;
+  freeThresholdCents: number | null;
+  // copy via useTranslations("cart") inside the island
+}
+```
+Derives: `subtotalCents(lines)`, `computeShipping({subtotal, flat, threshold})`,
+`freeShippingProgress(...)` (null when settings null), `totalItemCount`.
+
+**States**:
+| State | Visual | Behavior |
+| --- | --- | --- |
+| Loading / pre-hydration | **Skeleton**: title placeholder + 2–3 shimmer line rows + a summary placeholder (`bg-muted animate-pulse`, sized to the real layout → no shift) | Shown until `hydrated`. Server may render this shell so no-JS sees a sensible page |
+| Hydrated + empty | `<CartEmptyState>` only | No summary/progress/checkout (AC-10) |
+| Hydrated + populated | Title w/ count + line list + progress + summary | Full interactivity |
+| Settings null (populated) | Same, but `FreeShippingProgress` → null; `OrderSummary` neutral shipping | Graceful degradation |
+| Removing last item | Cross-fades populated → empty state | Badge → 0; summary/progress unmount |
+
+**Responsive**: single column < 1024px (list → progress → summary), two-column
+`[2fr_1fr]` at `lg`.
+
+**Animations**:
+- Skeleton: **Shimmer** via existing `animate-pulse` on `bg-muted` blocks.
+- Skeleton→content: **Crossfade** (opacity), 200ms `ease-out`, when `hydrated` flips.
+  Identical box sizes → no reflow.
+- Line list entrance: `.stagger` (§4).
+- Reduced motion: crossfade only; pulse kept (opacity-based).
+
+**A11y**:
+- Owns a single visually-hidden `aria-live="polite"` region ("Se agregó…", "Cantidad
+  actualizada: 3", "Producto eliminado") that all mutations announce through (AC-16).
+- Page `<h1>` = cart title with count; logical heading order; `<ul>`/`<li>` list.
+
+---
+
+## Page Layout
+
+### /carrito (server page → CartPageClient)
+
+Server `page.tsx`: read `getStoreSettingsStatic()`, resolve `<title>` metadata via
+i18n, render `<CartPageClient flatRateCents freeThresholdCents />`. Visible chrome
+(header w/ badge, footer) comes from `[locale]/layout.tsx`; the cart page adds only the
+body.
+
+```
+ Mobile (375px)                Tablet (768px)                 Desktop (≥1024px)
+┌──────────────┐              ┌────────────────────┐         ┌────────────────────────────┐
+│  Header 🛒3  │              │  Header      🛒3   │         │  Header              🛒 3   │
+├──────────────┤              ├────────────────────┤         ├────────────────────────────┤
+│ Tu carrito(3)│              │ Tu carrito (3)     │         │ Tu carrito (3)             │
+│ ─ line ─     │              │ ─ line ──────────  │         │ ┌────────────┐ ┌─────────┐ │
+│ ─ line ─     │              │ ─ line ──────────  │         │ │ line       │ │ progress│ │
+│ ─ line ─     │              │ ─ line ──────────  │         │ │ line       │ │ summary │ │
+│ [progress]   │              │ [progress full-w]  │         │ │ line       │ │ (sticky)│ │
+│ [summary]    │              │ [summary]          │         │ └────────────┘ └─────────┘ │
+│ [checkout]   │              │ [checkout]         │         │  2fr            1fr        │
+└──────────────┘              └────────────────────┘         └────────────────────────────┘
 ```
 
 ---
 
 ## Interaction Flows
 
-### Flow A — Filter by color (JS on, mobile)
-1. Tap **⚙ Filtros** → `FilterSheet` opens: drawer slides in from left (M-1, 300ms
-   `--ease-drawer`), scrim dims the grid, focus moves to the close button, body scroll locks.
-2. Tap the **Negro** swatch → `.swatch-press` scale(0.97) confirms instantly; swatch gains ring +
-   ✓; URL updates (`?color=111111`, `page`→1) via `router.push` inside `useTransition`.
-3. Behind the scrim, the grid dims to `opacity-60` (M-7) while the RPC runs; footer updates
-   "Ver **12** sillas".
-4. New results stream in; grid returns to full opacity with `.stagger`.
-5. Tap **Ver 12 sillas** (or scrim / Esc) → drawer slides out (200ms), focus returns to the
-   **Filtros** trigger, now showing badge **(1)**.
-6. An `● Negro ✕` chip is above the grid; `aria-live` announced "12 sillas".
+### Flow A — Add to cart from PDP
+1. Shopper selects a color → `ProductPurchasePanel` updates `selectedVariantId`
+   (existing behavior; source of truth).
+2. Shopper clicks **Agregar al carrito** (44px, `bg-primary`) → `:active`
+   `scale(0.98)` (instant feedback, Apple §1).
+3. `useCart().addItem(snapshot)` runs a **functional** update (`setLines(prev =>
+   addLine(prev, snapshot))`) → dedupes by `cartLineKey(productId, variantId)`,
+   increments + clamps → effect persists via `writeCart` → context changes.
+4. Button content **crossfades** to "Agregado ✓" (blur-masked, 180ms); header
+   **CartCountBadge** pill scales/fades in (or number crossfades) — the two
+   confirmations together replace a mini-cart (spec SKIP).
+5. `aria-live` announces "Agregado al carrito. {n} artículos."
+6. After `ADD_TO_CART_CONFIRM_MS` (~1500ms) the button crossfades back. Re-clicking
+   during confirm re-adds and resets the timer (interruptible).
+7. Out of stock: step 2 impossible (button `disabled`, "Agotado").
 
-### Flow B — Search from header (JS off)
-1. Type "malla" in the header input, press Enter.
-2. Native `<form method="get" action="/sillas">` navigates to `/sillas?q=malla`.
-3. Server parses `q` (truncated to `SEARCH_QUERY_MAX`), calls the RPC (uncached — free text),
-   renders the filtered grid + `noindex,follow` + canonical → `/sillas`. Chips degrade to plain
-   `<a>`. Works with zero JS.
+### Flow B — Adjust quantity on /carrito
+1. Tap **+** on a line's stepper (44px) → instant value bump (no stepper animation).
+2. `onQuantityChange(next)` → `setQuantity(key, clamp(next))` (functional) → persist.
+3. That line's **total** crossfades (`.price-value`, 150ms); **subtotal** + **total**
+   in `OrderSummary` crossfade; **FreeShippingProgress** bar animates `scaleX` to the
+   new pct (400ms); **header badge** number crossfades. All off one context change.
+4. At cap, **+** disables; at qty 1, **−** disables (use Remove to delete).
+5. `aria-live`: "Cantidad actualizada: {n}."
 
-### Flow C — Sort change (JS on, desktop)
-1. Open the **Ordenar** Select → listbox scales in from the trigger (M-3, <250ms ease-out).
-2. Select "Precio: menor a mayor" → `router.push` with `orden=precio-asc`, `page`→1, other params
-   preserved.
-3. Current grid dims (M-7) → new price-ascending results stagger in.
+### Flow C — Remove a line
+1. Click **Eliminar** (ghost button, 44px) → optimistic remove.
+2. Row **collapses** (height+opacity, 200ms; reduced-motion = opacity fade), unmounts.
+3. Totals/progress/badge recompute (Flow B.3).
+4. If last line → cross-fade to `CartEmptyState`; summary/progress/checkout unmount;
+   badge → 0.
+5. `aria-live`: "Producto eliminado."
+6. No undo in T6 (Phase-1 scope); no confirm dialog (Apple §16 Agency: reserve
+   confirms for destructive+irreversible; a guest cart line is trivially re-addable).
 
-### Flow D — Remove one chip / clear all
-1. Click `✕` on **● Negro** → `<a>` to `removeHref` (color dropped, others + page-1 preserved) →
-   re-query, new grid, `aria-live` count update.
-2. **Limpiar todo** → clean `/sillas` (default in-stock, no `q`, best-selling, page 1).
+### Flow D — Proceed to checkout
+1. Click **Proceder al pago** (44px CTA, populated cart only).
+2. It is a plain locale-aware `Link` to `CHECKOUT_PATH` (`/checkout`). May 404 until T7
+   (acceptable, same pattern T3 used). NOT a form; NO order creation in T6.
 
-### Flow E — Zero results
-1. A filter combination matches nothing (edge 1) → server renders `NoResults` (not 404, not
-   error): heading + echo of `q`/filters + **Limpiar filtros** + **Sillas populares** strip
-   (best-selling, ≤ 8, independent of active filters). URL stays valid/shareable.
+### Flow E — Cross-tab sync
+1. Tab A adds/edits → `writeCart` → `storage` event in Tab B.
+2. Tab B's `CartProvider` listener re-runs `readCart()` → `setState` → badge + page
+   re-render (last-write-wins). Numbers crossfade; no jump, no crash.
 
----
-
-## Motion Spec (animation-vocabulary terms; transform/opacity only, <300ms, interruptible)
-
-All new rules live in `globals.css` under labeled banners, following the existing
-`[data-state]`-driven CSS-transition pattern (NOT `tw-animate-css` keyframes).
-
-| # | Element | Effect (vocab) | Trigger | Property | Easing | Duration | Reduced-motion |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| **M-1** | Filter Sheet panel + scrim | **Slide in** (panel) + **Fade in** (scrim); interruptible | Sheet open/close (`data-state`) | `transform: translateX(-100%→0)` / `opacity` | `--ease-drawer` enter, `--ease-out` exit | 300ms enter / 200ms exit | `transform:none`, opacity 200ms — **reuse `.drawer-panel`/`.drawer-scrim`** |
-| **M-2** | Header search collapse→expand (`<md`) | **Reveal** / **Scale in** | Tap search icon | `opacity` + `transform: scaleX` (NOT width) | `--ease-out` | 180ms | opacity-only fade |
-| **M-3** | SortSelect content | **Origin-aware Scale in** ("Pop in", no bounce) | Select open (`data-state`) | `opacity` + `transform: scale(0.96→1)`; `transform-origin: var(--radix-select-content-transform-origin)` | `--ease-out` | 200ms open / 150ms close | opacity-only, `transform:none` |
-| **M-4** | Result grid swap | grid's existing **Stagger** entrance | New results mount | `opacity` + `translateY(8→0)` | `--ease-out` | 200ms, 40ms step, capped | reuse `.stagger` (opacity-only under RM) |
-| **M-5** | Checkbox / swatch press | **Press/Tap feedback** | `:active` | `transform: scale(0.97)` | `--ease-out` | 120ms | none (`transform:none`) — reuse `.swatch-press` |
-| **M-6** | Search clear `✕` | **Fade in** | field has value | `opacity` | `ease` | 120ms | keep (opacity is RM-safe) |
-| **M-7** | Current grid while re-querying (JS) | pending **dim** | `useTransition` `isPending` | `opacity: 1→0.6` | `ease` | 200ms | keep (comprehension aid, opacity-only) |
-| **M-8** | "Filtros" trigger active-count badge | none (instant) | count change | — | — | — | — |
-
-**Baseline compliance:** no `transition: all`; no `ease-in`; no `scale(0)` entrances (M-3 starts
-at `scale(0.96)`); enters use `ease-out`; the Sheet (gesture surface) reuses the proven
-interruptible drawer transition (Apple §3); every rule has a `prefers-reduced-motion` fallback
-keeping only opacity. Select origin is trigger-anchored (Emil popover rule); the Sheet is a full
-drawer (not origin-anchored). No animation on high-frequency actions (chip removal, the sort
-commit itself, checkbox toggle beyond press feedback).
+### Flow F — Corrupt / disabled storage (invisible degradation)
+1. Corrupt payload → `readCart()` returns `[]` + one guarded `console.warn` → page
+   renders `CartEmptyState`. No error UI.
+2. `writeCart` throws (private mode/quota) → swallowed with one `console.warn`;
+   in-memory context still updates so the cart works for the session; nothing scary
+   shown.
 
 ---
 
 ## Accessibility Checklist
+- [ ] All interactive elements have visible `focus-visible:ring-2 ring-ring` rings
+      (badge link, add-to-cart, stepper +/−, remove, checkout CTA, empty CTA).
+- [ ] All icon-only buttons have real `aria-label` (stepper increase/decrease, remove
+      on mobile, header cart link).
+- [ ] Color is never the only indicator: out-of-stock shows "Agotado" text +
+      `StockBadge` icon; free shipping shows "Gratis"/achieved text; disabled states
+      also set `aria-disabled`.
+- [ ] Tab order is logical: header (search → cart → lang); on /carrito: h1 → per row
+      (name link → − → qty → + → remove) → progress → summary → checkout.
+- [ ] Dynamic changes announced via a single page-level `aria-live="polite"` region
+      (add, qty change, remove). Header badge count is in the link's `aria-label`.
+- [ ] Header badge `aria-label` = "Carrito, {count} artículos"; pre-hydration = plain
+      "Carrito" (never claims a false count).
+- [ ] `role="progressbar"` with `aria-valuenow/min/max` on the free-shipping bar.
+- [ ] Keyboard: Enter/Space activate all controls; the stepper is operable without a
+      pointer; no keyboard trap.
+- [ ] Touch targets ≥ 44px on all cart controls (stepper, remove, CTAs, header badge).
+- [ ] No horizontal scroll at 320px (image shrinks to `w-20`, name wraps, stepper +
+      remove wrap below details on mobile).
 
-- [ ] **Filter Sheet focus trap** — Radix Dialog traps focus; focus → close button on open,
-      returns to the "Filtros" trigger on close; `Esc` closes.
-- [ ] **Checkbox semantics** — brand/style/material/category use real `Checkbox` with associated
-      `Label` (clicking the label toggles). Multi-select facets = independent checkboxes.
-- [ ] **Color swatches** — `role="group"` + each `role="checkbox" aria-checked` with a text
-      `aria-label`; selection shown by ring **and** ✓ (not color alone); each tabbable;
-      `Space`/`Enter` toggles.
-- [ ] **Sort Select labeling** — trigger `aria-label` "Ordenar resultados"; Radix Select
-      (listbox), current option `aria-selected`.
-- [ ] **`aria-live` result count** — "N sillas" node is `aria-live="polite"`; announces each
-      filter/sort/search change; doubles as the loading→done cue.
-- [ ] **Active-filter chips** — each a link with a descriptive `aria-label` ("Quitar filtro
-      Marca: ErgoVita"); visible `✕` `aria-hidden`; keyboard-operable (Tab + Enter).
-- [ ] **Search box** — `type="search"`, associated label (visually-hidden in the header), clear
-      button `aria-label`; Enter and submit both work.
-- [ ] **Landmarks / headings** — filter panel is a `<form>` with an accessible name ("Filtros");
-      facet groups use `<fieldset>`/`<legend>` (or `role="group"` + heading) so SR users hear the
-      grouping. Page h1 ("Sillas") preserved; NoResults heading is `<h2>` under it (no heading-
-      level skips — matches the T3 UX audit fix).
-- [ ] **Color never the only indicator** — swatch ✓, low-stock icon+text, text chips.
-- [ ] **Tab order** — header: search → nav → toggle; page: breadcrumb → search →
-      filters trigger/sort → chips → grid → pagination. Logical top-to-bottom, left-to-right.
-- [ ] **Touch targets** — all controls ≥ 44px tap height (`min-h-11`), matching T3 pagination.
-- [ ] **JS-off** — every control degrades to native form/link submission (AC-12, edge 11).
-- [ ] **Keyboard shortcuts** — none added (no command palette in scope); nothing to document.
-
----
-
-## SEO / rendering surface (UI-relevant only)
-
-- Unfiltered `/sillas` (no params) → indexable, cached/static path exactly as T3 (AC-10, AC-11).
-- Any request with `q`/filter/sort params → **dynamic**, `robots: { index: false, follow: true }`,
-  canonical `<link>` → clean `/sillas` (or the page-N canonical for pure `?page`). This is
-  metadata (not visible UI), but the toolbar/chips keep the current state legible to the user.
-
----
-
-## Copy — both locales (all new strings; nested under `catalog`, camelCase, ICU placeholders)
-
-Convention matches the existing `catalog` namespace (`catalog.stock`, `catalog.pagination`).
-Proposed keys (dev finalizes exact wording; es-MX is natural Mexican Spanish, en is parity):
-
-```
-catalog.search.placeholder        es: "Buscar sillas…"                 en: "Search chairs…"
-catalog.search.label              es: "Buscar en el catálogo"          en: "Search the catalog"
-catalog.search.submit             es: "Buscar"                         en: "Search"
-catalog.search.clear              es: "Borrar búsqueda"                en: "Clear search"
-catalog.search.open               es: "Abrir búsqueda"                 en: "Open search"
-
-catalog.filters.title             es: "Filtros"                        en: "Filters"
-catalog.filters.trigger           es: "Filtros"                        en: "Filters"
-catalog.filters.triggerCount      es: "Filtros ({count})"              en: "Filters ({count})"
-catalog.filters.close             es: "Cerrar filtros"                 en: "Close filters"
-catalog.filters.apply             es: "Ver {count, plural, one {# silla} other {# sillas}}"  en: "View {count, plural, one {# chair} other {# chairs}}"
-catalog.filters.clear             es: "Limpiar filtros"                en: "Clear filters"
-catalog.filters.clearAll          es: "Limpiar todo"                   en: "Clear all"
-catalog.filters.showMore          es: "Ver más"                        en: "Show more"
-catalog.filters.showLess          es: "Ver menos"                      en: "Show less"
-catalog.filters.availability      es: "Disponibilidad"                 en: "Availability"
-catalog.filters.inStockOnly       es: "Solo en stock"                  en: "In stock only"
-catalog.filters.includeOutOfStock es: "Incluye agotados"               en: "Include out of stock"
-catalog.filters.category          es: "Categoría"                      en: "Category"
-catalog.filters.brand             es: "Marca"                          en: "Brand"
-catalog.filters.style             es: "Estilo"                         en: "Style"
-catalog.filters.color             es: "Color"                          en: "Color"
-catalog.filters.colorGroup        es: "Filtrar por color"              en: "Filter by color"
-catalog.filters.material          es: "Material"                       en: "Material"
-catalog.filters.price             es: "Precio (MXN)"                   en: "Price (MXN)"
-catalog.filters.priceMin          es: "Mínimo"                         en: "Minimum"
-catalog.filters.priceMax          es: "Máximo"                         en: "Maximum"
-catalog.filters.priceIgnored      es: "Rango de precio ignorado"       en: "Price range ignored"
-catalog.filters.removeChip        es: "Quitar filtro {label}"          en: "Remove filter {label}"
-catalog.filters.chipCategory      es: "Categoría: {value}"             en: "Category: {value}"
-catalog.filters.chipBrand         es: "Marca: {value}"                 en: "Brand: {value}"
-catalog.filters.chipStyle         es: "Estilo: {value}"                en: "Style: {value}"
-catalog.filters.chipColor         es: "Color: {value}"                 en: "Color: {value}"
-catalog.filters.chipMaterial      es: "Material: {value}"              en: "Material: {value}"
-catalog.filters.chipPrice         es: "Precio: {min}–{max}"            en: "Price: {min}–{max}"
-catalog.filters.chipOutOfStock    es: "Incluye agotados"               en: "Includes out of stock"
-
-catalog.sort.label                es: "Ordenar resultados"             en: "Sort results"
-catalog.sort.prefix               es: "Ordenar:"                       en: "Sort:"
-catalog.sort.masVendidas          es: "Más vendidas"                   en: "Best selling"
-catalog.sort.precioAsc            es: "Precio: menor a mayor"          en: "Price: low to high"
-catalog.sort.precioDesc           es: "Precio: mayor a menor"          en: "Price: high to low"
-catalog.sort.novedades            es: "Novedades"                      en: "Newest"
-catalog.sort.nombreAsc            es: "Nombre: A–Z"                    en: "Name: A–Z"
-catalog.sort.nombreDesc           es: "Nombre: Z–A"                    en: "Name: Z–A"
-
-catalog.results.count             es: "{count, plural, one {# silla} other {# sillas}}"  en: "{count, plural, one {# chair} other {# chairs}}"
-
-catalog.noResults.heading         es: "No encontramos sillas que coincidan"  en: "No chairs matched your search"
-catalog.noResults.echoQuery       es: "con “{query}”"                  en: "for “{query}”"
-catalog.noResults.echoFilters     es: "con los filtros seleccionados"  en: "with the selected filters"
-catalog.noResults.clear           es: "Limpiar filtros"                en: "Clear filters"
-catalog.noResults.popularHeading  es: "Sillas populares"               en: "Popular chairs"
-```
-Uses ICU `plural` (next-intl supports it) so "1 silla" / "24 sillas" are correct — matches the
-existing ICU usage in `catalog.stock.lowStock`. No hard-coded user-facing text (AC-17).
+## Design Tokens Used
+- **Colors**: `bg-background`, `bg-card`, `text-foreground`, `text-muted-foreground`,
+  `bg-primary` / `text-primary-foreground` (CTAs, badge pill), `bg-muted` (skeleton,
+  progress track, out-of-stock chip), `border-border`, `ring-ring`. Achieved-shipping
+  tint: `emerald-500`/`emerald-600` used sparingly (mirrors how `StockBadge` low-stock
+  uses `amber` as a single semantic accent) — OR strictly neutral `text-foreground` +
+  🎉 emoji if the team prefers zero new hues (flag for UX).
+- **Typography**: `text-2xl md:text-3xl font-semibold tracking-tight` (page h1, mirror
+  PDP name); `text-sm font-medium` (summary heading, line name); `text-sm
+  text-muted-foreground` (variant/unit/remaining copy); `tabular-nums` on **every**
+  numeric; `text-xs` fine print.
+- **Spacing**: page `py-8`, `px-4 md:px-6 lg:px-8`, `max-w-(--breakpoint-xl)` (mirror
+  header/PDP); intra-panel `gap-4`/`gap-6`; grid `lg:grid-cols-[2fr_1fr] lg:gap-10`
+  (mirror PDP `lg:grid-cols-2 lg:gap-10`); line row `gap-3`/`gap-4`.
+- **Radius**: `rounded-lg` (cards, summary, image thumb — mirror product-card),
+  `rounded-md` (buttons, stepper group, input), `rounded-full` (badge pill, progress
+  track/fill).
+- **Elevation/shadows**: flat/neutral (border-defined surfaces, `bg-card` +
+  `border-border`); no drop shadows except the existing `.card-lift` hover on linked
+  thumbnails. Sticky summary uses the header's border grammar, not a shadow.
+- **Motion**: `--ease-out` for all enters (badge scale-in, confirm crossfade, empty
+  fade, progress fill); `--ease-in-out` for the remove collapse; `.price-value` for
+  number crossfades; `.stagger` for row entrance; `animate-pulse` for skeleton.
+  Durations: badge 160ms, confirm 180ms, progress 400ms, number crossfade ~150ms,
+  collapse 200ms, press 100ms. All `transform`/`opacity` (progress = `scaleX`);
+  reduced-motion drops movement, keeps opacity/color.
 
 ---
 
-## Config additions (single-sourced; components reference these, never literals)
+## i18n copy — ES (default) + EN (both required, one edit)
 
-`src/lib/config.ts` (per ticket "Files to Modify"):
+New `cart` namespace in `src/messages/es-MX.json` and `src/messages/en.json`. Match the
+existing nested-object + `{token}` template style (footer/product namespaces).
 
-```typescript
-// Search / filter URL param names — Spanish, single-sourced (AC-9)
-export const SEARCH_PARAM_KEYS = {
-  q: "q",
-  categoria: "categoria",
-  marca: "marca",
-  estilo: "estilo",
-  color: "color",
-  material: "material",
-  precioMin: "precioMin",
-  precioMax: "precioMax",
-  disponibilidad: "disponibilidad", // "todos" opts into out-of-stock; default omitted = in-stock
-  orden: "orden",
-  page: "page",                     // existing
-} as const;
+| Key | ES (es-MX) | EN |
+| --- | --- | --- |
+| `cart.title` | `Tu carrito` | `Your cart` |
+| `cart.titleCount` (plural) | `Tu carrito ({count})` | `Your cart ({count})` |
+| `cart.metadata.title` | `Carrito` | `Cart` |
+| `cart.empty.title` | `Tu carrito está vacío` | `Your cart is empty` |
+| `cart.empty.subtitle` (opt.) | `Explora nuestras sillas y encuentra la ideal para ti.` | `Browse our chairs and find the right one for you.` |
+| `cart.empty.cta` | `Ver sillas` | `Browse chairs` |
+| `cart.item.remove` | `Eliminar` | `Remove` |
+| `cart.item.increase` | `Aumentar cantidad` | `Increase quantity` |
+| `cart.item.decrease` | `Disminuir cantidad` | `Decrease quantity` |
+| `cart.item.quantityLabel` | `Cantidad` | `Quantity` |
+| `cart.item.unitEach` | `c/u` | `each` |
+| `cart.item.lineTotalLabel` | `Total` | `Total` |
+| `cart.item.colorLabel` | `Color: {name}` | `Color: {name}` |
+| `cart.summary.heading` | `Resumen del pedido` | `Order summary` |
+| `cart.summary.subtotal` | `Subtotal` | `Subtotal` |
+| `cart.summary.shipping` | `Envío` | `Shipping` |
+| `cart.summary.shippingFree` | `Gratis` | `Free` |
+| `cart.summary.shippingUnavailable` | `Se calcula al pagar` | `Calculated at checkout` |
+| `cart.summary.total` | `Total` | `Total` |
+| `cart.freeShipping.remaining` | `Te faltan {amount} para envío gratis` | `You're {amount} away from free shipping` |
+| `cart.freeShipping.achieved` | `¡Tienes envío gratis!` | `You've unlocked free shipping!` |
+| `cart.checkout` | `Proceder al pago` | `Proceed to checkout` |
+| `cart.addToCart` | `Agregar al carrito` | `Add to cart` |
+| `cart.added` | `Agregado` | `Added` |
+| `cart.outOfStock` | `Agotado` | `Out of stock` |
+| `cart.badgeLabel` (plural) | `Carrito, {count} artículos` | `Cart, {count} items` |
+| `cart.headerLink` | `Carrito` | `Cart` |
+| `cart.announce.added` | `Se agregó al carrito. {count} artículos.` | `Added to cart. {count} items.` |
+| `cart.announce.quantity` | `Cantidad actualizada: {count}` | `Quantity updated: {count}` |
+| `cart.announce.removed` | `Producto eliminado del carrito` | `Item removed from cart` |
 
-export const SORT_KEYS = [
-  "mas-vendidas", "precio-asc", "precio-desc",
-  "novedades", "nombre-asc", "nombre-desc",
-] as const;
-export const DEFAULT_SORT = "mas-vendidas" as const;
-
-export const SEARCH_QUERY_MAX = 80;             // hard cap on q (Constraint 3)
-export const POPULAR_PRODUCTS_MAX = 8;          // no-results strip (AC-16)
-export const FILTER_FACET_COLLAPSE_AFTER = 6;   // "Ver más" disclosure threshold
-// SEARCH_DEBOUNCE_MS — reserved; only if live-search is later enabled (submit-based today)
-```
-
----
-
-## Pagination change (AC-15) — carry the filter query string
-
-`makeHrefForPage(basePath)` currently returns `page<=1 ? basePath : ${basePath}?page=N`. Add a
-variant that appends the active filter/sort/search query string so page links preserve state:
-
-```typescript
-// page-helpers.ts (additive; existing callers pass no query = unchanged behavior)
-export function makeHrefForPage(
-  basePath: string,
-  query?: string,   // pre-serialized "q=malla&marca=ergovita&orden=precio-asc" (no leading ?, no page)
-): (page: number) => string {
-  return (page: number): string => {
-    const params = query ? query : "";
-    if (page <= 1) return params ? `${basePath}?${params}` : basePath;
-    const sep = params ? `${params}&` : "";
-    return `${basePath}?${sep}page=${page}`;
-  };
-}
-```
-`Pagination` is unchanged (it already takes `hrefForPage` as a prop). Page 1 still self-
-canonicalizes to the clean filtered URL (no `?page=1`). The serialized `query` comes from the
-`search-params.ts` serialize fn so param order is deterministic (stable, shareable URLs).
+> **Plurals**: where the count varies ("artículo"/"artículos", "silla"/"sillas"), use
+> next-intl ICU plural syntax (`{count, plural, one {# artículo} other {# artículos}}`)
+> to match the existing `catalog.filters.apply` pattern. Apply plural to `badgeLabel`,
+> `announce.added`, and `titleCount`.
+> **Amount interpolation**: `freeShipping.remaining` — format cents via `formatMXN`
+> FIRST, then `interpolate` the string into `{amount}` (never pass raw cents to ICU).
 
 ---
 
-## Open Questions for Dev
+## Notes for the Dev stage (watch-outs)
 
-1. **Sort JS-off fallback:** dual-render (native `<select>` + hydrated shadcn `Select`) vs.
-   client-only toolbar `Select` with the Sheet's in-`<form>` native `<select>` as the sole JS-off
-   path. Spec recommends the latter (simpler). AC-12 mandates JS-off for *search*; filters/sort
-   ride the filter `<form>` — confirm sort is inside that form.
-2. **Grid columns at exactly `lg` (1024px) with a 16rem sidebar:** the `1fr` column may only fit 3
-   cards. Decide: gate the grid's 4th column to `xl:` inside the sidebar layout, or accept 3 cols
-   at `lg`. Pure breakpoint tuning — verify visually.
-3. **Filter Sheet side:** spec chose `left` (spatial consistency with MobileNav). If product
-   prefers a bottom sheet (more native mobile-filter idiom), the M-1 motion swaps `translateX`→
-   `translateY(100%)` with the same curve — flag before build.
-4. **Mobile live-apply vs. batch-apply:** spec chose live-apply with a running "Ver N" footer
-   (desktop parity, immediate feedback). If the RPC round-trip feels heavy on mobile networks,
-   fall back to batch-apply (footer button commits accumulated changes). Live is better if the RPC
-   stays fast (research: trivial at seed scale).
-5. **Price control domain vs. cache buckets:** the slider shows the real catalog min/max for UX,
-   but the parse lib snaps to bounded buckets for the cache key (Constraint 3). Confirm this
-   two-layer approach (display domain ≠ cache-key buckets) is acceptable.
-6. **Price chip / open-ended wording:** chips use `formatMXN` from `src/lib/money` for both
-   bounds. Confirm wording for the open-ended cases ("desde $2,000", "hasta $4,000") vs. a full
-   range ("$2,000–$4,000").
-```
+1. **shadcn Button is too small for touch.** Its `lg` size is `h-8` (32px). Every cart
+   touch target (add-to-cart, stepper +/−, remove, checkout CTA, header badge box)
+   must explicitly override to **≥ 44px** (`h-11`/`size-11`) via `className`. Don't
+   ship the default sizes.
+2. **No layout shift is a hard contract.** Header badge pre-hydration = icon-only in a
+   fixed 44×44 box with the count as an *absolutely-positioned overlay pill* (never a
+   flex sibling). Cart page skeleton must size to the real layout so the
+   skeleton→content swap is a pure opacity crossfade.
+3. **Progress bar = `transform: scaleX`, never `width`.** Fill is `origin-left
+   scaleX(pct)` with `transition: transform … var(--ease-out)`. Reduced motion swaps to
+   an opacity crossfade with `transform: none`. Ticket + review gate.
+4. **`FreeShippingProgress` returns `null` when settings are null** — do not render an
+   empty bar; `OrderSummary` shows the neutral `shippingUnavailable` label and the
+   total equals the subtotal (never `$NaN`).
+5. **Every number is `tabular-nums` and goes through `formatMXN`.** For
+   `freeShipping.remaining`, format cents first, then `interpolate` into `{amount}`.
+6. **PDP panel keeps its "no client i18n" invariant.** Pass the 3 add-to-cart labels
+   into `AddToCartButton` as props (`labels`), resolved server-side in the panel/page —
+   do NOT call `useTranslations` inside the button. The cart *page* body
+   (`CartPageClient`) is the heavy island that uses `useTranslations("cart")`.
+7. **Add-to-cart + stepper use functional state updates** (`setLines(prev => …)`) so
+   rapid clicks coalesce (edge 9) and never exceed the cap.
+8. **Confirm state is interruptible** — re-click during "Agregado ✓" re-adds and resets
+   the timer; use a CSS transition (not a keyframe) for the label crossfade so it
+   retargets smoothly (emil: transitions over keyframes for rapid UI).
+9. **One `aria-live` region** at the page level, not per-control, to avoid duplicate
+   announcements.
+10. **Remove-row collapse uses `height`** (a deliberate one-off exit). If the reviewer
+    objects to animating a layout property, fall back to opacity-only. Reduced motion
+    must drop the height animation regardless.
+11. **Checkout CTA is a `Link`, not a form.** It only navigates to `CHECKOUT_PATH`; it
+    may 404 until T7. No order/stock/payment logic in any cart component.
+12. **Reuse `StockBadge` and `formatMXN` verbatim** — do not fork them. Out-of-stock
+    cart line = `StockBadge state="out" label={outOfStock}` + `opacity-60` image
+    (mirror product-card).
+13. **Achieved-shipping tint** (`emerald-*`) is the only proposed non-neutral hue; if
+    the team wants strictly neutral, use `text-foreground` + the 🎉 emoji (aria-hidden).
+    Flag for the UX stage.
+14. **Icons**: `@hugeicons/react` only — `ShoppingCart01Icon` (badge/empty),
+    `MinusSignIcon`/`PlusSignIcon` (stepper), `Delete02Icon` (remove),
+    `Tick02Icon`/`CheckmarkCircle02Icon` (confirm), `ArrowRight01Icon` (checkout),
+    `Image01Icon` (image fallback). Never mix icon sets.
