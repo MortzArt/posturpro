@@ -47,6 +47,13 @@ function isEntry(value: unknown): value is RecentlyViewedEntry {
     typeof entry.priceCents === "number" &&
     typeof entry.coverAlt === "string" &&
     typeof entry.colorCount === "number" &&
+    // Validate the remaining spread fields too (m-5): a tampered entry that
+    // omitted `compareAtPriceCents` used to reach `formatMXN(undefined)` → $NaN.
+    (entry.compareAtPriceCents === null ||
+      typeof entry.compareAtPriceCents === "number") &&
+    (entry.coverImageUrl === null || typeof entry.coverImageUrl === "string") &&
+    (entry.brandName === null || typeof entry.brandName === "string") &&
+    (entry.lowStockN === null || typeof entry.lowStockN === "number") &&
     (entry.stockState === "in" ||
       entry.stockState === "low" ||
       entry.stockState === "out")

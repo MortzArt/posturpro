@@ -43,7 +43,13 @@ should be fixed before ship; the rest are quick.
   and `interpolate(template, { count: entry.lowStockN ?? 0 })` for `low` entries (mirrors
   the existing `colorsCountTemplate` pattern already in this file), or pass a
   `lowStockLabel(n)` resolver. Drop the `count`-baked `stock.lowStock` from `stockByState`.
-- **Status**: OPEN
+- **Status**: FIXED — `recently-viewed.tsx` now resolves each tile's stock label
+  per-entry via `resolveStockLabel(entry, labels)`: `low` tiles interpolate
+  `lowStockTemplate` with `entry.lowStockN ?? 0` (mirrors the `colorsCountTemplate`
+  pattern and `product-grid.tsx`), `in`/`out` use static labels. The frozen
+  `stockByState` map (with the current product's baked count) is gone;
+  `RecentlyViewedCardLabels` now exposes `inStock`/`outOfStock`/`lowStockTemplate`.
+  `page.tsx` passes `lowStockTemplate: tCatalog.raw("stock.lowStock")` (no `count`).
 
 ### M-2: Rate-limiter map grows unbounded on attacker-supplied `productId` (memory DoS)
 - **ID**: M-2
@@ -67,7 +73,14 @@ should be fixed before ship; the rest are quick.
   `submissionLog.size` in `checkRateLimit` (evict when a key count cap is exceeded, or prune
   fully-empty keys). (c) Consider keying the limiter on `ip` alone (or `ip|slug` where slug
   is already bounded by `isCacheableSlug`) rather than the raw `productId`.
-- **Status**: OPEN
+- **Status**: FIXED — (a) `submit-guard.ts` exports `isValidProductId`
+  (`UUID_PATTERN`, anchored/fixed-length, no ReDoS); the action validates
+  `productId` as a UUID in step 2 (`!isValidProductId(productId)` → `invalid`)
+  BEFORE it keys the limiter or hits the DB, so arbitrary strings can no longer
+  mint keys. (b) `checkRateLimit` now deletes empty keys implicitly and enforces
+  a hard `QA_RATE_LIMIT_MAX_KEYS = 10_000` ceiling via `evictToCeiling` (prunes
+  fully-expired keys, then oldest-inserted keys) before inserting any NEW key —
+  map size is bounded regardless of input. Added test-only `rateLimitKeyCount()`.
 
 ### M-3: Rate limit is trivially bypassed via `X-Forwarded-For` spoofing
 - **ID**: M-3
@@ -88,7 +101,15 @@ should be fixed before ship; the rest are quick.
   document that this limiter assumes a trusted edge that overwrites XFF, and combine with
   M-2's global cap so spoofing cannot amplify memory. (`unknown` already collapses all
   no-IP callers into one bucket — fine.)
-- **Status**: OPEN
+- **Status**: FIXED — `clientIp()` rewritten with a documented trust model for
+  the Vercel deployment target (README/Geist): prefer `x-vercel-forwarded-for`
+  (single value injected by Vercel's trusted edge, not spoofable behind Vercel);
+  else the RIGHTMOST hop of `x-forwarded-for` (the address appended by the closest
+  trusted proxy — leftmost hops are client-forgeable); else `x-real-ip`; else the
+  shared `"unknown"` bucket. No longer trusts `split(",")[0]`. RESIDUAL RISK
+  documented in code + dev-done: on a deployment with NO trusted edge overwriting
+  XFF the limiter is only best-effort (per the ticket) — the honeypot and M-2's
+  hard map cap are the backstops that stop spoofing from amplifying into memory.
 
 ### M-4: `defaultVariant` helper is dead; panel duplicates the default-selection logic
 - **ID**: M-4
@@ -107,7 +128,11 @@ should be fixed before ship; the rest are quick.
 - **Suggested Fix**: Have the panel use `defaultVariant(variants)` for both the initial
   `useState` seed and the `selectedVariant` fallback, or delete `defaultVariant` if the
   inline form is preferred. Do not ship both.
-- **Status**: OPEN
+- **Status**: FIXED — `product-purchase-panel.tsx` now imports and uses
+  `defaultVariant(variants)` for BOTH the initial `useState` seed
+  (`defaultVariant(variants)?.id ?? ""`) and the `selectedVariant` fallback
+  (`... ?? defaultVariant(variants)`). The two inline `variants[0]` copies are
+  gone; "the default variant is index 0" lives in one place. Helper no longer dead.
 
 ---
 
@@ -122,6 +147,9 @@ should be fixed before ship; the rest are quick.
 - **Suggestion**: Either add a `MAX_META_DESCRIPTION` slice (≈155–160 chars, single-sourced
   in `config.ts`) to satisfy the literal AC, or update AC-3 to accept the brand-page pattern.
   Given the design/ticket tension, flag for the fix stage to decide — do not silently ignore.
+- **Status**: FIXED — chose to satisfy the literal AC. Added `MAX_META_DESCRIPTION = 160`
+  and pure `truncateForMeta(text)` (word-boundary slice + ellipsis) in `config.ts`;
+  `generateMetadata` truncates the product description (fallback message untouched).
 
 ### m-2: `next/image` in the zoom lightbox hardcodes 1200×1500 for every image
 - **File**: `src/components/product/product-gallery.tsx:100-107`
@@ -132,6 +160,13 @@ should be fixed before ship; the rest are quick.
 - **Suggestion**: If image dimensions aren't in the model, either use `fill` within a
   ratio-agnostic container, or carry width/height in `ProductImageView`. Low urgency (visual
   only), but the 4:5 assumption is a magic pair with no constant.
+- **Status**: FIXED (magic-pair removed) — extracted the nominal dimensions to named
+  constants `LIGHTBOX_NOMINAL_WIDTH`/`LIGHTBOX_NOMINAL_HEIGHT` in `product-gallery.tsx`
+  with a doc block noting they are a nominal upper bound only; the real fit is done by
+  `object-contain` inside `max-h-[90vh] max-w-[90vw]`, so any source aspect letterboxes
+  correctly. Did NOT carry width/height into `ProductImageView` (out of T4 model scope);
+  `fill` would letterbox within the full 90vw×90vh box rather than shrink-wrap, so the
+  intrinsic form is kept — the magic literal (the actual finding) is gone.
 
 ### m-3: no-variant `aria-live` region announces nothing (confirm intent)
 - **File**: `src/components/product/product-purchase-panel.tsx:107-110`, `:170-177`
@@ -139,6 +174,8 @@ should be fixed before ship; the rest are quick.
   empty. Per design this region is variant-selection feedback and price/stock are statically
   in the DOM at load, so this is acceptable — noted so the fix/QA stage doesn't "fix" it into
   announcing on load (which would be noise). Not a defect.
+- **Status**: SKIPPED (not a defect) — the reviewer explicitly flagged this as
+  intended behavior; "fixing" it into announcing on load would be a11y noise. Left as-is.
 
 ### m-4: no composite index for the published-question read
 - **File**: `src/lib/catalog/product-detail.ts:214-234`; index in
@@ -147,6 +184,8 @@ should be fixed before ship; the rest are quick.
   `created_at desc`; no composite `(product_id, is_published, created_at)` index → in-memory
   filter+sort. Bounded per-product (no pagination), fine at seed scale.
 - **Suggestion**: Backlog a composite index for T10/T11 volume; no migration in T4 scope.
+- **Status**: SKIPPED (backlog) — no migration in T4 scope (reviewer's own call); bounded
+  per-product with no pagination, fine at seed scale. Deferred to T10/T11 volume work.
 
 ### m-5: `isEntry` shape guard omits several fields it later spreads
 - **File**: `src/lib/recently-viewed.ts:38-54`
@@ -158,6 +197,10 @@ should be fixed before ship; the rest are quick.
 - **Suggestion**: Assert `compareAtPriceCents: number|null`, `coverImageUrl: string|null`,
   `lowStockN: number|null`, `brandName: string|null` in `isEntry`. Cheap; closes the `$NaN`
   path from tampered storage.
+- **Status**: FIXED — `isEntry` now asserts `compareAtPriceCents` (number|null),
+  `coverImageUrl` (string|null), `brandName` (string|null), and `lowStockN`
+  (number|null). A tampered entry missing any of these is rejected, closing the
+  `formatMXN(undefined)` → `$NaN` render path.
 
 ### m-6: published question with `answer === null` renders a bare question
 - **File**: `src/components/product/product-qa.tsx:88-93`; `product-detail.ts:214-224`
@@ -167,6 +210,9 @@ should be fixed before ship; the rest are quick.
   insert forces `answer=null`+`is_published=false`.
 - **Suggestion**: Filter `answer is not null` in `readQuestions` for strict AC-13 semantics,
   or accept as a T11 admin responsibility and document. Low risk in T4.
+- **Status**: FIXED — `readQuestions` now adds `.not("answer", "is", null)`, so a
+  published-but-unanswered row is excluded rather than rendered as a bare question
+  (strict AC-13 "author name, question, answer" semantics).
 
 ---
 
@@ -174,14 +220,19 @@ should be fixed before ship; the rest are quick.
 
 - **n-1**: `product-specs.tsx:22` uses `gap-y-0` while `ui-design.md:340` specced `gap-y-3`;
   row separation now relies only on `border-b`/`py-2`. Cosmetic — verify intended density.
+  **FIXED** — aligned to the spec: `gap-y-3` on the `<dl>`.
 - **n-2**: `product-gallery.tsx:124-126` combines `flex-wrap` + `overflow-x-auto` — `flex-wrap`
   wins so thumbs wrap at all sizes and never scroll; design wanted a scrollable rail on mobile.
-  Harmless; pick one.
+  Harmless; pick one. **FIXED** — dropped `flex-wrap`, kept `overflow-x-auto` (+`pb-1`); the
+  `<li>` already has `shrink-0`, so thumbnails now form the intended horizontal scroll rail.
 - **n-3**: Container class `mx-auto max-w-(--breakpoint-xl) px-4 py-8 …` and section rhythm
   `mt-10 md:mt-12` are repeated literals across page/skeleton/specs/qa. Matches T3, acceptable;
-  candidate for a shared layout primitive later.
+  candidate for a shared layout primitive later. **SKIPPED** — reviewer marked acceptable
+  (matches T3); a shared layout primitive is cross-cutting churn beyond T4 scope, deferred.
 - **n-4**: `firstOrSelf`/`EmbeddedBrand` PostgREST to-one normalizer duplicated from the T3
-  read layer (`queries.ts`). Minor DRY — hoist to a shared helper.
+  read layer (`queries.ts`). Minor DRY — hoist to a shared helper. **SKIPPED** — hoisting a
+  shared PostgREST normalizer touches the T3 read layer (`queries.ts`, covered by its own
+  tests); out of T4 fix scope, backlogged to a DRY pass rather than risk T3 churn here.
 
 ---
 
@@ -193,8 +244,8 @@ should be fixed before ship; the rest are quick.
 | Insert sends only safe columns | PASS — `{product_id, author_name, question}`; RLS `WITH CHECK` forces `is_published=false, answer=null, answered_at=null, is_active_product` (`0006:150-160`). |
 | Honeypot bypass | PASS — off-screen real input, `trim().length>0` → fake success, no insert. |
 | Validation trim-before-length (edge 4) | PASS — `validateQaSubmission` trims first; DB `btrim` CHECK is the floor. |
-| Rate-limit IP source | **FAIL — M-3** (XFF spoofable). |
-| Rate-limit map cardinality | **FAIL — M-2** (unbounded on `productId`). |
+| Rate-limit IP source | PASS (post-fix, M-3) — platform `x-vercel-forwarded-for` → rightmost XFF hop; leftmost-spoof no longer trusted; trust model + residual risk documented. |
+| Rate-limit map cardinality | PASS (post-fix, M-2) — `productId` UUID-validated before it keys anything; hard `QA_RATE_LIMIT_MAX_KEYS` ceiling with idle/oldest eviction. |
 | Q&A input reaching a cache key | PASS — only bounded `slug` reaches `updateTag`; no form input touches a tag/key. |
 | `cost_price_cents` reachable (AC-16) | PASS — reads the view; column never selected; structurally omitted. |
 | Slug → cache key discipline (edge 6) | PASS — `isCacheableSlug` (len ≤128, kebab regex) rejects junk pre-cache. |
@@ -239,7 +290,7 @@ tokens left literal. es-MX default. PASS (AC-17).
 | --- | --- | --- | --- |
 | AC-1 | Renders both locales; unknown/draft/archived → `notFound()` in shell | PASS | `page.tsx:83-86`; view filters `status='active'`; junk → `isCacheableSlug` null. (Next-16 `next start` 200-body-correct is dev-documented, CDN-correct.) |
 | AC-2 | `generateStaticParams` slugs × locales; tag-cached + `revalidate` | PASS | `page.tsx:53-58`; cache tags `[catalog, product:<slug>]`, `revalidate: CATALOG_REVALIDATE_SECONDS`. |
-| AC-3 | Metadata `"{name} — {store}"`, description, `{}` on miss | PARTIAL | Title + `{}`-on-miss correct; description NOT truncated — **m-1** (matches brand page). |
+| AC-3 | Metadata `"{name} — {store}"`, description, `{}` on miss | PASS (post-fix) | Title + `{}`-on-miss correct; description now truncated via `truncateForMeta` (`MAX_META_DESCRIPTION=160`) — m-1 FIXED. |
 | AC-4 | Breadcrumb `Inicio › Sillas › {name}`, last = current | PASS | `page.tsx:98-106` — third item no `href`. |
 | AC-5 | Gallery + thumbs; primary first; zero-image placeholder, no broken img | PASS | Order `is_primary,sort_order,id`; `GalleryPlaceholder`; `onError`→placeholder. |
 | AC-6 | Zoom lightbox; Escape/backdrop/close; focus trap + return | PASS | Radix `Dialog` (`gallery:65-121`), visible close. |
@@ -248,10 +299,10 @@ tokens left literal. es-MX default. PASS (AC-17).
 | AC-9 | `formatMXN`; strike only when compare-at `> effective` | PASS | `shouldStrikeCompareAt` strict `>`; per-variant `compareAtLabel`; enforced in read model too. |
 | AC-10 | Specs mm→cm/g→kg, null omitted, all-null hides section | PASS | `buildSpecRows`; page gates `specRows.length>0`. |
 | AC-11 | Three-state `StockBadge`, effective stock, legible w/o color | PASS | Reused badge; icon+text; per-variant `variantStockState`. |
-| AC-12 | Recently-viewed ≤8 newest-first excl current; localStorage; empty hidden | PASS* | Empty SSR shell, dedupe+cap; ***low-stock label wrong per M-1***. |
+| AC-12 | Recently-viewed ≤8 newest-first excl current; localStorage; empty hidden | PASS (post-fix) | Empty SSR shell, dedupe+cap; low-stock label now per-entry (M-1 FIXED). |
 | AC-13 | Lists published Q&A newest-first; empty state + form CTA | PASS | `is_published=true`, `created_at desc`; `QaEmptyState`. (null-answer edge = m-6.) |
 | AC-14 | Server-action anon insert; success clears+note+focus; trim-validate both | PASS | `actions.ts`+`submit-guard.ts`; client caps + `useActionState` reset+focus. |
-| AC-15 | Honeypot silent-accept; per-IP+product rate limit + friendly msg | PARTIAL | Honeypot PASS; rate limit **bypassable (M-3) + unbounded (M-2)**. |
+| AC-15 | Honeypot silent-accept; per-IP+product rate limit + friendly msg | PASS (post-fix) | Honeypot PASS; rate limit now UUID-gated + map-capped (M-2 FIXED) and sourced from the platform/rightmost-hop IP with a documented trust model (M-3 FIXED). |
 | AC-16 | `cost_price_cents` nowhere | PASS | View-only read; never selected. |
 | AC-17 | `product` namespace both locales, no hardcoded copy, es default | PASS | Parity verified; components string-free. |
 | AC-18 | Non-empty alts; swatch names; keyboard + SR labels | PASS | `altText ?? name`; roving-tabindex radiogroup; aria-live; sr-only compare. |
@@ -259,6 +310,9 @@ tokens left literal. es-MX default. PASS (AC-17).
 | AC-20 | Motion ease-out, transform/opacity, reduced-motion, <300ms | PASS | See Animation review. |
 
 **18 PASS · 2 PARTIAL (AC-3 truncation, AC-15 rate-limit robustness) · 0 FAIL.**
+
+> **Stage 6 update:** both PARTIALs resolved — AC-3 truncation (m-1) and AC-15
+> rate-limit robustness (M-2 + M-3) FIXED. **20 PASS · 0 PARTIAL · 0 FAIL.**
 
 ## Edge Case Verification
 
@@ -284,8 +338,14 @@ user-visible data bug (M-1), two DoS vectors on the brand-new public write path 
 that undercut the control the ticket calls out as full-depth security, and a ticket-mandated
 helper shipped dead (M-4).
 
-## Recommendation: REQUEST CHANGES
+## Recommendation: REQUEST CHANGES → RESOLVED (Stage 6)
 
 Fix M-1 (wrong stock label), M-2 + M-3 (write-path DoS: validate `productId`, bound the map,
 harden the IP source), and M-4 (dead `defaultVariant`) before Stage 12. Minors/nits can batch
 into the fix stage. No critical blockers; the core PDP is production-shaped.
+
+**Stage 6 (ultrafix) outcome:** all 4 majors FIXED; 5/6 minors FIXED (m-3 not-a-defect,
+m-4 index backlogged — both SKIPPED with justification); 2/4 nits FIXED (n-3/n-4 SKIPPED as
+out-of-T4-scope DRY backlog). Both PARTIAL ACs (AC-3, AC-15) now PASS. Verification: lint
+clean, `tsc --noEmit` clean, `next build` succeeds (PDP still SSG, 60 paths, 5m ISR), 297
+unit tests pass, message parity intact. Ready for Stage 12.

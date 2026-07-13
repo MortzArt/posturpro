@@ -19,7 +19,7 @@ export function ProductSpecs({ rows, heading }: ProductSpecsProps) {
       <h2 className="mb-4 text-sm font-medium tracking-tight text-foreground">
         {heading}
       </h2>
-      <dl className="grid grid-cols-1 gap-x-8 gap-y-0 sm:grid-cols-2">
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
         {rows.map((row) => (
           <div
             key={row.key}

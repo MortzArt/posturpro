@@ -40,6 +40,18 @@ interface ProductGalleryProps {
 const MAIN_SIZES = "(max-width: 1024px) 100vw, 50vw" as const;
 const THUMB_SIZES = "64px" as const;
 
+/**
+ * Nominal intrinsic dimensions declared to `next/image` for the lightbox (m-2).
+ * Real dimensions aren't in `ProductImageView`, and `next/image` requires a
+ * width/height (or `fill`) to reserve layout space. These are a NOMINAL upper
+ * bound only — the CSS (`object-contain` inside `max-h-[90vh] max-w-[90vw]`)
+ * does the real fit, so any source aspect (square seed images, landscape) is
+ * letterboxed correctly regardless of this ratio. Single-sourced so the pair is
+ * no longer a magic literal.
+ */
+const LIGHTBOX_NOMINAL_WIDTH = 1200;
+const LIGHTBOX_NOMINAL_HEIGHT = 1500;
+
 export function ProductGallery({
   images,
   productName,
@@ -100,8 +112,8 @@ export function ProductGallery({
               <Image
                 src={active.url}
                 alt={activeAlt}
-                width={1200}
-                height={1500}
+                width={LIGHTBOX_NOMINAL_WIDTH}
+                height={LIGHTBOX_NOMINAL_HEIGHT}
                 sizes="90vw"
                 className="h-auto max-h-[90vh] w-auto max-w-[90vw] rounded-lg object-contain"
               />
@@ -122,7 +134,7 @@ export function ProductGallery({
 
       {images.length > 1 ? (
         <ul
-          className="mt-3 flex flex-wrap gap-2 overflow-x-auto"
+          className="mt-3 flex gap-2 overflow-x-auto pb-1"
           data-testid="gallery-thumbnails"
         >
           {images.map((image, index) => {

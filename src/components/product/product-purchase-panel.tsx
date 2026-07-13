@@ -4,7 +4,10 @@ import { useMemo, useState } from "react";
 import { StockBadge } from "@/components/catalog/stock-badge";
 import { ProductGallery } from "@/components/product/product-gallery";
 import { VariantSelector } from "@/components/product/variant-selector";
-import { imagesForVariant } from "@/lib/catalog/variant-selection";
+import {
+  defaultVariant,
+  imagesForVariant,
+} from "@/lib/catalog/variant-selection";
 import type { StockState } from "@/lib/catalog/types";
 import type {
   ProductImageView,
@@ -77,12 +80,14 @@ export function ProductPurchasePanel({
 }: ProductPurchasePanelProps) {
   const hasVariants = variants.length > 0;
   const [selectedVariantId, setSelectedVariantId] = useState(
-    () => variants[0]?.id ?? "",
+    () => defaultVariant(variants)?.id ?? "",
   );
 
+  // Single source of truth for "the default variant is index 0": both the
+  // initial seed above and this fallback route through `defaultVariant` (M-4).
   const selectedVariant = hasVariants
     ? (variants.find((variant) => variant.id === selectedVariantId) ??
-      variants[0])
+      defaultVariant(variants))
     : null;
 
   const images = useMemo(

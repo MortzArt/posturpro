@@ -210,7 +210,12 @@ async function readVariants(
   }));
 }
 
-/** Batched PUBLISHED question read, newest-first (AC-13). */
+/**
+ * Batched PUBLISHED, ANSWERED question read, newest-first (AC-13). Requires a
+ * non-null `answer` (m-6): AC-13 lists "author name, question, answer", so a
+ * published-but-unanswered row (only reachable if an admin publishes without
+ * answering in T11) is excluded rather than rendered as a bare question.
+ */
 async function readQuestions(
   db: ReturnType<typeof createPublicClient>,
   productId: string,
@@ -220,6 +225,7 @@ async function readQuestions(
     .select("id,author_name,question,answer,answered_at,created_at")
     .eq("product_id", productId)
     .eq("is_published", true)
+    .not("answer", "is", null)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false });
   if (error) fail("product_questions", error.message);

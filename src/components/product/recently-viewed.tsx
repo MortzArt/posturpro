@@ -7,7 +7,7 @@ import {
   recordRecentlyViewed,
   type RecentlyViewedEntry,
 } from "@/lib/recently-viewed";
-import type { CatalogProductCard, StockState } from "@/lib/catalog/types";
+import type { CatalogProductCard } from "@/lib/catalog/types";
 
 /**
  * RecentlyViewed (T4 AC-12, edge 7) — client-only strip with an EMPTY SSR shell.
@@ -20,10 +20,34 @@ import type { CatalogProductCard, StockState } from "@/lib/catalog/types";
 
 /** Pre-resolved card labels so the reused `ProductCard` does no client i18n. */
 export interface RecentlyViewedCardLabels {
-  stockByState: Record<StockState, string>;
+  /** Static labels for the non-parameterized stock states. */
+  inStock: string;
+  outOfStock: string;
+  /**
+   * Template "Solo quedan {count}", interpolated PER-ENTRY from that entry's own
+   * `lowStockN` — never a single frozen count from the current product (M-1).
+   */
+  lowStockTemplate: string;
   imagePlaceholder: string;
   /** Template "{count} colores", interpolated client-side. */
   colorsCountTemplate: string;
+}
+
+/** Resolve a tile's stock label from ITS OWN state + stored count (M-1). */
+function resolveStockLabel(
+  entry: RecentlyViewedEntry,
+  labels: RecentlyViewedCardLabels,
+): string {
+  switch (entry.stockState) {
+    case "in":
+      return labels.inStock;
+    case "low":
+      return interpolate(labels.lowStockTemplate, {
+        count: entry.lowStockN ?? 0,
+      });
+    case "out":
+      return labels.outOfStock;
+  }
 }
 
 interface RecentlyViewedProps {
@@ -72,7 +96,7 @@ export function RecentlyViewed({
             <ProductCard
               product={toCard(entry)}
               labels={{
-                stock: cardLabels.stockByState[entry.stockState],
+                stock: resolveStockLabel(entry, cardLabels),
                 colors:
                   entry.colorCount >= 2
                     ? interpolate(cardLabels.colorsCountTemplate, {

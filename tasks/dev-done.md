@@ -161,3 +161,64 @@ max-w-2xl, no overflow.
 ## Dependencies Added
 
 None.
+
+---
+
+## Stage 6 fixes (ultrafix)
+
+Systematic fix of the Stage 5 review findings (0 critical, 4 major, 6 minor, 4 nit).
+
+### Issue Tracker
+
+| ID | Severity | Title | Status | File | Notes |
+|----|----------|-------|--------|------|-------|
+| M-1 | MAJOR | Recently-viewed tiles show current product's low-stock count | FIXED | `recently-viewed.tsx`, `page.tsx` | Per-entry `resolveStockLabel(entry, labels)`; `low` interpolates `lowStockTemplate` w/ `entry.lowStockN`; frozen `stockByState` map removed. |
+| M-2 | MAJOR | Rate-limiter map unbounded on attacker `productId` | FIXED | `submit-guard.ts`, `actions.ts`, `config.ts` | UUID-validate `productId` before it keys anything (`isValidProductId`/`UUID_PATTERN`); hard `QA_RATE_LIMIT_MAX_KEYS=10_000` ceiling w/ idle+oldest eviction. |
+| M-3 | MAJOR | Rate limit spoofable via `X-Forwarded-For` | FIXED | `actions.ts` | `clientIp()` prefers `x-vercel-forwarded-for`, then rightmost XFF hop, then `x-real-ip`, then `unknown`; trust model + residual risk documented. |
+| M-4 | MAJOR | Dead `defaultVariant` + duplicated index-0 logic | FIXED | `product-purchase-panel.tsx` | Panel uses `defaultVariant(variants)` for both the `useState` seed and fallback; two inline `variants[0]` copies removed. |
+| m-1 | MINOR | Metadata description not truncated (AC-3) | FIXED | `config.ts`, `page.tsx` | Added `MAX_META_DESCRIPTION=160` + pure `truncateForMeta` (word-boundary + ellipsis); applied in `generateMetadata`. |
+| m-2 | MINOR | Lightbox hardcodes 1200×1500 (magic pair) | FIXED | `product-gallery.tsx` | Extracted `LIGHTBOX_NOMINAL_WIDTH/HEIGHT` constants w/ doc block; `object-contain` still does the real fit. |
+| m-3 | MINOR | Empty no-variant `aria-live` region | SKIPPED | — | Reviewer flagged as intended; announcing on load would be a11y noise. |
+| m-4 | MINOR | No composite index for Q&A read | SKIPPED | — | No migration in T4 scope (reviewer's call); backlogged to T10/T11 volume. |
+| m-5 | MINOR | `isEntry` omits spread fields → `$NaN` | FIXED | `recently-viewed.ts` | Guards now assert `compareAtPriceCents`/`coverImageUrl`/`brandName`/`lowStockN` shapes. |
+| m-6 | MINOR | Published `answer===null` renders bare question | FIXED | `product-detail.ts` | `readQuestions` adds `.not("answer","is",null)` for strict AC-13. |
+| n-1 | NIT | `gap-y-0` vs specced `gap-y-3` | FIXED | `product-specs.tsx` | Aligned to `ui-design.md` spec. |
+| n-2 | NIT | `flex-wrap` + `overflow-x-auto` conflict | FIXED | `product-gallery.tsx` | Dropped `flex-wrap`; thumbnails now scroll horizontally (`<li>` already `shrink-0`). |
+| n-3 | NIT | Repeated container/rhythm literals | SKIPPED | — | Reviewer marked acceptable (matches T3); shared primitive deferred. |
+| n-4 | NIT | `firstOrSelf` normalizer duplicated from T3 | SKIPPED | — | Hoisting touches T3 `queries.ts` (own tests); out of T4 scope, backlogged. |
+
+### Summary
+- Critical: 0/0
+- Major: 4/4 FIXED, 0 skipped
+- Minor: 4/6 FIXED, 2 SKIPPED (m-3 not-a-defect, m-4 index backlog)
+- Nit: 2/4 FIXED, 2 SKIPPED (n-3/n-4 cross-cutting DRY backlog)
+
+### M-3 trust model (documented residual risk)
+
+The app deploys behind Vercel's edge. `clientIp()` now prefers, in order:
+`x-vercel-forwarded-for` (single value the trusted edge injects and strips from
+any client copy — not spoofable behind Vercel) → the **rightmost** hop of
+`x-forwarded-for` (the address the closest trusted proxy appended; leftmost hops
+are client-forgeable) → `x-real-ip` → the shared `"unknown"` bucket. The former
+`split(",")[0]` (fully client-controlled) is gone.
+
+**Residual risk:** on a deployment with NO trusted edge overwriting/appending
+XFF, the rightmost hop is still whatever the client sent, so the limiter remains
+best-effort (as the ticket accepts). The honeypot and M-2's hard map-size cap are
+the backstops that stop IP/productId spoofing from amplifying into memory growth.
+A durable/global limiter remains the documented follow-up.
+
+### New constants / helpers (single-sourced, Rule 4)
+`QA_RATE_LIMIT_MAX_KEYS`, `UUID_PATTERN`, `MAX_META_DESCRIPTION`, `truncateForMeta`
+in `config.ts`; `isValidProductId`, `rateLimitKeyCount` (test-only), `evictToCeiling`
+(internal) in `submit-guard.ts`; `LIGHTBOX_NOMINAL_WIDTH/HEIGHT` in `product-gallery.tsx`.
+
+### Verification after fixes
+- **Lint** — clean (0/0). **Typecheck** — `tsc --noEmit` clean. **Build** —
+  succeeds; PDP still SSG, 60 prerendered paths, 5m ISR (unchanged).
+- **Unit tests** — 297 passed (17 files), incl. message key-parity. No existing
+  test covered the changed modules, so none required updates; behavior-changing
+  fixes (M-2/M-3 limiter, m-6 query filter) are left for Stage 7 QA to cover.
+- No new npm dependencies. Accepted deviations untouched (messages path, icon
+  substitution, no route-level `revalidate`, local-200-on-unknown-slug). Anon
+  client only for the Q&A write. Motion layer (M1–M9) unchanged.

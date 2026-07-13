@@ -8,6 +8,7 @@ import {
   CATALOG_PATH,
   QUESTION_MAX,
   SEED_STORE_NAME,
+  truncateForMeta,
 } from "@/lib/config";
 import {
   getProduct,
@@ -69,10 +70,12 @@ export async function generateMetadata({
   const t = await getTranslations({ locale: activeLocale, namespace: "product" });
   const settings = await getStoreSettingsStatic();
   const store = settings?.store_name ?? SEED_STORE_NAME;
+  const description = product.description?.trim()
+    ? truncateForMeta(product.description)
+    : t("metadata.descriptionFallback");
   return {
     title: t("metadata.titlePattern", { name: product.name, store }),
-    description:
-      product.description?.trim() || t("metadata.descriptionFallback"),
+    description,
   };
 }
 
@@ -132,13 +135,9 @@ export default async function ProductPage({ params }: ProductPageProps) {
           current={toRecentlyViewedEntry(product)}
           heading={t("recentlyViewed.heading")}
           cardLabels={{
-            stockByState: {
-              in: tCatalog("stock.inStock"),
-              low: tCatalog("stock.lowStock", {
-                count: effectiveStock(product.stock, product.variants),
-              }),
-              out: tCatalog("stock.outOfStock"),
-            },
+            inStock: tCatalog("stock.inStock"),
+            outOfStock: tCatalog("stock.outOfStock"),
+            lowStockTemplate: tCatalog.raw("stock.lowStock"),
             imagePlaceholder: tCatalog("card.imagePlaceholder"),
             colorsCountTemplate: tCatalog.raw("card.colorsCount"),
           }}
