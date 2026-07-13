@@ -126,3 +126,53 @@ Open items discovered during the pipeline. Check off when addressed.
   filter/sort logic in will breach the ~400-line guidance. Split into
   `queries/products.ts` + `queries/taxonomy.ts` when T5 lands. (Ref: T3
   architecture review, LOW.)
+
+## T4 — Product detail page (routed to later tasks)
+
+- [ ] **Q&A composite index for the PDP read (T11, MED).**
+  `readQuestions` (`src/lib/catalog/product-detail.ts`) filters
+  `product_id = ? AND is_published = true AND answer IS NOT NULL ORDER BY
+  created_at DESC`, but `product_questions` has only single-column indexes on
+  `(product_id)` and `(is_published)` (`0004_content_qa.sql`) — no composite
+  `(product_id, is_published, created_at DESC)`. Fine at seed scale (Postgres
+  uses `product_id_idx` then sorts in memory, and ISR caps the cost to
+  per-revalidate). Add the composite index in the T11 migration before answering
+  makes long published lists real. (Ref: T4 architecture review, MED; T4 review
+  m-4 SKIPPED.)
+- [ ] **PDP Q&A list has no pagination / display cap (T11, MED).** The PDP
+  renders the ENTIRE published+answered set (`product-qa.tsx`); with ~0 published
+  Q&A today there is no impact, but once T11 answering exists a popular product's
+  full Q&A history serializes into the page and renders unbounded. Add a
+  `QA_DISPLAY_LIMIT` constant + a "show more" affordance when T11 lands.
+  (Ref: T4 architecture review, MED.)
+- [ ] **Durable Q&A rate limiter + the "do not reuse in-memory Map for T8"
+  precedent (T8, MED).** The Q&A limiter (`src/lib/qa/submit-guard.ts`) is an
+  in-memory per-instance `Map` (resets on deploy/scale-out) — ticket-sanctioned
+  best-effort for Q&A spam, with the honeypot + `QA_RATE_LIMIT_MAX_KEYS` map cap
+  as backstops. Make it durable (Upstash/Redis or a Postgres `rate_limits` table)
+  only if it ever guards more than best-effort Q&A. CRITICALLY: do NOT generalize
+  this in-memory pattern into T8's Mercado Pago webhook idempotency — that needs
+  the durable processed-events ledger (unique constraint on `mp_payment_id`)
+  already tracked in the T1 backlog above. (Ref: T4 architecture review, MED.)
+- [ ] **Extract shared catalog read primitives before T5 (LOW → do it in T5
+  prep).** `fail()`, `firstOrSelf()`, the slug/tag boilerplate, and the
+  `products_public` select conventions are now duplicated verbatim across
+  `src/lib/catalog/queries.ts` and `src/lib/catalog/product-detail.ts` (T4 review
+  n-4 SKIPPED because hoisting touches T3's tested `queries.ts`). T5 will add a
+  THIRD read module (DB-side filtered query path). Extract a shared
+  `src/lib/catalog/read-primitives.ts` (`fail`, `firstOrSelf`, tag builders,
+  `CATALOG_CACHE_TAG`) with characterization tests BEFORE T5 copies them again.
+  (Ref: T4 architecture review, LOW.)
+- [ ] **`generateStaticParams` unbounded prerender (scale milestone, LOW).**
+  The PDP prerenders every active slug × both locales (60 today; linear —
+  ~2,000 pages at 1,000 products). `dynamicParams=true` is on, so the long tail
+  ISRs on demand and the build set can be safely capped later (prerender top-N
+  best-sellers). Add a prerender cap when the active-product count approaches
+  ~1,000. (Ref: T4 architecture review, LOW.)
+- [ ] **PDP island serializes all variants+images (T11 UX guardrail, LOW).**
+  `ProductPurchasePanel` receives the full `variants[]` + `allImages[]` + a
+  `variantDisplay` map into the client island. Trivial for a chair; a product
+  with dozens of variants/images (only creatable via T11 admin) would bloat the
+  RSC payload + hydration. When T11 builds variant/multi-image management, add a
+  sane per-product image/variant guardrail (or lazy-load non-selected-variant
+  image metadata past a threshold). (Ref: T4 architecture review, LOW.)

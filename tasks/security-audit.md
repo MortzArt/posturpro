@@ -1,86 +1,135 @@
-# Security Audit: T3 — Catalog browsing
+# Security Audit: T4 — Product Detail Page (`/producto/[slug]`)
 
-Stage 9 (Security) of the full-cycle pipeline. Ran in parallel with Stage 10
-(Arch). Scope: the NEW T3 catalog read layer (`src/lib/catalog/*`,
-`src/lib/supabase/public.ts`, catalog routes, metadata). Verified live against
-the running seeded local Supabase (127.0.0.1:54321) with the anon publishable
-key. DB was NOT reset/stopped; the user's dev server on :3206 was untouched.
+Auditor: ultrasecurity (Stage 9, full-cycle). Depth: **FULL** — T4 introduces the
+store's first public WRITE path (anon Q&A insert), so the write surface, RLS
+boundary, and data-exposure guarantees were tested adversarially, including
+**live, non-destructive verification against the local Docker Supabase**
+(REST `:54321` + Postgres `:54322`). Stage 5/6 security claims (M-2/M-3 and the
+review's PASS table) were re-verified independently — trusting nothing.
 
 ## Summary
-- Files audited: 43 changed (T3 diff `7c85b83..HEAD`) + full-codebase secret/env/RLS scan
-- Vulnerabilities found: 1 (Critical: 0, High: 1, Medium: 0, Low: 2)
-- Vulnerabilities fixed: 1 (the High)
-- Secrets found: 0 (SHIP-eligible)
+- Files audited: 22 T4 files + RLS migrations (0005/0006), env/config, next.config, public client.
+- Vulnerabilities found: **0 (Critical: 0, High: 0, Medium: 0, Low: 2 documented)**.
+- Vulnerabilities fixed this stage: 0 (no critical/high present; Stage 6 already fixed M-2/M-3).
+- Secrets found: **0** (SHIP requirement met).
+- Live-DB attacks attempted: 9 (mass-assignment, self-publish, whitespace, oversize, cost-leak, unpublished-read) — **all defended**.
+- Cleanup: the leftover `T4 Verify` unpublished test row noted in dev-done was deleted during this audit (0 residual rows).
+
+## Independent Re-Verification of Stage 5/6 Claims
+
+Every Stage 5/6 security claim was re-checked against code AND the live DB, not accepted on trust:
+
+| Stage 5/6 claim | Re-verification method | Result |
+|---|---|---|
+| M-2: `productId` UUID-validated before it keys the limiter | Read `actions.ts:113` (`!isValidProductId` before `checkRateLimit`), `submit-guard.ts:77-79`, anchored fixed-length `UUID_PATTERN` (no ReDoS) | CONFIRMED |
+| M-2: hard `QA_RATE_LIMIT_MAX_KEYS` ceiling + eviction | Read `checkRateLimit`/`evictToCeiling`; ceiling checked only before inserting a NEW key; empty/expired keys pruned; oldest-insertion eviction | CONFIRMED |
+| M-3: IP source no longer `split(",")[0]` | Read `clientIp()`: `x-vercel-forwarded-for` → rightmost XFF hop → `x-real-ip` → `unknown` | CONFIRMED (residual risk correctly documented) |
+| Anon client only, never service-role, for the write | `actions.ts` imports only `createPublicClient()`; no `admin`/secret import | CONFIRMED |
+| Insert sends only `{product_id, author_name, question}` | `insertQuestion` object literal is exactly those 3 keys | CONFIRMED |
+| Mass-assignment (`is_published`/`answer`) blocked | **Live**: forced `is_published=true,answer=...` as trusted `anon` role → RLS 42501 | CONFIRMED |
+| Whitespace-only rejected before DB is first line | `validateQaSubmission` trims first; **Live**: btrim CHECK also rejects `'   '` | CONFIRMED (defense in depth) |
+| `cost_price_cents` unreachable (AC-16) | **Live**: anon SELECT on base `products` → 42501; `products_public.cost_price_cents` → 42703 "does not exist" | CONFIRMED (structural) |
+| Unpublished questions invisible to anon | **Live**: anon SELECT of an unpublished row → `[]` | CONFIRMED |
+| No XSS / `dangerouslySetInnerHTML` | `grep` across `src/` → only a comment; Q&A text are React text nodes | CONFIRMED |
+| Slug bounded before cache key (edge 6) | `isCacheableSlug` (len ≤128, kebab regex) gates before `unstable_cache` | CONFIRMED |
+| No Q&A input reaches a cache key | Only bounded `slug` reaches `updateTag(productCacheTag(slug))` | CONFIRMED |
+
+## Live Attack Log (local Docker Supabase, non-destructive)
+
+Attacks were run two ways: (a) via PostgREST `:54321`, and (b) definitively via
+`SET LOCAL role anon` inside a rolled-back transaction on `:54322` (the DB
+policy/grant truth, independent of the JWT the REST gateway trusts).
+
+| # | Attack | Expected | Observed | Verdict |
+|---|---|---|---|---|
+| 1 | anon `SELECT cost_price_cents` from base `products` | denied | `42501 permission denied for table products` | DEFENDED |
+| 2 | anon read `products_public` | allowed, no cost col | rows returned; slug/id only | OK |
+| 3 | `SELECT cost_price_cents` from the view | column absent | `42703 column does not exist` | DEFENDED (structural) |
+| 4 | INSERT forcing `is_published=true` + `answer` | RLS denial | `42501 violates RLS` (REST + `role anon`) | DEFENDED |
+| 5 | INSERT forcing `is_published=true` only | RLS denial | `42501 violates RLS` | DEFENDED |
+| 6 | Legit 3-column INSERT as `anon` role | success, forced unpublished | `INSERT 0 1` (tx rolled back) | OK |
+| 7 | anon SELECT of an unpublished row | invisible | `[]` | DEFENDED |
+| 8 | whitespace-only name/question | btrim CHECK denial | `42501` / blocked | DEFENDED |
+| 9 | oversized question (2500 chars) | length CHECK denial | `42501` | DEFENDED |
+
+> Note on the PostgREST path: a legit 3-column insert via `:54321` returned
+> `42501`, while the SAME insert as the trusted `anon` **role** on `:54322`
+> succeeded (`INSERT 0 1`), and `is_active_product()` returns `t` for the target.
+> This is a **local JWT/gateway artifact** (the demo anon JWT this instance
+> trusts vs. the app's publishable key), NOT a code or policy defect — the DB is
+> the source of truth and it permits the legit write while blocking every
+> tampered one. This matches dev-done's "valid anon insert 201" on the app's own
+> configured client.
 
 ## Vulnerability Findings
 
+### CRITICAL
+None.
+
 ### HIGH
+None.
 
-#### SEC-H-1: Unbounded `unstable_cache` key cardinality from attacker-controlled `?page` (DoS)
-- **Type**: OWASP A05 Security Misconfiguration / Uncontrolled Resource Consumption (CWE-770)
-- **File**: `src/lib/catalog/queries.ts:132-135` (old `cacheKeyForPage`); consumed at `:332, :357, :384, :408`
-- **Description**: Every product-listing read wrapped its `unstable_cache` key with `cacheKeyForPage(rawPage)`, which used the **raw, unclamped, un-normalized** `?page` string as a key segment (`p:${value ?? ""}`). The `?page` query param is fully attacker-controlled and reaches the cache key before any validation. The actual page is clamped to `[1, lastPage]` for the DB read, but the *cache key* was not — so `?page=1`, `?page=00001`, `?page=abc`, `?page=1e9`, `?page=-5`, and unbounded random strings each mint a **distinct** cache entry that all resolve to the same underlying page.
-- **Exploit**: `for i in $(seq 1 1000000); do curl "https://site/sillas?page=$RANDOM$i"; done` (and the same against every `/marcas/<slug>`, `/estilos/<slug>`, `/categorias/<slug>`). Each distinct `?page` value: (1) creates a new entry in the Next data cache → unbounded memory/disk growth; (2) on the cache miss, fires a `count:"exact"` head query **plus** a `.range()` data read **plus** the batched image/variant reads against Postgres. The clamp guarantees correctness but does nothing to stop the amplification — one cheap HTTP request → multiple DB round-trips + a permanent new cache entry.
-- **Impact**: Data-cache exhaustion (memory/disk) and amplified DB load from a single unauthenticated actor — a cache-cardinality DoS. Bounded only by how many distinct strings the attacker sends (effectively unbounded).
-- **Fix (FIXED)**: Added `canonicalPageKey(raw)` in `src/lib/catalog/pagination.ts` and a `MAX_PAGE = 100_000` ceiling in `src/lib/config.ts`. `canonicalPageKey` collapses every malformed / float / scientific / negative / zero / leading-zero / beyond-safe-integer / huge value into a bounded integer in `[1, MAX_PAGE]` **without needing `lastPage`**:
-  - non-digit / empty / negative / zero / `1.5` / `1e9` → `1`
-  - `00001` → `1`, `007` → `7` (leading zeros normalized so they share a key)
-  - any digit run above `MAX_PAGE` (incl. values past `Number.MAX_SAFE_INTEGER`) → `MAX_PAGE`
-  `cacheKeyForPage` now delegates to it (`p:${canonicalPageKey(rawPage)}`), so **at most `MAX_PAGE + 1` distinct cache keys can ever exist per listing**, regardless of junk volume. `parsePageParam` was refactored to reuse the same canonical form and also caps its ceiling at `MAX_PAGE` (defends against `parseInt` overflow on a huge digit string). The real page shown is still clamped to the true `[1, lastPage]`, so behavior for a valid request is unchanged.
-- **Verification**: 9 new unit tests in `pagination.test.ts` (`canonicalPageKey` block) assert the collapse of junk, leading-zero normalization, the `MAX_PAGE` cap (incl. a 24-digit value), array handling, and a bounded-key-set invariant. 297/297 unit tests pass; tsc + lint clean; production build route table unchanged.
-- **Status**: FIXED
+### MEDIUM
+None.
 
-### LOW
+### LOW (documented, no fix required in T4 scope)
 
-#### SEC-L-1: npm audit — 2 moderate `postcss` advisories via `next` (ACCEPTED baseline, no T3 delta)
-- **Type**: OWASP A06 Vulnerable and Outdated Components
-- **File**: `node_modules/next/node_modules/postcss` (transitive)
-- **Description**: `npm audit` reports 2 moderate `postcss <8.5.10` advisories (GHSA-qx2v-qp2m-jg93, XSS via unescaped `</style>` in CSS stringify output), pulled in transitively by `next`. The only offered fix is `npm audit fix --force`, which downgrades to `next@9.3.3` — a massive breaking change.
-- **Impact**: Build-time CSS stringify path only; not reachable by shopper-supplied input at runtime. T3 added **zero** new dependencies, so this is unchanged from the accepted baseline.
-- **Fix**: None. Do NOT run `audit fix --force`. Remains accepted; revisit when Next ships a patched postcss transitively.
-- **Status**: OPEN (documented, accepted)
+#### SEC-L-1: In-memory rate limiter is best-effort on a no-trusted-edge deployment
+- **Type**: A04 Insecure Design (rate-limit robustness)
+- **File**: `src/app/[locale]/producto/[slug]/actions.ts:62-83`, `src/lib/qa/submit-guard.ts:145-170`
+- **Description**: The per-IP+product limiter derives the IP from headers. Behind Vercel's edge (the stated deployment target) `x-vercel-forwarded-for` is authoritative and not spoofable. On a deployment with NO trusted edge overwriting XFF, the rightmost hop is still client-influenced, so a determined client can rotate IPs and evade the 3/min window.
+- **Exploit**: Attacker sends each request with a fresh `X-Forwarded-For` on a non-Vercel host → per-IP window never trips → floods the moderation queue with RLS-valid (unpublished) questions.
+- **Impact**: Moderation-queue flood only. Bounded by: (a) honeypot backstop, (b) `QA_RATE_LIMIT_MAX_KEYS=10_000` hard map ceiling with eviction (prevents memory amplification — verified in code), (c) DB CHECK/RLS caps each row to ≤120/≤2000 chars and forces unpublished (never reaches shoppers). No data exposure, no privilege escalation.
+- **Fix / recommendation**: Accepted best-effort per the ticket ("CAPTCHA / durable rate limiter is out of scope"). Follow-up: a durable/global limiter (Upstash/Redis) or platform-native rate limit keyed off `x-vercel-forwarded-for` when the store scales. Trust model is documented in-code and in dev-done.
+- **Status**: OPEN (accepted residual, ticket-sanctioned).
 
-#### SEC-L-2: `CATEGORY_MEMBER_ID_CAP` truncation is silent-correct but not observable in prod (informational)
-- **Type**: Defense-in-depth / observability
-- **File**: `src/lib/catalog/queries.ts:428, 467-472`
-- **Description**: The category membership read is correctly bounded to `CATEGORY_MEMBER_ID_CAP = 1000` (fixed in Stage 6, M-3) to keep the PostgREST `IN (...)` list and URL length bounded — a good DoS guard. When the cap is hit it `console.warn`s, but there is no metric/alert, so a legitimately-large category silently paginates only its first 1000 members in production. This is the documented scale ceiling (backlogged), not a T3 defect. Noting it so it is not lost.
-- **Fix**: None in T3. Migrate to a category-scoped view/RPC (server-side pagination) before a single category can legitimately exceed 1000 products (tracked in `tasks/clean-code-backlog.md`).
-- **Status**: OPEN (documented, deferred by design)
+#### SEC-L-2: `next` / `postcss` transitive moderate advisory
+- **Type**: A06 Vulnerable & Outdated Components
+- **File**: `package-lock.json` (transitive: `next` → `postcss <8.5.10`)
+- **Description**: `npm audit` reports **2 moderate** advisories: `postcss` XSS via unescaped `</style>` in CSS stringify output (GHSA-qx2v-qp2m-jg93), pulled in transitively by `next`. Zero critical, zero high.
+- **Exploit**: Requires attacker-controlled CSS passed through PostCSS stringify — not a path this app exposes (PostCSS runs at build time on trusted first-party CSS, never on user input).
+- **Impact**: None in practice for this app (no user-authored CSS is compiled). Build-time only.
+- **Fix / recommendation**: Do NOT `npm audit fix --force` — it downgrades `next` to 9.3.3 (major, app-breaking). Pick up the fix when Next ships a patched `postcss` in its dependency range (routine dependency bump). Report-only per stage instructions.
+- **Status**: OPEN (report-only, no safe non-breaking fix; no exposure).
 
-## Anon Attack-Surface Notes (verified LIVE against seeded local DB)
+## OWASP Top 10 Sweep (new T4 surface)
 
-The publishable (anon) key is the only credential shipped to any client-reachable
-path. Every probe below was run with the anon key against 127.0.0.1:54321.
-
-- **`cost_price_cents` unreachable through every select** — `products_public?select=id,cost_price_cents` → `42703 column ... does not exist` (view structurally omits it). Base `products?select=...` with the anon key → `42501 permission denied for table products` (never granted to anon). The card select (`PRODUCT_CARD_SELECT`) never names cost. `cost_price` does not appear in `.next/static` client bundle. **No cost leak by any path.**
-- **Draft/archived leakage — PROVEN ABSENT at the DB layer.** Live test: flipped one seeded product to `status='draft'` via the secret key, then re-queried as anon: `products_public` row → `[]`; `product_images`/`product_variants`/`product_categories` for that id → `*/0` (empty); the product's category membership count dropped from 9→8 (the draft id is excluded). Reverted to `active` cleanly (children reappear). Child-table RLS gates on `is_active_product(product_id)` (SECURITY DEFINER helper, `0005:90-102`), so draft/archived children can never leak via the batched `.in(product_id, ids)` reads OR inflate a category `count:"exact"` (the count runs against `products_public`, which is active-only). All 30 seeded products are currently `active`, so there is no live-data exposure today; the RLS filtering was verified empirically, not assumed.
-- **PostgREST filter-injection via slug — not exploitable.** Slugs reach queries only through parameterized PostgREST `.eq("slug", value)` / `.eq("id", value)` calls (never string-interpolated into a filter). Live probe `slug=eq.foo,bar)&is_active=eq.true` → `[]` (the comma/paren are treated as literal slug content, not filter operators). No slug is normalized-then-interpolated anywhere.
-- **`?page` injection into `.range()`/`.eq()`** — `?page` never reaches PostgREST raw. It is parsed by `parsePageParam` (digit-only regex, clamped) into an integer before `rangeFor` computes a numeric `.range(from, to)`. Arrays (`?page[]=1`), floats, negatives, NaN, and huge values all clamp deterministically (unit-tested). After SEC-H-1's fix the cache-key form is also bounded.
-- **No secret in client bundle** — `.next/static` contains no `sb_secret_`, no `SUPABASE_SECRET_KEY`/`supabaseSecretKey`, no `cost_price`. The secret key is reachable only via `getServerEnv()` → `src/lib/supabase/admin.ts` (guarded by `import "server-only"`); the cookie-free catalog client uses the publishable key only.
-- **XSS** — no `dangerouslySetInnerHTML`, no `application/ld+json`, no `<script>` sinks anywhere in `src/`. DB strings (product/brand/category/style names + descriptions) render through React's default escaping (DOM) and Next's Metadata API (`title`/`description` meta tags — HTML-escaped by the framework). Structured data (BreadcrumbList) is only referenced as a *future* comment — not emitted in T3. No raw HTML sink.
-- **SSRF / command / path injection** — none. No user-controlled URL reaches server-side `fetch`; no `child_process`/`eval`/`new Function`/`fs` in `src/`; `next/image` remote hosts stay allow-listed to the Supabase Storage host + `picsum.photos` (`next.config.ts` unchanged).
-- **Client/server boundary** — catalog reads are `import "server-only"`; the cookie-free client (`public.ts`) is server-only and `persistSession:false`. No privileged code path in the client bundle.
+| # | Category | Result | Evidence |
+|---|---|---|---|
+| A01 | Broken Access Control | PASS | RLS REVOKE-ALL baseline; base `products` ungranted; anon Q&A INSERT policy forces safe state; unpublished invisible — all live-verified. No IDOR (no per-user resources in Phase 1; `productId` UUID-gated). |
+| A02 | Cryptographic Failures | PASS | No crypto authored; secrets via `process.env` only, never inlined. |
+| A03 | Injection | PASS | Supabase client uses parameterized `.eq()/.insert()` (no string SQL); no shell/`child_process`; `interpolate` regex linear + literal fallback (no injection/ReDoS); no `dangerouslySetInnerHTML`. |
+| A04 | Insecure Design | PASS-with-note | Layered write guards (honeypot→validate→UUID-gate→rate-limit→RLS). Rate limiter best-effort off-Vercel (SEC-L-1). |
+| A05 | Security Misconfiguration | PASS | `image` remotePatterns allowlist (Supabase storage + picsum) — a tampered localStorage `coverImageUrl` to an arbitrary host is rejected by `next/image`. Error messages mapped to enums, never echo `error.message`; `fail()` logs server-side only. |
+| A06 | Vulnerable Components | PASS-with-note | 2 moderate transitive (SEC-L-2); 0 critical/high; 0 new deps in T4. |
+| A07 | Auth Failures | N/A | No authentication in Phase 1 (guest store); no session/token handling introduced. |
+| A08 | Data Integrity Failures | PASS | `isEntry` allowlist shape-guard on localStorage parse (m-5 closed the `$NaN` gap); mass-assignment blocked at RLS; no insecure deserialization (JSON.parse + guard, no proto pollution — fresh object literals only). |
+| A09 | Logging/Monitoring | PASS | Honeypot logs a bot-suspected metric; insert failures logged server-side with context; no PII/secret in logs. |
+| A10 | SSRF | PASS | No user-controlled URL reaches a server-side `fetch`; image hosts are a static build-time allowlist. |
 
 ## Checklist Results
 | Category | Status | Notes |
 |----------|--------|-------|
-| Secrets | ✅ | 0 secrets in code/git/history. `.env*` gitignored (`.gitignore:37,46`); no `.env` tracked or ever committed. `.env.local` present on disk, untracked, keys only (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`). |
-| Env var exposure | ✅ | Only 2 `NEXT_PUBLIC_*` vars (URL + publishable/anon key), both client-safe. `SUPABASE_SECRET_KEY` reached only via `getServerEnv`→`server-only` admin module. No secret in `.next/static`. |
-| Injection | ✅ | Parameterized PostgREST `.eq`/`.in`/`.range` only; slug/page never string-interpolated into filters; live filter-injection probe returned `[]`. No SQL/command/path/SSRF sinks. |
-| Auth/AuthZ | ✅ | Guest-store trust model; RLS-enforced anon key; base `products`/orders/customers ungranted to anon (belt-and-suspenders REVOKE-then-GRANT baseline, `0005`). No T3 mutation surface. |
-| Client/server boundary | ✅ | All catalog reads `server-only`; cookie-free public client server-side; no privileged path or secret in client bundle. |
-| Data Exposure | ✅ | `cost_price_cents` unreachable by every path (verified live); draft/archived filtered at DB layer (verified live via draft-flip test); errors logged server-side, generic message to boundary (`fail()`); no over-fetch (card select trimmed in Stage 6 m-1). |
-| CORS/CSRF | ✅ | No custom API routes / route handlers in T3 (server components read directly); no state-changing endpoints; nothing to misconfigure. |
-| Dependencies | ✅ | 0 new deps. npm audit = accepted baseline (2 moderate postcss-via-next, `--force`-only fix = breaking); no delta. |
+| Secrets | ✅ | 0 hardcoded secrets in T4 files or codebase; only fake `sb_secret_test` in unit tests. `.env*` gitignored, none tracked. Full secret value absent from `.next/static` (client bundle) and `.next/server` — read from `process.env` at runtime. |
+| Env var exposure | ✅ | No `NEXT_PUBLIC_*SECRET/SERVICE/TOKEN`. Publishable key is RLS-enforced + client-safe by design. `env.ts` splits `getPublicEnv` (client-safe) from `getServerEnv` (server-only, `server-only`-guarded admin module). |
+| Injection | ✅ | Parameterized Supabase queries; no raw SQL/shell; linear interpolate; no XSS. |
+| Auth/AuthZ | ✅ | RLS is the boundary; anon client only for the write; mass-assignment + unpublished-read live-blocked. |
+| Client/server boundary | ✅ | Only the anon client is bundled; i18n resolved server-side; no privileged path in client islands; server actions carry Next's built-in CSRF protection. |
+| Data Exposure | ✅ | `cost_price_cents` structurally absent (view); RSC payload reads the view only; no over-fetch; errors mapped to enums. |
+| CORS/CSRF | ✅ | Single write is a Next server action (built-in CSRF/action-id protection), no custom public REST route, no permissive CORS. |
+| Dependencies | ✅/⚠️ | 0 new deps; `npm audit`: 2 moderate transitive, 0 critical/high (SEC-L-2, report-only). |
 
-## Verdict: SECURE
+## Residual Risks (accepted / follow-up)
+1. **Rate limiter best-effort without a trusted edge** (SEC-L-1) — ticket-sanctioned; durable limiter is the documented follow-up. Backstopped by honeypot + hard map cap + RLS.
+2. **2 moderate transitive advisories** (SEC-L-2) — no safe non-breaking fix; no runtime exposure; bump with a future Next release.
+3. **Rate limiter resets on redeploy/scale-out** (per-instance memory) — documented; acceptable for Phase 1 volume.
 
-The T3 catalog read layer is secure. The one High-severity finding (SEC-H-1,
-unbounded cache-key cardinality DoS) is FIXED and unit-tested. Cost data,
-draft/archived products, filter injection, XSS, and secret leakage were all
-verified absent — several proven empirically against the live seeded DB (the
-draft-flip test and the cost/injection probes), not merely by reading policy
-text. Two Low items are documented and accepted (npm audit baseline; category
-cap observability). Gates green: tsc clean, lint clean, 297/297 unit tests,
-production build succeeds with the route table unchanged, no secret in the
-client bundle.
+## Verdict: SECURE-WITH-NOTES
+
+The first public write path is correctly defended at the RLS boundary (mass-assignment,
+self-publish, whitespace, oversize, and cost-leak attacks were all defeated live),
+uses the anon client exclusively, leaks no secrets or cost data to the client, and
+carries no critical/high vulnerabilities. Stage 6's M-2/M-3 fixes independently
+re-verified as correct. The only outstanding items are two accepted, ticket-sanctioned
+LOW residuals (best-effort rate limiter off-Vercel; a transitive moderate npm advisory
+with no runtime exposure). No code changes were required this stage.

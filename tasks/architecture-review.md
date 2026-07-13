@@ -1,81 +1,228 @@
-# Architecture Review: T3 — Catalog browsing
+# Architecture Review: T4 — Product Detail Page (PDP)
+
+**Reviewer:** ultraarch (Stage 10) · **Scope:** commits 9da6e40, 6f35543, 5ab9fdc, 2e2053f
+**Mode:** read-only on source (recommendations only) · **Parallel with:** Stage 9 (Security)
 
 ## Summary
 
-The catalog data-read layer is well-factored, correctly type-safe, and closes both routed backlog items cleanly. It is a **sound foundation for T4 (PDP), T6 (cart), and T14 (SEO)** — but the view+stitch read strategy is a **known wall for T5 filters/sorts on variant-level attributes (color/material) and for cross-page ordering by price/newest**, and that limit should be flagged to T5 now so it plans a DB-side (RPC / view) query path rather than trying to extend `queries.ts`.
+T4 is a disciplined, pattern-faithful extension of the T3 read architecture: it genuinely
+mirrors `queries.ts` (view-only reads, batched `.eq()` children, `unstable_cache` +
+per-entity tags, the `fail()` contract), keeps a clean lib/component boundary with a single
+selection island, and pushes all i18n resolution to the server so the client does zero
+translation. The data model is untouched (correct — every table pre-exists), the cache tag
+scheme is consistent with T3, and the known limitations (in-memory limiter, Q&A composite
+index) are honestly documented and already backlogged rather than hidden. The forward seams
+for T6 (variant id available), T11 (Q&A publish/answer filter + `product:<slug>` tag), and
+T5 (no coupling introduced) are clean. It will make sense in 6 months to a new developer.
 
 ## Pattern Compliance
 
 | Pattern | Status | Notes |
 |---------|--------|-------|
-| Separation of concerns | ✅ | Textbook. `queries.ts` reads/stitches, `stock.ts`/`pagination.ts` are pure compute, `types.ts` owns view models, components render, pages compose. `ProductCard` is a pure presentational server component with pre-resolved labels (no i18n inside — SRP). |
-| Boundary validation | ✅ | `?page` parsed+clamped in `parsePageParam` (rejects `abc`/`1.5`/`-1`/arrays); slugs go through the parameterized query builder + `notFound()` on miss; stock coerced via `normalizeCount`. No unvalidated input reaches a query. |
-| Typed contracts | ✅ | Public signatures fully typed; `CatalogProductCard`/`CatalogPage<T>` are the only shapes that escape the lib, so no `cost_price_cents`-bearing row leaks. One controlled `as unknown as` at the PostgREST embed boundary (documented). |
-| Service layer | ✅ | Pages → `queries.ts` → `createPublicClient()`. No component touches Supabase; no business logic in components. Matches the `getStoreSettings` wrapper template from T2. |
-| Type safety | ✅ | No `any`, no non-null `!`. `firstOrSelf` defensively normalizes the array/object embed ambiguity instead of asserting. |
-| shadcn / token styling | ✅ | Token classes only (`bg-card`, `text-muted-foreground`, `--ease-out`), `cn()`, `Button asChild` on CTAs, hugeicons single set, motion via `.card-lift`/`.stagger` (transform/opacity, hover+reduced-motion gated). |
-| i18n conventions | ✅ | New `catalog` namespace key-parallel in both dicts (parity enforced by tests); labels resolved once in the grid and passed down; single Spanish path segments per the routing decision. |
+| Separation of concerns | ✅ | `product-detail.ts` reads/stitches; `variant-selection.ts`/`specs.ts`/`submit-guard.ts` compute (pure, I/O-free); `product-display.ts` resolves display strings server-side; components render. Business/selection logic is not buried in components. |
+| Boundary validation | ✅ | Q&A input trimmed + length-checked server-side against the DB CHECKs (`validateQaSubmission`), honeypot, UUID-validated `productId`, RLS `WITH CHECK` as the floor. Slug bounded pre-cache (`isCacheableSlug`). No `zod` — hand-rolled per ticket, justified. |
+| Typed contracts | ✅ | View models in `product-detail.types.ts`; components consume only these, never raw Supabase rows. Public signatures fully typed; no `any`. One tolerated `as unknown as ProductDetailRow` cast at the PostgREST boundary (same idiom as T3). |
+| Service/read layer | ✅ | `getProduct`/`listActiveProductSlugs` live in the read layer; the page only renders. Mirrors `getBrand` + `stitchCards`. `fail()` contract identical to `queries.ts`. |
+| Type safety | ✅ | `tsc --noEmit` clean per dev-done; no non-null `!` to silence the compiler in the reviewed files. |
+| Single-island discipline | ✅ | `ProductPurchasePanel` is the ONE selection island / single source of truth for `selectedVariantId`; gallery + price + stock + selector all update from it. Recently-viewed and Q&A form are separate, independently-justified islands. |
+| Cache-key discipline (T3 precedent) | ✅ | Slug bounded (`SLUG_PATTERN` + `MAX_SLUG_LENGTH=128`) before it keys `unstable_cache`; Q&A text flows only into an insert, never a cache key; `productId` UUID-validated before it keys the rate-limiter (M-2). |
+| shadcn patterns | N/A | PDP reuses existing `StockBadge`/`Breadcrumbs` + raw Radix Dialog for zoom (per research); no new shadcn primitives introduced. Out of arch scope; covered in Stages 5/8. |
+
+**Verdict on coherence:** `product-detail.ts` is a faithful sibling of `queries.ts`, not a
+divergent re-implementation. It correctly re-derives the T3 lesson that child tables
+(`product_images`/`product_variants`/`product_questions`) cannot embed through the
+`products_public` view and must be batched by `product_id` and stitched. The `fail()`,
+`firstOrSelf`, and tag conventions are copied verbatim — the intended pattern compliance, but
+also the source of the DRY debt noted below (n-4).
 
 ## Data Model Review
 
-**No migration in T3 — correct.** T1 shipped the full schema; deferring `effective_stock` and a catalog-card view was the right call (avoids speculative DB surface on the critical path). Findings:
+**No migration — correct.** Every table pre-exists from T1; T4 is purely additive read +
+one RLS-bounded write. The right call and the lowest-risk data posture.
 
-- **Read strategy is correctly forced by the grants.** `products_public` is the only anon-readable product path; `brands` embeds through the view's forwarded FK; `product_images`/`product_variants`/`product_categories` FK the base table so they are batch-fetched by `.in(product_id, ids)`. The stitch is O(1) queries per page (2 batches regardless of item count), not N+1. Sound.
-- **Effective-stock split (lib vs deferred DB view, backlog m-2) is SAFE for T3, a DRIFT RISK for T6.** `stock.ts` computes variant-authoritative effective stock in the app layer purely for a *display badge*. That is fine — a badge being up to 5 minutes stale (ISR window) harms nothing. **But T6 cart needs *authoritative, race-safe* stock**, and if T6 re-implements "sum variants else product.stock" independently, the two code paths will drift. Route to T6: the cart must not read stock through this display path; the backlogged `effective_stock` view (or the atomic reservation RPC already backlogged for T7) is the single authority. `stock.ts` should be explicitly labeled "display-only, not authoritative."
-- **Indexes are the real T5 gap (see Scalability).** `products` has indexes on `status`, `brand_id`, `style_id`, `is_best_seller`, `is_featured` — good for T3's filters and default sort. There is **no index on `price_cents`, `created_at`, or `sales_count`**, and **variant `color_hex`/`color_name` and product `material_frame/upholstery/finish` are unindexed**. T5's price/newest sorts and color/material filters will table-scan.
+- **Q&A read shape vs. RLS:** `readQuestions` filters `is_published = true AND answer IS NOT
+  NULL ORDER BY created_at DESC`. The anon SELECT policy is `is_published = true` only, so
+  the `answer IS NOT NULL` refinement (m-6 fix) is an app-layer tightening for AC-13, not a
+  security boundary. **Forward-compatible with T11:** when the admin publishes an answered
+  question it appears; a published-but-unanswered row (only reachable via a future admin
+  mis-step) is correctly excluded rather than rendered as a bare question.
+- **Indexes:** `product_questions` has single-column indexes on `(product_id)` and
+  `(is_published)` but **no composite `(product_id, is_published, created_at DESC)`**. At
+  seed scale Postgres uses `product_id_idx` then sorts in memory — fine. This is the SKIPPED
+  m-4 finding; it bites at T11 volume (a product accumulating hundreds of questions), never
+  in T4. Backlogged below, mapped to T11.
+- **FKs / ON DELETE:** `product_questions.product_id → products ON DELETE CASCADE`;
+  `product_images`/`product_variants` are indexed on their FK columns (`variant_id`,
+  `product_id`) — verified. Variant/image reads are index-covered.
+- **Group FK / client-scoping:** N/A — PosturPro is single-tenant (one store).
+- **Unused authoritative column:** `product_variants` has a **UNIQUE `sku`** column that
+  `ProductVariantView` deliberately omits (not needed for display). Correct minimal
+  projection AND the exact seam T6 needs — see Forward-Compatibility.
 
 ## API Review
 
-No REST handlers (server components read directly) — appropriate for a read-only catalog and consistent with the codebase. Data-layer "API" review:
+No REST endpoints — the single write is a Next.js **server action** (`submitQuestion`), the
+right primitive for a form post.
 
-- **Function surface is clean and composable**: `listProducts`/`listProductsBy{Brand,Style,Category}` all funnel through `readProductPage(filter, rawPage, pageSize)` with a filter closure — a good seam. Adding a new *product-level* eq filter (e.g. availability by product row) is a one-line closure.
-- **Count-then-range (M-2 fix) is the right shape**: a `head:true` count query resolves `lastPage`, clamps, then one `.range()` read. Never 416s, no double full read. Pagination is crawlable (`?page=N` real anchors, page-1-canonical). Good for T14.
-- **Consistent error contract**: `fail()` logs server-side with context and throws an opaque message → route `error.tsx`. No Supabase error object reaches the DOM. `null` on slug miss → `notFound()`. Clean boundary.
+- **Result contract:** `QaFormState` is a discriminated union
+  (`success | invalid | rate-limited | unavailable | error`) with `fieldErrors`/`values`/
+  `submissionId` — a clean, serializable, consistent shape for `useActionState`. Error
+  mapping never echoes `error.message` to the DOM (RLS `42501` → "unavailable"; else
+  retryable "error"). Matches the `fail()` philosophy.
+- **Idempotency:** the action is intentionally not idempotent (each submit inserts one Q&A
+  row) — correct for a question post; `submissionId` drives client focus/reset, not server
+  dedup. No concern here — but see the T8 precedent note.
+- **Cache invalidation:** `updateTag(product:<slug>)` on success is the correct
+  read-your-own-writes purge for a server action, consistent with the T3 tag scheme.
+- **IP trust model:** `clientIp()` prefers `x-vercel-forwarded-for` → rightmost XFF hop →
+  `x-real-ip` → shared `"unknown"` bucket (M-3). Well-documented residual risk; acceptable
+  for a best-effort limiter behind the Vercel edge.
+
+## Data-Flow & Caching Assessment
+
+- **Invalidation story (T10/T11):** The tag scheme is **sufficient and consistent** — the
+  PDP read is tagged `catalog` + `product:<slug>`, exactly parallel to T3's
+  `brand:`/`category:`/`style:` scheme. **Gap for T11 (not a T4 defect):** today the ONLY
+  code that busts `product:<slug>` is the Q&A action. When T11 admin edits a product's name,
+  price, images, or variants it MUST `revalidateTag(product:<slug>)` AND the catalog listing
+  tags (`catalog`, plus the relevant `brand:`/`category:`/`style:`), or PDPs serve up to
+  `CATALOG_REVALIDATE_SECONDS` (5 min) stale. T4 leaves the correct seam
+  (`productCacheTag(slug)` is exported and reusable); T11 must wire it.
+- **generateStaticParams growth:** 60 paths today (30 slugs × 2 locales) —
+  `listActiveProductSlugs()` × `routing.locales`, linear and unbounded. At 1,000 products
+  that is 2,000 prerendered pages at build; at 10,000 it is 20,000 and build time/memory
+  become material. `dynamicParams = true` is (correctly) left on, so products beyond the
+  prerendered set still ISR on first hit — meaning the build set can be safely *capped* later
+  (prerender top-N best-sellers, let the long tail render on demand) without breaking
+  correctness. A known scaling lever, not a T4 problem. Backlogged.
+- **RSC stream / island payload:** `ProductPurchasePanel` receives the FULL `variants[]` and
+  `allImages[]` arrays plus a `variantDisplay` map serialized into the client island. For a
+  chair (a handful of colors, ~4–8 images each) this is a few KB — fine. It grows linearly
+  with variants × images; a pathological product (40 variants × 10 images = 400 image rows +
+  40 display bundles) would bloat the RSC payload and hydration. No such product exists in
+  the furniture domain, so this is a theoretical ceiling — worth a note so T11's
+  variant/image management doesn't let an admin create a 100-image product without anyone
+  realizing it all ships to the client. Backlogged LOW.
 
 ## Scalability Assessment
 
-| Concern | Severity | Recommendation |
-|---------|----------|----------------|
-| **T5 variant-attribute filters (color/material) cannot compose on this foundation** | **High (for T5)** | Color lives on `product_variants`, materials on `products` scalar columns — neither is on `products_public`, and a variant-color filter must be applied *before* pagination (you can't page products then discover which have a red variant). The view+stitch model pages products first, so it structurally can't do this. **Flag to T5 now: build a server-side filtered/sorted query — a Postgres RPC or a `products_filterable` view that pre-joins variant color/material aggregates — so filtering + counting + ranging all happen in the DB.** Do not try to extend `queries.ts` client-side stitching for T5 filters. |
-| **T5 price/newest/best-selling sorts need indexes** | **High (for T5)** | Sorting by `price_cents` / `created_at` runs in the DB across the full result set before `.range()`. The current `.order().range()` shape supports it, but there are **no indexes** on `price_cents`, `created_at`, `sales_count`. Add them in a T5 migration; without them every sorted page is a full sort scan. |
-| **Category membership `.in(ids)` ceiling** | **Med (deferred)** | Already mitigated (capped at 1000, de-duped, logged) and backlogged. At 30-product seed it is fine. The correct long-term fix is the same DB-side query path T5 needs — so **T5 and this item should be solved together**, not twice. |
-| **Cache-key cardinality explodes with T5 params** | **Med (for T5)** | Today the `unstable_cache` key includes only `?page` + pageSize + slug — bounded. T5 adds category×brand×style×price×color×material×availability×sort → a combinatorial key space that will thrash the cache (near-zero hit rate) and bloat the cache store. **T5 should NOT keep wrapping every filter combo in `unstable_cache`.** Options to flag: (a) tag-cache only the unfiltered/common views and let filtered queries hit the DB (cheap at this catalog size), or (b) move filtered browsing to client-side fetching against a cached RPC. Decide in T5 planning. |
-| **`count: "exact"` on every read** | **Low** | Fine at 30 products; one extra count query per page. If the catalog grows large *and* filters land, revisit (estimated count, or cache the count under the tag). Note for T5, not T3. |
-| **`?page` pages render `ƒ` dynamic** | **Low** | Honest, documented deviation. Cause is `searchParams`, not `cookies()` — the AC-11 target (kill the cookie taint) is fully met and the shell + index pages are `●` SSG/ISR. Data is tag-cached so no per-request DB storm. Full PPR needs Next 16 `cacheComponents` (bans `unstable_cache`) — correctly deferred. Acceptable long-term for T3; T5 param growth is the thing to watch. |
+| Concern | Severity | When it bites | Recommendation |
+|---------|----------|---------------|----------------|
+| In-memory Q&A rate limiter (per-instance, resets on deploy/scale-out) | Med | Multi-instance/serverless deploy — each instance has its own Map, so effective limit = N×config | Acceptable now (ticket-sanctioned; honeypot + M-2 map cap are backstops). Make durable (Upstash/Redis or a Postgres `rate_limits` table) if the limiter is ever reused beyond best-effort Q&A. See T8. |
+| Q&A read: no composite index; in-memory sort | Med | T11-era volume: a product with hundreds of published Q&A → sort-in-memory per revalidate (ISR caps cost to per-revalidate, not per-request) | Add `(product_id, is_published, created_at DESC)` in the T11 migration. |
+| No pagination / display cap on PDP Q&A list | Med | T11 answering makes long published lists real → whole set serializes + renders unbounded | Add `QA_DISPLAY_LIMIT` + "show more" in T11. ~0 published Q&A today, so no live impact. |
+| `generateStaticParams` linear growth | Low | ~1,000+ products → long builds | Cap prerender to top-N; rely on `dynamicParams=true` ISR for the tail. |
+| Island payload = all variants+images | Low | A T11-created product with dozens of variants/images | Note in T11 variant/image UX; lazy-load non-selected-variant image metadata past a threshold. |
+| `listActiveProductSlugs` unbounded SELECT | Low | Reads every active slug, no limit; fine to thousands, tag-cached | Leave as-is; revisit with the `generateStaticParams` cap. |
 
-## Frontend / Component Architecture
+No unbounded fetches in the hot path, no per-request expensive operations (ISR absorbs the
+read cost), no WebSocket/connection concerns. Read profile (1 detail + 3 batched children,
+all cached) matches the T3 stitch cost.
 
-- **`ProductCard` is a pure server component** — the correct default, but **T6 will need a client "add to cart" affordance on the card**. The seam is clean: the card is already a single `<Link>` wrapper with a self-contained content block. T6 should add cart interactivity as a *nested client island* (e.g. a `<QuickAddButton>` client component slotted into the card), NOT by converting `ProductCard` to `"use client"`. The current structure supports that without refactor. Flag to T6.
-- **`Breadcrumbs` is T14-ready**: the doc comment already notes the ordered `items` array is the single source a future `BreadcrumbList` JSON-LD emitter consumes, and it explicitly does not build JSON-LD itself. Correct forward-planning.
-- **Suspense-isolated `PaginatedProductListing`** keeps the shell static while the `?page` slice streams — good boundary design; the `read` closure prop makes it reusable across all four listing types.
-- File sizes healthy: `queries.ts` at 712 lines is the largest and is approaching the ~400-line guidance. It is cohesive (one concern: catalog reads) but **T5 filter logic must not be piled into it** — that is when it should split (e.g. `queries/products.ts`, `queries/taxonomy.ts`). Note for T5.
+## Forward-Compatibility with the Roadmap
+
+- **T6 (Cart) — CLEAN SEAM. ✅** The cart needs a variant id per cart line and authoritative
+  per-variant stock at add-to-cart time. T4 gives T6 exactly this: selection state lives in
+  one island with `selectedVariantId` always resolvable, `ProductVariantView` carries `id` +
+  `stock`, and `product_variants` has a UNIQUE `sku` T6 can project for a stable line
+  identifier. **The add-to-cart button is (correctly) NOT rendered** — no dead affordance to
+  unwind. **Reinforces the existing T3 backlog item:** T6 must read *authoritative* stock via
+  the deferred `effective_stock` view / reservation RPC, NOT `stock.ts`/`variantStockState`
+  (display-only, ISR-stale). Already backlogged from T3; T4 changes nothing and tempts no
+  shortcut.
+- **T5 (Search/Filters) — NO COUPLING. ✅** T4 adds a per-slug detail read; it does not touch
+  the listing/filter path and introduces no client-side variant-stitch T5 would have to
+  unwind. The existing T3 backlog (DB-side filtered query path, filter/sort indexes,
+  cache-key cardinality strategy) stands unchanged. T4 does not constrain T5.
+- **T8 (Payment) — PRECEDENT RISK, NOT A DEFECT. ⚠️** The in-memory `Map` limiter is fine for
+  best-effort Q&A spam control, but it sets a pattern that would be **wrong** for T8's
+  webhook idempotency, which requires a DURABLE store (a processed-events table with a unique
+  constraint on `mp_payment_id`) so duplicate deliveries are safe across instances/restarts.
+  The webhook-idempotency-ledger item is already backlogged from T3; the concrete
+  recommendation: **do not generalize `submit-guard.ts`'s in-memory Map into the payment
+  path.** The doc comments in `submit-guard.ts`/`config.ts` already say "durable is a
+  documented follow-up" — correct signal.
+- **T11 (Admin Q&A answering) — COMPATIBLE. ✅** The data model + `is_published`/`answer`
+  filter is exactly what T11 needs: admin sets `answer` + `is_published=true` + `answered_at`
+  (all blocked from anon by RLS), and the PDP filter (`is_published AND answer IS NOT NULL`)
+  surfaces it. `product:<slug>` is the invalidation seam T11 reuses. Two T11 obligations
+  (backlogged): (a) `revalidateTag(product:<slug>)` on answer-publish AND any product-field
+  edit, plus catalog listing tags; (b) add the composite index + PDP Q&A pagination before
+  volume is real.
 
 ## Tech Debt Ledger
 
-| Item | Type | Impact | Effort to Fix | Owner |
-|------|------|--------|---------------|-------|
-| No DB-side filtered/sorted query path (view/RPC); view+stitch can't filter on variant color/material pre-pagination | Existing (surfaced) | High | L | **T5** |
-| Missing indexes: `price_cents`, `created_at`, `sales_count`, variant `color_*`, product `material_*` | Existing (surfaced) | Med | S | **T5** |
-| `unstable_cache` key cardinality under multi-param filtering | Introduced (latent) | Med | M | **T5** |
-| Effective-stock computed in app layer (display) vs. no authoritative DB view; drift risk when cart reads stock | Existing (backlogged m-2) | Med | M | **T6/T7** |
-| Card is pure server component; needs client-island seam for add-to-cart | Neutral (by design) | Low | S | **T6** |
-| Category `.in(ids)` unbounded pattern (capped, backlogged) | Introduced (mitigated) | Low | M | **T5 (fold into DB query path)** |
-| `queries.ts` size (712 lines) will exceed guidance if T5 logic is added | Neutral | Low | S | **T5** |
+| Item | Type | Impact | Effort | When it bites |
+|------|------|--------|--------|---------------|
+| No composite `(product_id, is_published, created_at)` index (m-4 SKIPPED) | Existing (pre-T4) | Med | S | T11 Q&A volume |
+| PDP Q&A list has no pagination/display cap | Introduced | Med | S | T11 answering makes long lists real |
+| In-memory rate limiter (per-instance) | Introduced (ticket-sanctioned) | Med | M | Multi-instance deploy; reuse for T8 |
+| `firstOrSelf` duplicated `queries.ts` ↔ `product-detail.ts` (n-4 SKIPPED) | Introduced | Low | S | Third copy / drift |
+| `fail()` + slug-select + tag boilerplate duplicated across the two read modules | Introduced | Low | S | T5 adds a third read module |
+| `generateStaticParams` unbounded prerender | Introduced (latent) | Low | S | ~1,000+ products |
+| Island serializes all variants+images | Introduced (latent) | Low | S | A T11-created product with dozens of variants/images |
+| Q&A composite spam controls (durable limiter/CAPTCHA) | Existing (T1 backlog) | Med | M | Real public traffic |
 
-Net: T3 **reduced** debt (closed 2 backlog items — PostgREST embedding strategy standardized, cookie taint eliminated) and **introduced** no unmanaged debt — every new limit is documented and routed. No time bombs; the `.in()` cap and the ISR staleness are bounded and logged.
+**Debt REDUCED by T4:** the M-1/M-2/M-3/M-4 Stage-6 fixes closed real issues (per-entry
+stock labels, unbounded rate-limit map, XFF spoofing, dead `defaultVariant`). No time bombs
+introduced; the two behavior-changing fixes (limiter, query filter) are flagged for QA.
+Dependency health: **zero new deps** (correct); relies on installed `radix-ui`, `next-intl`,
+`@supabase/supabase-js`, `@hugeicons/*` — all current.
+
+## Boy-Scout & Clean-Code Posture
+
+- **File sizes:** all new files well under the ~400-line guidance (`product-detail.ts` 281,
+  `submit-guard.ts` 181, `page.tsx` 254, `product-purchase-panel.tsx` 234). Healthy.
+- **Functions:** small, one level of abstraction, intent-revealing names. No magic values —
+  every tunable is in `config.ts` with a doc block and `_MS`/`_MAX` unit suffixes.
+- **Errors never silenced:** `fail()` logs + throws; the Q&A action logs with context + maps
+  to friendly enums; recently-viewed swallows storage errors deliberately with a single
+  guarded `warnOnce` (edge 7 — justified, not a swallowed bug).
+- **DRY debt (cross-cutting with T3):** the SKIPPED n-3 (container/rhythm literals) and n-4
+  (`firstOrSelf` hoist) are real but correctly deferred — hoisting `firstOrSelf`/`fail`/tag
+  helpers touches T3's tested `queries.ts`, out of T4 scope. This is now a genuine
+  cross-module pattern (two read modules, a third coming in T5) and **worth a small dedicated
+  refactor task** to extract a shared `catalog/read-primitives.ts` (`fail`, `firstOrSelf`,
+  tag builders) BEFORE T5 mints a third copy. Backlogged.
+- **Storage schema versioning:** `RECENTLY_VIEWED_STORAGE_KEY` is versioned (`:v1`) with a
+  doc note to bump on incompatible change, and `isEntry` is a defensive shape guard that
+  drops malformed/old entries (m-5 hardened the spread fields). The migration story is sound:
+  a shape change bumps the key suffix → stale payloads are ignored, not mis-rendered.
 
 ## Refactors Applied
 
-None. This stage is review-only on `src/` (Stage 9 owns fixes this cycle). No code changed; only this artifact and (append-only) `tasks/clean-code-backlog.md` were written. The findings above are routed to owning tasks rather than fixed here — none are T3 defects (T3 explicitly scopes out filters/sorts/cart).
-
-## System Boundaries
-
-Clean. The cookie-free read client is a distinct, documented boundary (`public.ts`, marked "not for authenticated access"); `server-only` guards the lib; view models are the only cross-boundary shape; error propagation is one-way (log server-side, opaque throw to boundary). No circular deps. The `NEXT_PUBLIC_` publishable key is RLS-gated and correctly the only client-exposed credential.
+None — this stage is read-only on source per the orchestrator instruction (parallel with
+Stage 9 Security). All findings are documented recommendations mapped to future tasks, with
+backlog entries appended to `tasks/clean-code-backlog.md`.
 
 ## Architecture Score: 8.5/10
 
-Will this make sense in 6 months with 2× the team? **Yes.** The layering is disciplined, every non-obvious decision carries an evidence-bearing comment, and the forward-looking seams (breadcrumb JSON-LD source, card link wrapper, filter-closure query shape) are real, not decorative. The 1.5-point deduction is entirely about T5: the view+stitch strategy is presented as "the ONE standardized shape every catalog read uses," which is true for T3 but will mislead a T5 developer into extending it for variant-attribute filters — where it hits a hard wall. That expectation should be corrected in the query-layer doc and in T5 planning before T5 starts.
+T4 is a textbook additive feature — it reuses the T3 architecture faithfully, introduces no
+data model risk, keeps a clean single-island + pure-lib boundary, resolves i18n server-side,
+and honestly documents + backlogs its known limits rather than hiding them. A new developer
+in 6 months reading `product-detail.ts` next to `queries.ts` will immediately understand the
+shared idiom. The half-point deductions: accepted-but-real DRY debt that now spans two modules
+(the `firstOrSelf`/`fail`/tag duplication that should be extracted before T5 mints a third
+copy) and two latent scaling ceilings (unbounded `generateStaticParams`, unpaginated Q&A) —
+none of which bite in T4's lifetime, all with a clear owner task. Not a 10 only because the
+DRY extraction should have been a small in-scope refactor rather than a third deferral.
 
-## Recommendation: **APPROVE** (sound)
+## Recommendation: APPROVE
 
-Approve T3 as shipped. No changes required in T3 scope. Mandatory follow-ups routed to owning tasks (see `tasks/clean-code-backlog.md`): T5 must adopt a DB-side filtered/sorted query path with supporting indexes and a deliberate cache strategy rather than extending the T3 stitch; T6/T7 must treat `stock.ts` as display-only and read authoritative stock through the deferred DB view / reservation RPC.
+No architectural blockers. The design is sound, scales for Phase 1, and leaves clean seams
+for T5/T6/T8/T11. Recommendations are all future-task-mapped, not T4 rework.
+
+### Recommendations mapped to future tasks
+
+- **T5:** No T4-imposed constraint. Honor the existing T3 backlog (DB-side filter path,
+  indexes, cache-key strategy). When adding a third read module, first do the read-primitives
+  extraction below so it doesn't copy `fail`/`firstOrSelf` a third time.
+- **T6:** Consume the clean variant seam (`selectedVariantId` + `ProductVariantView.id` +
+  `sku`). Read authoritative stock via the deferred `effective_stock` view / reservation RPC
+  — NOT `stock.ts`/`variantStockState` (display-only, ISR-stale).
+- **T8:** Do NOT reuse the in-memory `Map` limiter pattern for webhook idempotency — use the
+  durable processed-events ledger (already backlogged). Promote the Q&A limiter to durable
+  only if it ever guards more than best-effort Q&A spam.
+- **T10/T11:** Wire `revalidateTag(product:<slug>)` + catalog listing tags on every product
+  edit and Q&A publish (the `productCacheTag` seam is ready). Add the Q&A composite index and
+  PDP Q&A pagination/display cap before answering makes long lists real.
