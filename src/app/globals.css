@@ -447,3 +447,141 @@
     }
   }
 }
+
+/* ======================================================================== *
+ * PRODUCT DETAIL PAGE MOTION (T4)
+ * ------------------------------------------------------------------------
+ * All transform/opacity only, < 300ms, ease-out for enter, interruptible (CSS
+ * transitions + keyed elements), and reduced-motion gated. See ui-design.md
+ * Motion Spec M1–M9. Hover is gated behind hover-capable pointers.
+ * ======================================================================== */
+
+/* M1 — Gallery main-image crossfade. The <Image> is keyed on the active image
+ * id, so each swap remounts a fresh element that fades in via @starting-style;
+ * a subtle blur masks the crossfade (Emil: blur bridges two overlapping states).
+ * Keyed + transition = interruptible → rapid variant/thumb retargets never stick
+ * on a stale frame (edge 8). Reduced motion: instant opacity, no blur. */
+.gallery-image {
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity 200ms var(--ease-out),
+    filter 200ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gallery-image {
+    transition: opacity 120ms ease;
+    filter: none;
+
+    @starting-style {
+      opacity: 0;
+      filter: none;
+    }
+  }
+}
+
+/* M4 — Zoom trigger + swatches press feedback (high-frequency → press only, no
+ * enter/hover motion). scale(0.97) on :active. Reduced motion drops it. */
+.gallery-zoom-trigger,
+.swatch-press {
+  transition: transform 120ms var(--ease-out);
+}
+.gallery-zoom-trigger:active,
+.swatch-press:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gallery-zoom-trigger:active,
+  .swatch-press:active {
+    transform: none;
+  }
+}
+
+/* M6 — Thumbnail hover (non-selected): opacity lift only, gated to real hover. */
+@media (hover: hover) and (pointer: fine) {
+  .thumb-hover {
+    transition: opacity 120ms ease;
+    opacity: 0.7;
+  }
+  .thumb-hover:hover {
+    opacity: 1;
+  }
+}
+
+/* M5 — Price / stock-line crossfade on variant change. The value span is keyed
+ * on its text, so a change remounts it and it fades in. Reduced motion: instant. */
+.price-value {
+  opacity: 1;
+  transition: opacity 150ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .price-value {
+    transition: none;
+
+    @starting-style {
+      opacity: 1;
+    }
+  }
+}
+
+/* M2/M3 — Zoom Dialog. MODAL → transform-origin: center (Emil modals exempt from
+ * trigger-origin). Content: opacity + scale(0.95→1), 200ms enter / 150ms exit,
+ * off Radix [data-state]. Scrim: opacity fade. CSS transitions (interruptible).
+ * Reduced motion: opacity only, no transform. */
+.gallery-zoom-scrim {
+  opacity: 1;
+  transition: opacity 200ms var(--ease-out);
+}
+.gallery-zoom-scrim[data-state="closed"] {
+  opacity: 0;
+  transition: opacity 150ms var(--ease-out);
+}
+.gallery-zoom-scrim[data-state="open"] {
+  @starting-style {
+    opacity: 0;
+  }
+}
+.gallery-zoom-dialog {
+  transform-origin: center;
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+}
+.gallery-zoom-dialog[data-state="closed"] {
+  opacity: 0;
+  transform: scale(0.95);
+  transition:
+    opacity 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
+}
+.gallery-zoom-dialog[data-state="open"] {
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gallery-zoom-dialog,
+  .gallery-zoom-dialog[data-state="open"],
+  .gallery-zoom-dialog[data-state="closed"] {
+    transform: none;
+    transition: opacity 150ms ease;
+  }
+  .gallery-zoom-dialog[data-state="open"] {
+    @starting-style {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}

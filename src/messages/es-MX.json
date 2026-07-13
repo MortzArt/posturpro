@@ -114,5 +114,78 @@
       "brandsTitle": "Marcas",
       "stylesTitle": "Estilos"
     }
+  },
+  "product": {
+    "metadata": {
+      "titlePattern": "{name} — {store}",
+      "descriptionFallback": "Silla ergonómica en PosturPro."
+    },
+    "breadcrumb": {
+      "ariaLabel": "Ruta de navegación",
+      "home": "Inicio",
+      "catalog": "Sillas"
+    },
+    "gallery": {
+      "regionLabel": "Galería del producto",
+      "zoom": "Ampliar imagen",
+      "close": "Cerrar",
+      "thumbnailAlt": "Ver imagen {number}",
+      "imagePlaceholder": "Imagen no disponible"
+    },
+    "variant": {
+      "groupLabel": "Elige un color",
+      "colorLabel": "Color: {name}",
+      "outOfStockName": "{name} (agotado)",
+      "selection": "{color} — {price} — {stock}"
+    },
+    "price": {
+      "comparePrevious": "Precio anterior:"
+    },
+    "specs": {
+      "heading": "Especificaciones",
+      "width": "Ancho",
+      "depth": "Profundidad",
+      "height": "Altura",
+      "seatHeight": "Altura del asiento",
+      "weight": "Peso",
+      "frameMaterial": "Material del marco",
+      "upholstery": "Tapicería",
+      "finish": "Acabado",
+      "unitCm": "{value} cm",
+      "unitKg": "{value} kg"
+    },
+    "recentlyViewed": {
+      "heading": "Vistos recientemente"
+    },
+    "qa": {
+      "heading": "Preguntas y respuestas",
+      "emptyTitle": "Sé el primero en preguntar",
+      "emptyBody": "¿Tienes dudas sobre esta silla? Pregúntanos abajo.",
+      "answerPrefix": "Respuesta",
+      "form": {
+        "heading": "Haz una pregunta",
+        "nameLabel": "Nombre",
+        "namePlaceholder": "Tu nombre",
+        "questionLabel": "Pregunta",
+        "questionPlaceholder": "¿Qué te gustaría saber?",
+        "counter": "{count}/{max}",
+        "submit": "Enviar pregunta",
+        "submitting": "Enviando…",
+        "honeypotLabel": "No llenar este campo"
+      },
+      "validation": {
+        "nameRequired": "Ingresa tu nombre.",
+        "nameTooLong": "El nombre no puede pasar de {max} caracteres.",
+        "questionRequired": "Escribe tu pregunta.",
+        "questionTooLong": "La pregunta no puede pasar de {max} caracteres."
+      },
+      "result": {
+        "successTitle": "Recibimos tu pregunta",
+        "successBody": "Aparecerá aquí en cuanto la respondamos.",
+        "rateLimited": "Ya enviaste una pregunta hace poco. Espera un momento antes de enviar otra.",
+        "unavailable": "Esta silla ya no está disponible.",
+        "errorRetry": "No pudimos enviar tu pregunta. Inténtalo de nuevo."
+      }
+    }
   }
 }

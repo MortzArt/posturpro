@@ -114,5 +114,78 @@
       "brandsTitle": "Brands",
       "stylesTitle": "Styles"
     }
+  },
+  "product": {
+    "metadata": {
+      "titlePattern": "{name} — {store}",
+      "descriptionFallback": "Ergonomic chair at PosturPro."
+    },
+    "breadcrumb": {
+      "ariaLabel": "Breadcrumb",
+      "home": "Home",
+      "catalog": "Chairs"
+    },
+    "gallery": {
+      "regionLabel": "Product gallery",
+      "zoom": "Zoom image",
+      "close": "Close",
+      "thumbnailAlt": "View image {number}",
+      "imagePlaceholder": "Image unavailable"
+    },
+    "variant": {
+      "groupLabel": "Choose a color",
+      "colorLabel": "Color: {name}",
+      "outOfStockName": "{name} (out of stock)",
+      "selection": "{color} — {price} — {stock}"
+    },
+    "price": {
+      "comparePrevious": "Was:"
+    },
+    "specs": {
+      "heading": "Specifications",
+      "width": "Width",
+      "depth": "Depth",
+      "height": "Height",
+      "seatHeight": "Seat height",
+      "weight": "Weight",
+      "frameMaterial": "Frame material",
+      "upholstery": "Upholstery",
+      "finish": "Finish",
+      "unitCm": "{value} cm",
+      "unitKg": "{value} kg"
+    },
+    "recentlyViewed": {
+      "heading": "Recently viewed"
+    },
+    "qa": {
+      "heading": "Questions & answers",
+      "emptyTitle": "Be the first to ask",
+      "emptyBody": "Have questions about this chair? Ask us below.",
+      "answerPrefix": "Answer",
+      "form": {
+        "heading": "Ask a question",
+        "nameLabel": "Name",
+        "namePlaceholder": "Your name",
+        "questionLabel": "Question",
+        "questionPlaceholder": "What would you like to know?",
+        "counter": "{count}/{max}",
+        "submit": "Send question",
+        "submitting": "Sending…",
+        "honeypotLabel": "Do not fill this field"
+      },
+      "validation": {
+        "nameRequired": "Enter your name.",
+        "nameTooLong": "Name can't be longer than {max} characters.",
+        "questionRequired": "Write your question.",
+        "questionTooLong": "Question can't be longer than {max} characters."
+      },
+      "result": {
+        "successTitle": "We got your question",
+        "successBody": "It will appear here once we answer it.",
+        "rateLimited": "You just sent a question. Please wait a moment before sending another.",
+        "unavailable": "This chair is no longer available.",
+        "errorRetry": "We couldn't send your question. Please try again."
+      }
+    }
   }
 }

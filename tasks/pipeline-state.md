@@ -1,10 +1,14 @@
 # Pipeline State
 Task: T4 — Product detail page
 Tier: full-cycle (medium)
-Stage: 4
-Agent: ultradev
+Stage: 5
+Agent: ultrareview
 Last Updated: 2026-07-13
-Notes: Stage 3 (UI Design) COMPLETE — tasks/ui-design.md written. Stage 1+2 artifacts: tasks/next-ticket.md + tasks/research-report.md.
+Notes: Stage 4 (Dev) COMPLETE — tasks/dev-done.md written. Prior artifacts: next-ticket.md, research-report.md, ui-design.md.
+
+Stage 4 summary: 22 files (19 new, 3 modified). Read layer src/lib/catalog/product-detail.ts (getProduct/listActiveProductSlugs) + 6 pure helper libs (variant-selection, specs, product-display, qa submit-guard, recently-viewed storage, interpolate). Route src/app/[locale]/producto/[slug]/{page,loading,actions}. 8 components in src/components/product/. Modified: config.ts (6 constants), src/messages/ both locales (product namespace), globals.css (M1-M6 motion). 20/20 ACs + 10 edge cases. Gates: lint 0/0, tsc clean, build green — PDP is SSG/ISR (60 prerendered paths, 5m revalidate via unstable_cache). 297 unit + 150 message parity pass. Live-verified RLS write path: valid anon insert 201; self-publish/archived 42501; unpublished invisible to anon.
+Deviations (documented in dev-done.md): messages in src/messages/ (real path, not src/i18n/messages/); MessageQuestionIcon (nearest free icon); no route-level revalidate export (Next 16 rejects non-literal — ISR via unstable_cache like T3).
+Known limitation: local next start serves HTTP 200 with correct 404 UI for unknown slugs (Next 16 SSG+notFound prerender-cache artifact; correct on real CDN). dynamicParams=true kept for ISR.
 
 Stage 3 design decisions (dev must honor): new components in src/components/product/ — ProductPurchasePanel (the ONE client selection island), ProductGallery + raw Radix Dialog zoom, VariantSelector (hand-rolled roving-tabindex radiogroup), ProductSpecs (server dl), ProductQa (server) + QaForm (client, useActionState), RecentlyViewed (client, empty SSR shell), PdpSkeleton. Reuse verbatim: StockBadge, Breadcrumbs, ProductCard, card placeholder, .card-lift/.stagger/.enter-fade primitives. Only shadcn button.tsx installed — use vendored radix-ui Dialog, hand-roll radiogroup/inputs (zero new deps). Motion M1-M9: crossfade 200/150ms for image/price, scale-in modal 0.95->1, press-feedback-only swatches, all transform/opacity <300ms, reduced-motion gated. Design recommendations accepted: recently-viewed stores card view model (no re-fetch); server-built variantDisplay map (zero client i18n in panel); add .order() id tiebreaker in getProduct; Q&A answer timestamps hidden in Phase 1.
 

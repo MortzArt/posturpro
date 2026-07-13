@@ -184,3 +184,53 @@ export function stylePath(slug: string): string {
 export function productPath(slug: string): string {
   return `/producto/${slug}`;
 }
+
+/* ========================================================================= *
+ * PRODUCT DETAIL PAGE (T4) — non-secret tunables, single-sourced here (Rule 4).
+ * ========================================================================= */
+
+/**
+ * Maximum products shown in the recently-viewed strip (T4 AC-12). The strip is
+ * client-only/localStorage (no accounts in Phase 1). Newest-first, current
+ * product excluded. Change here and both the storage cap and the render cap
+ * follow (both read this constant).
+ */
+export const RECENTLY_VIEWED_MAX = 8;
+
+/**
+ * localStorage key under which the recently-viewed card view models are stored
+ * (T4 AC-12). Namespaced so it never collides with other persisted state. If
+ * the stored shape ever changes incompatibly, bump the version suffix so stale
+ * payloads are ignored rather than mis-rendered.
+ */
+export const RECENTLY_VIEWED_STORAGE_KEY = "posturpro:recently-viewed:v1" as const;
+
+/**
+ * Q&A submission rate-limit window, in milliseconds (T4 AC-15). Within this
+ * window a single IP+product may submit at most {@link QA_MAX_SUBMISSIONS_PER_WINDOW}
+ * questions. Best-effort, in-memory, per-server-instance (resets on
+ * redeploy/scale-out) — a durable/global limiter is a documented follow-up, not
+ * this ticket. 60 seconds.
+ */
+export const QA_RATE_LIMIT_WINDOW_MS = 60_000;
+
+/**
+ * Max Q&A submissions allowed per IP+product within {@link QA_RATE_LIMIT_WINDOW_MS}
+ * (T4 AC-15). Above this the action rejects before any DB insert with a friendly
+ * "please wait" message.
+ */
+export const QA_MAX_SUBMISSIONS_PER_WINDOW = 3;
+
+/**
+ * Max author-name length for a Q&A submission (T4 AC-14). MIRRORS the DB CHECK
+ * `char_length(author_name) between 1 and 120` in `0004_content_qa.sql`. Client
+ * caps input and server re-validates the TRIMMED value against this — the DB
+ * CHECK is the floor, never the first line of defense.
+ */
+export const AUTHOR_NAME_MAX = 120;
+
+/**
+ * Max question length for a Q&A submission (T4 AC-14). MIRRORS the DB CHECK
+ * `char_length(question) between 1 and 2000` in `0004_content_qa.sql`.
+ */
+export const QUESTION_MAX = 2000;
