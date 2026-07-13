@@ -15,7 +15,7 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 - [x] **T3 — Catalog browsing** (tier: standard)
   Product listing grid, category pages, brand pages (logo + description), style browsing, breadcrumbs, stock indicators, pagination. `blocked by: T2`
 
-- [ ] **T4 — Product detail page** (tier: standard)
+- [x] **T4 — Product detail page** (tier: standard)
   Image gallery with zoom, color-variant selector (per-variant images/price/stock), specs display (dimensions, weight, materials), compare-at price display, recently-viewed strip, Q&A display + question submission form. `blocked by: T3`
 
 - [ ] **T5 — Search, filters & sorting** (tier: standard)
