@@ -1,212 +1,291 @@
-# Code Review: T3 — Catalog browsing
+# Code Review: T4 — Product Detail Page (`/producto/[slug]`)
+
+Reviewer: ultrareview (Stage 5). Scope: all 22 files in commit `9da6e40`, against
+`tasks/next-ticket.md` (20 ACs + 10 edge cases), `tasks/ui-design.md` (M1–M9, states,
+copy), and `tasks/dev-done.md`. Adversarial, line-by-line.
 
 ## Summary
-Strong, disciplined implementation. The read strategy (view + batched stitch), the cookie-free static-render fix, pagination math, stock logic, i18n parity, and motion discipline are all correct and well-tested (279 unit tests pass, tsc clean, lint clean). Two disclosed deviations are real: one is acceptable (searchParams dynamism), one is a genuine SEO defect that must be fixed before T14 (invalid slug returns HTTP 200). A handful of major/minor correctness and fidelity gaps remain.
 
-## Critical Issues (MUST FIX)
+Strong, disciplined implementation that honors the T3 patterns (view-only reads, cache-key
+bounding, cookie-free client, pre-resolved server i18n, single selection island). The write
+path is correctly anon+RLS with layered guards, message parity is exact, and the motion is
+compositor-friendly and reduced-motion-gated. However there is **one correctness bug that
+ships wrong data to users** (recently-viewed low-stock label), **two real memory/rate-limit
+DoS vectors on the new public write path**, and several minor gaps. No secrets, no XSS, no
+cost-data leak.
 
-### C-1: Invalid-slug 404 returns HTTP 200 (SEO / crawler defect) — FIXED
-- **ID**: C-1
-- **Status**: FIXED (verified with real curl, dev + production build, both locales)
-- **Root cause (confirmed)**: The three `[slug]` routes each had a route-level
-  `loading.tsx`. That file creates a Suspense boundary that makes Next stream a
-  200 HTML shell BEFORE the async page component (which awaits the slug lookup
-  and calls `notFound()`) resolves. When `notFound()` then throws, the response
-  status is already committed as 200 — a soft-404. The dev's "notFound fires
-  after JSX" framing was wrong; the trigger was the `loading.tsx` premature flush.
-- **Fix**: Removed `loading.tsx` from `categorias/[slug]`, `marcas/[slug]`,
-  `estilos/[slug]`. The slug lookup now resolves before any response is
-  committed, so `notFound()` yields a real HTTP 404. The product-grid loading
-  experience is preserved by the existing inner `<Suspense fallback={<ProductGridSkeleton/>}>`
-  in `PaginatedProductListing`. The e2e test now asserts `response.status() === 404`
-  (ES + EN + brand + style), strengthening it.
-- **Curl evidence (production `next start`)**:
-  `GET /categorias/no-existe → 404`, `GET /en/marcas/fantasma → 404`,
-  `GET /marcas/ergovita → 200` (valid slug still 200).
-- **Severity**: CRITICAL
-- **File**: `src/app/[locale]/categorias/[slug]/page.tsx:90-93`, `marcas/[slug]/page.tsx:60-63`, `estilos/[slug]/page.tsx:59-62`; corroborated by `e2e/catalog.spec.ts:98-108` (asserts UI, deliberately NOT status) and `tasks/dev-done.md:107`.
-- **Problem**: The dev discloses that `notFound()` on an unknown/inactive slug renders the correct localized 404 UI but responds with **HTTP 200**, not 404. The e2e test was written to assert only the visible UI, sidestepping the status code. AC-14 says the slug "calls `notFound()` and renders the localized in-shell 404" — the functional half passes, but a soft-404 (200 body that looks like a 404) is exactly what Google penalizes: crawlers index the fake page, dilute crawl budget, and never drop the dead URL. T14 (SEO) explicitly depends on this.
-- **Impact**: Every `/categorias|marcas|estilos/<garbage>` URL becomes a 200-status indexable page. Directly undermines T14. Also means uptime/monitoring checks can't distinguish a real 404.
-- **Assessment of the dev's root-cause claim**: The stated cause ("`notFound()` fires after the shell begins flushing") is technically shaky. In each detail page, `getCategory/getBrand/getStyle` is `await`ed and `notFound()` is called BEFORE any JSX in the page returns and before the `<Suspense>` child mounts — there is no page-level flush before the throw. The likely real cause is the async layout shell streaming in parallel, or these routes being `ƒ` dynamic where Next resolves status differently. This needs empirical confirmation, not a hand-wave.
-- **Suggested Fix**: Verify empirically with a production build + `curl -I /categorias/no-existe` to capture the real status. If 200 is confirmed: (1) **the e2e test MUST assert `response.status() === 404`** so the regression is caught; (2) investigate hoisting the taxonomy existence check so the throw resolves before the layout streams, or use `generateStaticParams` + `dynamicParams=false` so unknown slugs 404 statically. At minimum, correct the "acceptable" framing in dev-done.md — a soft-404 is not acceptable; if genuinely unfixable in-cycle it must be an explicit ticketed deferral, not silent.
+Counts: **Critical 0 · Major 4 · Minor 6 · Nit 4.**
+
+Recommendation: **REQUEST CHANGES** — M-1 (wrong stock label) and M-2/M-3 (write-path DoS)
+should be fixed before ship; the rest are quick.
+
+---
 
 ## Major Issues (SHOULD FIX)
 
-### M-1: Numbered pagination links are 32px tall — below the 44px tap target — FIXED
+### M-1: Recently-viewed tiles show the CURRENT product's low-stock count on every tile
 - **ID**: M-1
-- **Status**: FIXED — added a `numberedControl` class (`min-w-9 min-h-11 tabular-nums`)
-  to the numbered link + current-page span in `pagination.tsx`. Per the design
-  spec ("control height h-9 inside a min-h-11 tap row"), `min-h-11` gives a 44px
-  tap target while the button keeps its compact visual height. Kept unconditional
-  (not `sm:min-h-9`) because the numbered set only renders from the tablet
-  breakpoint up, where the pointer can still be touch — so it must be ≥44px there.
-- **Severity**: MAJOR
-- **File**: `src/components/catalog/pagination.tsx:96-98, 107-108` vs `src/components/ui/button.tsx:28`
-- **Problem**: Numbered page links and the current-page span use `buttonVariants({ variant, size: "lg" })` + `min-w-9`. In this repo's custom button scale, `size="lg"` is only `h-8` (32px) — the shadcn defaults were shrunk here. Only Prev/Next get `controlBase` (`min-h-11`). So numbered links are 32px tall, violating AC-17 and the ui-design "≥44px tap targets on pagination" (ui-design.md:92, :107).
-- **Impact**: Sub-minimum touch targets on tablet (768px, touch) where the numbered set is shown. Mobile (Prev/Next/count row) is compliant.
-- **Suggested Fix**: Add `min-h-11 sm:min-h-9` (or reuse `controlBase`'s height rule) to the numbered link + current-span className.
+- **Severity**: MAJOR (visible wrong data)
+- **File**: `src/app/[locale]/producto/[slug]/page.tsx:134-144`, consumed in
+  `src/components/product/recently-viewed.tsx:72-83`
+- **Problem**: `cardLabels.stockByState.low` is resolved **once** on the server using the
+  *current* product's effective stock:
+  `low: tCatalog("stock.lowStock", { count: effectiveStock(product.stock, product.variants) })`.
+  The recently-viewed strip then applies that single frozen string
+  (`stock: cardLabels.stockByState[entry.stockState]`) to **every** low-stock tile,
+  ignoring each stored entry's own `lowStockN`. A tile for product B with `lowStockN=2`
+  will render "Solo quedan 5" if the page you are on (product A) has 5 in stock.
+- **Impact**: Every low-stock recently-viewed tile except the current product displays an
+  incorrect remaining-count. `RecentlyViewedEntry.lowStockN` is stored specifically to
+  avoid this (types + `toRecentlyViewedEntry` populate it) but is never read.
+- **Suggested Fix**: In `recently-viewed.tsx`, resolve the low-stock label per-entry from
+  `entry.lowStockN`, not from a pre-baked map. Either pass a `lowStockTemplate` string down
+  and `interpolate(template, { count: entry.lowStockN ?? 0 })` for `low` entries (mirrors
+  the existing `colorsCountTemplate` pattern already in this file), or pass a
+  `lowStockLabel(n)` resolver. Drop the `count`-baked `stock.lowStock` from `stockByState`.
+- **Status**: OPEN
 
-### M-2: `readClampedProductPage` always issues a redundant page-1 read for any page > 1 — FIXED
+### M-2: Rate-limiter map grows unbounded on attacker-supplied `productId` (memory DoS)
 - **ID**: M-2
-- **Status**: FIXED — replaced the "read page 1 to discover lastPage" approach
-  with a count-only head query (`.select("id", { count: "exact", head: true })`,
-  `countProducts`) that fetches ZERO rows, computes `lastPage`, clamps the raw
-  `?page`, then does ONE `.range()` data read of the clamped page. Non-first
-  pages now cost one count (cheap, no rows) + one data read instead of two full
-  reads. The never-416 guarantee is preserved (range is clamped before reading).
-  `readClampedProductPage` was deleted (dead code); clamping moved into the query
-  layer, which returns the clamped page on the `CatalogPage`.
-- **Severity**: MAJOR
-- **File**: `src/lib/catalog/page-helpers.ts:28-39`
-- **Problem**: To learn `lastPage` for clamping, the helper unconditionally reads page 1 first, then reads the requested page when it isn't 1. For `?page=2` that is two full reads (each = 1 view query + 2 batched image/variant queries = 6 round-trips cold). The clamp only needs `count`, not page 1's rows.
-- **Impact**: 2x DB work for every non-first page on cache miss. Bounded and ISR-cached, so not fatal, but avoidable and scales with taxonomy pages. Design anticipated a single clamped read.
-- **Suggested Fix**: Either read the requested (unclamped) page directly and, on PostgREST 416, fall back to a clamped re-read using returned `count`; or add a count-only query (`head:true, count:"exact"`) to compute `lastPage` before a single row read. The latter is clean and keeps the never-416 guarantee.
+- **Severity**: MAJOR (first public write path; memory exhaustion)
+- **File**: `src/app/[locale]/producto/[slug]/actions.ts:80-114`,
+  `src/lib/qa/submit-guard.ts:85-122`
+- **Problem**: The action validates only `!productId` (empty check at `actions.ts:94`) — it
+  never checks the id is a UUID or a real product. The rate-limit key is
+  `${ip}|${productId}` and the map entry is created **before** the DB insert
+  (`checkRateLimit` at line 105, insert at 114). An attacker rotating `productId` (arbitrary
+  strings) — combined with a spoofable IP (see M-3) — mints an unbounded number of distinct
+  `submissionLog` keys, each holding a timestamp array, with no global cap and no key-count
+  eviction. Pruning only removes *expired timestamps within a key*, never removes empty/idle
+  keys. This is the exact cache-key-cardinality class T3 hardened against (`MAX_PAGE`), left
+  unbounded here.
+- **Impact**: Sustained requests grow server memory without bound until OOM; per-instance,
+  but trivially triggered. The RLS insert failing for a bogus product does not help — the
+  map entry already exists.
+- **Suggested Fix**: (a) Validate `productId` is a UUID (`/^[0-9a-f-]{36}$/i`) before
+  `checkRateLimit`; return `invalid` otherwise. (b) Add a hard ceiling on
+  `submissionLog.size` in `checkRateLimit` (evict when a key count cap is exceeded, or prune
+  fully-empty keys). (c) Consider keying the limiter on `ip` alone (or `ip|slug` where slug
+  is already bounded by `isCacheableSlug`) rather than the raw `productId`.
+- **Status**: OPEN
 
-### M-3: Category product query loads all member ids into an unbounded `.in()` — FIXED
+### M-3: Rate limit is trivially bypassed via `X-Forwarded-For` spoofing
 - **ID**: M-3
-- **Status**: FIXED (bounded + documented) — the membership read is now capped
-  with `.range(0, CATEGORY_MEMBER_ID_CAP - 1)` (`CATEGORY_MEMBER_ID_CAP = 1000`),
-  logging a warning if the cap is hit, so the `IN (...)` list and PostgREST URL
-  stay bounded as the catalog grows. The scale ceiling (migrate to a
-  category-scoped view/RPC when a category can legitimately exceed the cap) is
-  documented in code and added to `tasks/clean-code-backlog.md`.
-- **Severity**: MAJOR
-- **File**: `src/lib/catalog/queries.ts:384-402`
-- **Problem**: `readCategoryProductPage` fetches every `product_id` for the category (no limit) then passes the whole array to `.in("id", memberIds)`. Fine for 30 seeded products, but there is no ceiling — a large `oficina` parent aggregating children builds an ever-growing `IN (...)` list and a large PostgREST URL. Latent scale/perf issue; deviates from the "bounded batch" intent.
-- **Impact**: Fine at seed scale; degrades and risks URL-length limits as the catalog grows. Not a correctness bug today.
-- **Suggested Fix**: Push the membership filter server-side (category-scoped view or RPC) so pagination happens in the DB, or cap + document the ceiling. Acceptable to defer with a `clean-code-backlog.md` entry — but flag it, don't leave it silent.
+- **Severity**: MAJOR (rate-limit bypass on public write)
+- **File**: `src/app/[locale]/producto/[slug]/actions.ts:58-68`
+- **Problem**: `clientIp()` trusts the *first* comma value of the client-supplied
+  `x-forwarded-for` header (`headerList.get("x-forwarded-for")` → `split(",")[0]`). That
+  header is fully attacker-controlled unless a trusted proxy overwrites it. An attacker sets
+  a fresh `X-Forwarded-For` per request and the per-IP limiter never trips — the honeypot is
+  then the only spam control. This also feeds M-2 (each spoofed IP is a new map key).
+- **Impact**: `QA_MAX_SUBMISSIONS_PER_WINDOW` (3/min) is not enforced against any determined
+  client; unlimited RLS-valid inserts into `product_questions` (moderation queue flood) plus
+  unbounded map growth. The ticket accepts "best-effort in-memory," but a header a caller can
+  freely rewrite is effectively *no* limit, not best-effort.
+- **Suggested Fix**: Only trust the forwarded chain when a trusted-proxy contract exists;
+  otherwise take the *last* XFF hop appended by your own proxy, or read the platform's
+  trusted IP header (e.g. Vercel `x-vercel-forwarded-for` / `request.ip`). At minimum
+  document that this limiter assumes a trusted edge that overwrites XFF, and combine with
+  M-2's global cap so spoofing cannot amplify memory. (`unknown` already collapses all
+  no-IP callers into one bucket — fine.)
+- **Status**: OPEN
 
-### M-4: No test that per-category `total` equals the distinct active member count (edge case 8) — FIXED
+### M-4: `defaultVariant` helper is dead; panel duplicates the default-selection logic
 - **ID**: M-4
-- **Status**: FIXED — added a query test (`queries.test.ts`, "listProductsByCategory
-  dedup") that seeds a DUPLICATED `(product_id, category_id)` membership row and
-  asserts (a) the `.in("id", ids)` filter received de-duplicated ids, (b) no
-  duplicate product card, and (c) `total` is not inflated. Also hardened the read
-  itself: `readCategoryProductPage` now de-duplicates member ids
-  (`[...new Set(...)]`) so a stray duplicate membership row can never double-count.
-- **Severity**: MAJOR (verify)
-- **File**: `src/lib/catalog/queries.ts:377-403`
-- **Problem**: Per-category pagination `total` is the `count:"exact"` of `products_public.in("id", memberIds)`. Correct only if `product_categories` has one row per (product, category) and no duplicate active member is double-counted. Edge case 8 (a product in both `oficina` and `ejecutivas`) is handled within a single page, but nothing asserts the count/grid can't double-count if data ever inserts a duplicate membership row.
-- **Impact**: A future duplicate `(product_id, category_id)` row would double-count with no test catching it.
-- **Suggested Fix**: Add a query test seeding a duplicated membership row, asserting no duplicate card + correct `total`. Cheap AC-2/edge-8 insurance.
+- **Severity**: MAJOR (ticket-mandated helper unused + duplicated logic → drift risk)
+- **File**: `src/lib/catalog/variant-selection.ts:78-82` (exported, never imported),
+  `src/components/product/product-purchase-panel.tsx:79-86`
+- **Problem**: The ticket's Technical Approach explicitly lists
+  `variant-selection.ts` … `defaultVariant` as a helper, and dev-done claims it. It is
+  exported but never used (`grep` finds no import). The panel instead inlines the default
+  (`variants[0]?.id ?? ""`) *and* re-derives the fallback selected variant
+  (`variants.find(...) ?? variants[0]`). Two independent copies of "the default variant is
+  index 0" — violates DRY and the CLAUDE.md "no dead code" rule.
+- **Impact**: If the default-selection strategy ever changes (e.g. first in-stock), the
+  helper and the panel can silently diverge; and an exported-but-unused symbol is dead code
+  git-should-remember.
+- **Suggested Fix**: Have the panel use `defaultVariant(variants)` for both the initial
+  `useState` seed and the `selectedVariant` fallback, or delete `defaultVariant` if the
+  inline form is preferred. Do not ship both.
+- **Status**: OPEN
+
+---
 
 ## Minor Issues (NICE TO FIX)
 
-### m-1: `styles(...)` embed is fetched and never consumed — FIXED
-- **Status**: FIXED — removed `styles(name,slug)` and the unread `brand_id`/`style_id`
-  scalars from `PRODUCT_CARD_SELECT`; deleted the `EmbeddedStyle` type and the
-  `styles` field from `ProductCardRow`. Eliminates the per-query over-fetch. The
-  `is_best_seller`/`sales_count` columns are kept (they back the server-side
-  ORDER BY; PostgREST orders on the column regardless of select).
-- **File**: `src/lib/catalog/queries.ts:53-54, 90, 188-224`
-- **Suggestion**: `PRODUCT_CARD_SELECT` embeds `styles(name,slug)` and defines `EmbeddedStyle`, but `toCard` never reads `row.styles`. Pure over-fetch on every product-card query. Drop the style embed + type, or use it. Same for `brand_id`/`style_id` scalar columns — selected but unread in `toCard` (brand comes from the embed).
+### m-1: `generateMetadata` does not truncate the description (AC-3 says "truncated")
+- **File**: `src/app/[locale]/producto/[slug]/page.tsx:74-76`
+- **Problem**: AC-3 and the ticket error table specify a *truncated* product description;
+  the code passes `product.description?.trim()` in full. (Mitigating: AC-3 also says "mirrors
+  the brand page," and `marcas/[slug]/page.tsx:48` also passes the description untruncated,
+  so this is a consistent codebase pattern and search engines truncate anyway.)
+- **Suggestion**: Either add a `MAX_META_DESCRIPTION` slice (≈155–160 chars, single-sourced
+  in `config.ts`) to satisfy the literal AC, or update AC-3 to accept the brand-page pattern.
+  Given the design/ticket tension, flag for the fix stage to decide — do not silently ignore.
 
-### m-2: Breadcrumb mobile collapse is untested — risk of a doubled chevron — FIXED
-- **Status**: FIXED — the concern was real: with a 4-crumb trail the old code
-  rendered the `…` placeholder ONCE PER middle crumb (two `…`) plus stranded
-  chevrons from the still-rendered separators around hidden `<li>`s. Rewrote the
-  collapse: exactly ONE `…` placeholder (before the first middle crumb), the
-  separator before the first collapsed middle stays visible on mobile
-  (`Inicio ›`), subsequent middle separators hide on mobile, and the last
-  crumb's separator always shows — net mobile trail `Inicio › … › Ejecutivas`.
-  Removed the ellipsis's own trailing chevron (it was the doubling source). Added
-  a Playwright mobile assertion (Pixel 7) verifying exactly one visible ellipsis
-  and exactly two visible separators. Confirmed live: 1 ellipsis li + 3
-  separators in the full DOM for `/categorias/ejecutivas`.
-- **File**: `src/components/catalog/breadcrumbs.tsx:61-64, 109-120`
-- **Suggestion**: On mobile the collapsed `…` placeholder renders its own chevron (116-119) while the per-item `<Separator/>` (61) still renders around the hidden middle `<li>`s. Trace the 375px output (`Inicio › … › Ejecutivas`) to confirm no doubled chevron, and add a Playwright assertion at 375px — the mobile crumb rendering is currently untested.
+### m-2: `next/image` in the zoom lightbox hardcodes 1200×1500 for every image
+- **File**: `src/components/product/product-gallery.tsx:100-107`
+- **Problem**: The full-res lightbox `<Image width={1200} height={1500}>` forces a 4:5 aspect
+  on all images; a landscape or square source is letterboxed by `object-contain` but the
+  declared intrinsic ratio is wrong. Seed images are square (picsum 800×800), so this is
+  currently visible as vertical padding.
+- **Suggestion**: If image dimensions aren't in the model, either use `fill` within a
+  ratio-agnostic container, or carry width/height in `ProductImageView`. Low urgency (visual
+  only), but the 4:5 assumption is a magic pair with no constant.
 
-### m-3: Skeleton grid renders 12 cards regardless of last-page size — SKIPPED
-- **Status**: SKIPPED (note only, by the reviewer's own assessment) — the last-page
-  item count is unknowable at loading time (the count query hasn't run yet), so
-  reserving exactly N skeletons for a short last page is not possible without
-  making the shell dynamic. The common full-grid case is correct and the brief
-  over-reservation on a short LAST page is a minor, acceptable trade-off. No churn.
-- **File**: `src/components/catalog/catalog-skeleton.tsx:27-40`
-- **Suggestion**: A 3-item last page briefly shows 12 skeletons then collapses to 3 — a layout shift contradicting "reserve exact space" for short pages. Count isn't known at loading time so acceptable; the common full-grid case is correct. Note only.
+### m-3: no-variant `aria-live` region announces nothing (confirm intent)
+- **File**: `src/components/product/product-purchase-panel.tsx:107-110`, `:170-177`
+- **Problem**: For a no-variant product `liveStatus` is `""`, so the `aria-live` region is
+  empty. Per design this region is variant-selection feedback and price/stock are statically
+  in the DOM at load, so this is acceptable — noted so the fix/QA stage doesn't "fix" it into
+  announcing on load (which would be noise). Not a defect.
 
-### m-4: `firstOrSelf` defends against an array embed but only for `brands` — FIXED
-- **Status**: FIXED (resolved by m-1) — with the `styles` embed removed, `brands`
-  is the only to-one embed, so `firstOrSelf` normalizing just it is now correct
-  and consistent, not asymmetric.
-- **File**: `src/lib/catalog/queries.ts:113-116, 198`
-- **Suggestion**: Consistent with m-1 — since `styles` is unused, the asymmetry is moot once the embed is removed. If kept, normalize both or neither for clarity.
+### m-4: no composite index for the published-question read
+- **File**: `src/lib/catalog/product-detail.ts:214-234`; index in
+  `supabase/migrations/0004_content_qa.sql:21-24`
+- **Problem**: Read filters `product_id = ? AND is_published = true` and sorts
+  `created_at desc`; no composite `(product_id, is_published, created_at)` index → in-memory
+  filter+sort. Bounded per-product (no pagination), fine at seed scale.
+- **Suggestion**: Backlog a composite index for T10/T11 volume; no migration in T4 scope.
+
+### m-5: `isEntry` shape guard omits several fields it later spreads
+- **File**: `src/lib/recently-viewed.ts:38-54`
+- **Problem**: The malformed-payload guard validates `id/slug/name/priceCents/coverAlt/
+  colorCount/stockState` but not `compareAtPriceCents/coverImageUrl/brandName/lowStockN`. A
+  tampered entry can pass the guard and flow into `ProductCard` producing e.g.
+  `formatMXN(undefined)` → `$NaN`. Edge 7's "must not crash" is met (no throw), but malformed
+  money can render.
+- **Suggestion**: Assert `compareAtPriceCents: number|null`, `coverImageUrl: string|null`,
+  `lowStockN: number|null`, `brandName: string|null` in `isEntry`. Cheap; closes the `$NaN`
+  path from tampered storage.
+
+### m-6: published question with `answer === null` renders a bare question
+- **File**: `src/components/product/product-qa.tsx:88-93`; `product-detail.ts:214-224`
+- **Problem**: `readQuestions` returns any `is_published = true` row; the answer can be null.
+  AC-13 describes "author name, question, answer." A published-but-unanswered row shows just
+  the question. Only reachable if an admin publishes without answering (T11), since the anon
+  insert forces `answer=null`+`is_published=false`.
+- **Suggestion**: Filter `answer is not null` in `readQuestions` for strict AC-13 semantics,
+  or accept as a T11 admin responsibility and document. Low risk in T4.
+
+---
+
+## Nits
+
+- **n-1**: `product-specs.tsx:22` uses `gap-y-0` while `ui-design.md:340` specced `gap-y-3`;
+  row separation now relies only on `border-b`/`py-2`. Cosmetic — verify intended density.
+- **n-2**: `product-gallery.tsx:124-126` combines `flex-wrap` + `overflow-x-auto` — `flex-wrap`
+  wins so thumbs wrap at all sizes and never scroll; design wanted a scrollable rail on mobile.
+  Harmless; pick one.
+- **n-3**: Container class `mx-auto max-w-(--breakpoint-xl) px-4 py-8 …` and section rhythm
+  `mt-10 md:mt-12` are repeated literals across page/skeleton/specs/qa. Matches T3, acceptable;
+  candidate for a shared layout primitive later.
+- **n-4**: `firstOrSelf`/`EmbeddedBrand` PostgREST to-one normalizer duplicated from the T3
+  read layer (`queries.ts`). Minor DRY — hoist to a shared helper.
+
+---
+
+## Security review (attacker mindset — first public write path)
+
+| Check | Result |
+| --- | --- |
+| Anon client only, never admin/secret | PASS — `createPublicClient()` (publishable key, RLS) in read + write; no service key import (`actions.ts:125`). |
+| Insert sends only safe columns | PASS — `{product_id, author_name, question}`; RLS `WITH CHECK` forces `is_published=false, answer=null, answered_at=null, is_active_product` (`0006:150-160`). |
+| Honeypot bypass | PASS — off-screen real input, `trim().length>0` → fake success, no insert. |
+| Validation trim-before-length (edge 4) | PASS — `validateQaSubmission` trims first; DB `btrim` CHECK is the floor. |
+| Rate-limit IP source | **FAIL — M-3** (XFF spoofable). |
+| Rate-limit map cardinality | **FAIL — M-2** (unbounded on `productId`). |
+| Q&A input reaching a cache key | PASS — only bounded `slug` reaches `updateTag`; no form input touches a tag/key. |
+| `cost_price_cents` reachable (AC-16) | PASS — reads the view; column never selected; structurally omitted. |
+| Slug → cache key discipline (edge 6) | PASS — `isCacheableSlug` (len ≤128, kebab regex) rejects junk pre-cache. |
+| localStorage parse safety (edge 7) | PASS (crash-safe) — `JSON.parse` in try/catch + `Array.isArray` + `isEntry`. Partial-shape gap = **m-5**. |
+| XSS via stored data on PDP | PASS — question/answer/author are React text nodes; no `dangerouslySetInnerHTML`; image hosts allowlisted in `next.config.ts`. |
+| Error-message leakage | PASS — `fail()` logs server-side, throws generic; action maps errors to enums, never echoes `error.message`. |
+
+---
+
+## Animation review (STANDARDS.md — strict bar)
+
+M1 crossfade (opacity+blur≤2px, 200ms ease-out, keyed=interruptible, reduced-motion drops
+blur) · M2 zoom scale(0.95→1)+opacity center-origin 200/150ms · M3 scrim · M4 press
+scale(0.97) 120ms · M5 price crossfade 150ms · M6 thumb hover gated `hover:hover` opacity
+`ease` · M7 stagger cap `min(i*60,300)` · M8/M9 fade+rise, no shake. All PASS: no `ease-in`,
+only `transform`/`opacity`(+capped blur), all <300ms, all interruptible, reduced-motion
+honored everywhere. **Animation: APPROVED.**
+
+---
+
+## Clean Code review
+
+Function/file sizes small; SRP clean (pure helpers I/O-free, server display builders isolated,
+one client island for selection). No `any`; two guarded boundary `as` casts, no `!`. No empty
+catches (logged via `warnOnce`/contextual `console.error`). Constants single-sourced. Dead
+code: `defaultVariant` (**M-4**); minor magic values m-2/n-3. Overall PASS with M-4.
+
+---
+
+## i18n review
+
+`product` namespace present in BOTH locales; **key parity exact** (verified programmatically,
+0 missing either side). No hardcoded UI copy — all strings pre-resolved props or server
+templates filled by pure `interpolate()`. `interpolate` regex is linear (no ReDoS), unknown
+tokens left literal. es-MX default. PASS (AC-17).
+
+---
 
 ## Acceptance Criteria Verification
+
 | # | Criterion | Status | Evidence |
-|---|-----------|--------|----------|
-| AC-1 | Catalog grid, per-card image/name/brand/price, no cost leak | PASS | `sillas/page.tsx`; `product-card.tsx:99-114`; `queries.ts` select omits cost |
-| AC-2 | Category listing + parent aggregates children | PASS | `categorias/[slug]/page.tsx`, `readCategoryProductPage` via `product_categories` |
-| AC-3 | Category index with nesting | PASS | `categorias/page.tsx` + `category-tree.tsx` nested `<ul>/<li>` |
-| AC-4 | Brand page: logo/fallback + name + description + grid | PASS | `marcas/[slug]/page.tsx:76-102`, `brand-logo.tsx` monogram |
-| AC-5 | Brand index | PASS | `marcas/page.tsx` + `index-tile.tsx` |
-| AC-6 | Style index + style page | PASS | `estilos/page.tsx`, `estilos/[slug]/page.tsx` |
-| AC-7 | Accessible breadcrumbs, nesting, aria-current | PASS | `breadcrumbs.tsx` (`<nav><ol>`, `aria-current`), `buildCategoryCrumbs` uses ancestor chain |
-| AC-8 | Stock indicator exact copy + effective stock | PASS | `stock.ts` variant-authoritative; messages match exactly |
-| AC-9 | Crawlable pagination, page-1 canonical, aria-current | PASS | `pagination.tsx` real Link hrefs, `makeHrefForPage`; e2e:35-52 |
-| AC-10 | i18n both locales, catalog namespace, parity | PASS | 33/33 keys parallel (verified); no hardcoded UI strings |
-| AC-11 | Static rendering; cookies() removed | PARTIAL PASS | Shell + 3 index pages `●` SSG/ISR (layout + footer both swapped); `/sillas` + `[slug]` `ƒ` due to searchParams — acceptable per AC-11's cookies()-scoped wording |
-| AC-12 | PDP link `/producto/[slug]` locale-aware, no stub | PASS | `product-card.tsx:57` `productPath()` via `@/i18n/navigation` Link |
-| AC-13 | products_public only, embed brand/style, batch children, no cost | PASS | reads `products_public`; view omits cost (`0005:127`); e2e:27-33 |
-| AC-14 | Invalid slug → 404; malformed ?page clamps | PARTIAL FAIL | Clamping correct + tested; 404 returns HTTP 200 — see C-1 |
-| AC-15 | next/image fixed aspect + sizes + placeholder | PASS | `product-card.tsx:61-90` aspect-[4/5], sizes matches grid, placeholder tile |
-| AC-16 | Empty state, not blank/404 | PASS | `paginated-product-listing.tsx:44-52` + `empty-state.tsx` |
-| AC-17 | a11y + responsive, no horizontal scroll | PARTIAL PASS | Semantic navs, alt text, focus rings present; numbered pagination 32px tap target (M-1) |
-| AC-18 | Unit tests + e2e | PASS | stock/pagination/queries tests + e2e; 279 pass. e2e 404 test avoids status assertion (C-1) |
+| --- | --- | --- | --- |
+| AC-1 | Renders both locales; unknown/draft/archived → `notFound()` in shell | PASS | `page.tsx:83-86`; view filters `status='active'`; junk → `isCacheableSlug` null. (Next-16 `next start` 200-body-correct is dev-documented, CDN-correct.) |
+| AC-2 | `generateStaticParams` slugs × locales; tag-cached + `revalidate` | PASS | `page.tsx:53-58`; cache tags `[catalog, product:<slug>]`, `revalidate: CATALOG_REVALIDATE_SECONDS`. |
+| AC-3 | Metadata `"{name} — {store}"`, description, `{}` on miss | PARTIAL | Title + `{}`-on-miss correct; description NOT truncated — **m-1** (matches brand page). |
+| AC-4 | Breadcrumb `Inicio › Sillas › {name}`, last = current | PASS | `page.tsx:98-106` — third item no `href`. |
+| AC-5 | Gallery + thumbs; primary first; zero-image placeholder, no broken img | PASS | Order `is_primary,sort_order,id`; `GalleryPlaceholder`; `onError`→placeholder. |
+| AC-6 | Zoom lightbox; Escape/backdrop/close; focus trap + return | PASS | Radix `Dialog` (`gallery:65-121`), visible close. |
+| AC-7 | ≥1 variant → selector updates gallery/price/stock | PASS | Panel island; `imagesForVariant` fallback, `variantDisplay[id]`, gallery keyed remount. |
+| AC-8 | No variants → no selector; product-level | PASS | `hasVariants` gate; `imagesForVariant(all,null)`. |
+| AC-9 | `formatMXN`; strike only when compare-at `> effective` | PASS | `shouldStrikeCompareAt` strict `>`; per-variant `compareAtLabel`; enforced in read model too. |
+| AC-10 | Specs mm→cm/g→kg, null omitted, all-null hides section | PASS | `buildSpecRows`; page gates `specRows.length>0`. |
+| AC-11 | Three-state `StockBadge`, effective stock, legible w/o color | PASS | Reused badge; icon+text; per-variant `variantStockState`. |
+| AC-12 | Recently-viewed ≤8 newest-first excl current; localStorage; empty hidden | PASS* | Empty SSR shell, dedupe+cap; ***low-stock label wrong per M-1***. |
+| AC-13 | Lists published Q&A newest-first; empty state + form CTA | PASS | `is_published=true`, `created_at desc`; `QaEmptyState`. (null-answer edge = m-6.) |
+| AC-14 | Server-action anon insert; success clears+note+focus; trim-validate both | PASS | `actions.ts`+`submit-guard.ts`; client caps + `useActionState` reset+focus. |
+| AC-15 | Honeypot silent-accept; per-IP+product rate limit + friendly msg | PARTIAL | Honeypot PASS; rate limit **bypassable (M-3) + unbounded (M-2)**. |
+| AC-16 | `cost_price_cents` nowhere | PASS | View-only read; never selected. |
+| AC-17 | `product` namespace both locales, no hardcoded copy, es default | PASS | Parity verified; components string-free. |
+| AC-18 | Non-empty alts; swatch names; keyboard + SR labels | PASS | `altText ?? name`; roving-tabindex radiogroup; aria-live; sr-only compare. |
+| AC-19 | Mobile-first single col; two-col from `lg`; no 320px h-scroll | PASS | `lg:grid-cols-2`; correct order; intentional rails only. |
+| AC-20 | Motion ease-out, transform/opacity, reduced-motion, <300ms | PASS | See Animation review. |
+
+**18 PASS · 2 PARTIAL (AC-3 truncation, AC-15 rate-limit robustness) · 0 FAIL.**
 
 ## Edge Case Verification
-| # | Edge Case | Status | Evidence |
-|---|-----------|--------|----------|
-| 1 | Empty taxonomy → empty state | HANDLED | `paginated-product-listing.tsx:44` |
-| 2 | Out-of-stock still clickable, marked | HANDLED | `product-card.tsx:47,70-72` |
-| 3 | Missing cover image → placeholder | HANDLED | `product-card.tsx:74-90` role=img + label |
-| 4 | Nested category breadcrumb + tree | HANDLED | `buildCategoryCrumbs` + `walkAncestors`; nested ul |
-| 5 | Brand null logo/desc | HANDLED | `brand-logo.tsx`; desc omitted (`index-tile.tsx:49`) |
-| 6 | Invalid slug → 404 | PARTIAL | UI correct; HTTP status wrong (C-1) |
-| 7 | Malformed ?page clamps | HANDLED | `parsePageParam` rejects abc/1.5/-1/1e3/0; unit-tested |
-| 8 | Product in multiple categories, no dupes | HANDLED (untested count) | View + membership ids; no dedup-count test (M-4) |
-| 9 | RLS/DB failure → error boundary | HANDLED | `fail()` logs server-side + throws to `[locale]/error.tsx` |
-| 10 | Variant vs product stock mismatch | HANDLED | `effectiveStock` sums variants, ignores stale product stock; tested |
 
-## Animation & Motion Review
-- Easing: enter uses `--ease-out`; no `ease-in`. PASS
-- Properties: only transform/opacity animated. PASS
-- Duration: 160-200ms UI, 1600ms gated skeleton pulse. PASS
-- Stagger cap: `min(index,5)*40ms` ≤200ms, resets per page. PASS
-- Hover gating: `@media (hover:hover) and (pointer:fine)`. PASS
-- Reduced motion: `.stagger`/`.card-lift`/`motion-safe:animate-pulse` all collapse. PASS
-- Purpose: all motion justified; breadcrumb/pagination motion-light. PASS
-No animation findings.
+| # | Edge case | Status | Evidence |
+| --- | --- | --- | --- |
+| 1 | Zero images → placeholder, no zoom | HANDLED | `gallery:55-57`. |
+| 2 | All variants out → "Agotado", selectable, no buy CTA | HANDLED | `effectiveStock` sums; slash overlay; no cart affordance. |
+| 3 | Override vs compare-at → strike recomputes per selection | HANDLED | Per-variant server `compareAtLabel`. |
+| 4 | Whitespace/empty question → trimmed, field error, no insert | HANDLED | trim-before-length + DB `btrim` CHECK. |
+| 5 | Archived mid-flow → RLS denial → "unavailable" | HANDLED | `42501` → `unavailable`. |
+| 6 | Malformed/unsafe slug → not-found, no unbounded key | HANDLED | `isCacheableSlug`. |
+| 7 | localStorage unavailable/full → silent degrade, one warn | HANDLED (crash-safe) | try/catch + `warnOnce`; robustness nit m-5. |
+| 8 | Rapid variant clicks → idempotent, no stuck frame | HANDLED | Gallery keyed remount + `safeIndex` clamp. |
+| 9 | Hard read failure → typed throw to `error.tsx`, no raw detail | HANDLED | `fail()` generic throw; `error.tsx` present. |
+| 10 | Very long name/question → wraps, no overflow | HANDLED | `break-words`, `max-w-2xl`, `maxLength`. |
 
-## Security / RLS Review
-- Public client uses publishable (anon) key, `persistSession:false`, cookie-free. PASS (`public.ts`)
-- Only `products_public` read; base `products` never queried (test asserts). PASS
-- `cost_price_cents` absent from selects/types/payload/DOM. PASS
-- anon RLS policies exist for brands/categories/styles/images/variants (`0005`). PASS
-- Errors logged server-side only; generic message thrown to boundary. PASS
+**10/10 handled** (edge 7 crash-safe; robustness nit m-5).
 
 ## Quality Score: 8/10
-Clean, well-tested, convention-following, correct data/security/motion. Held back by one real SEO defect framed as "acceptable" (C-1), a doubled DB read (M-2), and a touch-target miss (M-1).
 
-## Recommendation: REQUEST CHANGES → RESOLVED (Stage 6 Fix)
-All findings addressed. C-1 (soft-404) is truly fixed — real HTTP 404 verified by
-curl in dev AND production build, both locales — with a strengthened e2e status
-assertion (ES + EN + brand + style). M-1 (tap target), M-2 (double read → count +
-single read), M-3 (bounded `.in()` + documented ceiling), M-4 (dedup test + read
-hardening) all FIXED. m-1/m-2/m-4 FIXED; m-3 SKIPPED (reviewer note-only, not
-fixable at loading time). Gates: lint clean, tsc clean, 280 unit tests pass, prod
-build route table unchanged (no static regression), catalog e2e 28 pass / 2
-skipped. No soft-404 ships.
+Excellent pattern fidelity, security posture, a11y, and motion; loses points for one
+user-visible data bug (M-1), two DoS vectors on the brand-new public write path (M-2/M-3)
+that undercut the control the ticket calls out as full-depth security, and a ticket-mandated
+helper shipped dead (M-4).
 
-### Fix Status Summary
-| ID | Severity | Status |
-|----|----------|--------|
-| C-1 | CRITICAL | FIXED (curl-verified, dev + prod, both locales) |
-| M-1 | MAJOR | FIXED |
-| M-2 | MAJOR | FIXED |
-| M-3 | MAJOR | FIXED (bounded + backlog-documented ceiling) |
-| M-4 | MAJOR | FIXED (test + read hardening) |
-| m-1 | MINOR | FIXED |
-| m-2 | MINOR | FIXED (bug was real; + e2e assertion) |
-| m-3 | MINOR | SKIPPED (note-only; not fixable at load time) |
-| m-4 | MINOR | FIXED (moot after m-1) |
+## Recommendation: REQUEST CHANGES
+
+Fix M-1 (wrong stock label), M-2 + M-3 (write-path DoS: validate `productId`, bound the map,
+harden the IP source), and M-4 (dead `defaultVariant`) before Stage 12. Minors/nits can batch
+into the fix stage. No critical blockers; the core PDP is production-shaped.

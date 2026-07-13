@@ -1,10 +1,10 @@
 # Pipeline State
 Task: T4 — Product detail page
 Tier: full-cycle (medium)
-Stage: 5
-Agent: ultrareview
+Stage: 6
+Agent: ultrafix
 Last Updated: 2026-07-13
-Notes: Stage 4 (Dev) COMPLETE — tasks/dev-done.md written. Prior artifacts: next-ticket.md, research-report.md, ui-design.md.
+Notes: Stage 5 (Review) COMPLETE — tasks/review-findings.md written. Verdict REQUEST CHANGES 8/10: 0 critical, 4 major (M-1 recently-viewed frozen low-stock label applied to every tile; M-2 unbounded rate-limit map keyed ip|productId with unvalidated productId — same cardinality class as T3's MAX_PAGE fix; M-3 clientIp trusts spoofable x-forwarded-for first hop; M-4 dead defaultVariant helper + duplicated default logic), 6 minor, 4 nit. ACs 18 PASS / 2 PARTIAL (AC-3 description truncation, AC-15 rate limit per M-2/M-3) / 0 FAIL; 10/10 edges. Clean: anon+RLS boundary, honeypot, cost_price_cents absent, slug cache-key bounding, no XSS, localStorage crash-safe, i18n parity, M1-M9 motion APPROVED. Stage 4 (Dev) COMPLETE — tasks/dev-done.md written. Prior artifacts: next-ticket.md, research-report.md, ui-design.md.
 
 Stage 4 summary: 22 files (19 new, 3 modified). Read layer src/lib/catalog/product-detail.ts (getProduct/listActiveProductSlugs) + 6 pure helper libs (variant-selection, specs, product-display, qa submit-guard, recently-viewed storage, interpolate). Route src/app/[locale]/producto/[slug]/{page,loading,actions}. 8 components in src/components/product/. Modified: config.ts (6 constants), src/messages/ both locales (product namespace), globals.css (M1-M6 motion). 20/20 ACs + 10 edge cases. Gates: lint 0/0, tsc clean, build green — PDP is SSG/ISR (60 prerendered paths, 5m revalidate via unstable_cache). 297 unit + 150 message parity pass. Live-verified RLS write path: valid anon insert 201; self-publish/archived 42501; unpublished invisible to anon.
 Deviations (documented in dev-done.md): messages in src/messages/ (real path, not src/i18n/messages/); MessageQuestionIcon (nearest free icon); no route-level revalidate export (Next 16 rejects non-literal — ISR via unstable_cache like T3).
