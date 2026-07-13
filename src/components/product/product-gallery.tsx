@@ -78,7 +78,11 @@ export function ProductGallery({
         <Dialog.Trigger asChild>
           <button
             type="button"
-            aria-label={labels.zoom}
+            // Combine the zoom action with the image description so a
+            // keyboard/SR user hears WHAT the main image shows without having
+            // to open the lightbox (the button's aria-label otherwise
+            // suppresses the inner <img> alt in the a11y tree).
+            aria-label={`${labels.zoom} — ${activeAlt}`}
             data-testid="gallery-zoom-trigger"
             className="gallery-zoom-trigger group/main relative block aspect-[4/5] w-full cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >

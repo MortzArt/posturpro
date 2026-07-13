@@ -125,9 +125,12 @@ export function VariantSelector({
               }}
             >
               {isOut ? (
+                // Colorless out-of-stock indicator (edge 2 — legible without
+                // color). 2px bar with a 1px background-colored outline so the
+                // strike stays visible against both light AND dark swatches.
                 <span
                   aria-hidden
-                  className="absolute h-px w-[140%] rotate-45 bg-foreground/70"
+                  className="absolute h-0.5 w-[140%] rotate-45 bg-foreground outline outline-1 outline-background"
                 />
               ) : null}
             </span>
