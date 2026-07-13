@@ -47,10 +47,15 @@ export async function NoResults({
           aria-hidden
           className="text-muted-foreground"
         />
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold tracking-tight">{heading}</h2>
+        <div className="flex w-full max-w-prose flex-col gap-1">
+          <h2 className="text-lg font-semibold tracking-tight break-words">
+            {heading}
+          </h2>
           {queryEcho ? (
-            <p className="text-sm text-muted-foreground" data-testid="no-results-echo">
+            <p
+              className="text-sm text-muted-foreground break-words"
+              data-testid="no-results-echo"
+            >
               {queryEcho}
             </p>
           ) : null}

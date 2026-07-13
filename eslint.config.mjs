@@ -15,6 +15,9 @@ const eslintConfig = defineConfig([
     // Isolated e2e build output (see NEXT_QA_DIST_DIR in next.config.ts) — build
     // artifacts, never linted (mirrors the `.next/**` ignore).
     ".next-qa/**",
+    // Any other stage-scoped `.next-*` build output dir (e.g. `.next-t5-ux`) is
+    // a generated artifact — never lint it (same rationale as `.next/**`).
+    ".next-*/**",
   ]),
 ]);
 

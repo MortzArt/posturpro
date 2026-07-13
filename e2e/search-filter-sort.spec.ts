@@ -374,3 +374,65 @@ test.describe("catalog under /en (AC-12 locale-aware)", () => {
     );
   });
 });
+
+test.describe("interruptibility (rapid input mid-transition — Apple §3, hacker T5)", () => {
+  /**
+   * Read the brand facet checkbox ids straight off the DOM so the test never
+   * hard-codes seed UUIDs (they can change on a reset). Returns up to `n` ids.
+   */
+  async function brandFacetIds(page: Page, n: number): Promise<string[]> {
+    const boxes = page.locator('[data-testid^="filter-brandIds-"]');
+    const count = Math.min(await boxes.count(), n);
+    const ids: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const testid = await boxes.nth(i).getAttribute("data-testid");
+      if (testid) ids.push(testid.replace("filter-brandIds-", ""));
+    }
+    return ids;
+  }
+
+  test("a burst of facet toggles accumulates — no click is clobbered", async ({
+    page,
+  }) => {
+    await gotoReady(page, "/sillas");
+    const ids = await brandFacetIds(page, 4);
+    expect(ids.length).toBeGreaterThanOrEqual(3);
+    // Fire the clicks back-to-back with no wait — faster than a router.push lands.
+    for (const id of ids) {
+      await page.getByTestId(`filter-brandIds-${id}`).click({ force: true });
+    }
+    await expect
+      .poll(
+        () =>
+          (new URL(page.url()).searchParams.get("marca") ?? "")
+            .split(",")
+            .filter(Boolean)
+            .sort()
+            .join(","),
+        { timeout: 20_000 },
+      )
+      .toBe([...ids].sort().join(","));
+  });
+
+  test("a scalar change (sort) fired mid-burst keeps the pending facets", async ({
+    page,
+  }) => {
+    await gotoReady(page, "/sillas");
+    const ids = await brandFacetIds(page, 2);
+    expect(ids.length).toBe(2);
+    // Toggle two brands fast, then immediately change sort — the sort push must
+    // compose against the pending facets (patch), not clobber them.
+    await page.getByTestId(`filter-brandIds-${ids[0]}`).click({ force: true });
+    await page.getByTestId(`filter-brandIds-${ids[1]}`).click({ force: true });
+    await page.getByTestId("sort-select").click();
+    await page.getByTestId("sort-option-precio-asc").click();
+    await expect.poll(() => new URL(page.url()).searchParams.get("orden"), {
+      timeout: 20_000,
+    }).toBe("precio-asc");
+    const marca = (new URL(page.url()).searchParams.get("marca") ?? "")
+      .split(",")
+      .filter(Boolean)
+      .sort();
+    expect(marca).toEqual([...ids].sort());
+  });
+});

@@ -53,10 +53,19 @@ export function ActiveFilters({
           >
             <Badge
               variant="secondary"
-              className="gap-1 py-1 pl-3 pr-2 text-sm font-normal"
+              className="max-w-[70vw] gap-1 py-1 pl-3 pr-2 text-sm font-normal sm:max-w-xs"
             >
-              {chip.label}
-              <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} aria-hidden />
+              {/* Truncate a long label (e.g. an 80-char `q` echo) so no single
+                  chip can exceed the viewport and force horizontal body scroll
+                  (edge 12); the ✕ stays visible + tappable. */}
+              <span className="min-w-0 truncate">{chip.label}</span>
+              <HugeiconsIcon
+                icon={Cancel01Icon}
+                size={14}
+                strokeWidth={2}
+                aria-hidden
+                className="shrink-0"
+              />
             </Badge>
           </Link>
         ))}

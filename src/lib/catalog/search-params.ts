@@ -93,9 +93,21 @@ function centsToPesosParam(cents: number): string {
   return String(Math.round(cents / CENTS_PER_PESO));
 }
 
-/** Parse `q`: trim, drop whitespace-only, truncate to the cap (AC-3). */
+/**
+ * Control characters meaningless as search input. The NUL byte is the
+ * critical one: PostgreSQL `text` OUTRIGHT REJECTS it, so a raw `q=%00` would
+ * reach the `search_products` RPC and throw `unsupported Unicode escape
+ * sequence`, surfacing as a 500 that empties the catalog (edge 3: hostile
+ * input must never 500). We strip the C0 range (U+0000..U+001F) and DEL
+ * (U+007F); the result is re-trimmed, so a `q` of only control bytes collapses
+ * to `null` (the filter-only view) rather than 500-ing. Legitimate whitespace
+ * inside a real query is untouched.
+ */
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
+
+/** Parse `q`: strip control bytes, trim, drop whitespace-only, truncate (AC-3, edge 3). */
 function parseQuery(raw: string | string[] | undefined): string | null {
-  const value = firstValue(raw);
+  const value = firstValue(raw).replace(CONTROL_CHARS, "").trim();
   if (value.length === 0) return null;
   return value.slice(0, SEARCH_QUERY_MAX);
 }

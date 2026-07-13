@@ -135,7 +135,7 @@ export function AvailabilityToggle({
   inStockOnly: boolean;
   label: string;
 }) {
-  const { filters, apply } = useFilterNavigation();
+  const { patch } = useFilterNavigation();
   const includeOutOfStock = !inStockOnly;
   return (
     <div className="flex items-center gap-2">
@@ -147,7 +147,7 @@ export function AvailabilityToggle({
         checked={includeOutOfStock}
         data-testid="filter-in-stock"
         onChange={(event) =>
-          apply({ ...filters, inStockOnly: !event.target.checked })
+          patch({ inStockOnly: !event.target.checked })
         }
         className={cn(
           "peer size-4 shrink-0 cursor-pointer rounded-[4px] border border-input accent-primary outline-none",
@@ -188,7 +188,7 @@ export function PriceRange({
   ignoredNote: string;
   showIgnored: boolean;
 }) {
-  const { filters, apply } = useFilterNavigation();
+  const { patch } = useFilterNavigation();
   const [minPesos, setMinPesos] = useState(centsToField(priceMin));
   const [maxPesos, setMaxPesos] = useState(centsToField(priceMax));
 
@@ -206,8 +206,7 @@ export function PriceRange({
   }
 
   const commit = (): void => {
-    apply({
-      ...filters,
+    patch({
       priceMin: fieldToCents(minPesos),
       priceMax: fieldToCents(maxPesos),
       priceRangeIgnored: false,

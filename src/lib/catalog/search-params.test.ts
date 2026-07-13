@@ -213,6 +213,22 @@ describe("hostile / adversarial inputs (edge 3) — never 500, never empty the c
     expect(f.query?.length).toBe(SEARCH_QUERY_MAX);
   });
 
+  it("strips NUL / control bytes from q (Postgres rejects NUL \u2192 would 500; edge 3)", () => {
+    // A raw NUL in text is fatal to the RPC's `text` param \u2014 must never reach it.
+    expect(parseCatalogFilters({ q: "ma\u0000lla" }, known).query).toBe("malla");
+    // NUL + surrounding control bytes stripped, then re-trimmed.
+    expect(parseCatalogFilters({ q: "\u0000\u001f malla \u007f" }, known).query).toBe(
+      "malla",
+    );
+    // A NUL early in a long query is stripped in place (not merely truncated away).
+    const withNul = "a".repeat(10) + "\u0000" + "b".repeat(10);
+    expect(parseCatalogFilters({ q: withNul }, known).query).toBe(
+      "a".repeat(10) + "b".repeat(10),
+    );
+    // A control-only query collapses to the filter-only view, not a 500.
+    expect(parseCatalogFilters({ q: "\u0000\u0001\u0002" }, known).query).toBeNull();
+  });
+
   it("uses only the FIRST value of a repeated scalar param (?orden=a&orden=b)", () => {
     const f = parseCatalogFilters(
       { orden: ["precio-asc", "precio-desc"] },

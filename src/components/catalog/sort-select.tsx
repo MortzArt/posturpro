@@ -31,11 +31,11 @@ interface SortSelectProps {
 }
 
 export function SortSelect({ value, labels, ariaLabel, prefix }: SortSelectProps) {
-  const { filters, apply } = useFilterNavigation();
+  const { patch } = useFilterNavigation();
 
   const onChange = (next: string): void => {
     if (!(SORT_KEYS as readonly string[]).includes(next)) return;
-    apply({ ...filters, sort: next as SortKey });
+    patch({ sort: next as SortKey });
   };
 
   return (

@@ -43,6 +43,14 @@ interface FilterNavigationValue {
   isPending: boolean;
   /** Push the given fully-resolved filter state (page → 1). */
   apply: (next: CatalogFilters) => void;
+  /**
+   * Merge a partial change into the LATEST applied state (the pending ref, not
+   * the stale render prop) and push. Scalar controls (sort, availability, price)
+   * must use this so a change fired mid-transition composes with a preceding
+   * facet-toggle burst instead of clobbering it — same interruptibility contract
+   * as `toggleValue` (Apple §3).
+   */
+  patch: (partial: Partial<CatalogFilters>) => void;
   /** Convenience: apply with one facet value toggled on/off. */
   toggleValue: (facet: MultiFacet, value: string, on: boolean) => void;
 }
@@ -83,6 +91,13 @@ export function FilterNavigationProvider({
       });
     };
 
+    // Compose against the pending ref (latest applied), never the stale prop, so
+    // a scalar change (sort/availability/price) fired mid-transition keeps any
+    // facet toggles that have not yet landed in the URL.
+    const patch = (partial: Partial<CatalogFilters>): void => {
+      apply({ ...pendingRef.current, ...partial });
+    };
+
     const toggleValue = (facet: MultiFacet, value: string, on: boolean): void => {
       const base = pendingRef.current;
       const current = base[facet];
@@ -92,7 +107,7 @@ export function FilterNavigationProvider({
       apply({ ...base, [facet]: nextValues });
     };
 
-    return { filters, isPending, apply, toggleValue };
+    return { filters, isPending, apply, patch, toggleValue };
   }, [filters, isPending, router]);
 
   return (
