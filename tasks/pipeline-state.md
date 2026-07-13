@@ -1,24 +1,23 @@
 # Pipeline State
-Task: T3 — Catalog browsing
-Tier: full-cycle (auto-classified: complexity=medium → run all stages EXCEPT Stage 11 Hacker)
-Stage: COMPLETE
-Agent: — (Stage 12 Verify PASSED → SHIP). Verdict SHIP, confidence HIGH, quality 9/10. Verifier re-ran ALL gates fresh against a prod build (next start :3000) on the seeded local Supabase (user :3206 + Docker DB untouched): lint clean, tsc exit 0, build success (route table matches AC-11: shell + 3 index pages ● SSG/ISR, /sillas + [slug] ƒ searchParams-only), 297/297 unit, 4/4 read-only integration (non-destructive, NOT run-integration.sh), 122/122 e2e (+4 by-design cross-project skips). 18/18 ACs PASS — cost leak absent (view 42703 + base products 42501, 0 DOM hits), invalid slugs real HTTP 404 both locales (ex-C-1 genuinely fixed), canonicalPageKey bounds cache keys, ?page clamps (0/-1/abc/1.5/999/1e9 all 200), page-1 canonical + page-2 distinct, i18n parity (34 catalog.* keys each), breadcrumb aria + PDP locale-aware links verified live. Scope clean: no T4/T5/T6/T13 build-ahead. See tasks/ship-decision.md.
-Agent (superseded): ultraverify (Stage 12 — final gate). Stage 11 (Hacker) SKIPPED per medium complexity. Block D: Security SECURE — 1 HIGH fixed (unbounded unstable_cache key cardinality from raw ?page → canonicalPageKey + MAX_PAGE bound, +9 tests → 297 unit), draft-leakage proven absent live, 2 low documented. Arch SOUND 8.5/10 APPROVE — T5 must build DB-side filtered query (view+stitch can't filter variant color pre-pagination) + indexes; T6 must use authoritative stock (backlogged, 6 entries appended). Dev done (~45 files): src/lib/catalog/ (queries via products_public + batched .in() children, stock, pagination, types, page-helpers), src/lib/supabase/public.ts (cookie-free client), 7 catalog routes with loading/metadata/notFound/generateStaticParams, 11 components in src/components/catalog/, catalog i18n namespace. Gates: 279 unit, 23+1skip catalog e2e, lint/tsc/build clean. AC-11: shell + index pages now SSG/ISR (were dynamic); /sillas + [slug] pages remain dynamic due to searchParams only (documented deviation). Deviation 2: invalid-slug 404 renders correct UI but HTTP 200 (Next streaming notFound limitation). Both T3 backlog items resolved+checked off.
-Last Updated: 2026-07-12
-Notes: Stage 1+2 (PlanResearch) COMPLETE. Artifacts written: tasks/next-ticket.md + tasks/research-report.md.
+Task: T4 — Product detail page
+Tier: full-cycle (medium)
+Stage: 3
+Agent: ultradesign
+Last Updated: 2026-07-13
+Notes: Stage 1+2 (PlanResearch) COMPLETE. Artifacts: tasks/next-ticket.md + tasks/research-report.md.
 
-Classification: Complexity=medium (leaning high), Feature Type=full-feature. Because full-feature, all UI/UX stages run at full depth. Medium complexity → SKIP Stage 11 (Hacker); run 3(UI Design)→4(Dev)→5(Review)→6(Fix)→7(QA)→8(UX)→9(Security)→10(Arch)→12(Verify).
+Classification: Complexity=medium (reclassified from standard recommendation), Feature Type=full-feature (full-stack). Medium → SKIP Stage 11 (Hacker); run 3(UI Design)→4(Dev)→5(Review)→6(Fix)→7(QA)→8(UX)→9(Security)∥10(Arch)→12(Verify). Security runs FULL depth (first public write path).
 
-Key T3 decisions locked in the ticket (dev MUST honor):
-- Routes (locale-agnostic paths, es-MX unprefixed / en under /en, no next-intl pathnames): /sillas (catalog grid), /categorias + /categorias/[slug], /marcas + /marcas/[slug], /estilos + /estilos/[slug]. Card PDP link -> /producto/[slug] (owned by T4, may 404 until then; do NOT stub).
-- Catalog-read strategy (backlog item 1 RESOLVED): read via products_public view (base products NOT granted to anon; view + children ARE — 0005_rls_policies.sql). Embed brands/styles THROUGH the view (FKs forwarded). Fetch product_images, product_variants, product_categories in SEPARATE batched .in(product_id, ids) queries (their FKs target base products, not the view — not embeddable through it). No cost_price_cents ever exposed.
-- Static-render fix (backlog item 2 RESOLVED): new src/lib/supabase/public.ts createPublicClient() (plain supabase-js, publishable key, cookie-free, RLS still applies) + getStoreSettingsStatic(); catalog reads wrapped in unstable_cache with per-entity tags (catalog, brand:<slug>, category:<slug>, style:<slug>) + time-based revalidate. layout.tsx swaps getStoreSettings -> cookie-free read. T10 busts via revalidateTag. AC-11 requires next build shows these pages static/ISR, not dynamic.
-- Stock: effective stock = sum(variant stock) when variants exist, else product.stock. LOW_STOCK_THRESHOLD=5. Copy: "En stock"/"In stock" (>5), "Solo quedan {n}"/"Only {n} left" (1..5), "Agotado"/"Out of stock" (0).
-- Pagination: crawlable numbered ?page=N (real <a>/Link, works JS-off), page 1 canonical without ?page=1, PRODUCTS_PER_PAGE=12. Clamp out-of-range page deterministically.
-- Card shows "N colores"/"N colors" count (NOT swatches — swatches are T4).
-- No migration / no data-model change (T1 schema is sufficient; effective stock computed in lib, not a DB view).
-- i18n: new `catalog` namespace in es-MX.json + en.json; product content stays seeded Spanish (no translation lookup in T3).
+Key T4 decisions locked in the ticket (dev MUST honor):
+- PDP route src/app/[locale]/producto/[slug]/page.tsx cloned from marcas/[slug] structure; getProduct(slug) in new src/lib/catalog/product-detail.ts mirroring getBrand + stitchCards, reading products_public view (cost_price_cents unreachable by construction; test must assert absence).
+- Variant selection owned by ONE client island (ProductPurchasePanel) — price, stock badge, gallery sync from single source of truth. Per-variant images via product_images.variant_id (null = shared fallback).
+- Q&A write uses ANON client + RLS (product_questions_anon_insert WITH CHECK: is_published=false, length caps, is_active_product) — NOT admin/secret client. Server action layers: honeypot + in-memory per-IP+product rate limit + trimmed validation. Durable limiter = documented follow-up, not this ticket.
+- Recently-viewed: client-only localStorage, effect-driven with empty SSR shell (no hydration mismatch).
+- Zoom via Radix Dialog (already installed). Zero new npm deps.
+- Do NOT reintroduce T3 cache-key cardinality issue: Q&A input flows only into insert, never a cache key.
 
-Scope guards for dev: NO search box / filter sidebar / sort dropdown (T5). NO PDP (T4). NO homepage hero/featured (T13). NO cart (T6).
+Scope guards: NO cart (T6), NO search/filters (T5), NO admin Q&A answering (T11), NO customer accounts (Phase 2).
 
-ENVIRONMENT: user actively browsing dev server on port 3206 (background) with local Docker Supabase seeded — do NOT kill either; agents use port 3000 for their own servers. Note: playwright.config.ts currently targets port 3000 (flagged by planner, not changed).
+Open risks for later stages: Q&A form = first public write vector (Stage 9 full focus); in-memory rate limiter is per-instance/best-effort; localStorage/hydration + stale-price-on-rapid-variant-switch edge cases specified in ticket.
+
+ENVIRONMENT: user may be browsing dev server on port 3206 (background) with local Docker Supabase seeded — do NOT kill either; agents use port 3000 for their own servers.
