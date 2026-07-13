@@ -1,135 +1,243 @@
-# Security Audit: T4 — Product Detail Page (`/producto/[slug]`)
+# Security Audit: T5 — Search, Filters & Sorting
 
-Auditor: ultrasecurity (Stage 9, full-cycle). Depth: **FULL** — T4 introduces the
-store's first public WRITE path (anon Q&A insert), so the write surface, RLS
-boundary, and data-exposure guarantees were tested adversarially, including
-**live, non-destructive verification against the local Docker Supabase**
-(REST `:54321` + Postgres `:54322`). Stage 5/6 security claims (M-2/M-3 and the
-review's PASS table) were re-verified independently — trusting nothing.
+Stage 9 (ultrasecurity). FULL-depth audit of the store's first anon-executable SQL
+function (`search_products` RPC) and its large user-controlled input surface
+(search/filter/sort/price query params). Every input treated as hostile; every claim
+in the prior Review (Stage 5) and QA (Stage 7) reports independently re-verified against
+the live local Supabase and the running prod server — trust nothing.
 
 ## Summary
-- Files audited: 22 T4 files + RLS migrations (0005/0006), env/config, next.config, public client.
-- Vulnerabilities found: **0 (Critical: 0, High: 0, Medium: 0, Low: 2 documented)**.
-- Vulnerabilities fixed this stage: 0 (no critical/high present; Stage 6 already fixed M-2/M-3).
-- Secrets found: **0** (SHIP requirement met).
-- Live-DB attacks attempted: 9 (mass-assignment, self-publish, whitespace, oversize, cost-leak, unpublished-read) — **all defended**.
-- Cleanup: the leftover `T4 Verify` unpublished test row noted in dev-done was deleted during this audit (0 residual rows).
+- Files audited: 20 T5-touched files (RPC migration, query/param libs, facets, page, 8
+  client components, config, database types) + full-codebase secret/env sweep
+- Vulnerabilities found: 0 Critical, 0 High, 0 Medium (2 informational/low notes)
+- Vulnerabilities fixed: 0 (none required)
+- Secrets found: **0** (SHIP-eligible)
+- npm audit: 2 moderate (pre-existing, build-tool-only, transitive — not T5, report-only)
 
-## Independent Re-Verification of Stage 5/6 Claims
+## Verdict: **SECURE-WITH-NOTES**
 
-Every Stage 5/6 security claim was re-checked against code AND the live DB, not accepted on trust:
+The T5 security posture is excellent and requires no code changes. The RPC is
+SECURITY INVOKER, fully parameterized, and grant-disciplined; the param-parse lib is
+defensively bounded; there is zero XSS surface (no `dangerouslySetInnerHTML`, all echoes
+React-escaped); no secret or `cost_price_cents` reaches the client. The two notes are a
+pre-existing transitive npm advisory and a low-severity worst-case DB timing observation,
+both non-blocking.
 
-| Stage 5/6 claim | Re-verification method | Result |
-|---|---|---|
-| M-2: `productId` UUID-validated before it keys the limiter | Read `actions.ts:113` (`!isValidProductId` before `checkRateLimit`), `submit-guard.ts:77-79`, anchored fixed-length `UUID_PATTERN` (no ReDoS) | CONFIRMED |
-| M-2: hard `QA_RATE_LIMIT_MAX_KEYS` ceiling + eviction | Read `checkRateLimit`/`evictToCeiling`; ceiling checked only before inserting a NEW key; empty/expired keys pruned; oldest-insertion eviction | CONFIRMED |
-| M-3: IP source no longer `split(",")[0]` | Read `clientIp()`: `x-vercel-forwarded-for` → rightmost XFF hop → `x-real-ip` → `unknown` | CONFIRMED (residual risk correctly documented) |
-| Anon client only, never service-role, for the write | `actions.ts` imports only `createPublicClient()`; no `admin`/secret import | CONFIRMED |
-| Insert sends only `{product_id, author_name, question}` | `insertQuestion` object literal is exactly those 3 keys | CONFIRMED |
-| Mass-assignment (`is_published`/`answer`) blocked | **Live**: forced `is_published=true,answer=...` as trusted `anon` role → RLS 42501 | CONFIRMED |
-| Whitespace-only rejected before DB is first line | `validateQaSubmission` trims first; **Live**: btrim CHECK also rejects `'   '` | CONFIRMED (defense in depth) |
-| `cost_price_cents` unreachable (AC-16) | **Live**: anon SELECT on base `products` → 42501; `products_public.cost_price_cents` → 42703 "does not exist" | CONFIRMED (structural) |
-| Unpublished questions invisible to anon | **Live**: anon SELECT of an unpublished row → `[]` | CONFIRMED |
-| No XSS / `dangerouslySetInnerHTML` | `grep` across `src/` → only a comment; Q&A text are React text nodes | CONFIRMED |
-| Slug bounded before cache key (edge 6) | `isCacheableSlug` (len ≤128, kebab regex) gates before `unstable_cache` | CONFIRMED |
-| No Q&A input reaches a cache key | Only bounded `slug` reaches `updateTag(productCacheTag(slug))` | CONFIRMED |
+---
 
-## Live Attack Log (local Docker Supabase, non-destructive)
+## Live Verification Performed (attacker mindset)
 
-Attacks were run two ways: (a) via PostgREST `:54321`, and (b) definitively via
-`SET LOCAL role anon` inside a rolled-back transaction on `:54322` (the DB
-policy/grant truth, independent of the JWT the REST gateway trusts).
+All probes run against local Supabase (`supabase_db_posturpro` / PostgREST `:54321`) as
+the **`anon`** role, and against the agent prod server on `:3000`. No destructive
+mutations; no test artifacts left behind.
 
-| # | Attack | Expected | Observed | Verdict |
-|---|---|---|---|---|
-| 1 | anon `SELECT cost_price_cents` from base `products` | denied | `42501 permission denied for table products` | DEFENDED |
-| 2 | anon read `products_public` | allowed, no cost col | rows returned; slug/id only | OK |
-| 3 | `SELECT cost_price_cents` from the view | column absent | `42703 column does not exist` | DEFENDED (structural) |
-| 4 | INSERT forcing `is_published=true` + `answer` | RLS denial | `42501 violates RLS` (REST + `role anon`) | DEFENDED |
-| 5 | INSERT forcing `is_published=true` only | RLS denial | `42501 violates RLS` | DEFENDED |
-| 6 | Legit 3-column INSERT as `anon` role | success, forced unpublished | `INSERT 0 1` (tx rolled back) | OK |
-| 7 | anon SELECT of an unpublished row | invisible | `[]` | DEFENDED |
-| 8 | whitespace-only name/question | btrim CHECK denial | `42501` / blocked | DEFENDED |
-| 9 | oversized question (2500 chars) | length CHECK denial | `42501` | DEFENDED |
+### 1. The RPC — `supabase/migrations/0007_search.sql` (highest scrutiny) — PASS
 
-> Note on the PostgREST path: a legit 3-column insert via `:54321` returned
-> `42501`, while the SAME insert as the trusted `anon` **role** on `:54322`
-> succeeded (`INSERT 0 1`), and `is_active_product()` returns `t` for the target.
-> This is a **local JWT/gateway artifact** (the demo anon JWT this instance
-> trusts vs. the app's publishable key), NOT a code or policy defect — the DB is
-> the source of truth and it permits the legit write while blocking every
-> tampered one. This matches dev-done's "valid anon insert 201" on the app's own
-> configured client.
+- **SECURITY INVOKER confirmed live**: `pg_proc.prosecdef = f` (invoker, not definer),
+  `provolatile = s` (stable), `proconfig = {search_path=public}` (search_path pinned —
+  hardening beyond what INVOKER strictly needs). So the function runs with the caller's
+  rights; anon's RLS/grants fully apply.
+- **Grant discipline verified live** (actual `pg_proc.proacl`, not migration text):
+  `{postgres=X/postgres, anon=X/postgres, authenticated=X/postgres}` — **PUBLIC was
+  revoked**; only the two storefront roles hold EXECUTE. Matches the `products_public`
+  discipline from 0005.
+- **Anon isolation proven** (SQL `SET ROLE anon` AND real HTTP/PostgREST as anon): the
+  RPC returns rows, while `SELECT ... FROM products` (base table) raises `42501 permission
+  denied for table products`. The RPC reads only `products_public` (which omits
+  `cost_price_cents`) + `product_variants` + `product_categories`. `cost_price_cents` is
+  unreachable by construction (view omits it AND base table ungranted — belt & suspenders).
+- **RETURNS shape has no cost column**: the 14 returned columns are card fields +
+  `effective_stock` + `distinct_color_count` + `total_count`. Confirmed over HTTP as anon —
+  the JSON row contains no cost/margin field.
+- **Injection surface — NONE**: the function body is a single static SQL statement; every
+  filter is a bind parameter (`p_query`, `p_*_ids`, `p_colors`, `p_materials`, `p_price_*`,
+  `p_sort`, `p_limit`, `p_offset`). Zero `format()`, zero `EXECUTE`, zero string
+  concatenation of user input into SQL. `p_sort` is consumed only via `CASE WHEN p_sort =
+  'literal'` comparisons (not injected into ORDER BY), so an unknown/hostile sort value
+  simply falls through to the deterministic `name, id` tiebreak — harmless. Live probe:
+  `search_products(p_query := ''';DROP TABLE products;--')` returns 0 rows, no error,
+  tables intact.
+- **Server-side length/known-set binding**: the 80-char `q` cap and unknown-facet dropping
+  are enforced app-side (`search-params.ts` — see §2), NOT in the RPC. This is the correct
+  layering: the RPC is injection-proof regardless of input length, and the app bounds the
+  DB work. The RPC itself accepts any-length text safely (parameterized); the app is the
+  DoS bound. Verified the RPC clamps `LIMIT`/`OFFSET` via `greatest(_, 0)` so a negative
+  limit/offset cannot error or over-read.
+- **DoS worst-case timings (as anon, local seed = 30 products)**:
+  | Probe | Result | Time |
+  |-------|--------|------|
+  | single-char `q='a'` (broad wildcard) | 12 rows | 29 ms |
+  | huge offset `2e9` | 0 rows (no 416) | 499 ms |
+  | extreme price bounds (int32 min/max) | 12 rows | 10 ms |
+  | pathological wildcard `q` (`%_` ×40) | 12 rows | 4 ms |
+  | 50,000-element color array | 0 rows | 57 ms |
+  | 20,000 × 80-char material array | 0 rows | **1,450 ms** |
+  | injection `';DROP TABLE...` | 0 rows | 7 ms |
 
-## Vulnerability Findings
+  The one elevated timing (1.45 s) is a synthetic 20k-element material array — the material
+  facet does `EXISTS (SELECT 1 FROM unnest(p_materials) ... LIKE ...)`, so a huge array
+  multiplies substring work per product. **This is not reachable in production**: the app's
+  `keepKnown(materials)` drops every value not in the catalog's real material set before the
+  RPC is called, so the array is bounded by facet cardinality (single digits at seed scale).
+  Documented as Low note SEC-L-1 for catalog-growth follow-up.
 
-### CRITICAL
-None.
+### 2. Query-param surface — `search-params.ts` / `search.ts` — PASS
 
-### HIGH
-None.
+- **Hostile inputs (edge 3)**: `firstValue`/`multiValues` handle array-form params,
+  duplicate keys (de-dup via `Set`), and repeated params (first value for scalars). `q` is
+  trimmed and hard-sliced to `SEARCH_QUERY_MAX = 80` (a 100k-char `q` is truncated before it
+  can reach the RPC or a cache key). Price bounds require `^\d+$`, reject negative/NaN, and
+  reject values above `PRICE_BOUND_MAX_CENTS`. Unknown category/brand/style/color/material
+  values are dropped via `keepKnown` against the live facet sets — a bad or attacker-minted
+  id never reaches the RPC. Sort outside the closed `SORT_KEYS` set → `DEFAULT_SORT`.
+  Prototype-pollution-shaped keys (`__proto__`, `constructor`) are inert: the parser reads
+  only fixed `SEARCH_PARAM_KEYS` and returns a fresh object literal, never iterating attacker
+  keys into an object.
+- **Reflected XSS via echoed `q` — NONE (live-verified)**: the echoed query flows into the
+  search input `value`, the active-filter chips, the no-results echo, and the persistent
+  aria-live announcer — all as React text/attribute props, which auto-escape. Live probe:
+  `/sillas?q="><script>alert(1)</script>` renders the payload HTML-entity-escaped everywhere
+  it appears in the DOM (`value="&quot;&gt;&lt;script&gt;..."`, chip text
+  `&lt;script&gt;alert(1)&lt;/script&gt;`). The 3 raw `<script>` occurrences in the response
+  are inside `self.__next_f.push([...])` RSC flight-data JSON string literals (backslash-
+  escaped, inert data that hydrates the already-escaped DOM) — standard Next.js RSC, not an
+  executable sink. Document title/metadata uses only static translated strings, never the
+  echoed `q` (verified `generateMetadata` — title is `t("metadata.catalogTitle")`).
+- **Cache discipline re-verified (Constraint 3)**: `isCacheableFilters` returns
+  `filters.query === null`, so any request with free text provably bypasses `unstable_cache`
+  and calls the RPC directly (control flow read in `searchProducts` — the `!isCacheable`
+  branch returns `readSearchPage` with no cache wrapper). The filter-only cache key
+  (`filterCacheKey`) is provably bounded: known-id facets only (unknowns already dropped),
+  closed sort set, price snapped to `PRICE_BUCKET_CENTS` buckets, page via `canonicalPageKey`
+  (bounded to `[1, MAX_PAGE]`). No unbounded user value can mint a distinct cache entry — the
+  T3 cache-key DoS is closed.
+- **Open redirect / header injection — NONE**: form `action`s are built from the
+  `CATALOG_PATH` constant via next-intl `getPathname({href, locale})` (locale from the route,
+  not user input). Client `router.push` targets `${CATALOG_PATH}?${serializeFilters(...)}` —
+  a relative path with a hardcoded base and `encodeURIComponent`ed params. No user-controlled
+  absolute URL ever reaches navigation. Canonical `<link>` points at the constant
+  `CATALOG_PATH` (or `?page=N` from a validated numeric).
 
-### MEDIUM
-None.
+### 3. Client surfaces — PASS
 
-### LOW (documented, no fix required in T4 scope)
+- **Hidden-input mirroring (C-1 fix) — no smuggling**: `searchPreservedParams` in `page.tsx`
+  serializes from **parsed/validated** filters (`serializeFilters({...filters, query:null})`),
+  not raw params. So the hidden inputs emitted into the search form carry only canonicalized,
+  known-value data — a crafted `?marca=<script>` is dropped by `keepKnown` before it could
+  become a hidden input. `FacetCheckboxGroup` mirrors only `selected` values (already
+  `keepKnown`-filtered), Radix checkbox is `name`-less (no double-submit). SearchBox
+  additionally filters `q`/`page` out of `preservedParams` (m-5).
+- **noscript panel**: the `<noscript>` mobile fallback (`catalog-toolbar.tsx`) renders the
+  same `FilterPanel` native form — same validated-value contract, no new surface.
+- **Result-count announcer (UX addition)**: `result-announcer.tsx` pushes the resolved count
+  text (a translated ICU-plural string with a numeric count) into a persistent aria-live
+  node — no user free text, no injection.
+- **FilterSheet**: Radix Dialog with `forceMount`; no user input rendered as HTML.
 
-#### SEC-L-1: In-memory rate limiter is best-effort on a no-trusted-edge deployment
-- **Type**: A04 Insecure Design (rate-limit robustness)
-- **File**: `src/app/[locale]/producto/[slug]/actions.ts:62-83`, `src/lib/qa/submit-guard.ts:145-170`
-- **Description**: The per-IP+product limiter derives the IP from headers. Behind Vercel's edge (the stated deployment target) `x-vercel-forwarded-for` is authoritative and not spoofable. On a deployment with NO trusted edge overwriting XFF, the rightmost hop is still client-influenced, so a determined client can rotate IPs and evade the 3/min window.
-- **Exploit**: Attacker sends each request with a fresh `X-Forwarded-For` on a non-Vercel host → per-IP window never trips → floods the moderation queue with RLS-valid (unpublished) questions.
-- **Impact**: Moderation-queue flood only. Bounded by: (a) honeypot backstop, (b) `QA_RATE_LIMIT_MAX_KEYS=10_000` hard map ceiling with eviction (prevents memory amplification — verified in code), (c) DB CHECK/RLS caps each row to ≤120/≤2000 chars and forces unpublished (never reaches shoppers). No data exposure, no privilege escalation.
-- **Fix / recommendation**: Accepted best-effort per the ticket ("CAPTCHA / durable rate limiter is out of scope"). Follow-up: a durable/global limiter (Upstash/Redis) or platform-native rate limit keyed off `x-vercel-forwarded-for` when the store scales. Trust model is documented in-code and in dev-done.
-- **Status**: OPEN (accepted residual, ticket-sanctioned).
+### 4. Regression invariants from T3/T4 — PASS
 
-#### SEC-L-2: `next` / `postcss` transitive moderate advisory
+- `cost_price_cents` unreachable everywhere: 0 occurrences in the live RPC response (HTTP as
+  anon), 0 in the rendered `/sillas` HTML (with and without filters), 0 in the built client
+  static chunks. Source references to `cost_price` are all omission-comments or the base-table
+  type in `database.types.ts` (a type, not a reachable query).
+- Q&A surfaces untouched by T5 (no changes to `product-qa.tsx` logic).
+- No secrets in client bundles: `.next-t5-ux/static` grep = 0 for `service_role`,
+  `cost_price`, `sb_secret`, `SUPABASE_SECRET`, `SERVICE_ROLE_KEY`.
+- No `NEXT_PUBLIC_` secret: the only `NEXT_PUBLIC_*` vars are the Supabase URL and the
+  RLS-enforced publishable/anon key — client-safe by design (`env.ts`).
+
+### 5. Dependency & migration hygiene
+
+- **npm audit**: 2 moderate, 0 high, 0 critical. Both are the same transitive advisory —
+  `postcss < 8.5.10` (GHSA-qx2v-qp2m-jg93, XSS via unescaped `</style>` in CSS stringify
+  output) pulled in by Next.js's build tooling. This is a **build-time** CSS-processing issue,
+  not a runtime request-path vector in this app, and the suggested `audit fix --force`
+  downgrades Next.js to 9.3.3 (a broken/false remediation). Pre-existing; not introduced by
+  T5; no new dependencies were added by T5 (shadcn components vendor already-installed
+  radix-ui). Report-only.
+- **6 shadcn-vendored components** (`input, checkbox, select, slider, badge, label`): reviewed
+  — thin wrappers over installed radix-ui primitives; no `dangerouslySetInnerHTML`, no eval,
+  no network calls, no known-vulnerable patterns. Badge's `transition-all` was already fixed
+  (M-2, motion not security).
+- **Migration applied state matches file (live schema diff)**: all 7 T5 indexes present live
+  (`products_name/description_trgm_idx`, `brands_name_trgm_idx`, `products_price_cents/
+  created_at/sales_count_idx`, `product_variants_color_hex_idx`); RPC grants/security match
+  the file. `.env*` is gitignored and no `.env` file is tracked in git.
+
+### 6. OWASP Top 10 sweep over the new surface
+
+| # | Category | Finding |
+|---|----------|---------|
+| A01 Broken Access Control | PASS — anon reads only anon-safe surfaces; base table + cost column denied (live-proven); RPC granted to anon/authenticated only, PUBLIC revoked. No IDOR (facet ids are catalog-public, no per-user data). |
+| A02 Cryptographic Failures | N/A — no new secrets, tokens, or crypto in T5. |
+| A03 Injection | PASS — RPC fully parameterized (live DROP-TABLE probe inert); facet reads use PostgREST builder (parameterized); no XSS sink (live payload echo escaped). |
+| A04 Insecure Design | PASS — defense-in-depth: DB parameterization + app-side length cap + known-set dropping + bounded cache key. |
+| A05 Security Misconfiguration | PASS — SECURITY INVOKER, search_path pinned, PUBLIC revoked; `.env` gitignored. |
+| A06 Vulnerable Components | LOW — 2 moderate transitive (postcss, build-time only); no high/critical; zero new deps. |
+| A07 Auth Failures | N/A — no auth surface added (public catalog read). |
+| A08 Data Integrity Failures | PASS — no deserialization of untrusted data; RSC flight data is framework-managed. |
+| A09 Logging/Monitoring Failures | PASS — `fail()` logs full detail server-side, throws redacted error (no stack/internal path to client). |
+| A10 SSRF | N/A — no user-controlled URL reaches a server-side fetch; all reads go to the fixed Supabase client. |
+
+---
+
+## Findings
+
+### CRITICAL — none
+### HIGH — none
+### MEDIUM — none
+
+### LOW / INFORMATIONAL (document + recommend, no fix required)
+
+#### SEC-L-1: Material-facet EXISTS/unnest is O(array × products) if an unbounded array ever reached the RPC
+- **Type**: A04 Insecure Design (DoS, mitigated)
+- **File**: `supabase/migrations/0007_search.sql:176-184`
+- **Description**: The material facet does `EXISTS (SELECT 1 FROM unnest(p_materials) m(term) WHERE ... LIKE '%'||m.term||'%')`. A synthetic 20,000-element material array measured 1.45 s as anon.
+- **Why not exploitable today**: the app drops every unknown material via `keepKnown` before
+  the RPC call, so `p_materials` is bounded by the catalog's real distinct-material count
+  (single digits). The measured slow case is unreachable through the app.
+- **Impact**: none in current architecture; forward-looking as the catalog/material vocabulary
+  grows or if any future caller passes the RPC an unfiltered array.
+- **Recommendation**: (a) keep the app-side `keepKnown` bound as the primary defense; (b) when
+  the catalog grows, add an explicit array-length guard in the RPC (e.g. cap `p_materials`
+  cardinality) and revisit the trigram/functional-index strategy noted in the migration header.
+- **Status**: OPEN (documented; no live risk).
+
+#### SEC-L-2: Transitive `postcss < 8.5.10` build-tool advisory (GHSA-qx2v-qp2m-jg93)
 - **Type**: A06 Vulnerable & Outdated Components
-- **File**: `package-lock.json` (transitive: `next` → `postcss <8.5.10`)
-- **Description**: `npm audit` reports **2 moderate** advisories: `postcss` XSS via unescaped `</style>` in CSS stringify output (GHSA-qx2v-qp2m-jg93), pulled in transitively by `next`. Zero critical, zero high.
-- **Exploit**: Requires attacker-controlled CSS passed through PostCSS stringify — not a path this app exposes (PostCSS runs at build time on trusted first-party CSS, never on user input).
-- **Impact**: None in practice for this app (no user-authored CSS is compiled). Build-time only.
-- **Fix / recommendation**: Do NOT `npm audit fix --force` — it downgrades `next` to 9.3.3 (major, app-breaking). Pick up the fix when Next ships a patched `postcss` in its dependency range (routine dependency bump). Report-only per stage instructions.
-- **Status**: OPEN (report-only, no safe non-breaking fix; no exposure).
+- **File**: `node_modules/next/node_modules/postcss` (transitive, not a direct dep)
+- **Description**: `npm audit` reports 2 moderate for a postcss CSS-stringify XSS. It is a
+  build-time code path bundled by Next.js, not a runtime request handler in this app.
+- **Impact**: negligible in this app's runtime; the auto-fix would downgrade Next.js to 9.3.3
+  (breaking, incorrect remediation).
+- **Recommendation**: do not run `audit fix --force`; upgrade via a future Next.js minor when
+  it ships the patched postcss. Track in the dependency backlog. Pre-existing, not T5.
+- **Status**: OPEN (report-only; not introduced by T5).
 
-## OWASP Top 10 Sweep (new T4 surface)
-
-| # | Category | Result | Evidence |
-|---|---|---|---|
-| A01 | Broken Access Control | PASS | RLS REVOKE-ALL baseline; base `products` ungranted; anon Q&A INSERT policy forces safe state; unpublished invisible — all live-verified. No IDOR (no per-user resources in Phase 1; `productId` UUID-gated). |
-| A02 | Cryptographic Failures | PASS | No crypto authored; secrets via `process.env` only, never inlined. |
-| A03 | Injection | PASS | Supabase client uses parameterized `.eq()/.insert()` (no string SQL); no shell/`child_process`; `interpolate` regex linear + literal fallback (no injection/ReDoS); no `dangerouslySetInnerHTML`. |
-| A04 | Insecure Design | PASS-with-note | Layered write guards (honeypot→validate→UUID-gate→rate-limit→RLS). Rate limiter best-effort off-Vercel (SEC-L-1). |
-| A05 | Security Misconfiguration | PASS | `image` remotePatterns allowlist (Supabase storage + picsum) — a tampered localStorage `coverImageUrl` to an arbitrary host is rejected by `next/image`. Error messages mapped to enums, never echo `error.message`; `fail()` logs server-side only. |
-| A06 | Vulnerable Components | PASS-with-note | 2 moderate transitive (SEC-L-2); 0 critical/high; 0 new deps in T4. |
-| A07 | Auth Failures | N/A | No authentication in Phase 1 (guest store); no session/token handling introduced. |
-| A08 | Data Integrity Failures | PASS | `isEntry` allowlist shape-guard on localStorage parse (m-5 closed the `$NaN` gap); mass-assignment blocked at RLS; no insecure deserialization (JSON.parse + guard, no proto pollution — fresh object literals only). |
-| A09 | Logging/Monitoring | PASS | Honeypot logs a bot-suspected metric; insert failures logged server-side with context; no PII/secret in logs. |
-| A10 | SSRF | PASS | No user-controlled URL reaches a server-side `fetch`; image hosts are a static build-time allowlist. |
+---
 
 ## Checklist Results
 | Category | Status | Notes |
 |----------|--------|-------|
-| Secrets | ✅ | 0 hardcoded secrets in T4 files or codebase; only fake `sb_secret_test` in unit tests. `.env*` gitignored, none tracked. Full secret value absent from `.next/static` (client bundle) and `.next/server` — read from `process.env` at runtime. |
-| Env var exposure | ✅ | No `NEXT_PUBLIC_*SECRET/SERVICE/TOKEN`. Publishable key is RLS-enforced + client-safe by design. `env.ts` splits `getPublicEnv` (client-safe) from `getServerEnv` (server-only, `server-only`-guarded admin module). |
-| Injection | ✅ | Parameterized Supabase queries; no raw SQL/shell; linear interpolate; no XSS. |
-| Auth/AuthZ | ✅ | RLS is the boundary; anon client only for the write; mass-assignment + unpublished-read live-blocked. |
-| Client/server boundary | ✅ | Only the anon client is bundled; i18n resolved server-side; no privileged path in client islands; server actions carry Next's built-in CSRF protection. |
-| Data Exposure | ✅ | `cost_price_cents` structurally absent (view); RSC payload reads the view only; no over-fetch; errors mapped to enums. |
-| CORS/CSRF | ✅ | Single write is a Next server action (built-in CSRF/action-id protection), no custom public REST route, no permissive CORS. |
-| Dependencies | ✅/⚠️ | 0 new deps; `npm audit`: 2 moderate transitive, 0 critical/high (SEC-L-2, report-only). |
+| Secrets | ✅ | 0 in code/tests/config/bundles; `.env*` gitignored, none tracked |
+| Env var exposure | ✅ | Only client-safe `NEXT_PUBLIC_SUPABASE_URL`/publishable key; no server secret in client |
+| Injection | ✅ | RPC fully parameterized (live DROP probe inert); no XSS sink (live echo escaped); PostgREST builders |
+| Auth/AuthZ | ✅ | SECURITY INVOKER; PUBLIC revoked, anon/authenticated only; base table + cost denied live; no IDOR |
+| Client/server boundary | ✅ | RPC returns only card columns; no cost/internal shape; `server-only` on read modules |
+| Data Exposure | ✅ | `cost_price_cents` 0 occurrences (RPC/HTML/bundle); `fail()` redacts errors |
+| CORS/CSRF | ✅ | GET-only reads (no state mutation); relative-path navigation; no wildcard-CORS-with-creds |
+| Dependencies | ⚠️ | 2 moderate transitive (postcss, build-only); 0 high/critical; 0 new deps in T5 |
 
-## Residual Risks (accepted / follow-up)
-1. **Rate limiter best-effort without a trusted edge** (SEC-L-1) — ticket-sanctioned; durable limiter is the documented follow-up. Backstopped by honeypot + hard map cap + RLS.
-2. **2 moderate transitive advisories** (SEC-L-2) — no safe non-breaking fix; no runtime exposure; bump with a future Next release.
-3. **Rate limiter resets on redeploy/scale-out** (per-instance memory) — documented; acceptable for Phase 1 volume.
+## Fixes Applied
+None — no critical, high, or medium issues were found. The Stage 5/6 fixes (C-1, C-2,
+M-1..M-7) were functional/UX, not security, and were independently re-verified not to have
+introduced any injection or smuggling surface (hidden inputs carry only validated values).
 
-## Verdict: SECURE-WITH-NOTES
-
-The first public write path is correctly defended at the RLS boundary (mass-assignment,
-self-publish, whitespace, oversize, and cost-leak attacks were all defeated live),
-uses the anon client exclusively, leaks no secrets or cost data to the client, and
-carries no critical/high vulnerabilities. Stage 6's M-2/M-3 fixes independently
-re-verified as correct. The only outstanding items are two accepted, ticket-sanctioned
-LOW residuals (best-effort rate limiter off-Vercel; a transitive moderate npm advisory
-with no runtime exposure). No code changes were required this stage.
+## Residual Risk: LOW
+- SEC-L-1: material-array DoS is unreachable via the app (bounded by `keepKnown`); revisit at
+  catalog scale.
+- SEC-L-2: transitive build-tool postcss advisory; not runtime-exploitable here; upgrade with a
+  future Next.js.
+- Neither blocks ship. The T5 attack surface (first anon-executable SQL + large query-param
+  input) is well-defended in depth: injection-proof at the DB, bounded at the app, escaped at
+  the render layer, and grant-isolated from cost data.

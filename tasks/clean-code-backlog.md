@@ -176,3 +176,94 @@ Open items discovered during the pipeline. Check off when addressed.
   RSC payload + hydration. When T11 builds variant/multi-image management, add a
   sane per-product image/variant guardrail (or lazy-load non-selected-variant
   image metadata past a threshold). (Ref: T4 architecture review, LOW.)
+
+## T5 — Search, Filters & Sorting (routed to later tasks)
+
+- [ ] **T5-1 — `listPopularProducts` reuse guidance for T13 homepage (T13, LOW).**
+  `listPopularProducts(limit)` (`src/lib/catalog/search.ts`) is exported cleanly,
+  filter-independent, always-cached, best-selling order — T13's "popular chairs"
+  strip should reuse it directly. But "featured" is a DIFFERENT intent (editorial,
+  not sales-derived): do NOT cargo-cult or overload `listPopularProducts` for
+  featured; add a distinct path (or a `sort`/`mode` param on a shared helper). Also
+  note for T11: search facet-value sets (colors/materials/price domain in
+  `facets.ts`) are `catalog`-tag cached, so a T11 admin save that adds a variant
+  color/material MUST `revalidateTag("catalog")` for the new known-value to appear
+  in the filter panel (and thereby be accepted by `parseCatalogFilters`, which drops
+  unknowns). The tag scheme is coherent — this is a reminder, not a gap.
+  (Ref: T5 architecture review, forward-compat.)
+- [ ] **T5-2 — pg_trgm GIN indexes are dead for the accent-insensitive keyword
+  branch (catalog-growth milestone, MED).** `0007_search.sql` adds trigram GIN
+  indexes on `products.name`/`description`/`brands.name`, but the RPC predicate wraps
+  each column in `unaccent(lower(col))`, so a plain-column trigram index cannot be
+  used — `EXPLAIN ANALYZE` on `?q=ergonomica` confirms a full `Seq Scan on products`
+  with the GIN untouched. Harmless at 30 rows; a full scan on every free-text search
+  once the catalog is large. FIX SHAPE: create an `IMMUTABLE` unaccent wrapper
+  (`f_unaccent(text)`) and replace the three trigram indexes with FUNCTIONAL GIN
+  indexes `gin(f_unaccent(lower(name)) gin_trgm_ops)` (and description/brand name),
+  rewriting the RPC predicate to call the same `f_unaccent`. Do this when the active-
+  product count approaches a few hundred. (Ref: T5 architecture review, Scalability.)
+- [ ] **T5-3 — `product_variants_color_hex_idx` unusable by the color filter
+  (catalog-growth milestone, MED).** `color_hex` is stored MIXED-CASE in the live DB
+  (`#1D4ED8`, `#B91C1C`), but the RPC color facet filters on `lower(v.color_hex) =
+  any(<lowercased array>)`. The plain btree/`color_hex` index is on the raw mixed-case
+  column and can NEVER serve the lowercased predicate — the index is dead by
+  construction, not just at seed scale. FIX SHAPE (pick one): (a) normalize stored
+  `color_hex` to lowercase via a data migration + a `CHECK (color_hex = lower(color_hex))`
+  and drop the `lower()` from the predicate so the plain index works; OR (b) add a
+  functional index `btree(lower(color_hex))` on `product_variants` and keep the
+  predicate. Option (a) is cleaner long-term (canonical storage). Do this alongside
+  T5-2 at the growth milestone. (Ref: T5 architecture review, Data Model / Scalability.)
+- [ ] **T5-4 — Double `search_products` RPC per page + full-set materialization
+  (catalog-growth milestone, MED).** `readSearchPage` (`src/lib/catalog/search.ts`)
+  runs a probe at offset 0 to learn `total`/clamp `?page`, then a second RPC at the
+  clamped offset (page 1 reuses the probe; pages 2+ pay TWO calls). Each RPC
+  materializes the ENTIRE filtered set because `COUNT(*) OVER ()` runs before LIMIT.
+  Free at 30 rows; at scale a deep paged broad filter does the full filter+sort+count
+  twice. FIX SHAPE: compute the clamp DB-side so a single call returns the correct
+  clamped page + count (e.g. pass the raw page and let the RPC clamp `p_offset` against
+  its own `total_count`), or add a cheap `count_products(...)` companion for the probe.
+  Also fold in the 0008+ RPC-versioning discipline: the arg signature is repeated in
+  the `revoke`/`grant` (12-type list) — any arg change must touch signature + revoke +
+  grant in lockstep, and every change must go through a migration (never a live-only
+  `create or replace`) so the file stays the source of truth. (Ref: T5 architecture
+  review, API Review.)
+- [ ] **T5-5 — Catalog client-context ladder is the seed of a god-context (watch,
+  LOW).** `CatalogShell` now nests `FilterNavigationProvider` + `ResultAnnouncerProvider`.
+  Both are single-purpose and justified today. Guardrail for the next dev: do NOT bolt
+  additional unrelated shared catalog client state onto either provider — add a new
+  focused provider or lift state to the server. Revisit if a third provider appears.
+  (Ref: T5 architecture review, Frontend Architecture.)
+- [ ] **T5-6 — `/sillas` inline-`await` blocks TTFB on the RPC; re-open streaming on
+  a Next upgrade (LOW→MED).** Stage 7b removed `<Suspense>`/`loading.tsx` so JS-off
+  users get SSR-visible results (correct), but the route now blocks on the one-round-
+  trip `search_products` RPC before first byte with no skeleton to mask latency. This
+  is Next-version-specific (the dynamic-route `$RC` streaming-holder is invisible with
+  JS off), NOT a permanent constraint. When the app moves to Next 16
+  `cacheComponents`/PPR, restore a static shell + dynamic results hole (streaming for
+  JS-on, SSR-visible for JS-off) — or edge-cache the shell. Trigger: RPC p95 TTFB
+  climbs past ~150–200ms in production. (Ref: T5 architecture review, Scalability.)
+- [ ] **T5-7 — `cachedRead` wrapper adopted by only 1 of 3 read modules (cleanup,
+  LOW).** `read-primitives.ts` exports `cachedRead(keyParts, tags, fn)` to single-
+  source the `unstable_cache({ tags, revalidate })` boilerplate, but only `facets.ts`
+  uses it; `queries.ts` (~8 sites) and `search.ts` (2 sites) still hand-write the
+  inline `unstable_cache` shape, so two cache idioms coexist in one module family.
+  Migrate the bounded `queries.ts`/`search.ts` cache sites to `cachedRead` (the
+  `search.ts` filter-only branch fits; its conditional-cache path can stay inline with
+  a comment). Do this when `queries.ts` is split (existing T3 LOW split item), to
+  avoid touching it twice. (Ref: T5 architecture review, Read-Layer Coherence.)
+- [ ] **T5-8 — "malla" / mesh search-scope gap: materials unsurfaced by keyword
+  search (T5 follow-up / T13, MED).** Keyword search matches name/brand/description
+  only (AC-3). Chairs whose "mesh/malla" nature lives ONLY in the `material_*` columns
+  (not the name/description) are invisible to a shopper typing "malla" in the search
+  box — a real product-discovery miss the UX stage deferred. RECOMMENDED FIX SHAPE:
+  **add the three `material_*` columns to the RPC keyword `WHERE` branch** (one extra
+  `OR unaccent(lower(coalesce(material_*, ''))) LIKE ...` per column), so keyword and
+  the material facet cover the same surface — smallest change, keeps a single search
+  affordance, and reuses the same functional-index work as T5-2. Rejected alternatives:
+  (a) a denormalized `search_text` column concatenating name+desc+materials — more
+  moving parts, needs a trigger/generated column and re-index, only worth it if search
+  scope grows further; (b) facet-only (tell users to use the material filter) — poorer
+  UX, the search box is the primary discovery surface per PRODUCT_SPEC. Ship the RPC
+  WHERE change as a small 0008 migration, ideally bundled with T5-2's functional index
+  so the material columns are indexed the same way. (Ref: T5 UX audit deferred item;
+  T5 architecture review, Scalability.)
