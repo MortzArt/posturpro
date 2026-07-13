@@ -1,849 +1,909 @@
-# UI Design: T4 — Product Detail Page (`/producto/[slug]`)
+# UI Design: T5 — Search, Filters & Sorting
 
-> Scope authority: `tasks/next-ticket.md` (AC-1…AC-20, 10 edge cases, error/UX
-> tables). This spec designs every PDP surface that ticket names — nothing more.
-> Locked constraints honored: variant state lives in ONE client island
-> (`ProductPurchasePanel`); recently-viewed is client-only localStorage with an
-> empty SSR shell; zoom uses Radix `Dialog`; Hugeicons only; Tailwind only; zero
-> new npm deps.
+Scope authority: `tasks/next-ticket.md` (AC-1…AC-18, edge cases 1–12). This spec covers
+**only** the UI surfaces the ticket names: the header search box, the in-page `/sillas`
+toolbar (search echo + sort + count), the filter panel (desktop sidebar / mobile-tablet
+Sheet), active-filter chips, the no-results state with a popular strip, the filtered
+grid loading/transition states, and the pagination-preserves-filters change. It does not
+design autocomplete, `/buscar`, per-option facet counts, or a tag facet (all Out of Scope).
+
+All visual values flow through existing tokens (monochrome grayscale oklch) and the three
+motion easing tokens already in `globals.css` (`--ease-out`, `--ease-in-out`,
+`--ease-drawer`). No new color, radius, or easing token is invented.
 
 ---
 
 ## Design Principles for This Feature
 
-- **Native to the store, not a new visual language.** The PDP reuses the exact
-  tokens, radii, and motion primitives already shipped in T2/T3
-  (`--ease-out: cubic-bezier(0.23,1,0.32,1)`, `.card-lift`, `.stagger`,
-  `.enter-fade`, `aspect-[4/5]`, `rounded-lg`, `border-border`, `bg-card`,
-  `tabular-nums`, `motion-safe:animate-pulse`). A shopper coming from a grid card
-  should feel zero seam.
-- **The design system is monochrome (grayscale oklch).** There is no brand hue.
-  The ONLY chromatic accents in the whole app are `amber` (low-stock urgency) and
-  `destructive` (errors). Color-variant swatches are the sole place real product
-  color appears — treat them as the visual focal point, everything else stays
-  neutral. Do NOT introduce a new accent color.
-- **Conversion clarity over decoration.** Price, stock, and the variant a shopper
-  is looking at must be unambiguous at a glance. Motion serves comprehension
-  (which image/price/stock belongs to the selected color), never spectacle.
-- **Frequency governs motion.** Swatch selection happens tens of times/session →
-  minimal, instant-feeling (crossfade < 200ms, no slide). Zoom is occasional →
-  standard modal motion. Page entrance is rare → a justified `.enter-fade`.
-- **Dense, compact chrome.** The button scale is small (`h-7` default, `lg` = `h-8`).
-  Match it: the Q&A submit is `size="lg"` at most; do not oversize controls (but
-  bump to `min-h-11` on mobile for tap targets, like `EmptyState` does).
-- **No dead affordances.** Cart is T6 — render NO "add to cart" button, disabled
-  or otherwise (ticket + research anti-pattern). The purchase panel ends at the
-  stock badge.
+- **The catalog is the hero; filters are chrome.** The grid never moves or resizes when the
+  filter UI opens (desktop sidebar reserves its column; mobile filters float in a Sheet over
+  the grid). Emil: "reserve exact space; never pop content in."
+- **SSR-first, JS-enhances.** Every control is a real `<form method="get">` / `<a>` that
+  works with JS off (AC-12, AC-9, edge 11). JS upgrades submit-on-change and removes full
+  page reloads — it is never required for correctness.
+- **Motion earns its place by frequency.** The mobile Sheet (occasional) gets the drawer
+  curve. Checkbox/swatch presses (high-frequency) get instant press feedback only — no
+  enter animation. Chips removed constantly → no exit choreography, just the grid's existing
+  stagger on the new results. Matches Emil's frequency table.
+- **Color is never the only signal.** Swatches carry a text label + checkmark; the low-stock
+  badge keeps its icon+amber+text; active filters read as text chips, not color dots alone.
+- **Match T3/T4 exactly.** Reuse `ProductGrid`, `ProductCard`, `Pagination`, `Breadcrumbs`,
+  `ProductGridSkeleton`, the `.card-lift`/`.stagger`/`.swatch-press` classes, `min-h-11` tap
+  targets, `tabular-nums` on numbers, translucent `backdrop-blur` chrome, and the
+  `buttonVariants` cva. New components look like they shipped in T3.
+- **Bounded, defensive, single-sourced.** Param names + `SEARCH_QUERY_MAX` come from
+  `config.ts`; the parse lib drops unknown/hostile values so a bad param never empties the
+  catalog (edges 3–4).
 
 ---
 
 ## Design Tokens Used
 
-| Category | Tokens | Notes |
+- **Colors:** `background`, `foreground`, `muted`, `muted-foreground`, `card`, `border`,
+  `accent`, `accent-foreground`, `primary`, `primary-foreground`, `input`, `ring`,
+  `secondary`. Amber for low-stock is inherited from `StockBadge` (unchanged). No new colors.
+- **Typography:** existing scale — `text-2xl sm:text-3xl font-semibold tracking-tight` (h1),
+  `text-sm`/`text-xs`, `text-muted-foreground`, `tabular-nums` for counts/prices.
+- **Spacing:** page shell `mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8`
+  (identical to current `/sillas`); grid gaps `gap-x-4 gap-y-8 md:gap-x-6 md:gap-y-10`.
+- **Radius:** `rounded-md` (controls), `rounded-lg` (cards, sheet body), `rounded-full`
+  (swatches, chips).
+- **Shadows:** `--shadow-sm` on card hover (inherited); Sheet uses a heavier shadow (see M-1).
+- **Easing:** `--ease-out` (all enters/exits, press, select), `--ease-drawer` (mobile Sheet
+  slide), `--ease-in-out` (none needed here). Durations per the Emil table (all < 300ms).
+
+---
+
+## shadcn/ui Components to Install
+
+Only `button.tsx` exists today. Install via `npx shadcn add` (do NOT hand-roll — CLAUDE.md).
+`radix-ui` is already installed and backs all of these. After generation, each gets its motion
+CSS aligned to the tokens (see "Motion Spec" — the generated `tw-animate-css` keyframe classes
+are replaced/augmented with the transition-based, `[data-state]`-driven pattern this repo uses
+for the mobile nav drawer).
+
+| shadcn component | Used by | Notes |
 | --- | --- | --- |
-| Color | `bg-background` `text-foreground` `bg-card` `bg-muted` `text-muted-foreground` `border-border` `bg-primary`/`text-primary-foreground` (Q&A submit) `ring-ring` `text-destructive`/`bg-destructive/10` (errors) `text-amber-600 dark:text-amber-400` (low stock, via StockBadge) | No new tokens. No new accent hue. |
-| Radius | `rounded-lg` (cards, gallery frame), `rounded-md` (buttons, inputs, focus targets), `rounded-full` (badge, swatches), `rounded-sm` (small focus rings) | From `--radius: 0.625rem` scale. |
-| Typography | `text-2xl md:text-3xl font-semibold tracking-tight` (product name / h1), `text-sm font-medium tracking-tight` (section headings h2), `text-xs text-muted-foreground` (meta/labels), `text-xl md:text-2xl font-semibold tabular-nums` (price), `line-through tabular-nums text-muted-foreground` (compare-at), `text-sm/relaxed` (body/answers) | `tabular-nums` on ALL money + counters. `tracking-tight` on headings (site convention). |
-| Spacing | container `mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8` (matches `CatalogPageSkeleton` exactly); section gap `mt-10 md:mt-12`; two-column `grid lg:grid-cols-2 lg:gap-10` | Reuse the catalog container so the PDP aligns with grid pages. |
-| Motion easing | `--ease-out` for all enter/interaction; reduced-motion & hover gates copied from `globals.css` conventions | New PDP transitions live in `globals.css` following the same block style. |
-| Elevation | `card-lift` hover `box-shadow: var(--shadow-sm)`; zoom scrim `bg-background/80 backdrop-blur-sm` | No new shadow tokens. |
-| Focus | `focus-visible:ring-2 focus-visible:ring-ring` (+ `ring-offset-2 ring-offset-background` on cards/swatches) | Matches shell + button convention. |
+| `input` | `search-box`, price range inputs | native `<input>`; keep `type="search"` semantics |
+| `checkbox` | `filter-panel` (brand/style/material/category multi-select) | Radix Checkbox; instant press |
+| `select` | `sort-select` | Radix Select; trigger-anchored origin, <250ms (AC-18) |
+| `sheet` | `filter-sheet` | Radix Dialog as drawer; **retrofit** the repo drawer-motion pattern (see M-1) |
+| `slider` | price range (dual-thumb) | Radix Slider; paired with numeric inputs |
+| `badge` | `active-filters` chip base, result count pill | cva base for chips |
+| `label` | every facet group + control | associates labels to inputs (a11y) |
+
+**Motion retrofit rule (applies to `sheet` + `select`):** the default shadcn install ships
+`tw-animate-css` keyframe classes (`data-[state=open]:animate-in …`). Keyframes restart from
+zero and are not interruptible. Replace them with the repo's `[data-state]`-driven **CSS
+transition** pattern already proven in `globals.css` (`.drawer-panel`, `.gallery-zoom-*`) so a
+mid-open dismiss retargets smoothly (Emil: "transitions over keyframes for interruptible UI";
+Apple §3). New rules live in `globals.css` under new banners.
 
 ---
 
 ## Component Inventory
 
-### shadcn / Radix primitive audit (shadcn-first)
+### 1. SearchBox (`src/components/catalog/search-box.tsx`)
 
-Only **`button.tsx`** exists in `src/components/ui/`. shadcn `Dialog`, `Input`,
-`Textarea`, `Label`, `RadioGroup` are **NOT installed**. The `radix-ui` package IS
-a dependency (used by `button.tsx`: `import { Slot } from "radix-ui"`). Decisions:
+**Purpose:** Keyword search entry. Submits to `/sillas?q=…` (AC-12). Two placements: (a) the
+site header (collapsing icon→input below `md`), (b) the `/sillas` in-page toolbar as the
+primary, always-expanded search field echoing the active query.
 
-| Need | Use | Rationale |
-| --- | --- | --- |
-| Zoom lightbox | `Dialog` from the installed `radix-ui` package (`import { Dialog } from "radix-ui"`, same import style as `Slot`) | Free focus trap, Escape, backdrop dismiss, `aria-modal`, scroll lock (AC-6, AC-18). No new dep. Do NOT `npx shadcn add dialog` — the raw Radix primitive is enough. |
-| Q&A submit button | existing `Button` (`@/components/ui/button`, `variant="default" size="lg"`) | Reuse. |
-| Variant selector | native `<button role="radio">` inside a `role="radiogroup"` container — hand-rolled roving-tabindex | AC-7/AC-18 want a radiogroup of color swatches; Radix RadioGroup isn't installed and swatches need custom color rendering. Small, avoids a dep. |
-| Text inputs | native `<input>` / `<textarea>` styled with Tailwind to match the token system | No `Input`/`Textarea` primitive; only 2 fields. Keep it a local pattern, not a new `ui/` primitive. |
+**Location:** `site-header.tsx` (all pages) + `/sillas` toolbar.
 
-### T3 components reused verbatim (no changes)
+**shadcn base:** `Input` (`type="search"`), wrapped in a native `<form method="get" action="/sillas">`.
 
-| Component | Reuse for | Notes |
-| --- | --- | --- |
-| `StockBadge` (`catalog/stock-badge.tsx`) | AC-11 stock indicator; per-swatch state | Documents "inline on a PDP" placement. Pass pre-resolved `catalog.stock.*` label + `state`. On PDP use **inline** (no `absolute`). |
-| `Breadcrumbs` + `Crumb` (`catalog/breadcrumbs.tsx`) | AC-4 trail `Inicio › Sillas › {name}` | `items=[{label:home,href:'/'},{label:catalog,href:CATALOG_PATH},{label:product.name}]` (last crumb no `href` = current). `ariaLabel`/`moreLabel` from copy below. |
-| `ProductCard` (`catalog/product-card.tsx`) | Recently-viewed strip tiles | Its `CatalogProductCard` shape is the target for stored entries; render tiles identically to the grid (no re-fetch). |
-| `EmptyState` (`catalog/empty-state.tsx`) | Reference for Q&A empty visual grammar | Q&A empty state is bespoke (icon + copy + form as CTA below), modeled on this component's centered-icon + `.enter-fade` pattern, not this component itself. |
-| Card placeholder pattern (in `product-card.tsx`) | AC-5 gallery no-image tile | `<span role="img" aria-label> + Hugeicons Image01Icon size=40 strokeWidth=1.5 text-muted-foreground` on `bg-muted aspect-[4/5]`. |
-
-### New components (all under `src/components/product/`)
-
----
-
-### `ProductPurchasePanel`  *(new, `"use client"` — the ONE selection island)*
-
-**Purpose**: Single source of truth for `selectedVariantId`. Owns selection state
-and derives (via pure helpers in `lib/catalog/variant-selection.ts`) the images /
-effective price / stock state, then feeds them to gallery, price, and stock badge
-so all three stay in sync (AC-7). Locked architecture — do not scatter state.
-
-**Location**: Right column on `lg+`, below the gallery on mobile.
-
-**shadcn base**: none (composition container).
-
-**Layout**:
+**Layout — header, ≥ md (expanded):**
 ```
-┌──────────────────────────────────────────┐
-│  {brandName}                    (text-xs) │   ← optional
-│  Silla Ergonómica Aria           (h1)     │
-│                                            │
-│  $8,499.00   $9,999.00        (price row) │   ← struck compare-at only if >
-│                                            │
-│  [✓ En stock]                (StockBadge) │   ← inline
-│                                            │
-│  Color: Negro                  (label)    │
-│  (●) (○) (○) (○)          (VariantSelector radiogroup)
-│                                            │
-│  ‹aria-live status: "Negro — $8,499 — En stock"›
-└──────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│ [≡]  PosturPro   Sillas Categorías Marcas Estilos              │
+│                  ┌──────────────────────────┐  [ES|EN]         │
+│                  │ 🔍  Buscar sillas…      ✕│                  │
+│                  └──────────────────────────┘                  │
+└───────────────────────────────────────────────────────────────┘
 ```
 
-**Props**:
+**Layout — header, < md (collapsed → expanded):**
+```
+collapsed:   [≡]  PosturPro …………………………  [🔍] [ES]
+tapped 🔍:   [≡]  ┌──────────────────────────────┐ [ES]
+                  │ 🔍  Buscar sillas…          ✕│
+                  └──────────────────────────────┘   (wordmark hidden while open)
+```
+
+**Layout — /sillas toolbar:** always expanded, full width of the toolbar column.
+
+**Props:**
 ```typescript
-interface ProductPurchasePanelProps {
-  productName: string;
-  brandName: string | null;
-  basePriceCents: number;
-  compareAtPriceCents: number | null;
-  productStock: number;               // product-level stock (no-variant case)
-  variants: ProductVariantView[];     // [] when the product has none
-  sharedImages: ProductImageView[];   // variant_id === null images (fallback set)
-  imagesByVariant: Record<string, ProductImageView[]>; // pre-grouped by variant_id
-  /** Pre-resolved, per-variant display strings so the panel does NO i18n (SRP).
-   *  See Open Question #2 — recommended: build this map on the server. */
-  variantDisplay: Record<string, {
-    colorLabel: string;               // "Color: Negro"
-    swatchName: string;               // accessible radio name, incl. "(agotado)" when out
-    stockState: StockState;
-    stockLabel: string;               // resolved "En stock"/"Solo quedan 3"/"Agotado"
-    effectivePriceLabel: string;      // formatMXN(effectivePrice)
-    liveStatus: string;               // "Negro — $8,499.00 — En stock"
-  }>;
-  /** No-variant display (product-level). */
-  productDisplay: {
-    stockState: StockState;
-    stockLabel: string;
-    effectivePriceLabel: string;
-  };
-  labels: {
-    variantGroupLabel: string;        // radiogroup aria-label ("Elige un color")
-    galleryRegion: string; galleryZoom: string; galleryClose: string;
-    thumbnailAlt: string;             // "Ver imagen {number}" template
-    imagePlaceholder: string;
-    priceCompareLabel: string;        // sr-only "Precio anterior:"
-  };
+interface SearchBoxProps {
+  /** Pre-resolved placeholder ("Buscar sillas…"). */
+  placeholder: string;
+  /** Accessible label for the search input ("Buscar en el catálogo"). */
+  ariaLabel: string;
+  /** Accessible label for the clear button ("Borrar búsqueda"). */
+  clearLabel: string;
+  /** Accessible label for the submit button ("Buscar"). */
+  submitLabel: string;
+  /** Current `q` from the URL, so the field echoes on /sillas. */
+  defaultValue?: string;
+  /** Locale-agnostic form action target (CATALOG_PATH). */
+  action: string;
+  /** "header" → collapses to an icon below md; "toolbar" → always expanded. Default "toolbar". */
+  variant?: "header" | "toolbar";
+  /**
+   * Hidden inputs to preserve active filters when submitting a new query from the
+   * toolbar (searching must not drop the user's brand/color filters). `page` is
+   * intentionally omitted — a new query always resets to page 1 (AC-8).
+   */
+  preservedParams?: Record<string, string>;
 }
 ```
+`"use client"` only for the header collapse toggle; the underlying `<form method="get">` still
+submits natively without JS.
 
-**Responsive**:
+**Behavior:**
+- **Submit / URL-state:** submit-based (autocomplete is Out of Scope; AC-12 "submit-based search
+  only"). Enter or the submit button commits → `useRouter().push` with the new `q` (JS on) or
+  native form GET (JS off). **No debounce** by default (no live-search). A `SEARCH_DEBOUNCE_MS`
+  constant is reserved in `config.ts` only if live-search is added later.
+- **Clear affordance:** an `✕` button appears inside the input only when it has a value; clicking
+  clears the field and, on `/sillas`, navigates to the same URL minus `q` (keeping other
+  filters). `type="button"`, `aria-label` = `clearLabel`.
+- **Empty-query state:** submitting empty/whitespace `q` lands on `/sillas` with `q` omitted
+  entirely (not `?q=`) so the URL stays canonical (parse lib treats whitespace-only as absent —
+  AC-3).
+
+**States:**
+| State | Visual | Behavior |
+| --- | --- | --- |
+| Idle (empty) | Placeholder, search icon left, no clear button | Submit lands on clean `/sillas` |
+| Typing | Value shown, clear `✕` fades in (M-6) | Enter commits |
+| Has committed query (/sillas) | Field pre-filled with `q` | Clear removes `q` only |
+| Header collapsed (< md) | Icon button only | Tap expands + autofocuses input |
+| Disabled | n/a — never disabled | — |
+
+**Responsive:**
 | Breakpoint | Layout |
 | --- | --- |
-| < 1024px | Full-width, stacked below gallery. Price row `text-xl`. |
-| ≥ 1024px | Right grid column, top-aligned with gallery. Price row `text-2xl`. |
+| < 640px | Header: icon → full-width input (wordmark hides while open). Toolbar: full-width, own row |
+| 640–1023px | Header: same collapse. Toolbar: full-width; sort+count on the row below |
+| ≥ 1024px | Header: inline expanded input between nav & toggle. Toolbar: search left, sort+count right |
 
-**Animations**: price + badge crossfade on variant change (see M5). No own mount
-animation (page-level `.enter-fade` covers it).
+**Animations:** Motion Spec **M-2** (header expand), **M-6** (clear-button fade).
 
 ---
 
-### `ProductGallery`  *(new, `"use client"`)*
+### 2. SortSelect (`src/components/catalog/sort-select.tsx`)
 
-**Purpose**: Main image + thumbnail rail + zoom trigger. Receives the image set
-for the currently-selected variant. AC-5, AC-6, AC-18, edges 1 & 8.
+**Purpose:** Choose result ordering (AC-7). Six options; default best-selling.
 
-**Location**: Left column `lg+`, top on mobile.
+**Location:** `/sillas` toolbar (right on desktop; toolbar row on mobile) **and** inside the
+mobile filter Sheet (so mobile users can sort without a separate control).
 
-**shadcn base**: raw Radix `Dialog` (zoom lightbox only).
+**shadcn base:** `Select`.
 
-**Layout (desktop)**:
+**Layout:**
 ```
-┌───────────────────────────────┐
-│                          [⤢]  │   aspect-[4/5], rounded-lg, bg-muted,
-│         MAIN IMAGE            │   overflow-hidden, cursor-zoom-in;
-│      (activate → zoom)        │   [⤢] zoom icon top-right, shows on hover/focus
-└───────────────────────────────┘
-[▢][▢][▢][▢]                      thumb rail; selected = ring-2 ring-foreground
+┌───────────────────────────┐
+│ Ordenar:  Más vendidas  ▾ │   ← trigger (button variant="outline")
+└───────────────────────────┘
+   opens ↓ (origin = trigger, ease-out < 250ms)
+   ┌───────────────────────────┐
+   │ • Más vendidas            │
+   │   Precio: menor a mayor   │
+   │   Precio: mayor a menor   │
+   │   Novedades               │
+   │   Nombre: A–Z             │
+   │   Nombre: Z–A             │
+   └───────────────────────────┘
 ```
 
-**Layout (mobile)**: main full-width `aspect-[4/5]`; thumbnails horizontally
-scrollable (`flex gap-2 overflow-x-auto`, each `shrink-0 size-16` = 64px ≥44px).
-
-**Props**:
+**Props:**
 ```typescript
-interface ProductGalleryProps {
-  images: ProductImageView[];   // for the selected variant (resolved by panel)
-  productName: string;          // alt fallback
+type SortKey =
+  | "mas-vendidas"   // best-selling (default) — sales_count DESC + tiebreak (Constraint 4)
+  | "precio-asc"
+  | "precio-desc"
+  | "novedades"      // created_at DESC
+  | "nombre-asc"
+  | "nombre-desc";
+
+interface SortSelectProps {
+  /** Current sort from the URL (canonicalized; unknown → default). */
+  value: SortKey;
+  /** Pre-resolved option labels keyed by SortKey. */
+  labels: Record<SortKey, string>;
+  /** Accessible label for the trigger ("Ordenar resultados"). */
+  ariaLabel: string;
+  /** URL param name (config: SEARCH_PARAM_KEYS.orden). */
+  paramKey: string;
+}
+```
+`"use client"`. On change → `useRouter().push` with the new `orden`, **resetting `page` to 1**
+(AC-8) and preserving all other params. `SortKey` values are Spanish, single-sourced in
+`config.ts` (`SORT_KEYS`), so they match exactly what the parse lib accepts.
+
+**Behavior (JS off):** sort rides the filter `<form>` as a native `<select name="orden">` that
+submits with the form; the client `Select` hydrates the enhanced overlay on top. (If dual-render
+is too costly, the toolbar `Select` is client-only and the Sheet's in-form native `<select>` is
+the sole JS-off path — see Open Question 1.)
+
+**States:** Idle (shows current label) · Open (listbox, current option checked) · no disabled
+state. Changing sort triggers the grid transition (M-7 → M-4).
+
+**Responsive:** Desktop → inline toolbar right. Mobile → compact trigger (label may hide, leaving
+value + chevron). Also present inside the Sheet.
+
+**Animations:** Motion Spec **M-3** (open/close, trigger-anchored origin).
+
+---
+
+### 3. FilterPanel (`src/components/catalog/filter-panel.tsx`)
+
+**Purpose:** All facet controls (AC-13). One component rendered **twice**: desktop sidebar body
+and mobile Sheet body. Facet options come from real DB values passed in (never hard-coded).
+
+**Location:** desktop left sidebar (`≥ lg`); mobile/tablet inside `FilterSheet`.
+
+**shadcn base:** composes `Checkbox`, `Label`, `Slider`, `Input`, and `ColorSwatchGroup`.
+
+**Layout (sidebar body, desktop):**
+```
+┌──────────────────────────┐
+│ Filtros                  │
+│                          │
+│ Disponibilidad           │
+│  [✓] Solo en stock       │   ← default ON (AC-5); unchecking includes OOS
+│                          │
+│ Categoría                │
+│  [ ] Oficina        (M2M)│
+│  [ ] Gerencial           │
+│  [ ] Ergonómica          │
+│                          │
+│ Marca                    │
+│  [ ] ErgoVita            │
+│  [ ] Herman …            │
+│  ▸ Ver más (if > 6)      │   ← collapse long facet lists to 6 + toggle
+│                          │
+│ Estilo                   │
+│  [ ] Malla   [ ] Piel …  │
+│                          │
+│ Color                    │
+│  ⬤ ⬤ ⬤ ⬤ ⬤ ⬤  (swatches)│
+│                          │
+│ Material                 │
+│  [ ] Malla  [ ] Tela …   │
+│                          │
+│ Precio (MXN)             │
+│  ├──────●────────●──────┤ │   ← dual-thumb Slider
+│  [ min ]      [ max ]    │   ← two numeric inputs, synced to slider
+│  Rango de precio ignorado│   ← subtle note only when min>max dropped (edge 4)
+│                          │
+│  [ Limpiar filtros ]     │   ← ghost, only when ≥1 filter active
+└──────────────────────────┘
+```
+
+**Props:**
+```typescript
+interface FacetOption {
+  value: string;   // stable id/slug sent to the URL (a known value)
+  label: string;   // pre-resolved display label
+}
+interface ColorFacetOption {
+  value: string;   // color_hex, lowercased, e.g. "111111"
+  label: string;   // accessible color name ("Negro")
+  hex: string;     // CSS color ("#111111")
+}
+interface FilterPanelProps {
+  facets: {
+    categories: FacetOption[];
+    brands: FacetOption[];
+    styles: FacetOption[];
+    materials: FacetOption[];
+    colors: ColorFacetOption[];
+  };
+  priceMin: number;   // bounded price domain, cents
+  priceMax: number;
+  selected: CatalogFilters;    // current selection (parsed, canonicalized)
+  labels: FilterPanelLabels;   // headings, availability toggle, "Ver más", etc.
+  paramKeys: SearchParamKeys;  // config.SEARCH_PARAM_KEYS
+  /** URL-mutation callback (client) OR undefined when rendered in the JS-off <form>. */
+  onChange?: (next: CatalogFilters) => void;
+  context: "sidebar" | "sheet";  // affects spacing/scroll only
+}
+```
+Server-renderable as a `<form method="get" action="/sillas">` for JS-off; a thin client wrapper
+adds submit-on-change. Long facet lists (> `FILTER_FACET_COLLAPSE_AFTER`) collapse to a
+"Ver más / Ver menos" disclosure so the panel never becomes an endless scroll.
+
+**States:**
+| State | Visual | Behavior |
+| --- | --- | --- |
+| Default | "Solo en stock" checked; others unchecked; slider at full domain | JS-off: submit button applies; JS-on: each toggle re-queries |
+| Some active | Checked boxes; selected swatches ringed; "Limpiar filtros" visible | Clear → clean `/sillas` |
+| Facet list empty (0 DB options) | The whole facet group is omitted (never an empty heading) | — |
+| Facet-list load error | Handled at page boundary → error panel; panel never renders half-populated (edge 10) | — |
+| Inverted price (min>max) | Both bounds dropped; subtle "Rango de precio ignorado" note under inputs | edge 4 |
+
+**Responsive:** Sidebar and Sheet bodies differ only in outer spacing + scroll container (Sheet
+body scrolls; sidebar is `sticky top-20 self-start` and scrolls with the page). Controls identical.
+
+**Animations:** press feedback only (M-5). The "Ver más" disclosure does NOT animate height
+(never animate layout properties); newly-shown rows may fade (opacity-only, ≤ 6 items).
+
+---
+
+### 4. ColorSwatchGroup (`src/components/catalog/color-swatch.tsx`)
+
+**Purpose:** Multi-select color filter as accessible swatch **checkboxes** (AC-4 color
+OR-within-facet). Distinct from T4's single-select `VariantSelector` (a `radiogroup`); this is a
+**multi-select group of checkbox-semantics buttons** that deliberately reuses T4's visual swatch
++ `.swatch-press` + out-of-stock-strike vocabulary so the two read as siblings.
+
+**Location:** inside `FilterPanel` "Color" group.
+
+**shadcn base:** none (custom, like `VariantSelector`); each swatch is a labeled checkbox-semantics control.
+
+**Layout:**
+```
+Color
+ ⬤   ⬤   ⬤   ⬤   ⬤   ⬤
+Negro Gris Azul Café Blanco Rojo    ← each swatch has a text label (SR + visible small caption)
+(selected swatches show a ✓ + ring-2 ring-foreground ring-offset-2)
+```
+
+**Props:**
+```typescript
+interface ColorSwatchGroupProps {
+  colors: ColorFacetOption[];      // value=hex-key, label=name, hex=css
+  selected: string[];              // selected color hex-keys
+  groupLabel: string;              // "Filtrar por color"
+  onToggle: (value: string, next: boolean) => void;
+}
+```
+
+**A11y:** container `role="group" aria-label={groupLabel}`. Each swatch is a
+`<button role="checkbox" aria-checked>` with `aria-label` = the color name (never color alone).
+Selection = `ring-2 ring-foreground ring-offset-2` **plus** a centered `✓` glyph so it's legible
+without relying on ring color. Every swatch is tabbable (multi-select checkboxes are each in the
+tab order per WAI-ARIA — unlike T4's roving radiogroup); `Space`/`Enter` toggles. Light swatches
+(e.g. white) keep the `border border-border` outline so they're visible on the white card; the
+`✓` renders `text-foreground` on light swatches (oklch L > ~0.7) and `text-background` on dark —
+computed from `hex` at build.
+
+**Animations:** `.swatch-press` (reused) — `scale(0.97)` on `:active`, 120ms `--ease-out`,
+reduced-motion drops it. Selection ring appears instantly (high-frequency → no transition).
+
+---
+
+### 5. FilterSheet (`src/components/catalog/filter-sheet.tsx`)
+
+**Purpose:** The mobile/tablet (`< lg`) container for `FilterPanel`. A full-height drawer opened
+by a "Filtros" button in the toolbar (AC-13, Mobile UX).
+
+**Location:** `/sillas` toolbar, `< lg` only.
+
+**shadcn base:** `Sheet` (Radix Dialog), **`side="left"`** — mirrors the existing MobileNav
+drawer (spatial consistency: the site's drawers come from the left) and reuses the exact
+`.drawer-panel` motion. A bottom sheet would introduce a competing drawer idiom; if product
+later prefers bottom, the motion pattern is identical (swap `translateX` for `translateY(100%)`
+— Open Question 3).
+
+**Layout:**
+```
+Trigger (in toolbar):   [ ⚙ Filtros (3) ]   ← badge shows active-filter count
+
+Open (drawer from left, scrim dims grid):
+┌──────────────────────────────┐░░░░░
+│ Filtros              [ ✕ ]   │░░░░░  ← header: title + close (focus lands here)
+├──────────────────────────────┤░░░░░
+│  (FilterPanel body, scrolls)  │░░░░░
+│  … Disponibilidad …           │░░░░░
+│  … Categoría, Marca …         │░░░░░
+│  … Color, Material, Precio …  │░░░░░
+├──────────────────────────────┤░░░░░  ← sticky footer (translucent, backdrop-blur)
+│ [ Limpiar ]   [ Ver 24 sillas ]│░░░░  ← "apply" = live result count; closes sheet
+└──────────────────────────────┘░░░░░
+```
+
+**Props:**
+```typescript
+interface FilterSheetProps {
+  activeCount: number;   // for the trigger badge
+  resultCount: number;   // for the "Ver N sillas" footer button (live)
   labels: {
-    imagePlaceholder: string;   // AC-5 no-image tile
-    zoom: string;               // "Ampliar imagen"
-    close: string;              // "Cerrar"
-    thumbnailAlt: string;       // "Ver imagen {number}"
-    regionLabel: string;        // "Galería del producto"
+    trigger: string;     // "Filtros"
+    title: string;       // "Filtros"
+    close: string;       // "Cerrar filtros"
+    clear: string;       // "Limpiar"
+    apply: string;       // ICU: "Ver {count} sillas"
   };
+  children: React.ReactNode;  // <FilterPanel context="sheet" />
 }
-// ProductImageView: { id; url; altText: string | null; isPrimary: boolean; sortOrder: number; variantId: string | null }
+```
+`"use client"`.
+
+**Interaction model (AC-18; Apple gesture surface):**
+- With JS, filters apply **live** as toggled (desktop parity). The footer "Ver N sillas" button
+  then primarily *closes* the sheet, its label reflecting the running live count (Apple §8: hint
+  the outcome). Count updates as facets change.
+- **Focus trap** while open (Radix); focus moves to the close button on open, returns to the
+  "Filtros" trigger on close; `Esc` closes.
+- **Dismiss:** scrim-tap + `Esc` + close button. Add bespoke swipe-to-close only if MobileNav
+  already implements it (consistency over novelty; do not add a second gesture idiom).
+- **Body scroll lock** while open (Radix).
+
+**Animations:** Motion Spec **M-1** — reuse `.drawer-panel` / `.drawer-scrim` verbatim (300ms
+`--ease-drawer` enter, 200ms exit, interruptible, reduced-motion → opacity-only). This is the
+feature's most-important motion and it already exists, tested, in the repo.
+
+**Responsive:** rendered only `< lg` (`lg:hidden`). At `≥ lg` the sidebar replaces it.
+
+---
+
+### 6. ActiveFilters (`src/components/catalog/active-filters.tsx`)
+
+**Purpose:** Removable chips for every active filter + "Clear all" (AC-14). Above the grid,
+below the toolbar. Also owns the `aria-live` result count.
+
+**Location:** `/sillas`, above `ProductGrid`, all breakpoints.
+
+**shadcn base:** `Badge` (chip base) + a close `✕`.
+
+**Layout (desktop):**
+```
+24 sillas   ● Marca: ErgoVita ✕   ● Color: Negro ✕   ● Precio: $2,000–$4,000 ✕   [ Limpiar todo ]
+```
+**Layout (mobile 375px — wraps / scrolls-x, edge 12):**
+```
+24 sillas
+┌─ chips scroll-x if needed ───────────────────────────▶
+● ErgoVita ✕  ● Negro ✕  ● Malla ✕  ● $2k–$4k ✕  …
+[ Limpiar todo ]
 ```
 
-**Internal state**: `activeIndex`, `zoomOpen`. On `images` prop change, reset
-`activeIndex → 0` and clamp if the new set is shorter (edge 8 — idempotent, no
-stuck image).
+**Props:**
+```typescript
+interface ActiveFilterChip {
+  key: string;          // stable React key + removal id ("marca:ergovita", "precio")
+  label: string;        // pre-resolved chip text ("Marca: ErgoVita", "Precio: $2,000–$4,000")
+  removeHref: string;   // URL with THIS filter removed (others preserved, page→1)
+  removeLabel: string;  // "Quitar filtro Marca: ErgoVita"
+}
+interface ActiveFiltersProps {
+  resultCountLabel: string;  // pre-resolved ICU count ("24 sillas")
+  chips: ActiveFilterChip[];
+  clearAllHref: string;      // clean CATALOG_PATH (page-provided)
+  clearAllLabel: string;     // "Limpiar todo"
+}
+```
+Server component. Each chip's `✕` is a real `<a href={removeHref}>` (works JS off; JS enhances to
+`router.push`). **The default in-stock filter is NOT a removable chip** (it's the baseline, not a
+user-added constraint); only the *opt-in to include out-of-stock* shows a chip ("Incluye
+agotados ✕"). "Limpiar todo" → clean `/sillas` (default in-stock, no `q`, best-selling, page 1).
 
-**States**:
-| State | Visual | Behavior |
-| --- | --- | --- |
-| Has images | Main `next/image fill sizes` + thumb rail | Click thumb → swap main (crossfade). Click main / ⤢ → open Dialog. |
-| Single image | Main image, no thumb rail | Zoom still available. |
-| Zero images (edge 1) | Placeholder tile `bg-muted aspect-[4/5] rounded-lg` + centered `Image01Icon`, `role="img" aria-label="{name} — {imagePlaceholder}"` | **No zoom affordance** (AC-5). No thumb rail. |
-| Image load error | `next/image onError` → placeholder tile for that slot; alt retained | Never a broken `<img>` (error table). |
-| Zoom open | `Dialog.Overlay` (`bg-background/80 backdrop-blur-sm`) + centered `Dialog.Content` full-res image (`max-h-[90vh] max-w-[90vw] object-contain`) + visible `Dialog.Close` (`Cancel01Icon` icon button, top-right, ≥44px) | Escape / backdrop / close dismiss; focus trapped; returns to trigger (Radix). |
+**A11y:** the result-count node is `aria-live="polite"` so SRs hear "24 sillas" after each change
+(also the loading→done cue). Each chip is a link with a descriptive `aria-label`; the visible `✕`
+is `aria-hidden`; keyboard-operable as links (Tab + Enter).
 
-**Z-index**: Dialog portals at `z-50` (must exceed sticky header `z-40`).
-
-**Responsive**:
-| Breakpoint | Change |
+**States:**
+| State | Visual |
 | --- | --- |
-| < 640px | Thumb rail scrollable `size-16`; main full-width. |
-| 640–1024px | Thumbs wrap under image. |
-| ≥ 1024px | Gallery is left grid column; thumbs `flex-wrap gap-2`. |
+| No filters | Renders **only** the result count ("30 sillas"); no chips, no "Limpiar todo" |
+| ≥1 filter | Count + chips + "Limpiar todo" |
+| Many filters (mobile) | Chip row `overflow-x-auto` with a subtle right fade mask; never pushes the grid off-screen (edge 12) |
 
-**Animations**:
-- **M1 Main-image swap** (thumb OR variant switch): **Crossfade** (`opacity` only,
-  never slide/scale-from-0), `200ms var(--ease-out)`; optional `filter: blur(2px)`
-  on the outgoing frame to mask the swap. Key `<Image>` on active image `id` + a
-  `.gallery-image` `@starting-style` opacity 0→1. Interruptible (keyed CSS
-  transition) → no stuck frame on rapid retarget (edge 8). Reduced motion: instant
-  opacity swap, no blur.
-- **M4 Zoom trigger press**: `:active { transform: scale(0.97) }` `120ms`.
-- **M2 Zoom Dialog enter**: MODAL → `transform-origin: center` (NOT trigger-origin,
-  per Emil modals-are-exempt rule). `opacity 0→1` + `scale(0.95→1)`,
-  `200ms var(--ease-out)` off Radix `[data-state]`; exit `150ms`. CSS transition
-  (interruptible). Reduced motion: opacity only, `transform: none`.
-- **M3 Scrim**: `opacity 0→1` `200ms` / `150ms` exit.
-- **M6 Thumbnail hover**: gated `@media (hover:hover) and (pointer:fine)` — opacity
-  lift on non-selected thumbs, color/opacity only, no transform.
+**Animations:** none on remove (high-frequency; removal re-queries → the new grid uses its
+existing `.stagger`). Chips do not animate in/out — that would fight the grid transition.
 
 ---
 
-### `VariantSelector`  *(new, `"use client"`)*
+### 7. CatalogToolbar (`src/components/catalog/catalog-toolbar.tsx`) — small composer
 
-**Purpose**: One color swatch per variant; a `radiogroup` raising the selected id
-to the panel (AC-7, AC-18). Not rendered when 0 variants (AC-8).
+**Purpose:** The row(s) above the grid holding search echo + filters trigger (mobile) + sort +
+count. Keeps `sillas/page.tsx` thin (SRP). May be inlined into the page if the team prefers fewer
+files; documented here for layout clarity.
 
-**Location**: Inside `ProductPurchasePanel`, below the stock badge.
-
-**shadcn base**: none — hand-rolled roving-tabindex radiogroup.
-
-**Layout**:
+**Layout — desktop (≥ lg):**
 ```
-Color: Negro                    ← live label, updates on selection
-(●)  (○)  (○)  (○)
- sel                             ← selected: ring-2 ring-foreground ring-offset-2
+┌─────────────────────────────────────────────────────────────────┐
+│  [ 🔍 Buscar sillas…            ✕ ]        Ordenar: Más vendidas ▾│
+└─────────────────────────────────────────────────────────────────┘
+(result count + chips render below via ActiveFilters; sidebar is to the left)
 ```
-Each swatch: `size-9` (36px) round button + a padding wrapper so the hit target is
-≥44px; `background: color_hex` inline; `rounded-full border border-border` (keeps
-white/near-white swatches visible). Selected → `ring-2 ring-foreground ring-offset-2
-ring-offset-background`. Out-of-stock swatch → `opacity-60` + a colorless
-diagonal-slash overlay (legible without color, edge 2); still selectable.
-
-**Props**:
-```typescript
-interface VariantSelectorProps {
-  variants: ProductVariantView[];       // length ≥ 1 (parent gates 0)
-  selectedVariantId: string;
-  onSelect: (variantId: string) => void;
-  groupLabel: string;                    // radiogroup aria-label
-  swatchNames: Record<string, string>;   // id → accessible name incl. "(agotado)"
-  outOfStock: Record<string, boolean>;   // id → dim + slash
-}
-// ProductVariantView: { id; colorName; colorHex: string | null; priceOverrideCents: number | null; stock; sortOrder }
+**Layout — tablet (768):**
 ```
-
-**A11y (AC-18)**:
-- Container `role="radiogroup" aria-label={groupLabel}`.
-- Each swatch `role="radio" aria-checked` + `aria-label={swatchNames[id]}`.
-- **Roving tabindex**: selected `tabIndex=0`, others `-1`. Arrow keys move
-  selection+focus (wrapping); Space/Enter select; Home/End jump. Standard contract.
-- `colorHex === null` → neutral `bg-muted` swatch; accessible name still carries
-  `colorName`, so color is never the only signal.
-
-**States**:
-| State | Visual | Behavior |
-| --- | --- | --- |
-| Default | `flex flex-wrap gap-2` swatches | Wraps on narrow screens. |
-| Selected | `ring-2 ring-foreground ring-offset-2` | One at a time. |
-| Out-of-stock variant | `opacity-60` + colorless slash | Still selectable → badge "Agotado". |
-| Focus | `focus-visible:ring-2 focus-visible:ring-ring` | Selection ring = `ring-foreground`; focus ring = `ring-ring` (distinct). |
-
-**Animations**:
-- **M4 Press feedback**: `:active { transform: scale(0.97) }` `120ms var(--ease-out)`
-  (`.swatch-press`). High-frequency control → NO enter, NO hover scale. Selection
-  ring appears instantly (≤100ms opacity max). Reduced motion: drop press scale.
+[ 🔍 Buscar sillas…                                          ✕ ]
+[ ⚙ Filtros (2) ]                            Ordenar: Más vendidas ▾
+```
+**Layout — mobile (375):**
+```
+[ 🔍 Buscar sillas…                    ✕ ]
+[ ⚙ Filtros (2) ]              [ Más vendidas ▾ ]
+```
 
 ---
 
-### Price display  *(inline within `ProductPurchasePanel`, not a component)*
+### 8. NoResults (`src/components/catalog/no-results.tsx`)
 
-**AC-9, edge 3.** Effective price = `variant.priceOverrideCents ?? basePriceCents`.
-Compare-at struck ONLY when `compareAtPriceCents > effectivePrice`.
+**Purpose:** The zero-match state (AC-16, edges 1, 6, 8). NOT the generic `EmptyState`, NOT a 404.
+
+**Location:** `/sillas`, replaces the grid when `total === 0`.
+
+**shadcn base:** none (composes `Button` + a popular strip via `ProductGrid`).
+
+**Layout:**
 ```
-$8,499.00   $9,999.00
- current     struck (sr-only "Precio anterior:" prefix)
-```
-- Current: `text-xl md:text-2xl font-semibold tabular-nums text-foreground`.
-- Struck: `text-sm tabular-nums text-muted-foreground line-through`, preceded by
-  `sr-only` "Precio anterior:" so SR announces the was-price.
-- Keyed on the price value → **M5 Crossfade** (opacity 150ms) on variant change.
-  Recomputed per selection, never stale (edge 3).
-- **aria-live**: a single `aria-live="polite" aria-atomic="true"` status line under
-  the swatches announces the coherent selection ("Negro — $8,499.00 — En stock"),
-  so SR users hear one update, not three (AC-18).
-
----
-
-### `ProductSpecs`  *(new, server component)*
-
-**Purpose**: AC-10 specs. Pure render; `buildSpecRows` (in `lib/catalog/specs.ts`,
-pure/unit-testable) does mm→cm, g→kg, and null-omission. Section hidden if all null.
-
-**Location**: Below the two-column block, full width.
-
-**Layout**:
-```
-Especificaciones                       (h2, text-sm font-medium tracking-tight)
-Ancho            60 cm    │  Material del marco  Aluminio
-Profundidad      55 cm    │  Tapicería           Malla
-Altura           110 cm   │  Acabado             Negro
-Altura asiento   45 cm    │  Peso                15 kg
-   two-column dl; mobile stacks to one pair per row
+┌───────────────────────────────────────────────┐
+│                    🔍 (search/chair icon)       │
+│                                                 │
+│   No encontramos sillas que coincidan          │
+│   con "malla azul"                             │   ← echoes q and/or active filters
+│                                                 │
+│            [ Limpiar filtros ]                  │   ← → clean /sillas (primary)
+│                                                 │
+│   ─────────  Sillas populares  ─────────        │
+│   ┌────┐ ┌────┐ ┌────┐ ┌────┐                  │
+│   │card│ │card│ │card│ │card│   (up to 8,       │
+│   └────┘ └────┘ └────┘ └────┘    best-selling)  │
+│   (reuses ProductGrid layout / ProductCard)     │
+└───────────────────────────────────────────────┘
 ```
 
-**Props**:
+**Props:**
 ```typescript
-interface ProductSpecsProps {
-  rows: SpecRow[];   // pre-built, nulls omitted, values formatted "60 cm"/"15 kg"/"Malla"
-  heading: string;   // "Especificaciones"
-}
-// SpecRow: { label: string; value: string }
-```
-> If `rows.length === 0`, the PAGE does not render `<ProductSpecs>` at all (AC-10).
-
-**Markup**: `<dl>` in `grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2`; each row a
-`<div class="flex justify-between gap-4 border-b border-border/60 py-2">` with
-`<dt class="text-sm text-muted-foreground">` + `<dd class="text-sm font-medium tabular-nums text-foreground text-right">`.
-
-**States**: has-rows only (parent gates). No loading (route skeleton covers it).
-
-**Animations**: none (static). Inherits page `.enter-fade`.
-
----
-
-### `ProductQa`  *(new, server)* + `QaForm`  *(new, `"use client"`)*
-
-**Purpose**: AC-13/14/15. Server lists PUBLISHED questions (newest-first) + renders
-the client form.
-
-**Location**: Bottom section, full width, form/list in a `max-w-2xl` column.
-
-**Layout (has questions)**:
-```
-Preguntas y respuestas                 (h2)
-Q  ¿La malla es transpirable?
-   — María G.                          (text-xs muted)
-A  Sí, la malla permite ventilación…   (muted block, bg-muted/50 rounded-md p-3)
-──────────────────────────────────────
-Haz una pregunta                        (form heading, h2)
-Nombre     [__________________]
-Pregunta   [__________________]
-           [__________________]  1980/2000
-(honeypot: off-screen)
-                        [ Enviar pregunta ]
-```
-
-**Layout (no published questions — AC-13)**:
-```
-Preguntas y respuestas
-   💬 (MessageQuestion02Icon, size 40, text-muted-foreground)
-   Sé el primero en preguntar
-   ¿Tienes dudas sobre esta silla? Pregúntanos abajo.
-   [ form directly below as the CTA ]
-```
-
-**`ProductQa` props**:
-```typescript
-interface ProductQaProps {
-  productId: string;
-  questions: ProductQuestionView[];   // published, newest-first
-  labels: { heading; emptyTitle; emptyBody; answerPrefix; };
-  formLabels: QaFormProps["labels"];  // forwarded
-  maxName: number; maxQuestion: number;
-}
-// ProductQuestionView: { authorName; question; answer; answeredAt: string | null; createdAt: string }
-```
-
-**`QaForm` props**:
-```typescript
-interface QaFormProps {
-  productId: string;
-  maxName: number;      // AUTHOR_NAME_MAX (120)
-  maxQuestion: number;  // QUESTION_MAX (2000)
-  labels: {
-    formHeading; nameLabel; namePlaceholder; questionLabel; questionPlaceholder;
-    submit; submitting; counter /* "{count}/{max}" */; honeypotLabel;
-    nameRequired; nameTooLong; questionRequired; questionTooLong;
-    successTitle; successBody; rateLimited; unavailable; errorRetry;
-  };
+interface NoResultsProps {
+  heading: string;            // "No encontramos sillas que coincidan"
+  /** Echo of what was searched/filtered ('con "malla azul"'); null when nothing to echo. */
+  queryEcho: string | null;
+  clearLabel: string;         // "Limpiar filtros"
+  clearHref: string;          // clean CATALOG_PATH
+  popular: CatalogProductCard[];  // ≤ POPULAR_PRODUCTS_MAX (8), best-selling order
+  popularHeading: string;     // "Sillas populares"
 }
 ```
+Server component. Reuses `.enter-fade` for the message block (low-frequency page → entrance
+justified, same as `EmptyState`). The popular strip renders through the **same `ProductGrid`**
+(sliced to ≤ 8) so cards/stagger/badges are pixel-identical to the catalog. If `popular` is empty
+(edge 8), the strip + heading are omitted; message + "Limpiar filtros" still render (never a
+broken layout).
 
-**Rendering safety (AC-13, security)**: author/question/answer are **text nodes
-only** — never `dangerouslySetInnerHTML`. Each item `<article class="border-b
-border-border py-4">`; question `<p class="text-sm font-medium break-words">`;
-author `<p class="text-xs text-muted-foreground">`; answer in
-`<div class="mt-2 rounded-md bg-muted/50 p-3 text-sm/relaxed break-words">`. Long
-text (to 2000 chars) wraps; NO clamp on answers; `max-w-2xl` holds (edge 10).
-
-**Field styling** (match token system):
-```
-w-full rounded-md border border-border bg-background px-3 py-2 text-sm
-text-foreground outline-none placeholder:text-muted-foreground
-focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30
-aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20
-```
-Textarea: `min-h-24 resize-y`.
-
-**Honeypot (AC-15)**: real `<input name="website">` in an off-screen wrapper
-`<div class="absolute left-[-9999px]" aria-hidden="true">`, `tabIndex={-1}`,
-`autoComplete="off"`, sr-only label. NOT `display:none`/`hidden` (bots skip those).
-Filled → server returns success WITHOUT insert (indistinguishable UI).
-
-**States** (`useActionState`-driven):
-| State | Visual | Behavior |
-| --- | --- | --- |
-| Idle | empty/valid form | — |
-| Typing near limit | counter `muted → amber-600` within 10% of max, `destructive` at/over | input capped at max client-side; server re-validates trimmed |
-| Field invalid | field `aria-invalid` + red ring; inline `<p role="alert" class="text-xs text-destructive">`; focus → first invalid field | blocks submit; input preserved |
-| Submitting | button disabled, label → "Enviando…"; fast-spin spinner optional | `useActionState` pending |
-| Success | form clears; `role="status"` note (`bg-muted/50 rounded-md p-3`) with title+body; **focus moves to note** | not shown in list (is_published=false) |
-| Rate-limited | inline `role="alert"` friendly message; input preserved | no insert |
-| Unavailable (edge 5) | inline `role="alert"` "ya no está disponible"; input preserved | RLS denial mapped by action |
-| Transient error | inline `role="alert"` "inténtalo de nuevo" + submit acts as retry; input preserved | retryable |
-
-**Responsive**: single column, `max-w-2xl`; submit `w-full sm:w-auto sm:self-end`,
-`min-h-11` on mobile.
-
-**Animations**:
-- **M8 Field error + success note**: `.enter-fade`-style opacity + 8px rise
-  (`150–200ms ease-out`). Reduced motion: opacity only.
-- **No shake/wiggle** on blocked submit — inline error + focus move + red ring
-  already communicate (Emil: motion only with purpose; the form is retried often).
-- Submit button inherits `Button` `:active`.
-
----
-
-### `RecentlyViewed`  *(new, `"use client"`, empty SSR shell)*
-
-**Purpose**: AC-12, edge 7. Records the current product on mount; renders up to
-`RECENTLY_VIEWED_MAX` (8) prior products, newest-first, excluding current.
-localStorage only, guarded. Empty SSR shell (renders `null` until hydrated).
-
-**Location**: Between specs and Q&A (AC-19 order).
-
-**shadcn base**: none; tiles reuse `ProductCard`.
-
-**Layout**:
-```
-Vistos recientemente                    (h2)
-[card][card][card][card]                grid on desktop / scroll rail on mobile
-```
-
-**Props**:
-```typescript
-interface RecentlyViewedProps {
-  current: RecentlyViewedEntry;   // recorded on mount
-  heading: string;                // "Vistos recientemente"
-  cardLabels: {                   // ProductCard needs pre-resolved labels
-    stockByState: Record<StockState, string>;
-    imagePlaceholder: string;
-    colorsCount: string;          // "{count} colores" template
-  };
-}
-// RecentlyViewedEntry mirrors the storable CatalogProductCard fields:
-// { id; slug; name; brandName: string | null; priceCents; compareAtPriceCents: number | null;
-//   coverImageUrl: string | null; coverAlt; colorCount; stockState: StockState; lowStockN: number | null }
-```
-> **Storage shape** (Open Q #1): store the *card view model* so tiles render
-> identically to the grid without a re-fetch, keeping the strip client-only and
-> instant. Price/stock may be slightly stale — acceptable for a convenience strip;
-> the tile links to the live PDP. `lib/recently-viewed.ts` owns get/add (dedupe by
-> slug, cap 8, newest-first, quota + SSR guarded).
-
-**States**:
-| State | Visual | Behavior |
-| --- | --- | --- |
-| SSR / pre-hydration | `null` (empty shell) | No hydration mismatch. |
-| No history / only current (AC-12) | `null` — section not rendered | No empty shell UI. |
-| localStorage unavailable (edge 7) | `null` + one guarded `console.warn` | Page unaffected. |
-| Has history | `ProductCard` tiles, `.stagger` entrance | Each links to its PDP. |
-
-**Responsive**:
-| Breakpoint | Layout |
+**States:**
+| State | Visual |
 | --- | --- |
-| < 640px | Scrollable rail `flex gap-4 overflow-x-auto snap-x`, tile `w-40 shrink-0 snap-start`. |
-| ≥ 640px | `grid grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8`, cap visible at 4. |
+| Zero results, has popular | Message + echo + Clear + popular strip |
+| Zero results, empty catalog | Message + Clear only (no strip) |
+| Popular read failed | Same as empty-catalog (strip omitted, logged not fatal — error table) |
 
-**Animations**:
-- **M7 Tiles**: existing `.stagger` (opacity + 8px rise, 200ms ease-out, capped
-  per-item delay), plays once on mount. Reduced motion: opacity only.
-- No auto-scroll / marquee (motion without purpose).
-
----
-
-### `PdpSkeleton`  *(new, in `product/pdp-skeleton.tsx` or export from `catalog-skeleton.tsx`)*
-
-**Purpose**: route `loading.tsx` content, mirroring the PDP layout pixel-for-pixel
-(no layout shift). `motion-safe:animate-pulse`, `bg-muted`, `rounded`.
-
-**Layout**:
-```
-[breadcrumb bars]
-┌ gallery box ┐  ┌ brand bar          ┐
-│ aspect-[4/5]│  │ title bar (h-8)     │
-│ bg-muted    │  │ price bar (h-6)     │
-└─────────────┘  │ badge chip          │
-[thumb dots]     │ swatch dots ●●●●    │
-[specs: 4 label/value bar rows]
-[Q&A: heading bar + 2 question-block bars + form field bars]
-```
-- **Props**: `{ className?: string }` (mirror `CatalogPageSkeleton`).
-- Reuse container `mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8`.
-- Gallery box `aspect-[4/5] w-full rounded-lg bg-muted motion-safe:animate-pulse`
-  (matches the real frame exactly).
-- **Do NOT skeleton the recently-viewed strip** (client-only, empty SSR shell — a
-  skeleton there would be a phantom). Q&A form skeleton = simple field bars.
+**Animations:** `.enter-fade` on the message block; popular strip uses `ProductGrid`'s `.stagger`.
+No new motion.
 
 ---
 
-## Page Layout
+### 9. Filtered grid loading state (reuse `ProductGridSkeleton`)
 
-### `/producto/[slug]` — desktop (≥ 1024px)
+**Purpose:** The transition between a URL change and new server-rendered results (UX "Loading").
+No new component — reuse `ProductGridSkeleton` (already pixel-matches the grid: same 2/3/4-col
+layout, `aspect-[4/5]` box, `motion-safe:animate-pulse`).
+
+**Rendering semantics (App Router):** `/sillas` reads `searchParams` → any request with params is
+**dynamic**. The filtered grid read is isolated in `<Suspense fallback={<ProductGridSkeleton/>}>`
+so the shell (breadcrumb, header, toolbar, sidebar, and the URL-derived active-filter chips)
+renders **immediately** and only the grid region shows the 12-card skeleton while the RPC runs.
+No full-page spinner; the filter panel and toolbar stay interactive during load.
+
+**Pending affordance (client-initiated navigations):** when JS is on and a filter/sort toggle
+uses `router.push`, wrap the mutation in `useTransition` and apply a **pending dim** to the
+current grid (`opacity-60 transition-opacity 200ms ease` while `isPending`) so fast local reads
+don't flash a skeleton — the stale results dim, then swap (Emil: prevent jarring changes). On slow
+reads the Suspense skeleton is the fallback. The dim is a comprehension aid → keep it under
+reduced-motion (opacity-only is RM-safe). Motion Spec **M-7**.
+
+---
+
+## Page Layout — `/sillas` (rewrite)
+
+### Desktop (≥ 1024px)
 ```
-Header (sticky, h-16, z-40)
-Inicio › Sillas › Silla Ergonómica Aria        (breadcrumbs)
-┌ GALLERY ─────────┐   ┌ PURCHASE PANEL ──────────┐
-│ aspect-[4/5] [⤢] │   │ Marca                     │
-│                  │   │ Silla … Aria (h1)         │
-│ [▢][▢][▢] thumbs │   │ $8,499  $9,999            │
-└──────────────────┘   │ [✓ En stock]              │
-                       │ Color: Negro / (●)(○)(○)  │
-                       └───────────────────────────┘
-Especificaciones          [ dl two-column ]
-Vistos recientemente      [card][card][card][card]
-Preguntas y respuestas    [ Q&A list ] [ ask form ]
-Footer
+┌───────────────────────────────────────────────────────────────────────┐
+│ HEADER: [≡] PosturPro  Sillas Cat… Marcas Estilos  [🔍 Buscar… ] [ES|EN]│
+├───────────────────────────────────────────────────────────────────────┤
+│ Inicio › Sillas                                                         │  breadcrumb
+│ Sillas                                                                  │  h1
+│ Toda nuestra colección…                                                 │  subtitle
+│                                                                         │
+│ [ 🔍 Buscar sillas…                    ✕ ]      Ordenar: Más vendidas ▾ │  toolbar
+│ 24 sillas  ● Marca: ErgoVita ✕  ● Negro ✕            [ Limpiar todo ]   │  ActiveFilters
+│ ┌─────────────┐ ┌───────────────────────────────────────────────────┐ │
+│ │ FILTROS     │ │  ┌────┐ ┌────┐ ┌────┐ ┌────┐                       │ │
+│ │ (sidebar,   │ │  │card│ │card│ │card│ │card│   ProductGrid          │ │
+│ │  sticky)    │ │  └────┘ └────┘ └────┘ └────┘                       │ │
+│ │ Disponib.   │ │  ┌────┐ ┌────┐ ┌────┐ ┌────┐                       │ │
+│ │ Categoría   │ │  └────┘ └────┘ └────┘ └────┘                       │ │
+│ │ Marca …     │ │                                                     │ │
+│ │ Color …     │ │      ‹ Prev  1 2 [3] 4 … 10  Next ›  (preserves     │ │
+│ │ Precio …    │ │                                        filters)     │ │
+│ └─────────────┘ └───────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────┘
 ```
-Split: `grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-10` (gallery left, panel
-right). Sections below full-width, separated by `mt-10 md:mt-12`.
+Outer layout `lg:grid lg:grid-cols-[16rem_1fr] lg:gap-8`. Sidebar is `sticky top-20 self-start
+max-h-[calc(100vh-6rem)] overflow-y-auto`. The `ProductGrid` in the right column keeps its own
+2/3/4 responsive layout; because the right column is narrower than the full page, gate the 4th
+column to `xl:` if 4 cards feel cramped at exactly 1024px (Open Question 2).
 
 ### Tablet (768px)
-Gallery + panel stay single column (ticket allows discretion below `lg`) for a
-larger gallery; the 2-col grid begins at `lg` only.
+```
+HEADER (search collapses to icon)
+Breadcrumb / h1 / subtitle
+[ 🔍 Buscar sillas…                                        ✕ ]
+[ ⚙ Filtros (2) ]                          Ordenar: Más vendidas ▾
+24 sillas  ● chips…                                 [ Limpiar todo ]
+ProductGrid (3 col)
+Pagination
+```
+Filters live in the left `Sheet` (no sidebar until `lg`).
 
-### Mobile (375px) — single column, order gallery → info → specs → recently-viewed → Q&A (AC-19)
+### Mobile (375px)
 ```
-Header (h-14)
-Inicio › … › Aria           (breadcrumb collapses middle to …)
-[ GALLERY full-width aspect-[4/5], ⤢ ]
-[▢][▢][▢]→                  scrollable thumb rail
-Marca / Silla … Aria
-$8,499 $9,999 / [✓ En stock]
-Color: Negro / (●)(○)(○)(○) swatches wrap
-Especificaciones            2-col dl → stacks
-Vistos recientemente        scrollable card rail
-Preguntas y respuestas      stacked Q&A + form
-Footer
+HEADER: [≡] PosturPro …  [🔍] [ES]
+Breadcrumb / h1 / subtitle
+[ 🔍 Buscar sillas…                    ✕ ]
+[ ⚙ Filtros (2) ]              [ Más vendidas ▾ ]
+30 sillas
+● chips scroll-x →
+ProductGrid (2 col)
+Prev · Página 2 de 5 · Next
 ```
-No horizontal scroll at 320px: swatches wrap, breadcrumb collapses, only the
-thumb/card rails use intentional `overflow-x-auto` (they don't overflow the body).
-Container `px-4` at 320.
 
 ---
 
 ## Interaction Flows
 
-### Flow 1 — Select a color variant (AC-7, edges 3 & 8)
-1. Shopper clicks/taps a swatch (or arrow-keys + Space).
-2. `VariantSelector` → `onSelect(id)` → panel sets `selectedVariantId` (synchronous
-   React state, no network).
-3. Pure helpers recompute images (variant → shared fallback → placeholder),
-   effective price (`override ?? base`), stock state.
-4. Gallery main image **crossfades** to the variant's primary (index reset to 0);
-   price number crossfades; compare-at strike recomputes; StockBadge swaps.
-5. `aria-live` announces "{color} — {price} — {stock}".
-6. Rapid clicks: idempotent; gallery retargets to the latest selection, no stuck
-   frame (edge 8).
+### Flow A — Filter by color (JS on, mobile)
+1. Tap **⚙ Filtros** → `FilterSheet` opens: drawer slides in from left (M-1, 300ms
+   `--ease-drawer`), scrim dims the grid, focus moves to the close button, body scroll locks.
+2. Tap the **Negro** swatch → `.swatch-press` scale(0.97) confirms instantly; swatch gains ring +
+   ✓; URL updates (`?color=111111`, `page`→1) via `router.push` inside `useTransition`.
+3. Behind the scrim, the grid dims to `opacity-60` (M-7) while the RPC runs; footer updates
+   "Ver **12** sillas".
+4. New results stream in; grid returns to full opacity with `.stagger`.
+5. Tap **Ver 12 sillas** (or scrim / Esc) → drawer slides out (200ms), focus returns to the
+   **Filtros** trigger, now showing badge **(1)**.
+6. An `● Negro ✕` chip is above the grid; `aria-live` announced "12 sillas".
 
-### Flow 2 — Zoom an image (AC-6)
-1. Activate main image (click/Enter/Space) or the ⤢ icon.
-2. Radix `Dialog` opens: scrim fades in (200ms); content **scale(0.95→1) + opacity**
-   (200ms ease-out, center origin). Focus trapped; close button focused.
-3. Dismiss via Escape / backdrop / ✕ → content exits (150ms) → focus **returns to
-   trigger** (Radix).
-4. Reduced motion: opacity-only enter/exit.
+### Flow B — Search from header (JS off)
+1. Type "malla" in the header input, press Enter.
+2. Native `<form method="get" action="/sillas">` navigates to `/sillas?q=malla`.
+3. Server parses `q` (truncated to `SEARCH_QUERY_MAX`), calls the RPC (uncached — free text),
+   renders the filtered grid + `noindex,follow` + canonical → `/sillas`. Chips degrade to plain
+   `<a>`. Works with zero JS.
 
-### Flow 3 — Ask a question (AC-14/15, edges 4 & 5)
-1. Fill Nombre + Pregunta; counter live; input capped at max.
-2. Submit → client validates **trimmed** values (name 1–120, question 1–2000).
-   Invalid → inline errors, focus to first invalid, no network.
-3. Valid → `useActionState` calls the server action; button "Enviando…", disabled.
-4. Server: honeypot → trim → length → rate-limit → anon insert (RLS).
-5. Result: success (clears, note, focus moves) / honeypot (identical success, no
-   insert) / rate-limited / unavailable (edge 5) / transient (retry). Input
-   preserved on every failure.
+### Flow C — Sort change (JS on, desktop)
+1. Open the **Ordenar** Select → listbox scales in from the trigger (M-3, <250ms ease-out).
+2. Select "Precio: menor a mayor" → `router.push` with `orden=precio-asc`, `page`→1, other params
+   preserved.
+3. Current grid dims (M-7) → new price-ascending results stagger in.
 
-### Flow 4 — Recently-viewed (AC-12, edge 7)
-1. Component mounts (client) → reads localStorage (guarded), prepends current
-   (dedupe by slug, cap 8), writes back.
-2. Renders tiles for entries ≠ current slug, `.stagger` in.
-3. No other entries or storage throws → `null` (no section, one guarded warn).
+### Flow D — Remove one chip / clear all
+1. Click `✕` on **● Negro** → `<a>` to `removeHref` (color dropped, others + page-1 preserved) →
+   re-query, new grid, `aria-live` count update.
+2. **Limpiar todo** → clean `/sillas` (default in-stock, no `q`, best-selling, page 1).
 
----
-
-## All UI States (consolidated)
-
-| Surface | Loading | Empty | Error | Success / Special |
-| --- | --- | --- | --- | --- |
-| Page | `loading.tsx` → `PdpSkeleton` | — (missing product = 404, not empty) | `error.tsx` localized panel + retry (edge 9) | `.enter-fade` on mount |
-| Gallery | part of page skeleton | zero images → placeholder tile, no zoom (edge 1) | image load error → placeholder tile | crossfade on switch |
-| Variant selector | — | N/A (no variants → not rendered, AC-8) | — | all-out-of-stock → each swatch dim+slash, still selectable (edge 2) |
-| Price/badge | — | — | — | recomputes per variant (edge 3); aria-live announced |
-| Specs | part of page skeleton | all-null → section hidden (AC-10) | — | — |
-| Recently-viewed | renders nothing | no history → not rendered (AC-12) | storage throws → not rendered + 1 warn (edge 7) | tiles `.stagger` in |
-| Q&A list | field-bar skeleton (optional) | no published Q → empty state + form as CTA (AC-13) | — | — |
-| Q&A form | renders after hydration | idle | field/rate-limit/unavailable/transient inline (error table) | clears + success note + focus move (AC-14) |
+### Flow E — Zero results
+1. A filter combination matches nothing (edge 1) → server renders `NoResults` (not 404, not
+   error): heading + echo of `q`/filters + **Limpiar filtros** + **Sillas populares** strip
+   (best-selling, ≤ 8, independent of active filters). URL stays valid/shareable.
 
 ---
 
-## Copy — both locales (new `product` namespace)
+## Motion Spec (animation-vocabulary terms; transform/opacity only, <300ms, interruptible)
 
-Add to `src/messages/es-MX.json` (default) + `src/messages/en.json`. Tone matches
-`catalog`: concise, warm, informal "tú" imperative in Spanish. Reuse existing
-`catalog.stock.*` for badge labels — do NOT duplicate them into `product`.
+All new rules live in `globals.css` under labeled banners, following the existing
+`[data-state]`-driven CSS-transition pattern (NOT `tw-animate-css` keyframes).
 
-### es-MX (`product`)
-```jsonc
-"product": {
-  "metadata": { "titlePattern": "{name} — {store}", "descriptionFallback": "Silla ergonómica en PosturPro." },
-  "breadcrumb": { "ariaLabel": "Ruta de navegación", "home": "Inicio", "catalog": "Sillas" },
-  "gallery": {
-    "regionLabel": "Galería del producto", "zoom": "Ampliar imagen", "close": "Cerrar",
-    "thumbnailAlt": "Ver imagen {number}", "imagePlaceholder": "Imagen no disponible"
-  },
-  "variant": {
-    "groupLabel": "Elige un color", "colorLabel": "Color: {name}",
-    "outOfStockName": "{name} (agotado)", "selection": "{color} — {price} — {stock}"
-  },
-  "price": { "comparePrevious": "Precio anterior:" },
-  "specs": {
-    "heading": "Especificaciones", "width": "Ancho", "depth": "Profundidad", "height": "Altura",
-    "seatHeight": "Altura del asiento", "weight": "Peso", "frameMaterial": "Material del marco",
-    "upholstery": "Tapicería", "finish": "Acabado", "unitCm": "{value} cm", "unitKg": "{value} kg"
-  },
-  "recentlyViewed": { "heading": "Vistos recientemente" },
-  "qa": {
-    "heading": "Preguntas y respuestas",
-    "emptyTitle": "Sé el primero en preguntar",
-    "emptyBody": "¿Tienes dudas sobre esta silla? Pregúntanos abajo.",
-    "answerPrefix": "Respuesta",
-    "form": {
-      "heading": "Haz una pregunta", "nameLabel": "Nombre", "namePlaceholder": "Tu nombre",
-      "questionLabel": "Pregunta", "questionPlaceholder": "¿Qué te gustaría saber?",
-      "counter": "{count}/{max}", "submit": "Enviar pregunta", "submitting": "Enviando…",
-      "honeypotLabel": "No llenar este campo"
-    },
-    "validation": {
-      "nameRequired": "Ingresa tu nombre.",
-      "nameTooLong": "El nombre no puede pasar de {max} caracteres.",
-      "questionRequired": "Escribe tu pregunta.",
-      "questionTooLong": "La pregunta no puede pasar de {max} caracteres."
-    },
-    "result": {
-      "successTitle": "Recibimos tu pregunta",
-      "successBody": "Aparecerá aquí en cuanto la respondamos.",
-      "rateLimited": "Ya enviaste una pregunta hace poco. Espera un momento antes de enviar otra.",
-      "unavailable": "Esta silla ya no está disponible.",
-      "errorRetry": "No pudimos enviar tu pregunta. Inténtalo de nuevo."
-    }
-  }
-}
-```
-
-### en (`product`)
-```jsonc
-"product": {
-  "metadata": { "titlePattern": "{name} — {store}", "descriptionFallback": "Ergonomic chair at PosturPro." },
-  "breadcrumb": { "ariaLabel": "Breadcrumb", "home": "Home", "catalog": "Chairs" },
-  "gallery": {
-    "regionLabel": "Product gallery", "zoom": "Zoom image", "close": "Close",
-    "thumbnailAlt": "View image {number}", "imagePlaceholder": "Image unavailable"
-  },
-  "variant": {
-    "groupLabel": "Choose a color", "colorLabel": "Color: {name}",
-    "outOfStockName": "{name} (out of stock)", "selection": "{color} — {price} — {stock}"
-  },
-  "price": { "comparePrevious": "Was:" },
-  "specs": {
-    "heading": "Specifications", "width": "Width", "depth": "Depth", "height": "Height",
-    "seatHeight": "Seat height", "weight": "Weight", "frameMaterial": "Frame material",
-    "upholstery": "Upholstery", "finish": "Finish", "unitCm": "{value} cm", "unitKg": "{value} kg"
-  },
-  "recentlyViewed": { "heading": "Recently viewed" },
-  "qa": {
-    "heading": "Questions & answers",
-    "emptyTitle": "Be the first to ask",
-    "emptyBody": "Have questions about this chair? Ask us below.",
-    "answerPrefix": "Answer",
-    "form": {
-      "heading": "Ask a question", "nameLabel": "Name", "namePlaceholder": "Your name",
-      "questionLabel": "Question", "questionPlaceholder": "What would you like to know?",
-      "counter": "{count}/{max}", "submit": "Send question", "submitting": "Sending…",
-      "honeypotLabel": "Do not fill this field"
-    },
-    "validation": {
-      "nameRequired": "Enter your name.",
-      "nameTooLong": "Name can't be longer than {max} characters.",
-      "questionRequired": "Write your question.",
-      "questionTooLong": "Question can't be longer than {max} characters."
-    },
-    "result": {
-      "successTitle": "We got your question",
-      "successBody": "It will appear here once we answer it.",
-      "rateLimited": "You just sent a question. Please wait a moment before sending another.",
-      "unavailable": "This chair is no longer available.",
-      "errorRetry": "We couldn't send your question. Please try again."
-    }
-  }
-}
-```
-
----
-
-## Motion Spec (animation-vocabulary terms — unambiguous for dev)
-
-New CSS lives in `globals.css` in the established block style (comment header,
-`--ease-out`, `[data-state]` off Radix, `@media (prefers-reduced-motion)` gate,
-`@media (hover:hover) and (pointer:fine)` for hover).
-
-| # | Element | Effect (vocabulary term) | Trigger | Property | Easing | Duration | Reduced-motion fallback |
+| # | Element | Effect (vocab) | Trigger | Property | Easing | Duration | Reduced-motion |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| M1 | Gallery main image | **Crossfade** + optional 2px **Blur** mask | thumb click OR variant switch | `opacity` (+ `filter: blur`) | `var(--ease-out)` | 200ms | instant opacity swap, no blur |
-| M2 | Zoom Dialog content | **Scale in** (0.95→1) + **Fade in**, `transform-origin: center` (MODAL) | dialog open | `transform`, `opacity` | `var(--ease-out)` | 200ms enter / 150ms exit | opacity only, `transform: none` |
-| M3 | Zoom scrim | **Fade in** | dialog open | `opacity` | ease | 200ms / 150ms exit | unchanged (opacity allowed) |
-| M4 | Zoom trigger + swatches + submit | **Press / Tap feedback** (scale 0.97) | `:active` | `transform` | `var(--ease-out)` | 120ms | `transform: none` |
-| M5 | Price number + stock line | **Crossfade** (keyed span) | variant switch (value change) | `opacity` | `var(--ease-out)` | 150ms | instant swap |
-| M6 | Thumbnails (non-selected) | **Hover effect** (opacity lift) | hover, gated pointer | `opacity` | ease | 120ms | none (hover gate excludes touch) |
-| M7 | Recently-viewed tiles | **Stagger** entrance (reuse `.stagger`) | client mount | `opacity`, `transform` | `var(--ease-out)` | 200ms, ≤80ms/item cap | opacity only, no delay |
-| M8 | Q&A field error + success note | **Fade in** + 8px rise (reuse `.enter-fade`) | validation fail / submit success | `opacity`, `transform` | `var(--ease-out)` | 150–200ms | opacity only |
-| M9 | Whole page main | **Fade in** (reuse `.enter-fade`) | route mount | `opacity`, `transform` | `var(--ease-out)` | 200ms | opacity only |
+| **M-1** | Filter Sheet panel + scrim | **Slide in** (panel) + **Fade in** (scrim); interruptible | Sheet open/close (`data-state`) | `transform: translateX(-100%→0)` / `opacity` | `--ease-drawer` enter, `--ease-out` exit | 300ms enter / 200ms exit | `transform:none`, opacity 200ms — **reuse `.drawer-panel`/`.drawer-scrim`** |
+| **M-2** | Header search collapse→expand (`<md`) | **Reveal** / **Scale in** | Tap search icon | `opacity` + `transform: scaleX` (NOT width) | `--ease-out` | 180ms | opacity-only fade |
+| **M-3** | SortSelect content | **Origin-aware Scale in** ("Pop in", no bounce) | Select open (`data-state`) | `opacity` + `transform: scale(0.96→1)`; `transform-origin: var(--radix-select-content-transform-origin)` | `--ease-out` | 200ms open / 150ms close | opacity-only, `transform:none` |
+| **M-4** | Result grid swap | grid's existing **Stagger** entrance | New results mount | `opacity` + `translateY(8→0)` | `--ease-out` | 200ms, 40ms step, capped | reuse `.stagger` (opacity-only under RM) |
+| **M-5** | Checkbox / swatch press | **Press/Tap feedback** | `:active` | `transform: scale(0.97)` | `--ease-out` | 120ms | none (`transform:none`) — reuse `.swatch-press` |
+| **M-6** | Search clear `✕` | **Fade in** | field has value | `opacity` | `ease` | 120ms | keep (opacity is RM-safe) |
+| **M-7** | Current grid while re-querying (JS) | pending **dim** | `useTransition` `isPending` | `opacity: 1→0.6` | `ease` | 200ms | keep (comprehension aid, opacity-only) |
+| **M-8** | "Filtros" trigger active-count badge | none (instant) | count change | — | — | — | — |
 
-Baseline compliance (AC-20): enter animations `ease-out` only; only
-`transform`/`opacity` animated (blur is a compositor filter, capped 2px, used
-sparingly); zoom/variant transitions < 300ms; all interruptible (CSS transitions +
-keyed elements, no gesture-blocking); `prefers-reduced-motion` honored everywhere.
-**No animation on any keyboard-repeated action.** Swatch selection (high frequency)
-gets press feedback only.
-
-New utility classes to add to `globals.css` (dev): `.gallery-image` (M1),
-`.gallery-zoom-dialog` + `.gallery-zoom-scrim` (M2/M3), `.gallery-zoom-trigger` +
-`.swatch-press` (M4), `.price-value` (M5), `.thumb-hover` (M6). Reuse existing
-`.stagger`, `.enter-fade`, `.card-lift`.
+**Baseline compliance:** no `transition: all`; no `ease-in`; no `scale(0)` entrances (M-3 starts
+at `scale(0.96)`); enters use `ease-out`; the Sheet (gesture surface) reuses the proven
+interruptible drawer transition (Apple §3); every rule has a `prefers-reduced-motion` fallback
+keeping only opacity. Select origin is trigger-anchored (Emil popover rule); the Sheet is a full
+drawer (not origin-anchored). No animation on high-frequency actions (chip removal, the sort
+commit itself, checkbox toggle beyond press feedback).
 
 ---
 
 ## Accessibility Checklist
 
-- [ ] Gallery is a labeled region (`aria-label` = `gallery.regionLabel`).
-- [ ] Every image has non-empty `alt` (`altText ?? productName`) (AC-18).
-- [ ] Zoom Dialog: focus trapped, Escape/backdrop/close dismiss, focus returns to
-      trigger (Radix, AC-6); close button `aria-label` = `gallery.close`.
-- [ ] Thumbnail buttons named (`thumbnailAlt` + index), active thumb
-      `aria-current`/`aria-pressed`.
-- [ ] Variant selector `role="radiogroup"` + roving tabindex; each swatch
-      `role="radio" aria-checked` + accessible name incl. "(agotado)"; color never
-      the only signal (AC-11, AC-18).
-- [ ] Arrow keys move swatches; Space/Enter select; Home/End jump.
-- [ ] `aria-live="polite"` status line announces selected color+price+stock (AC-18).
-- [ ] Struck compare-at preceded by `sr-only` "Precio anterior:".
-- [ ] Specs use semantic `<dl>/<dt>/<dd>`.
-- [ ] Q&A form: every field has `<label htmlFor>`; errors `role="alert"` +
-      `aria-describedby`; success note `role="status"` and receives focus; honeypot
-      sr-only labeled, off-screen (not `display:none`), `tabIndex=-1`, `aria-hidden`.
-- [ ] Counter tied to textarea via `aria-describedby`; announce via `aria-live`
-      only near the limit (avoid per-keystroke chatter).
-- [ ] All interactive elements have visible `focus-visible:ring-2 ring-ring`.
-- [ ] Tab order: breadcrumb → gallery (main → thumbs → zoom) → swatches → Q&A
-      questions → form fields → submit → recently-viewed links.
-- [ ] Tap targets ≥ 44px on mobile (swatch padding wrapper, thumb `size-16`, submit
-      `min-h-11`).
-- [ ] One `<h1>` (product name); section headings are `<h2>`; Q&A questions don't
-      introduce competing headings (styled `<p>`). (Mirrors T3 heading-hierarchy fix.)
-- [ ] No horizontal body scroll at 320px.
+- [ ] **Filter Sheet focus trap** — Radix Dialog traps focus; focus → close button on open,
+      returns to the "Filtros" trigger on close; `Esc` closes.
+- [ ] **Checkbox semantics** — brand/style/material/category use real `Checkbox` with associated
+      `Label` (clicking the label toggles). Multi-select facets = independent checkboxes.
+- [ ] **Color swatches** — `role="group"` + each `role="checkbox" aria-checked` with a text
+      `aria-label`; selection shown by ring **and** ✓ (not color alone); each tabbable;
+      `Space`/`Enter` toggles.
+- [ ] **Sort Select labeling** — trigger `aria-label` "Ordenar resultados"; Radix Select
+      (listbox), current option `aria-selected`.
+- [ ] **`aria-live` result count** — "N sillas" node is `aria-live="polite"`; announces each
+      filter/sort/search change; doubles as the loading→done cue.
+- [ ] **Active-filter chips** — each a link with a descriptive `aria-label` ("Quitar filtro
+      Marca: ErgoVita"); visible `✕` `aria-hidden`; keyboard-operable (Tab + Enter).
+- [ ] **Search box** — `type="search"`, associated label (visually-hidden in the header), clear
+      button `aria-label`; Enter and submit both work.
+- [ ] **Landmarks / headings** — filter panel is a `<form>` with an accessible name ("Filtros");
+      facet groups use `<fieldset>`/`<legend>` (or `role="group"` + heading) so SR users hear the
+      grouping. Page h1 ("Sillas") preserved; NoResults heading is `<h2>` under it (no heading-
+      level skips — matches the T3 UX audit fix).
+- [ ] **Color never the only indicator** — swatch ✓, low-stock icon+text, text chips.
+- [ ] **Tab order** — header: search → nav → toggle; page: breadcrumb → search →
+      filters trigger/sort → chips → grid → pagination. Logical top-to-bottom, left-to-right.
+- [ ] **Touch targets** — all controls ≥ 44px tap height (`min-h-11`), matching T3 pagination.
+- [ ] **JS-off** — every control degrades to native form/link submission (AC-12, edge 11).
+- [ ] **Keyboard shortcuts** — none added (no command palette in scope); nothing to document.
+
+---
+
+## SEO / rendering surface (UI-relevant only)
+
+- Unfiltered `/sillas` (no params) → indexable, cached/static path exactly as T3 (AC-10, AC-11).
+- Any request with `q`/filter/sort params → **dynamic**, `robots: { index: false, follow: true }`,
+  canonical `<link>` → clean `/sillas` (or the page-N canonical for pure `?page`). This is
+  metadata (not visible UI), but the toolbar/chips keep the current state legible to the user.
+
+---
+
+## Copy — both locales (all new strings; nested under `catalog`, camelCase, ICU placeholders)
+
+Convention matches the existing `catalog` namespace (`catalog.stock`, `catalog.pagination`).
+Proposed keys (dev finalizes exact wording; es-MX is natural Mexican Spanish, en is parity):
+
+```
+catalog.search.placeholder        es: "Buscar sillas…"                 en: "Search chairs…"
+catalog.search.label              es: "Buscar en el catálogo"          en: "Search the catalog"
+catalog.search.submit             es: "Buscar"                         en: "Search"
+catalog.search.clear              es: "Borrar búsqueda"                en: "Clear search"
+catalog.search.open               es: "Abrir búsqueda"                 en: "Open search"
+
+catalog.filters.title             es: "Filtros"                        en: "Filters"
+catalog.filters.trigger           es: "Filtros"                        en: "Filters"
+catalog.filters.triggerCount      es: "Filtros ({count})"              en: "Filters ({count})"
+catalog.filters.close             es: "Cerrar filtros"                 en: "Close filters"
+catalog.filters.apply             es: "Ver {count, plural, one {# silla} other {# sillas}}"  en: "View {count, plural, one {# chair} other {# chairs}}"
+catalog.filters.clear             es: "Limpiar filtros"                en: "Clear filters"
+catalog.filters.clearAll          es: "Limpiar todo"                   en: "Clear all"
+catalog.filters.showMore          es: "Ver más"                        en: "Show more"
+catalog.filters.showLess          es: "Ver menos"                      en: "Show less"
+catalog.filters.availability      es: "Disponibilidad"                 en: "Availability"
+catalog.filters.inStockOnly       es: "Solo en stock"                  en: "In stock only"
+catalog.filters.includeOutOfStock es: "Incluye agotados"               en: "Include out of stock"
+catalog.filters.category          es: "Categoría"                      en: "Category"
+catalog.filters.brand             es: "Marca"                          en: "Brand"
+catalog.filters.style             es: "Estilo"                         en: "Style"
+catalog.filters.color             es: "Color"                          en: "Color"
+catalog.filters.colorGroup        es: "Filtrar por color"              en: "Filter by color"
+catalog.filters.material          es: "Material"                       en: "Material"
+catalog.filters.price             es: "Precio (MXN)"                   en: "Price (MXN)"
+catalog.filters.priceMin          es: "Mínimo"                         en: "Minimum"
+catalog.filters.priceMax          es: "Máximo"                         en: "Maximum"
+catalog.filters.priceIgnored      es: "Rango de precio ignorado"       en: "Price range ignored"
+catalog.filters.removeChip        es: "Quitar filtro {label}"          en: "Remove filter {label}"
+catalog.filters.chipCategory      es: "Categoría: {value}"             en: "Category: {value}"
+catalog.filters.chipBrand         es: "Marca: {value}"                 en: "Brand: {value}"
+catalog.filters.chipStyle         es: "Estilo: {value}"                en: "Style: {value}"
+catalog.filters.chipColor         es: "Color: {value}"                 en: "Color: {value}"
+catalog.filters.chipMaterial      es: "Material: {value}"              en: "Material: {value}"
+catalog.filters.chipPrice         es: "Precio: {min}–{max}"            en: "Price: {min}–{max}"
+catalog.filters.chipOutOfStock    es: "Incluye agotados"               en: "Includes out of stock"
+
+catalog.sort.label                es: "Ordenar resultados"             en: "Sort results"
+catalog.sort.prefix               es: "Ordenar:"                       en: "Sort:"
+catalog.sort.masVendidas          es: "Más vendidas"                   en: "Best selling"
+catalog.sort.precioAsc            es: "Precio: menor a mayor"          en: "Price: low to high"
+catalog.sort.precioDesc           es: "Precio: mayor a menor"          en: "Price: high to low"
+catalog.sort.novedades            es: "Novedades"                      en: "Newest"
+catalog.sort.nombreAsc            es: "Nombre: A–Z"                    en: "Name: A–Z"
+catalog.sort.nombreDesc           es: "Nombre: Z–A"                    en: "Name: Z–A"
+
+catalog.results.count             es: "{count, plural, one {# silla} other {# sillas}}"  en: "{count, plural, one {# chair} other {# chairs}}"
+
+catalog.noResults.heading         es: "No encontramos sillas que coincidan"  en: "No chairs matched your search"
+catalog.noResults.echoQuery       es: "con “{query}”"                  en: "for “{query}”"
+catalog.noResults.echoFilters     es: "con los filtros seleccionados"  en: "with the selected filters"
+catalog.noResults.clear           es: "Limpiar filtros"                en: "Clear filters"
+catalog.noResults.popularHeading  es: "Sillas populares"               en: "Popular chairs"
+```
+Uses ICU `plural` (next-intl supports it) so "1 silla" / "24 sillas" are correct — matches the
+existing ICU usage in `catalog.stock.lowStock`. No hard-coded user-facing text (AC-17).
+
+---
+
+## Config additions (single-sourced; components reference these, never literals)
+
+`src/lib/config.ts` (per ticket "Files to Modify"):
+
+```typescript
+// Search / filter URL param names — Spanish, single-sourced (AC-9)
+export const SEARCH_PARAM_KEYS = {
+  q: "q",
+  categoria: "categoria",
+  marca: "marca",
+  estilo: "estilo",
+  color: "color",
+  material: "material",
+  precioMin: "precioMin",
+  precioMax: "precioMax",
+  disponibilidad: "disponibilidad", // "todos" opts into out-of-stock; default omitted = in-stock
+  orden: "orden",
+  page: "page",                     // existing
+} as const;
+
+export const SORT_KEYS = [
+  "mas-vendidas", "precio-asc", "precio-desc",
+  "novedades", "nombre-asc", "nombre-desc",
+] as const;
+export const DEFAULT_SORT = "mas-vendidas" as const;
+
+export const SEARCH_QUERY_MAX = 80;             // hard cap on q (Constraint 3)
+export const POPULAR_PRODUCTS_MAX = 8;          // no-results strip (AC-16)
+export const FILTER_FACET_COLLAPSE_AFTER = 6;   // "Ver más" disclosure threshold
+// SEARCH_DEBOUNCE_MS — reserved; only if live-search is later enabled (submit-based today)
+```
+
+---
+
+## Pagination change (AC-15) — carry the filter query string
+
+`makeHrefForPage(basePath)` currently returns `page<=1 ? basePath : ${basePath}?page=N`. Add a
+variant that appends the active filter/sort/search query string so page links preserve state:
+
+```typescript
+// page-helpers.ts (additive; existing callers pass no query = unchanged behavior)
+export function makeHrefForPage(
+  basePath: string,
+  query?: string,   // pre-serialized "q=malla&marca=ergovita&orden=precio-asc" (no leading ?, no page)
+): (page: number) => string {
+  return (page: number): string => {
+    const params = query ? query : "";
+    if (page <= 1) return params ? `${basePath}?${params}` : basePath;
+    const sep = params ? `${params}&` : "";
+    return `${basePath}?${sep}page=${page}`;
+  };
+}
+```
+`Pagination` is unchanged (it already takes `hrefForPage` as a prop). Page 1 still self-
+canonicalizes to the clean filtered URL (no `?page=1`). The serialized `query` comes from the
+`search-params.ts` serialize fn so param order is deterministic (stable, shareable URLs).
 
 ---
 
 ## Open Questions for Dev
 
-1. **Recently-viewed storage shape** — specced storing the *card view model*
-   (minimal `CatalogProductCard` fields) so tiles render without re-fetch, staying
-   client-only/instant, accepting slightly-stale price/stock. Alternative: store
-   only slugs + re-fetch — needs a client-callable read (not currently exposed) and
-   breaks the empty-SSR-shell simplicity. **Recommendation: store the view model.**
-2. **Per-variant display strings** — the panel needs `Color: {name}` and low-stock
-   `Solo quedan {n}` (both interpolated). Specced passing a pre-resolved
-   `variantDisplay` map built on the server, so the panel does ZERO client i18n
-   (purest, matches T3 grid "resolve labels once on the server" discipline).
-   Confirm you want the server-built map (recommended) vs. one client
-   `useTranslations("product")` call for just these two strings.
-3. **`sort_order` collisions** — order images by `is_primary desc, sort_order asc,
-   id` and variants by `sort_order, id` in `getProduct`, adding `id` as a
-   tiebreaker so gallery/swatch order is deterministic (prevents a flickering thumb
-   order across renders). Determinism note, not a design change.
-4. **Answer timestamp display** — `ProductQuestionView` carries `answeredAt`/
-   `createdAt`. I did NOT spec a visible date (avoids a locale date-format
-   dependency, keeps it clean). Recommendation: hidden in Phase 1. Confirm.
-5. **Zoom of a single low-res seed image** — spec keeps zoom available whenever ≥1
-   real image exists; only the zero-image case hides it. Fine as-is; flagging that
-   zoom just shows the same image larger (expected).
-
----
-
-## Summary of Decisions
-
-- **Layout**: mobile-first single column (gallery → info → specs → recently-viewed
-  → Q&A); 2-column split (`grid lg:grid-cols-2 lg:gap-10`) only at `lg`; reuses the
-  catalog container so PDP aligns with grid pages; zoom Dialog portals above the
-  sticky header at `z-50`.
-- **Reuse**: `StockBadge`, `Breadcrumbs`, `ProductCard`, the card placeholder
-  pattern, `.card-lift`/`.stagger`/`.enter-fade`, all tokens — verbatim, no drift.
-- **New components**: `ProductPurchasePanel` (the one island), `ProductGallery`
-  (+ raw Radix Dialog zoom), `VariantSelector` (hand-rolled radiogroup),
-  `ProductSpecs` (server `dl`), `ProductQa` (server) + `QaForm` (client),
-  `RecentlyViewed` (client, empty SSR shell), `PdpSkeleton`.
-- **shadcn/Radix**: only `button` installed; use raw `radix-ui` `Dialog` for zoom
-  (no new dep); hand-roll radiogroup + inputs to avoid new primitives.
-- **Motion highlights**: image + price **crossfade** (200/150ms, blur-masked,
-  reduced-motion → instant); zoom **scale-in** modal (center origin, 200ms); swatch
-  **press feedback** only (high-frequency → no enter/hover motion); Q&A
-  errors/success **fade-in**; recently-viewed **stagger**. All `transform`/`opacity`,
-  `< 300ms`, reduced-motion + hover gated.
-- **No dead cart CTA.** Color is never the only signal (badge icon+text, swatch
-  out-of-stock slash, sr labels).
+1. **Sort JS-off fallback:** dual-render (native `<select>` + hydrated shadcn `Select`) vs.
+   client-only toolbar `Select` with the Sheet's in-`<form>` native `<select>` as the sole JS-off
+   path. Spec recommends the latter (simpler). AC-12 mandates JS-off for *search*; filters/sort
+   ride the filter `<form>` — confirm sort is inside that form.
+2. **Grid columns at exactly `lg` (1024px) with a 16rem sidebar:** the `1fr` column may only fit 3
+   cards. Decide: gate the grid's 4th column to `xl:` inside the sidebar layout, or accept 3 cols
+   at `lg`. Pure breakpoint tuning — verify visually.
+3. **Filter Sheet side:** spec chose `left` (spatial consistency with MobileNav). If product
+   prefers a bottom sheet (more native mobile-filter idiom), the M-1 motion swaps `translateX`→
+   `translateY(100%)` with the same curve — flag before build.
+4. **Mobile live-apply vs. batch-apply:** spec chose live-apply with a running "Ver N" footer
+   (desktop parity, immediate feedback). If the RPC round-trip feels heavy on mobile networks,
+   fall back to batch-apply (footer button commits accumulated changes). Live is better if the RPC
+   stays fast (research: trivial at seed scale).
+5. **Price control domain vs. cache buckets:** the slider shows the real catalog min/max for UX,
+   but the parse lib snaps to bounded buckets for the cache key (Constraint 3). Confirm this
+   two-layer approach (display domain ≠ cache-key buckets) is acceptable.
+6. **Price chip / open-ended wording:** chips use `formatMXN` from `src/lib/money` for both
+   bounds. Confirm wording for the open-ended cases ("desde $2,000", "hasta $4,000") vs. a full
+   range ("$2,000–$4,000").
+```

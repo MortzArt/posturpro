@@ -1,12 +1,14 @@
 # Pipeline State
 Task: T5 — Search, filters & sorting
 Tier: full-cycle
-Stage: 3
-Agent: ultradesign
+Stage: 4
+Agent: ultradev
 Complexity: high (all 12 stages run; hacker stage included)
 Feature Type: full-feature
 Last Updated: 2026-07-13
-Notes: Stage 1+2 (PlanResearch) COMPLETE — tasks/next-ticket.md + tasks/research-report.md. Complexity=high (reclassified UP from standard): new DB-side query subsystem + migration, anon-reachable RPC, 15+ files, cross-cutting cache/SEO/search concerns. ALL 12 stages run incl. Stage 11 Hacker.
+Notes: Stage 3 (UI Design) COMPLETE — tasks/ui-design.md. Stage 1+2 artifacts: next-ticket.md + research-report.md.
+
+Stage 3 design decisions (dev must honor): Search = collapsing icon->input in header + always-expanded toolbar field on /sillas echoing q; submit-based native <form method="get"> (works JS-off, no debounce/autocomplete). Filters: >=lg persistent sticky left sidebar (grid-cols-[16rem_1fr]); below lg a left Sheet drawer reusing MobileNav .drawer-panel/.drawer-scrim motion; ONE FilterPanel renders in both. Facets: availability (in-stock default, NOT chipped; opt-out "include agotados" IS chipped), category, brand, style, color swatches (multi-select checkbox variant of T4 VariantSelector), material, dual-thumb price slider + numeric inputs; long lists collapse to 6 + "Ver más". ActiveFilters chips own the aria-live result count, per-chip remove links + "Limpiar todo", scroll-x mobile. NoResults dedicated component: query echo + clear + "Sillas populares" best-selling strip via ProductGrid. Loading: ProductGridSkeleton in Suspense + useTransition pending opacity dim. New components in src/components/catalog/: search-box, sort-select, filter-panel, color-swatch, filter-sheet, active-filters, no-results, catalog-toolbar. shadcn to install: input, checkbox, select, sheet, slider, badge, label (retrofit tw-animate-css keyframes to interruptible [data-state] transitions). Motion M-1..M-8 all transform/opacity, ease-out enters, reduced-motion fallbacks. Copy keys catalog.search/filters/sort/results/noResults (ICU plurals). config.ts: SEARCH_PARAM_KEYS, SORT_KEYS, SEARCH_QUERY_MAX, POPULAR_PRODUCTS_MAX. makeHrefForPage(basePath, query?) additive change. 6 open questions left for dev with recommendations in spec. Complexity=high (reclassified UP from standard): new DB-side query subsystem + migration, anon-reachable RPC, 15+ files, cross-cutting cache/SEO/search concerns. ALL 12 stages run incl. Stage 11 Hacker.
 
 Key T5 decisions locked in the ticket (dev MUST honor):
 - DB strategy: SECURITY INVOKER SQL function search_products(...) via supabase.rpc(), reading ONLY products_public + product_variants + product_categories. EXECUTE granted to anon/authenticated only after REVOKE FROM public. Verified live as anon: RPC returns rows while base products SELECT still 42501; cost_price_cents unreachable. Returns page rows + total_count via COUNT(*) OVER () in one round trip. Variant-color filter via EXISTS; availability via COALESCE(SUM(variant.stock), product.stock) > 0 matching effectiveStock().
