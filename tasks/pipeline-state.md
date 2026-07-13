@@ -1,10 +1,12 @@
 # Pipeline State
 Task: T6 — Cart
 Tier: standard
-Stage: 3 COMPLETE → next: ReviewFix (Stage 4)
-Agent: ultrareviewfix
+Stage: 4 COMPLETE → next: QA (Stage 5)
+Agent: ultraqa
 Last Updated: 2026-07-14
-Notes: S3 (Dev) COMPLETE. Full T6 cart implemented — 14 files created (cart lib x3, cart components x8, /carrito route, ...) + 8 modified (config, layout, header, mobile-nav, purchase panel, PDP page, both message files, keys-used test). See tasks/dev-done.md for the AC-by-AC (all 18 PASS), file table, decisions, deviations. Verification: lint clean, tsc clean, build green (carrito SSG both locales; index SSG, PDP SSG, /sillas Dynamic — T3/T4/T5 modes intact), 634/634 unit + 110/110 integration pass. No new tests (QA owns Stage 7). Build ran against local Docker Supabase via well-known keys + NEXT_QA_DIST_DIR; tsconfig auto-edit reverted, build dir cleaned.
+Notes: S4 (ReviewFix) COMPLETE. Verdict APPROVE (9/10). Found+fixed 1 CRITICAL (C-1: cross-tab storage sync infinite write loop in cart-provider — added lastPersistedRef loop guard; persist effect bails on content-identical payload; storage listener records incoming payload before dispatch), 1 MAJOR (M-1: unbounded tampered unitPriceCents in isCartLine — now rejects > PRICE_BOUND_MAX_CENTS), 1 MINOR (m-1: subtotal DRY → use subtotalCents helper); 2 MINOR skipped (justified). All 18 ACs verified against actual code, all 10 edge cases handled. Dev self-flags 1-5 all confirmed correct/acceptable (ICU-plural boundary clean, no t.raw(plural)→interpolate; no-layout-shift+44px+reduced-motion confirmed). Gate: lint clean, tsc clean, 634/634 unit, 110/110 integration — all green post-fix. QA (Stage 5) should focus on: cross-tab sync (two-tab add/edit/remove, verify no write loop + last-write-wins), corrupt/tampered/oversized localStorage payloads, persistence across reload, out-of-stock add guard, store-settings-null path (no $NaN, progress hidden), 320px no-h-scroll, keyboard + aria-live announcements. QA owns writing cart unit + e2e tests (none written yet).
+
+S3 (Dev) COMPLETE. Full T6 cart implemented — 14 files created (cart lib x3, cart components x8, /carrito route, ...) + 8 modified (config, layout, header, mobile-nav, purchase panel, PDP page, both message files, keys-used test). See tasks/dev-done.md for the AC-by-AC (all 18 PASS), file table, decisions, deviations. Verification: lint clean, tsc clean, build green (carrito SSG both locales; index SSG, PDP SSG, /sillas Dynamic — T3/T4/T5 modes intact), 634/634 unit + 110/110 integration pass. No new tests (QA owns Stage 7). Build ran against local Docker Supabase via well-known keys + NEXT_QA_DIST_DIR; tsconfig auto-edit reverted, build dir cleaned.
 
 S3 Dev decisions / watch-outs for ReviewFix:
 - CartProvider: useReducer + functional actions (coalesce rapid clicks). Hydrates empty→storage on mount; persist effect is REF-GATED so it never writes [] over stored data pre-hydration. storage listener re-reads for cross-tab sync. Scrutinize this ordering.

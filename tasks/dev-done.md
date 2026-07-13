@@ -119,3 +119,27 @@ empty state. Zero TODOs, zero placeholders. No new dependencies.
 - **`formatMXN` never reaches a non-integer** — `isCartLine` enforces integer `unitPriceCents`; `lineTotalCents`/`subtotalCents`/`totalCents` stay integer.
 - **44px targets** on stepper buttons, remove, add-to-cart, checkout CTA, header badge, empty CTA.
 - **Reduced-motion coverage** of the new `globals.css` cart-motion classes.
+
+## Review + Fix Pass (ReviewFix Stage 4)
+
+### Issues Found & Fixed
+
+| ID  | Severity | Title                                        | Status  | File | Fix Applied |
+| --- | -------- | -------------------------------------------- | ------- | ---- | ----------- |
+| C-1 | CRITICAL | Cross-tab `storage` sync infinite write loop | FIXED   | `cart-provider.tsx:81-136` | Added `lastPersistedRef`; persist effect bails on content-identical payload; storage listener records incoming payload before dispatch → no cross-tab echo. Last-write-wins preserved. |
+| M-1 | MAJOR    | Tampered `unitPriceCents` had no upper bound | FIXED   | `cart-storage.ts:32-48` | `isCartLine` now rejects `unitPriceCents > PRICE_BOUND_MAX_CENTS` (reuses catalog's sane cents ceiling); prevents overflow to nonsense totals. |
+| m-1 | MINOR    | Subtotal math duplicated (DRY)               | FIXED   | `cart-page-client.tsx:128` | Use pure `subtotalCents(lines)` instead of inline reduce. |
+| m-2 | MINOR    | `handleQuantityChange` inline clamp          | SKIPPED | —    | Value is already a bounded finite integer; inline min/max reads clearly for a display-only announcement. |
+| m-3 | MINOR    | Stepper sends absolute value from stale prop | SKIPPED | —    | Safe (no lost/over-applied/cap-breach); design treats stepper as non-coalescing. Delta-based rewrite not worth the churn. |
+
+### Summary
+
+- Critical: 1/1 fixed
+- Major: 1/1 fixed
+- Minor: 1/3 fixed, 2 skipped (justified)
+
+### Verification (post-fix)
+- `npm run lint` — clean. `npx tsc --noEmit` — clean.
+- `npx vitest run` — 634/634 unit pass. `npm run test:integration` — 110/110 pass.
+- All 18 ACs re-verified against actual code; all 10 edge cases handled.
+- **Recommendation: APPROVE** — ready for QA (Stage 5).

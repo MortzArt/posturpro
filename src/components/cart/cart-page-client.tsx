@@ -15,6 +15,7 @@ import {
 } from "@/lib/config";
 import {
   lineKey,
+  subtotalCents,
   totalItemCount,
   type CartLine,
 } from "@/lib/cart/cart-line";
@@ -125,10 +126,7 @@ function PopulatedCart({
   onRemove,
   t,
 }: PopulatedCartProps) {
-  const subtotal = lines.reduce(
-    (sum, line) => sum + line.unitPriceCents * line.quantity,
-    0,
-  );
+  const subtotal = subtotalCents(lines);
   const shipping = computeShipping(subtotal, { flatRateCents, freeThresholdCents });
   const total = totalCents(subtotal, shipping);
   const progress = freeShippingProgress(subtotal, freeThresholdCents);

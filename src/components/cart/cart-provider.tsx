@@ -81,6 +81,11 @@ interface CartProviderProps {
 export function CartProvider({ children }: CartProviderProps) {
   const [lines, dispatch] = useReducer(cartReducer, []);
   const hydratedRef = useRef(false);
+  // The last cart payload this tab has reconciled with localStorage — either
+  // what it wrote or what it read from a cross-tab `storage` event. Used to skip
+  // no-op writes so a cross-tab sync cannot ping-pong into an infinite
+  // write→storage-event→re-read→write loop between two tabs (edge 5).
+  const lastPersistedRef = useRef<string | null>(null);
   // Re-render gate for `hydrated`: a ref alone would not re-render consumers, so
   // we mirror it into a reducer-driven counter via a one-shot effect below.
   const [hydrated, markHydrated] = useReducer(() => true, false);
@@ -89,29 +94,45 @@ export function CartProvider({ children }: CartProviderProps) {
   // external-system read that can only happen client-side (mirrors
   // RecentlyViewed's documented effect).
   useEffect(() => {
-    dispatch({ type: "hydrate", lines: readCart() });
+    const initial = readCart();
+    lastPersistedRef.current = JSON.stringify(initial);
+    dispatch({ type: "hydrate", lines: initial });
     hydratedRef.current = true;
     markHydrated();
   }, []);
 
   // Persist on every change AFTER hydration. Skipping the pre-hydration state
   // (an empty array) prevents clobbering stored lines with `[]` before the read
-  // effect runs on mount.
+  // effect runs on mount. Content-identical states are NOT re-written: a
+  // cross-tab `storage` re-read produces a new array reference with the same
+  // payload, and re-writing it would fire a `storage` event in the peer tab and
+  // loop forever — so we compare the serialized payload and bail on a match.
   useEffect(() => {
     if (!hydratedRef.current) {
       return;
     }
+    const serialized = JSON.stringify(lines);
+    if (serialized === lastPersistedRef.current) {
+      return;
+    }
+    lastPersistedRef.current = serialized;
     writeCart(lines);
   }, [lines]);
 
   // Cross-tab sync: another tab's write fires a `storage` event here (never in
   // the writing tab). Re-read into state; last write wins, no crash (edge 5).
+  // The persist effect above bails on a content-identical re-read, so this never
+  // starts a cross-tab write loop.
   useEffect(() => {
     function onStorage(event: StorageEvent): void {
       if (event.key !== null && event.key !== CART_STORAGE_KEY) {
         return;
       }
-      dispatch({ type: "hydrate", lines: readCart() });
+      const next = readCart();
+      // Record the incoming payload as already-reconciled so the persist effect
+      // does not echo it back to storage (loop guard).
+      lastPersistedRef.current = JSON.stringify(next);
+      dispatch({ type: "hydrate", lines: next });
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);

@@ -1,215 +1,166 @@
-# Code Review: T5 — Search, Filters & Sorting
+# Code Review + Fix: T6 — Cart
 
 ## Summary
 
-Strong, security-conscious implementation. The SQL RPC layer is excellent — SECURITY
-INVOKER, fully parameterized, grant discipline correct, availability semantics verified
-byte-for-byte against `effectiveStock()` on the live DB, all edge cases (variantless +
-color, all-OOS variants, accent-insensitive, offset bounds) proven correct. The
-cache-key discipline and param-parsing lib are defensively bounded. i18n parity is
-perfect (0 drift, ICU plurals correct in both locales), tsc/lint/tests green.
+Strong, disciplined implementation that faithfully mirrors the proven
+`recently-viewed` guest-persistence pattern and honors every scope fence (no
+checkout, no mini-cart, no server writes, no URL coupling). Line-by-line review
+found **one CRITICAL cross-tab write loop** and a few smaller hardening/DRY
+items — all fixed in this pass. All 18 ACs verified against the actual code; all
+10 edge cases handled. Gate stays green (lint / tsc / 634 unit / 110 integ).
 
-The material weakness is the **JS-disabled path**, which the ticket makes a first-class
-requirement (AC-12, AC-13, edge 11). Four of seven filter facets, the availability
-toggle, and the entire mobile filter/sort UI do NOT function without JavaScript, because
-the shadcn/Radix `Checkbox` renders a `<button>` (no native submittable input server-side)
-and the mobile Sheet is gated behind a JS-only Radix `Dialog.Trigger`. Free-text search,
-color, price, sort, and chips degrade correctly; the checkbox facets do not.
+## Issues Found & Resolved
 
-**Verdict: REQUEST CHANGES.** No security or data-loss defects; the blockers are JS-off
-functional gaps against explicit ACs plus one AC-18 motion violation.
+### Critical Issues
 
----
+#### C-1: Cross-tab `storage` sync can ping-pong into an infinite write loop
 
-## Critical Issues (MUST FIX)
-
-### C-1: JS-off filter form submits none of the checkbox facets (Radix Checkbox has no native input)
-- **ID**: C-1
 - **Severity**: CRITICAL
-- **File**: `src/components/ui/checkbox.tsx:15`; consumed at `src/components/catalog/filter-controls.tsx:72-81` (FacetCheckboxGroup) and `filter-panel.tsx:96-160`
-- **Problem**: `Checkbox` is `CheckboxPrimitive.Root` (Radix), which renders `<button role="checkbox">`, not `<input type="checkbox">`. Radix only injects a submittable hidden `<input>` (`BubbleInput`) via client JS after hydration. With JS disabled, the category / brand / style / material `FacetCheckboxGroup`s and the availability toggle render as buttons that submit **nothing** — the `name`/`value`/`checked` props at `filter-controls.tsx:73-76` are inert server-side. The color facet (`filter-panel.tsx:143-145`) and price (`type=number`) and sort (native `<select>`) are handled correctly with hidden inputs / native fields; the four checkbox facets and availability are not. Worse: an existing `?marca=X` is also lost on a JS-off submit because no hidden input preserves it.
-- **Impact**: AC-13 ("filter panel ... facets come from real DB values") and edge 11 ("the filter `<form>` submit[s] natively to `/sillas?...`; results render server-side") are FAILED for category, brand, style, material, and availability. A no-JS shopper cannot filter by five of the eight documented dimensions.
-- **Suggested Fix**: Mirror the color-facet pattern used two files over. In `FacetCheckboxGroup`, for each currently-selected value render a real `<input type="hidden" name={paramName} value={value}>`, and render the interactive Radix checkbox for the JS-on toggle; OR replace the Radix checkbox with a styled native `<input type="checkbox" name value defaultChecked>` (a native checkbox submits JS-off AND enhances). Do the same for `AvailabilityToggle` (see C-2).
-- **Status**: FIXED — Adopted the hidden-input-mirroring strategy (`filter-controls.tsx` `FacetCheckboxGroup`). For every *selected* value (including ones collapsed under "Ver más") a real `<input type="hidden" name={paramName} value={value}>` is rendered, so a native GET submits the full facet selection. The Radix `Checkbox` is now `name`-less (no hydrated `BubbleInput`), so it contributes nothing to a native submit and never double-posts alongside the hidden mirror; it remains the JS-on live toggle. Any active `?marca=X` etc. is therefore preserved on a native submit. Verified by curl: `/sillas?marca=<id>` renders `<input type="hidden" name="marca" value="<id>">`; the Radix button has no `name`.
+- **File**: `src/components/cart/cart-provider.tsx:100-118` (persist + storage effects)
+- **Problem**: The `storage` listener dispatched `hydrate` with a fresh array
+  from `readCart()`. That new reference changed `lines`, so the ref-gated persist
+  effect ran `writeCart(lines)`. A `writeCart` fires a `storage` event in the
+  **peer** tab, which re-read + re-wrote, which fired back in the first tab, and
+  so on — two open tabs would hammer `localStorage` and re-render forever with
+  content-identical payloads. This is exactly the loop the dev flagged as
+  "scrutinize the storage re-read".
+- **Impact**: With two tabs open, an unbounded write/event/re-read loop: pegged
+  CPU, constant re-renders, `localStorage` thrash. Edge 5 (two tabs) broken.
+- **Fix Applied**: Added a `lastPersistedRef` holding the last serialized payload
+  this tab reconciled with storage. The persist effect now serializes `lines`,
+  compares to `lastPersistedRef`, and **bails on a match** (no echo write). The
+  `storage` listener records the incoming payload into `lastPersistedRef` before
+  dispatching, so a cross-tab re-read is treated as already-reconciled and never
+  echoed back. The mount hydrate seeds the ref too. Last-write-wins semantics
+  preserved; genuine mutations still persist.
+- **Status**: FIXED (verified: tsc clean, 634 unit + 110 integ green)
 
-### C-2: JS-off availability toggle cannot opt into out-of-stock; mobile has no filter/sort UI at all
-- **ID**: C-2
-- **Severity**: CRITICAL
-- **File**: `src/components/catalog/filter-controls.tsx:118-147` (AvailabilityToggle); `src/components/catalog/filter-sheet.tsx:41-152`; sheet is the only mobile host per `catalog-shell.tsx:64` (`hidden lg:block` sidebar)
-- **Problem**: (a) `AvailabilityToggle` admits in its own comment (`filter-controls.tsx:120-126`) that the JS-off model is not expressible — the hidden `disponibilidad=todos` input only renders when `!inStockOnly` (already opted-in), and the Radix checkbox emits nothing when unchecked, so a JS-off shopper starting from the default in-stock view can never reach out-of-stock. (b) `FilterSheet` mounts its content only when `mounted = open || closing`, both `false` initially, behind a Radix `Dialog.Trigger` button that requires JS to open. On `< lg` (mobile/tablet) with JS off, there are **zero** filter and sort controls (the FilterPanel lives only inside the sheet on mobile).
-- **Impact**: AC-5 ("A shopper can opt to include out-of-stock via an explicit control"), AC-13 (mobile filters "inside a Sheet drawer"), and edge 11 all FAIL for `< lg` with JS off. The dev-summary's "client path is authoritative" explicitly concedes this.
-- **Suggested Fix**: For availability, use the native-checkbox-with-hidden-default pattern: render `<input type="hidden" name="disponibilidad" value="todos">` guarded so that an unchecked native checkbox yields `todos` (e.g. checkbox `value="en-stock"` + always-present hidden default, or invert the control to "Incluir agotados" that posts `todos` when checked). For mobile, provide a JS-off fallback: render the FilterPanel form inside a `<details>`/`<noscript>`-visible container, or make the sheet degrade to an always-rendered form below `lg` when unhydrated.
-- **Status**: FIXED — (a) `AvailabilityToggle` (`filter-controls.tsx`) is now a NATIVE `<input type="checkbox" name="disponibilidad" value="todos">` with inverted "include out of stock" semantics (label = existing `catalog.filters.includeOutOfStock`, "Incluye agotados"). Default view = unchecked = posts nothing = in-stock only; checking it posts `disponibilidad=todos` on a native submit — exactly what `parseCatalogFilters` reads. It also pushes the URL live with JS. (b) Mobile JS-off: a `<noscript>` block in `catalog-toolbar.tsx` renders the SAME `FilterPanel` form always-expanded, scoped `lg:hidden`, so a no-JS shopper below `lg` gets a fully working native filter/sort form; the JS-on Sheet is untouched. Verified by curl: the `disponibilidad=todos` param round-trips; the `<noscript>` block contains a full filter form with the availability checkbox, native sort `<select>`, and price fields.
+### Major Issues
 
----
+#### M-1: Tampered `unitPriceCents` had no upper bound (overflow to nonsense)
 
-## Major Issues (SHOULD FIX)
-
-### M-1: JS-off price filter applies a 100x-wrong bound (pesos submitted where cents are parsed)
-- **ID**: M-1
 - **Severity**: MAJOR
-- **File**: `src/components/catalog/filter-controls.tsx:192-220`, `254-266`; parsed at `src/lib/catalog/search-params.ts:67-76`
-- **Problem**: The price `<Input name={minParam}>` fields display and submit **pesos** (`centsToField` = cents/100). But `parsePriceBound` interprets `precioMin`/`precioMax` as **cents**. The JS-on path fixes this by multiplying via `fieldToCents` before `apply`, but a native JS-off form submit sends the raw pesos string, so `precioMin=4000` is read as MX$40, not MX$4,000 — a silent 100x error.
-- **Impact**: JS-off price filtering returns wrong results; edge 11 (native price submit) FAILS.
-- **Suggested Fix**: Submit cents natively — render hidden `<input name={minParam} value={cents}>` alongside a display-only pesos field, or keep the visible field in pesos with a different name and reconcile server-side. Keep the URL contract in cents everywhere.
-- **Status**: FIXED — Unified the contract on PESOS at the URL boundary (the reviewer's second option, chosen because a hidden-cents field cannot reflect a JS-off user's freshly-typed value). `parsePriceBound` now reads the URL value as pesos and converts to internal cents (×100); `serializeFilters` converts internal cents back to pesos. So the visible pesos field IS the native submitter under the canonical `precioMin`/`precioMax` names, and JS-on/JS-off carry identical semantics. Internals (chips via `formatMXN`, RPC `p_price_*`, cache buckets) stay in cents — unchanged. Added a unit test (`search-params.test.ts` "price URL contract is PESOS ↔ internal CENTS…") proving `precioMin=4000` → 400000 centavos and byte-stable round-trip. Verified by curl: `?precioMin=5000` → 13 chairs, `?precioMin=100000` → 0, chip reads "desde $5,000.00" (no 100x error).
+- **File**: `src/lib/cart/cart-storage.ts:32-45` (`isCartLine`)
+- **Problem**: The shape guard accepted any non-negative integer `unitPriceCents`.
+  Storage is explicitly attacker-controlled (per the file's own docstring); a
+  payload with an absurd price (e.g. `1e21`) would pass, and `lineTotalCents` /
+  `subtotalCents` would render a nonsense figure. `formatMXN` does not throw here
+  (inputs stay integer, so no `$NaN`/crash — AC-12 holds) but the display is
+  garbage and the totals math is meaningless.
+- **Fix Applied**: `isCartLine` now rejects `unitPriceCents > PRICE_BOUND_MAX_CENTS`
+  (`100_000_000` = MX$1,000,000), reusing the catalog's existing sane cents
+  ceiling (same constant `search-params` uses to drop absurd price bounds).
+  Root-cause hardening at the trust boundary; docstring updated.
+- **Status**: FIXED
 
-### M-2: `badge.tsx` uses `transition: all` — AC-18 explicitly forbids it (badge is the active-filter chip)
-- **ID**: M-2
-- **Severity**: MAJOR
-- **File**: `src/components/ui/badge.tsx:8`
-- **Problem**: The installed shadcn Badge class string contains `transition-all`; it was not retrofitted. Badge is used as the active-filter chip (`active-filters.tsx:55`), so it is in T5 scope. AC-18: "No `transition: all`; only `transform`/`opacity` animate." `transition-all` animates layout-affecting properties (padding via `has-data-[icon=...]`, border) off the compositor.
-- **Impact**: AC-18 FAIL (one line). Everything else in the T5 motion layer is compliant (drawer curve `cubic-bezier(0.32,0.72,0,1)` 300ms enter / 200ms exit; Select trigger-anchored `transform-origin`, open 200ms/close 150ms; all reduced-motion gated; no other `transition: all`, no leftover tw-animate-css keyframes).
-- **Suggested Fix**: Replace `transition-all` with `transition-[color,box-shadow,border-color]` (or `transition-colors`) in `badge.tsx:8`. (`button.tsx:8` has the same `transition-all` but is pre-existing/out of scope — note only.)
-- **Status**: FIXED — `badge.tsx:8` now uses `transition-[color,box-shadow,border-color]`; only compositor-safe / non-layout properties animate. `button.tsx` left as-is (pre-existing, out of T5 scope, per the finding's own note).
+### Minor Issues
 
-### M-3: Native filter/search forms lose locale on `/en` when JS is off (`action="/sillas"` is locale-agnostic)
-- **ID**: M-3
-- **Severity**: MAJOR
-- **File**: `src/components/catalog/filter-panel.tsx:76` and `search-box.tsx:96` (both `action={CATALOG_PATH}`, wired from `site-header.tsx` and `catalog-toolbar.tsx`)
-- **Problem**: next-intl `Link`/`useRouter` add the `/en` prefix for JS-on navigation, but a native `<form method="get" action="/sillas">` does not. On the `/en` locale with JS off, submitting the header search or the filter form navigates to `/sillas` (es-MX default), silently switching the shopper's locale.
-- **Impact**: AC-12 ("locale-aware ... works with JS disabled") is partially FAILED on `/en`. Impact is bounded because es-MX is the default/unprefixed locale (majority path is fine).
-- **Suggested Fix**: Build the action from the active locale (prefix `/en` when `locale !== defaultLocale`), or use next-intl's locale-aware path helper to compute the form `action`.
-- **Status**: FIXED — Used next-intl's `getPathname({ href: CATALOG_PATH, locale })` to compute a locale-aware `action`. `page.tsx` derives it from the route `locale` and threads it (`catalogAction`) through `CatalogShell` → `CatalogToolbar`/sidebar `FilterPanel` and the toolbar `SearchBox`; `site-header.tsx` derives it via `getLocale()` for both header search boxes. `FilterPanel` now takes an `action` prop (defaulting to the locale-agnostic path for tests) used for BOTH the form `action` and the JS-off "Clear all" link. Verified by curl: on `/en/sillas` the filter form and the search form both render `action="/en/sillas"`.
+#### m-1: Subtotal math duplicated instead of using the pure helper (DRY)
 
-### M-4: Controlled price/search inputs never re-sync to props — stale after chip removal / Clear-all
-- **ID**: M-4
-- **Severity**: MAJOR
-- **File**: `src/components/catalog/filter-controls.tsx:174-175` (PriceRange); `src/components/catalog/search-box.tsx:59` (SearchBox `value`)
-- **Problem**: `useState(centsToField(priceMin))` and `useState(defaultValue)` initialize once. The filter panel and toolbar live in `CatalogShell` (outside the Suspense boundary), so a chip removal / Clear-all (router.push) re-renders them with new props but the `useState` initializer does not re-run. The price fields and the search box keep showing stale typed values that no longer match the URL/active filters.
-- **Impact**: UI drifts from actual state after common interactions (removing a price chip leaves the old number in the field). No AC directly, but a real correctness/UX defect.
-- **Suggested Fix**: Add `useEffect(() => { setMinPesos(centsToField(priceMin)); setMaxPesos(centsToField(priceMax)); }, [priceMin, priceMax])` in PriceRange and `useEffect(() => setValue(defaultValue), [defaultValue])` in SearchBox (or key those subtrees on the serialized filter state).
-- **Status**: FIXED — Both controls now re-sync to props on navigation. Used React's official "adjust state during render" pattern (a tracked synced-key + in-render correction) rather than `useEffect` + `setState`, because the repo's `react-hooks/set-state-in-effect` lint rule forbids the effect form. `PriceRange` tracks `priceMin:priceMax` and re-derives both fields when it changes; `SearchBox` tracks `defaultValue` and re-derives `value`. So removing a price chip / Clear-all no longer leaves stale typed values in the fields.
+- **File**: `src/components/cart/cart-page-client.tsx:128-131` (`PopulatedCart`)
+- **Suggestion**: `PopulatedCart` recomputed the subtotal inline
+  (`lines.reduce((s, l) => s + l.unitPriceCents * l.quantity, 0)`) while
+  `subtotalCents()` in `cart-line.ts` is the single source of truth.
+- **Fix Applied**: Imported and used `subtotalCents(lines)`. Clean Code DRY;
+  one source of truth for line math.
+- **Status**: FIXED
 
-### M-5: SearchBox ✕ (clear) does not clear the active query
-- **ID**: M-5
-- **Severity**: MAJOR
-- **File**: `src/components/catalog/search-box.tsx:71-74`
-- **Problem**: `clear()` only calls `setValue("")` + refocus. It does not submit or navigate. When viewing `/sillas?q=malla`, clicking the ✕ empties the field visually but the URL keeps `?q=malla` and results stay filtered until the user manually re-submits an empty query.
-- **Impact**: Users expect the clear affordance to clear the search; it doesn't. UX defect against the "removing a chip updates the URL and re-queries" spirit of AC-14.
-- **Suggested Fix**: On clear, navigate to the filters-minus-`q` URL (JS-on) and/or submit the form; ensure the empty submit removes `q`.
-- **Status**: FIXED — `clear()` in `search-box.tsx` now, when there was an active query (`defaultValue` non-empty), calls `formRef.current.requestSubmit()` after emptying the field. The empty `q` is dropped by `parseQuery`, preserved filters ride along as hidden inputs, and the form's locale-aware `action` (M-3) keeps the locale. This is a native submit, so it also works JS-off. A ✕ on a header box with no active query just clears the field (no navigation), as before.
+#### m-2: `handleQuantityChange` re-implements the clamp inline
 
-### M-6: FilterSheet does not lock background scroll while open
-- **ID**: M-6
-- **Severity**: MAJOR
-- **File**: `src/components/catalog/filter-sheet.tsx:88-108`
-- **Problem**: The sheet is built on `Dialog.Portal`/`Overlay`/`Content` with `forceMount` and a manual `FocusScope`, but there is no body scroll-lock (`RemoveScroll` or a `body { overflow:hidden }` effect). Radix's automatic modal scroll-lock is not reliably engaged in this forceMount-bypass pattern. On mobile, the catalog behind the open sheet scrolls.
-- **Impact**: Mobile UX defect — background scrolls under a full-height drawer. (Verify against MobileNav, which this pattern was lifted from; if MobileNav has the same gap, widen the fix.)
-- **Suggested Fix**: Add a `useEffect` toggling `document.body.style.overflow = "hidden"` while `open` (restore on cleanup), or wrap the panel in `react-remove-scroll`.
-- **Status**: FIXED — Added a `useEffect` in `filter-sheet.tsx` that sets `document.body.style.overflow = "hidden"` while `open` and restores the previous value on cleanup. Per the finding's note, verified `MobileNav` has the SAME forceMount-bypass gap and widened the fix there (`mobile-nav.tsx`) with the identical guard.
+- **File**: `src/components/cart/cart-page-client.tsx:63`
+- **Suggestion**: The announcement clamp uses `Math.min(Math.max(next, 1), MAX)`
+  rather than `sanitizeQuantity`. Functionally correct (the stepper only ever
+  passes a finite in-range integer), but duplicates the clamp intent.
+- **Status**: SKIPPED — `sanitizeQuantity` floors + finite-guards a value that is
+  already a bounded integer here; swapping it in changes nothing observable and
+  the inline min/max reads clearly for a display-only announcement. Not worth a
+  churn edit. Noted for QA to assert the announced count equals the clamped qty.
 
-### M-7: `aria-live` result count is unreliable because it remounts inside Suspense
-- **ID**: M-7
-- **Severity**: MAJOR
-- **File**: `src/components/catalog/search-results.tsx:49-57`
-- **Problem**: The count `<p aria-live="polite">` sits inside the Suspense-suspending server subtree, which is unmounted/remounted on every filter change (the page keys Suspense on `suspenseKey`, `page.tsx:112-143`). A live region that is freshly inserted into the DOM does not reliably announce its initial content — screen readers announce *text changes on a persistent node*. It correctly does NOT spam per-keystroke (submit-based), but announcement is not dependable.
-- **Impact**: A11y: the "N sillas" filtered-count cue may not be announced on filter changes. AC-14 result count is visible (PASS), but its SR affordance is weak.
-- **Suggested Fix**: Hoist a stable `aria-live` node into `CatalogShell` (client, persistent across Suspense) that updates its text with the new count, rather than remounting the region.
-- **Status**: FIXED — New `result-announcer.tsx`: `ResultAnnouncerProvider` (mounted in `CatalogShell`, above the Suspense boundary) owns a single persistent visually-hidden `aria-live="polite" aria-atomic` region and exposes an `announce()` via context. `SearchResults` now renders a client `<ResultCountAnnouncer text={countText}>` that pushes the resolved count into that stable node on mount/change; the visible count `<p>` is no longer itself a remounting live region. A zero-width-space toggle guarantees re-announcement even when the same count recurs.
+#### m-3: Stepper sends an absolute value from a possibly-stale `value` prop
 
----
+- **File**: `src/components/cart/quantity-stepper.tsx:62,79`
+- **Suggestion**: `onClick={() => onChange(value - 1)}` reads the `value` prop
+  (a render snapshot). Very rapid `+`/`−` bursts coalesce to a **single** step
+  rather than N steps.
+- **Status**: SKIPPED — this is safe (no lost/over-applied updates, no cap
+  breach, no negative), and the design explicitly treats the stepper as a
+  non-coalescing high-frequency control (unlike add-to-cart, which is functional).
+  Making it delta-based would require a reducer "incrementQuantity" action for a
+  cosmetic gain. Documented; acceptable.
 
-## Minor Issues (NICE TO FIX)
+## Dev Self-Flagged Concerns — Verdict
 
-### m-1: `fail()` refactor changed product-detail log prefix and thrown message
-- **File**: `src/lib/catalog/product-detail.ts` (was `[product-detail]` / `"Product detail read failed"`, now shared `[catalog]` / `"Catalog read failed"` via `read-primitives.ts:36-39`)
-- **Suggestion**: Behavior-preserving claim (Constraint 2) is not literally true — the log prefix and redacted message changed. Harmless (message is redacted, not surfaced) and tests stayed green, but note it. If per-module log prefixes matter for triage, pass a prefix arg.
-- **Status**: SKIPPED (accepted deviation) — The consolidation to a single `[catalog]` prefix is intentional: all three modules are catalog reads, so one prefix is arguably better for triage, the thrown message is redacted (never surfaced to users), the `read-primitives.ts` doc already documents the `[catalog]` prefix, and the full suite is green. Adding a per-module prefix arg would churn every call site for no user-visible benefit. Noted, not changed.
-
-### m-2: JS material-facet unaccent may diverge from Postgres `unaccent()` for non-Spanish glyphs
-- **File**: `src/lib/catalog/facets.ts:46-53` (`unaccentLower` uses NFD + combining-mark strip) vs RPC `unaccent()`
-- **Suggestion**: NFD-strip and `unaccent` agree for Spanish diacritics (á é í ó ú ñ ü) but diverge for transliterated glyphs (ß→ss, æ→ae, ø→o). Material facet values are Spanish today, so no live bug; flag for future non-Spanish material copy. Consider a shared normalization source of truth.
-- **Status**: SKIPPED (no live bug, future flag) — By the reviewer's own analysis there is no current bug: all material values are Spanish and NFD-strip agrees with Postgres `unaccent` for every Spanish diacritic. A shared normalization source of truth would need to reproduce Postgres `unaccent`'s full transliteration table in JS — disproportionate churn for a hypothetical future non-Spanish material. Left as a documented follow-up.
-
-### m-3: Dead conditional in ActiveFilters
-- **File**: `src/components/catalog/active-filters.tsx:44`
-- **Suggestion**: `chips.length > 0 ?` is always true (line 39 already returns `null` for empty). Remove the inner ternary.
-- **Status**: FIXED — Removed the always-true inner `chips.length > 0 ? … : null` ternary; the chip row `<div>` renders unconditionally (the early `return null` for the empty case already guards it).
-
-### m-4: Magic string `"q"` duplicated instead of `SEARCH_PARAM_KEYS.q`
-- **File**: `src/components/catalog/search-box.tsx:43`
-- **Suggestion**: `config.ts` is not `server-only`; import `SEARCH_PARAM_KEYS.q` to prevent drift (the comment's justification does not hold).
-- **Status**: FIXED — `search-box.tsx` imports `SEARCH_PARAM_KEYS` from config; `QUERY_FIELD = SEARCH_PARAM_KEYS.q`. Also used to defensively filter `q`/`page` out of `preservedParams` (m-5).
-
-### m-5: `preservedParams` could double the `q` field
-- **File**: `src/components/catalog/search-box.tsx:105-109`
-- **Suggestion**: If a caller ever includes `q`/`page` in `preservedParams`, the form posts two `q` values. The page currently strips `q` (`searchPreservedParams` sets `query:null`) so it is safe today; defensively filter `q` and `page` inside SearchBox.
-- **Status**: FIXED — SearchBox now filters `preservedParams` to drop any `SEARCH_PARAM_KEYS.q` / `SEARCH_PARAM_KEYS.page` before emitting hidden inputs, so the field always owns `q` and a new query resets to page 1 regardless of caller input.
-
-### m-6: `.grid-pending` opacity dim has no reduced-motion override
-- **File**: `src/app/globals.css` (`.grid-pending`)
-- **Suggestion**: Opacity is RM-safe so this is acceptable and documented, but for strictness under `prefers-reduced-motion` consider dropping the transition duration to 0 while keeping the state.
-- **Status**: FIXED — Added a `@media (prefers-reduced-motion: reduce)` block setting `transition-duration: 0ms` on `.grid-pending`/`.grid-idle`, so the dim STATE (a comprehension cue) is kept but nothing animates under reduced motion.
-
-### m-7: Manual `aria-modal` on forceMounted sheet content
-- **File**: `src/components/catalog/filter-sheet.tsx:103` (`aria-modal={open ? true : undefined}`)
-- **Suggestion**: Manual `aria-modal` is a workaround for the forceMount pattern; verify SR announces the dialog role/label on open (Dialog.Title is present — good). Low risk.
-- **Status**: SKIPPED (verified acceptable) — This is the same proven pattern as `MobileNav` (which ships and passes its a11y e2e). `Dialog.Content` carries `role="dialog"`, `Dialog.Title` provides the accessible name, and `aria-modal` is scoped to `open`. No change needed; the mobile-nav e2e a11y suite (focus trap, Esc, shell exposure) remains green.
-
----
+1. **Hydration/persist ordering** — CORRECT (and now hardened). The `hydratedRef`
+   gate prevents a pre-hydration `[]` clobber; the new `lastPersistedRef` prevents
+   both the empty-load spurious write and the cross-tab loop (C-1). Stored data is
+   never overwritten before the mount read.
+2. **ICU-plural vs interpolate boundary** — CLEAN. Only `cart.badgeLabel` uses ICU
+   plural syntax, and it is resolved via `t("badgeLabel", { count })` in the badge
+   and the mobile link. Every `t.raw(...) → interpolate` target (`titleCount`,
+   `item.colorLabel`, `item.removeItem`, `freeShipping.remaining`,
+   `announce.quantity`) is a simple `{token}` template — no plural reaches
+   `interpolate`. Verified against both message files.
+3. **No remove-row collapse animation** — ACCEPTABLE. Design watch-out #10
+   explicitly allows the opacity-only fallback; row just unmounts. Clean.
+4. **`announce.added` is count-free** — ACCEPTABLE. Preserves the PDP panel's
+   no-client-i18n invariant (labels are server-resolved props). The running count
+   lives in the header badge `aria-label` (which uses client i18n legitimately).
+5. **No-layout-shift / 44px / reduced-motion** — CONFIRMED. Badge count is an
+   absolutely-positioned overlay pill (never a flex sibling); skeleton is sized to
+   the real layout; every control is `h-11`/`size-11` (≥44px); all cart-motion
+   classes are reduced-motion gated; progress is `transform: scaleX` (never width).
 
 ## Acceptance Criteria Verification
 
-| # | Criterion | Status | Evidence |
-|---|-----------|--------|----------|
-| AC-1 | Migration adds unaccent+pg_trgm, RPC (INVOKER, revoke public / grant anon+auth), indexes; applies cleanly | PASS | `0007_search.sql` all present; live DB: `prosecdef=f` (invoker), `provolatile=s`, `proacl={postgres,anon,authenticated}` only — public revoked |
-| AC-2 | RPC reads only public surfaces; anon gets rows but base `products` denied; no `cost_price_cents` | PASS | Live as `anon`: RPC returns 5 rows; `select from products` → `permission denied`; REST also denied; no cost column in Returns type or row shape |
-| AC-3 | Keyword matches name/brand/description, case+accent-insensitive; empty q → filter-only | PASS | Live: `ergonomica`=6, `ergonómica`=6, `OFICINA`=5; `parseQuery` returns null for whitespace-only (`search-params.ts:79-83`); RPC `p_query is null` branch |
-| AC-4 | Facets individually + combined; distinct facets AND, values within OR | PASS | `0007_search.sql:143-187` — each facet ANDed, `= any(array)` / EXISTS-over-array OR within; live combos verified |
-| AC-5 | Default in-stock only; explicit opt-in for OOS | PASS (fixed) | RPC `p_in_stock_only default true`; parser default correct; JS-on opt-in works; JS-off opt-in now expressible via native `<input type=checkbox name=disponibilidad value=todos>` (C-2 FIXED) |
-| AC-6 | RPC effective_stock == effectiveStock(); 3 badges identical | PASS | Live cross-check: 0 mismatches across all 30 products; synthetic all-OOS → 0, variantless → product.stock; `toCard` uses `stockState()` |
-| AC-7 | Six sorts, each deterministic; default best-selling | PASS | `0007_search.sql:214-231` CASE-per-key + global `name, id` tiebreak; live determinism confirmed; `DEFAULT_SORT='mas-vendidas'` |
-| AC-8 | Pagination on filtered set; COUNT(*) OVER(); clamp [1,lastPage]; filter change → page 1 | PASS | `total_count` window verified (=30, equal all rows); `readSearchPage` probes offset 0, clamps before read; `serializeFilters` never emits page |
-| AC-9 | Shareable crawlable query params; single-sourced names | PASS | `SEARCH_PARAM_KEYS` in config; `serializeFilters` canonical + `encodeURIComponent`; round-trip unit-tested (17 tests pass) |
-| AC-10 | /sillas enhances in place; dynamic when params; unfiltered from cached read | PASS | `page.tsx` reads searchParams (dynamic); unfiltered path via cached facet/listing reads; documented in page header |
-| AC-11 | Canonical → clean /sillas (or page-N); filtered = noindex,follow; unfiltered indexable | PASS | `generateMetadata`: `hasAnyFacetParam` → `robots {index:false,follow:true}` + canonical `/sillas`; pure pagination keeps page-N canonical |
-| AC-12 | Header search box → /sillas?q; keyboard; locale-aware; JS-off native form | PASS (fixed) | Native `<form method=get>` works JS-off; `action` now locale-aware on /en (M-3 FIXED → `action="/en/sillas"` verified). Mobile header collapse remains a JS enhancement of the same native form (accepted deviation) |
-| AC-13 | Filter panel (sidebar ≥lg / Sheet mobile) with all facets + sort; options from DB | PASS (fixed) | Desktop sidebar renders full panel from real DB facets; checkbox facets now submit JS-off via hidden-input mirroring (C-1 FIXED); mobile gets a `<noscript>` always-expanded native form below `lg` (C-2 FIXED) |
-| AC-14 | Active-filter chips removable + Clear all; count reflects filtered total | PASS | `active-filters.tsx` real `<Link>` chips + Clear-all; count in `search-results.tsx` from `result.total`; chip builder pure + tested |
-| AC-15 | ≥1 match → ProductGrid + crawlable pagination preserving filters | PASS | `search-results.tsx:76-98` `makeHrefForPage(CATALOG_PATH, serializeFilters(filters))`; page links carry filters |
-| AC-16 | 0 match → friendly no-results (echo query, Clear filters, popular strip best-selling ≤8) | PASS | `no-results.tsx` + `listPopularProducts(8)` best-selling order; `safePopular` degrades on failure; echoes query/filters |
-| AC-17 | New strings in both dicts under catalog.*; keys-used/messages tests pass; no hardcoded text | PASS | 0 es-only / 0 en-only keys; ICU plurals correct both locales; keys-used test 249 pass; UI strings via props/translations |
-| AC-18 | Motion per skills; drawer curve; instant press; Select <250ms anchored; RM; no transition:all; only transform/opacity | PASS (fixed) | Drawer/Select/swatch/pending all compliant + RM-gated; `badge.tsx:8` now `transition-[color,box-shadow,border-color]` (M-2 FIXED); `.grid-pending` gains an RM duration-0 override (m-6) |
+| #     | Criterion                              | Status | Evidence |
+| ----- | -------------------------------------- | ------ | -------- |
+| AC-1  | Add-to-cart on PDP, qty 1              | PASS   | `product-purchase-panel.tsx:229`, `add-to-cart-button.tsx:69-85` |
+| AC-2  | Dedupe by product+variant             | PASS   | `cart-line.ts:44-49,112-128` (`cartLineKey`, `addLine`) |
+| AC-3  | Persist across refresh + sessions     | PASS   | `cart-storage.ts` read/write; provider mount hydrate |
+| AC-4  | Header badge live count, every page   | PASS   | `cart-count-badge.tsx`, provider in `[locale]/layout.tsx` |
+| AC-5  | `/carrito` line rows (all fields)     | PASS   | `carrito/page.tsx`, `cart-line-row.tsx` |
+| AC-6  | Qty control recomputes everything     | PASS   | one context change drives line/subtotal/badge/progress |
+| AC-7  | `−` disabled at 1; Remove control     | PASS   | `quantity-stepper.tsx:46,62`; `cart-line-row.tsx:150-160` |
+| AC-8  | Summary reads store settings (not hardcoded) | PASS | `shipping.ts:computeShipping`, props from server page |
+| AC-9  | Free-ship progress; hidden if null    | PASS   | `free-shipping-progress.tsx:40-42`, `shipping.ts:87-101` |
+| AC-10 | Empty state, no summary/progress/CTA  | PASS   | `cart-page-client.tsx:85-96`, `cart-empty-state.tsx` |
+| AC-11 | `cart` namespace both locales; parity | PASS   | both message files; `keys-used.test.ts` +31 keys; 634 green |
+| AC-12 | `formatMXN` only; integer cents; no `$NaN` | PASS | integer guards in `isCartLine`+`sanitizeQuantity`; totals integer |
+| AC-13 | Clamp `[1, MAX]`; `+` disables at cap | PASS   | `sanitizeQuantity`, `quantity-stepper.tsx:47` |
+| AC-14 | Corrupt/absent/foreign → empty + 1 warn | PASS | `cart-storage.ts:73-94` try/catch + `warnOnce` |
+| AC-15 | Checkout CTA (non-empty) → `CHECKOUT_PATH` | PASS | `order-summary.tsx:84-94` plain `Link`, no form |
+| AC-16 | Keyboard + `aria-live` + badge label  | PASS   | page-level live region; icon-button aria-labels; badge label |
+| AC-17 | No URL/search-filter coupling         | PASS   | grep: no `useSearchParams`/`useRouter`/`location` in cart |
+| AC-18 | Out-of-stock add prevented ("Agotado")| PASS   | `add-to-cart-button.tsx:70,87,111`; guarded no-op |
 
 ## Edge Case Verification
 
-| # | Edge Case | Status | Evidence |
-|---|-----------|--------|----------|
-| 1 | Contradictory filters → no-results, not error/404 | HANDLED | RPC returns total_count=0 → NoResults; live color+brand contradiction = 0 rows |
-| 2 | ?page=99999 on 2-page result → clamp, no 416 | HANDLED | `readSearchPage` probes total, `parsePageParam` clamps to lastPage before read |
-| 3 | Junk/hostile params (DROP, <script>, negatives, empty, nonexistent, repeated, 10KB q) | HANDLED | `search-params.ts` drops unknown ids (`keepKnown`), caps q at 80, drops non-`^\d+$` prices, parameterized RPC; `encodeURIComponent` on serialize |
-| 4 | Price min>max → drop both + note | HANDLED | `search-params.ts:117-121` sets both null + `priceRangeIgnored`; note rendered |
-| 5 | Variantless product + color filter excluded; included w/o color | HANDLED | Synthetic test (rolled back): color filter → 0, no-color in-stock → 1, effective_stock=7 |
-| 6 | All variants OOS but products.stock>0 → out of stock | HANDLED | Synthetic test: effective_stock=0, hidden under default in-stock; matches stock.ts |
-| 7 | Accent/diacritic + case | HANDLED | Live: OFICINA/oficína/oficina all match; `unaccent(lower())` on column + term |
-| 8 | Empty catalog / popular strip empty → message still renders | HANDLED | `safePopular` catch → [] ; `no-results.tsx:65` omits strip when empty |
-| 9 | RPC/DB failure → redacted fail() → error boundary | HANDLED | `search.ts` calls `fail()` on rpc error; `read-primitives.fail` logs + throws redacted |
-| 10 | Facet lists fail → page boundary, never half-populated | HANDLED | `loadFacetOptions` awaits all in Promise.all at page level; a throw propagates to route boundary |
-| 11 | JS disabled: header search + filter form native; chips as links | HANDLED (fixed) | Chips/Clear/pagination/color/price/sort-select native; checkbox facets now submit via hidden-input mirroring (C-1), availability via native `disponibilidad=todos` checkbox (C-2), mobile via `<noscript>` form (C-2), price in unified pesos contract (M-1). All curl-verified against a fresh prod server on :3000 |
-| 12 | Long chip row at 375px wraps/scrolls | HANDLED | `active-filters.tsx:45` `flex-wrap ... overflow-x-auto` |
+| #   | Edge Case                          | Status  | Evidence |
+| --- | ---------------------------------- | ------- | -------- |
+| 1   | Corrupt localStorage JSON          | HANDLED | `readCart` try/catch → `[]` + `warnOnce` |
+| 2   | Storage disabled / quota           | HANDLED | `writeCart` swallow + warn; in-memory state persists session |
+| 3   | Tampered qty / price               | HANDLED | `isDroppableQuantity`, `sanitizeQuantity`, `isCartLine` (+ price ceiling, M-1) |
+| 4   | Stale snapshot                     | HANDLED | renders from client snapshot; T7 re-validates (documented) |
+| 5   | Two tabs mutating                  | HANDLED | `storage` listener re-read; **loop-guarded (C-1)**; last-write-wins |
+| 6   | store_settings null                | HANDLED | `computeShipping`→unavailable, progress→null, total=subtotal |
+| 7   | Subtotal == threshold              | HANDLED | `>=` in `computeShipping`/`freeShippingProgress` |
+| 8   | SSR / pre-hydration                | HANDLED | null-until-hydrated island; no `window` at module top |
+| 9   | Rapid add clicks                   | HANDLED | functional reducer `add` action coalesces; cap clamped |
+| 10  | Removing last item                 | HANDLED | transitions to empty state; badge→0; summary unmounts |
 
-## Quality Score: 7.5/10
+## Fix Summary
 
-Exceptional data/security/SQL layer and cache discipline; complete i18n; clean typed
-boundaries (no `any`, no `!`). Held back by the JS-off gaps against explicit ACs (C-1,
-C-2, M-1, M-3), which the dev-summary partially concedes ("client path is authoritative"),
-plus stale-controlled-input bugs (M-4, M-5), a missing scroll-lock (M-6), and the AC-18
-`transition-all` slip (M-2).
+- Critical: 1/1 fixed
+- Major: 1/1 fixed
+- Minor: 1/3 fixed, 2 skipped (justified)
 
-## Recommendation: REQUEST CHANGES → RESOLVED (Stage 6)
+## Quality Score: 9/10
 
-All findings addressed: **2/2 CRITICAL FIXED, 7/7 MAJOR FIXED, 5/7 minor FIXED + 2 SKIPPED
-(justified)**. The JS-off path is now genuinely functional and curl-verified:
+Excellent pattern discipline, thorough edge-case coverage, clean motion, tight
+scope. Lost a point only for the cross-tab write loop (a real reliability defect
+that would have shipped) — now fixed. Everything else was hardening or polish.
 
-- **C-1** checkbox facets submit JS-off via always-present hidden-input mirroring (Radix
-  checkbox left `name`-less → no double-submit).
-- **C-2** availability is a native `disponibilidad=todos` opt-in checkbox; mobile gets a
-  `<noscript>` always-expanded native filter/sort form below `lg`.
-- **M-1** price contract unified on PESOS end-to-end (parser converts to internal cents);
-  new unit test proves it; `?precioMin=5000` → 13 chairs, chip reads "desde $5,000.00".
-- **M-3** forms target `/en/sillas` on `/en`. **M-2/M-4/M-5/M-6/M-7** all fixed.
+## Recommendation: APPROVE
 
-Gates: tsc clean, lint clean, `next build` succeeds, **537 unit / 78 integration / 167 e2e
-all green**. Skipped minors (m-1 log prefix, m-2 unaccent) are documented no-live-bug
-follow-ups. Ready for QA (Stage 7).
+All critical/major issues fixed inline and verified (lint clean, tsc clean,
+634/634 unit, 110/110 integration green). Ready for QA (Stage 5).

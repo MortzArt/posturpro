@@ -11,7 +11,7 @@
  * clamped, and a line with a missing/`NaN` `unitPriceCents` or a junk quantity is
  * DROPPED so nothing downstream ever reaches `formatMXN(undefined)` → `$NaN`.
  */
-import { CART_STORAGE_KEY } from "@/lib/config";
+import { CART_STORAGE_KEY, PRICE_BOUND_MAX_CENTS } from "@/lib/config";
 import {
   isDroppableQuantity,
   sanitizeQuantity,
@@ -21,8 +21,10 @@ import {
 /**
  * Whether a value is a plausible stored cart line (defensive shape guard). A
  * missing/wrong-typed `unitPriceCents` fails here so it can never reach
- * `formatMXN` and render `$NaN` (edge 3). `quantity` is validated only for TYPE
- * here; range/junk handling (drop vs. clamp) happens in `readCart`.
+ * `formatMXN` and render `$NaN` (edge 3); an absurd (tampered) price above the
+ * catalog cents ceiling is rejected too so a line total can never overflow into
+ * a nonsense figure. `quantity` is validated only for TYPE here; range/junk
+ * handling (drop vs. clamp) happens in `readCart`.
  */
 function isCartLine(value: unknown): value is CartLine {
   if (typeof value !== "object" || value === null) {
@@ -39,6 +41,9 @@ function isCartLine(value: unknown): value is CartLine {
     Number.isFinite(line.unitPriceCents) &&
     Number.isInteger(line.unitPriceCents) &&
     line.unitPriceCents >= 0 &&
+    // Reject an absurd (tampered) unit price so a line total can never overflow
+    // into a nonsense figure — reuses the catalog's sane cents ceiling.
+    line.unitPriceCents <= PRICE_BOUND_MAX_CENTS &&
     (line.coverImageUrl === null || typeof line.coverImageUrl === "string") &&
     (line.sku === null || typeof line.sku === "string") &&
     typeof line.quantity === "number"
