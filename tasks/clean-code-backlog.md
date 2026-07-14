@@ -267,3 +267,40 @@ Open items discovered during the pipeline. Check off when addressed.
   WHERE change as a small 0008 migration, ideally bundled with T5-2's functional index
   so the material columns are indexed the same way. (Ref: T5 UX audit deferred item;
   T5 architecture review, Scalability.)
+
+## 2026-07-14 — Uncle Bob alignment audit (full-codebase)
+
+Audit verdict: strongly aligned. Zero `any` / non-null `!` / empty catch / TODO in src/.
+Magic values, naming, error handling, dead code, DRY: all clean. Three >50-line
+functions (processPaymentNotification 134, runCheckout 94, PaymentPanel 73) are
+documented, money-path-critical, and rated JUSTIFIED — do not extract.
+payment-panel.tsx (479) rated do-NOT-split (1:1 state-machine render mapping).
+
+Actions (executing now):
+
+- [ ] **A1 — Split `database.types.ts` (1,248 lines; breaks the 1,000-line hard cap).**
+  Hand-maintained (header's "generated" claim is false — CLI unlinked, remote empty).
+  Split into domain modules under `src/lib/supabase/types/` (json, enums/domain
+  aliases, tables by domain, RPC Functions+Args/Results, Database assembly), with
+  `database.types.ts` as a re-export barrel so no import changes. RPC Args/Results
+  MUST stay `type` aliases (T8 gotcha). Each new file ≤400 lines.
+- [ ] **A2 — Split `config.ts` (689) into domain config modules** (catalog / cart /
+  checkout / email / product-detail / shared), `config.ts` stays as barrel.
+- [ ] **A3 — Split `queries.ts` (710) + adopt `cachedRead` (closes T3 split item +
+  T5-7).** Extract internal stitching/orchestration per audit seams; migrate the
+  hand-written `unstable_cache` sites in queries.ts/search.ts to `cachedRead`
+  (conditional-cache branch in search.ts stays inline with a comment).
+- [ ] **A4 — Extract pure form-parsing helpers from `checkout/actions.ts` (512) to
+  `src/lib/checkout/form-parsing.ts`; switch both action files' local `clientIp`
+  copies to the canonical `src/lib/request/client-ip.ts` (closes SEC-M-1).**
+  NOTE: expands the T7/T9 human-review diff; behavior-preserving, test-covered.
+- [ ] **A5 — Enforce the 1,000-line hard cap: ESLint `max-lines` (error, 1000)
+  repo-wide.**
+- [ ] **A6 — Fix the `database.types.ts` header lie + `db:types` script
+  (`--linked` → `--local`, documented as hand-maintained w/ domain aliases);
+  CLAUDE.md: record "no Python today; any future Python ships with and passes
+  `mypy --strict`" + make the 1,000-line hard cap explicit.**
+
+Deferred (rated OK/justified — intentionally NOT actioned): >50-line money-path
+functions; payment-panel split; rate-limiter file duplication (intentional seams,
+both delegate to shared sliding-window.ts).
