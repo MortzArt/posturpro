@@ -87,6 +87,31 @@ export interface CreateOrderResult {
   reused: boolean;
 }
 
+/**
+ * Args for the `advance_order_status` RPC (T8, 0009_payments.sql — Arch R-1). The
+ * ONE path that transitions an order's status/payment fields; it also writes an
+ * `order_status_history` row and is idempotent (repeat = no-op, no dup history)
+ * with an out-of-order regression guard. Optional args default to null in SQL.
+ */
+export type AdvanceOrderStatusArgs = {
+  p_order_id: string;
+  p_order_status: OrderStatus;
+  p_payment_status: PaymentStatus;
+  p_payment_method?: string | null;
+  p_mp_payment_id?: string | null;
+  p_note?: string | null;
+};
+
+/** The `advance_order_status` RPC result (T8, 0009_payments.sql). */
+export type AdvanceOrderStatusResult = {
+  /** true only when the order was transitioned + a history row written. */
+  applied: boolean;
+  /** `advanced` | `noop_same_status` | `regression_blocked` | `order_not_found`. */
+  reason: "advanced" | "noop_same_status" | "regression_blocked" | "order_not_found";
+  from_status: OrderStatus | null;
+  to_status: OrderStatus;
+};
+
 export interface Database {
   public: {
     Tables: {
@@ -598,6 +623,49 @@ export interface Database {
           },
         ];
       };
+      mp_payment_events: {
+        Row: {
+          id: string;
+          mp_payment_id: string;
+          order_id: string | null;
+          mp_status: string | null;
+          mp_status_detail: string | null;
+          action: string | null;
+          amount_cents: number | null;
+          raw: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          mp_payment_id: string;
+          order_id?: string | null;
+          mp_status?: string | null;
+          mp_status_detail?: string | null;
+          action?: string | null;
+          amount_cents?: number | null;
+          raw?: Json | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          mp_payment_id?: string;
+          order_id?: string | null;
+          mp_status?: string | null;
+          mp_status_detail?: string | null;
+          action?: string | null;
+          amount_cents?: number | null;
+          raw?: Json | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "mp_payment_events_order_id_fkey";
+            columns: ["order_id"];
+            referencedRelation: "orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       order_items: {
         Row: {
           id: string;
@@ -962,6 +1030,10 @@ export interface Database {
       create_order: {
         Args: { payload: CreateOrderPayload };
         Returns: CreateOrderResult;
+      };
+      advance_order_status: {
+        Args: AdvanceOrderStatusArgs;
+        Returns: AdvanceOrderStatusResult;
       };
     };
     Enums: {

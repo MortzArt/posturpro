@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MissingEnvVarError,
+  getMercadoPagoEnv,
   getPublicEnv,
   getServerEnv,
   requireEnv,
@@ -70,5 +71,42 @@ describe("getServerEnv", () => {
     expect(() => getServerEnv(noSecret)).toThrow(
       "Missing required env var: SUPABASE_SECRET_KEY",
     );
+  });
+});
+
+describe("getMercadoPagoEnv (T8 AC-1)", () => {
+  const validMpSource = {
+    MERCADOPAGO_ACCESS_TOKEN: "TEST-access-token",
+    MERCADOPAGO_WEBHOOK_SECRET: "whsec_test",
+  };
+
+  it("reads the two MP secrets", () => {
+    expect(getMercadoPagoEnv(validMpSource)).toEqual({
+      accessToken: "TEST-access-token",
+      webhookSecret: "whsec_test",
+    });
+  });
+
+  it("throws a named error when the access token is missing", () => {
+    expect(() => getMercadoPagoEnv({ MERCADOPAGO_WEBHOOK_SECRET: "whsec_test" })).toThrow(
+      "Missing required env var: MERCADOPAGO_ACCESS_TOKEN",
+    );
+  });
+
+  it("throws a named error when the webhook secret is missing", () => {
+    expect(() => getMercadoPagoEnv({ MERCADOPAGO_ACCESS_TOKEN: "x" })).toThrow(
+      "Missing required env var: MERCADOPAGO_WEBHOOK_SECRET",
+    );
+  });
+
+  it("throws MissingEnvVarError (typed) for blank values", () => {
+    expect(() =>
+      getMercadoPagoEnv({ MERCADOPAGO_ACCESS_TOKEN: "  ", MERCADOPAGO_WEBHOOK_SECRET: "x" }),
+    ).toThrow(MissingEnvVarError);
+  });
+
+  it("does NOT read MERCADOPAGO_PUBLIC_KEY (redirect surface needs only server token)", () => {
+    // Public key absent → still resolves (redirect baseline, AC-1 note).
+    expect(() => getMercadoPagoEnv(validMpSource)).not.toThrow();
   });
 });

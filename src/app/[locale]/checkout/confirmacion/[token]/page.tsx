@@ -8,7 +8,12 @@ import { routing } from "@/i18n/routing";
 import { Link } from "@/i18n/navigation";
 import { buttonVariants } from "@/components/ui/button";
 import { OrderConfirmation } from "@/components/checkout/order-confirmation";
+import { PaymentPanel } from "@/components/checkout/payment-panel";
 import { getOrderByToken, type OrderView } from "@/lib/checkout/order-read";
+import { getOrderPaymentByToken } from "@/lib/payments/order-payment-read";
+import { derivePanelState, toReturnHint } from "@/lib/payments/panel-state";
+import { buildPaymentPanelLabels } from "@/components/checkout/payment-labels";
+import { MP_RETURN_STATUS_PARAM } from "@/lib/payments/config";
 import { formatMXN } from "@/lib/money";
 import { interpolate } from "@/lib/interpolate";
 import { CATALOG_PATH } from "@/lib/config";
@@ -25,6 +30,7 @@ import { cn } from "@/lib/utils";
 
 interface ConfirmationPageProps {
   params: Promise<{ locale: string; token: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export async function generateMetadata({ params }: ConfirmationPageProps): Promise<Metadata> {
@@ -34,27 +40,47 @@ export async function generateMetadata({ params }: ConfirmationPageProps): Promi
   return { title: t("confirmation.metadata.title") };
 }
 
-export default async function ConfirmationPage({ params }: ConfirmationPageProps) {
+export default async function ConfirmationPage({ params, searchParams }: ConfirmationPageProps) {
   const { locale, token } = await params;
   setRequestLocale(locale);
 
-  const order = await getOrderByToken(decodeURIComponent(token));
-  if (!order) {
+  const decodedToken = decodeURIComponent(token);
+  const [order, payment, query] = await Promise.all([
+    getOrderByToken(decodedToken),
+    getOrderPaymentByToken(decodedToken),
+    searchParams,
+  ]);
+  if (!order || !payment) {
     notFound();
   }
 
   const t = await getTranslations({ locale, namespace: "checkout" });
+
+  // Derive the panel state from LIVE DB fields; the ?mp_status back_url param is a
+  // DISPLAY HINT ONLY (never trusted for state, EC-6).
+  const returnHint = toReturnHint(readParam(query, MP_RETURN_STATUS_PARAM));
+  const panelState = derivePanelState({
+    orderStatus: payment.orderStatus,
+    paymentStatus: payment.paymentStatus,
+    paymentMethod: payment.paymentMethod,
+    voucher: payment.voucher,
+    returnHint,
+  });
+  const isPaidHero = panelState.kind === "paid";
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
       <OrderConfirmation />
 
       <div className="enter-fade flex flex-col items-center gap-3 text-center" role="status">
-        <span className="text-emerald-600 dark:text-emerald-500" aria-hidden>
+        <span
+          className={isPaidHero ? "text-emerald-600 dark:text-emerald-500" : "text-muted-foreground"}
+          aria-hidden
+        >
           <HugeiconsIcon icon={CheckmarkCircle02Icon} size={48} strokeWidth={1.5} />
         </span>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground" data-testid="confirmation-heading">
-          {t("confirmation.title")}
+          {isPaidHero ? t("confirmation.paidTitle") : t("confirmation.receivedTitle")}
         </h1>
         <p className="text-sm text-muted-foreground">
           {t("confirmation.orderNumberLabel")}{" "}
@@ -64,10 +90,13 @@ export default async function ConfirmationPage({ params }: ConfirmationPageProps
         </p>
       </div>
 
-      <div className="mt-6 rounded-lg border border-border bg-muted/40 p-4">
-        <p className="text-sm font-medium text-foreground">{t("confirmation.noPaymentTitle")}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{t("confirmation.noPaymentYet")}</p>
-      </div>
+      <PaymentPanel
+        confirmationToken={decodedToken}
+        locale={locale}
+        initialState={panelState}
+        totalCents={payment.totalCents}
+        labels={buildPaymentPanelLabels(t)}
+      />
 
       <div className="mt-6 grid gap-6 md:grid-cols-2">
         <OrderSummaryCard order={order} labels={summaryLabels(t)} />
@@ -86,6 +115,18 @@ export default async function ConfirmationPage({ params }: ConfirmationPageProps
       </div>
     </div>
   );
+}
+
+/** Read a single string search param (first value if it's an array). */
+function readParam(
+  query: Record<string, string | string[] | undefined>,
+  key: string,
+): string | null {
+  const value = query[key];
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+  return value ?? null;
 }
 
 type Translator = Awaited<ReturnType<typeof getTranslations>>;

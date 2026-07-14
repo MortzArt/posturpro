@@ -83,3 +83,50 @@ export function getServerEnv(
     supabaseSecretKey: requireEnv("SUPABASE_SECRET_KEY", source),
   };
 }
+
+/* ========================================================================= *
+ * Mercado Pago (T8, AC-1, AC-2)
+ *
+ * SAFETY MODEL — same discipline as the Supabase secret above:
+ *  - MERCADOPAGO_ACCESS_TOKEN  : server-only SECRET (Bearer auth to the MP API).
+ *  - MERCADOPAGO_WEBHOOK_SECRET : server-only SECRET (HMAC key for x-signature).
+ *  Neither is EVER prefixed `NEXT_PUBLIC_`. They are exposed ONLY through
+ *  `getMercadoPagoEnv()`, which is reached exclusively from the
+ *  `server-only`-guarded MP client module (`src/lib/payments/mp-client.ts`) and
+ *  the webhook route — never from a client bundle.
+ *
+ *  MERCADOPAGO_PUBLIC_KEY is NOT read here on purpose: the chosen Checkout Pro
+ *  REDIRECT surface (redirect the browser to `init_point`) needs only the
+ *  server-side access token. The public key would only be needed for a
+ *  client-side Wallet Brick / SDK render, which T8 does not build (AC-1 note).
+ *  If a future task adds a client SDK, expose the public key as
+ *  `NEXT_PUBLIC_MERCADOPAGO_PUBLIC_KEY` (public keys ARE safe to expose) — never
+ *  route the access token or webhook secret through a `NEXT_PUBLIC_` var.
+ * ========================================================================= */
+
+/** Server-only Mercado Pago secrets (T8 AC-1). */
+export interface MercadoPagoEnv {
+  /** Bearer access token for the MP REST API. SECRET — server-only. */
+  accessToken: string;
+  /** HMAC-SHA256 key used to verify the webhook `x-signature`. SECRET. */
+  webhookSecret: string;
+}
+
+/**
+ * Server-only Mercado Pago environment. Reads the two required MP secrets and
+ * throws a named {@link MissingEnvVarError} if either is absent/blank (edge 11:
+ * the pay-now action / webhook surface this friendly, never a stack trace).
+ *
+ * Must only be reached from server code (the MP client module enforces this
+ * with `import "server-only"`).
+ *
+ * @throws {MissingEnvVarError} if a required MP secret is missing/blank
+ */
+export function getMercadoPagoEnv(
+  source: Record<string, string | undefined> = process.env,
+): MercadoPagoEnv {
+  return {
+    accessToken: requireEnv("MERCADOPAGO_ACCESS_TOKEN", source),
+    webhookSecret: requireEnv("MERCADOPAGO_WEBHOOK_SECRET", source),
+  };
+}

@@ -357,7 +357,7 @@
       "shippingUnavailable": "Calculated at payment",
       "total": "Total",
       "itemQuantity": "×{count}",
-      "noPaymentYet": "No payment yet. Payment is the next step.",
+      "noPaymentYet": "Payment is the next step.",
       "lineOutOfStock": "Out of stock",
       "lineUnavailable": "Unavailable",
       "linePriceChanged": "Price updated: {amount}",
@@ -396,21 +396,79 @@
       "metadata": {
         "title": "Order confirmed"
       },
-      "title": "Thank you! We received your order",
       "orderNumberLabel": "Order",
-      "noPaymentTitle": "No payment yet",
-      "noPaymentYet": "We haven't processed any payment yet. Payment is the next step and we'll contact you to complete it.",
       "summaryHeading": "Summary",
       "shippingHeading": "Shipping",
       "keepShopping": "Keep shopping",
       "notesLabel": "Notes",
-      "phoneLabel": "Phone"
+      "phoneLabel": "Phone",
+      "paidTitle": "Thank you! Your payment was received",
+      "receivedTitle": "We received your order"
     },
     "liveRegion": {
       "discountApplied": "Code applied. You save {amount}.",
       "discountInvalid": "The code is not valid.",
       "processing": "Processing order.",
       "orderReceived": "Order received, redirecting."
+    },
+    "payment": {
+      "heading": "Complete your payment",
+      "subheading": "Choose your payment method in the next step.",
+      "totalLabel": "Total to pay",
+      "payNow": "Pay now",
+      "redirecting": "Redirecting…",
+      "secureNote": "Secure payment with Mercado Pago · card, OXXO, SPEI",
+      "payDifferently": "Pay a different way",
+      "paid": {
+        "title": "Payment received",
+        "methodCard": "Paid with card",
+        "methodOxxo": "Paid at OXXO",
+        "methodSpei": "Paid via SPEI transfer",
+        "methodWallet": "Paid with Mercado Pago",
+        "methodGeneric": "Payment confirmed",
+        "refundedNote": "Refunded"
+      },
+      "failed": {
+        "title": "Your payment was declined",
+        "body": "The charge didn't go through. Please try again.",
+        "retry": "Retry payment"
+      },
+      "expired": {
+        "body": "Your payment wasn't completed in time. You can try again."
+      },
+      "unavailable": {
+        "body": "Payment is temporarily unavailable. Please try again later.",
+        "retry": "Try again"
+      },
+      "processing": {
+        "title": "We're confirming your payment",
+        "body": "This can take a moment. Refresh the page in a few seconds.",
+        "refresh": "Refresh",
+        "retryHint": "Having trouble? Retry the payment"
+      },
+      "voucher": {
+        "oxxoTitle": "Awaiting your payment",
+        "oxxoSubtitle": "Pay in cash at any OXXO.",
+        "speiTitle": "Awaiting your payment",
+        "speiSubtitle": "Transfer from your online banking to this CLABE.",
+        "referenceLabel": "Reference",
+        "clabeLabel": "Interbank CLABE",
+        "amountLabel": "Amount",
+        "expiresLabel": "Expires",
+        "copy": "Copy",
+        "copied": "Copied",
+        "copyAria": "Copy payment reference",
+        "viewVoucher": "View voucher",
+        "viewVoucherAria": "View voucher (opens in a new tab)",
+        "noVoucherUrl": "We've emailed you the voucher.",
+        "generating": "We're generating your payment voucher. Check your email."
+      },
+      "liveRegion": {
+        "redirecting": "Redirecting to Mercado Pago.",
+        "paid": "Payment received.",
+        "declined": "Your payment was declined.",
+        "copied": "Reference copied."
+      }
     }
   }
 }

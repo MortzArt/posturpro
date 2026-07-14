@@ -357,7 +357,7 @@
       "shippingUnavailable": "Se calcula al pagar",
       "total": "Total",
       "itemQuantity": "×{count}",
-      "noPaymentYet": "Sin pago todavía. El pago es el siguiente paso.",
+      "noPaymentYet": "El pago es el siguiente paso.",
       "lineOutOfStock": "Agotado",
       "lineUnavailable": "No disponible",
       "linePriceChanged": "Precio actualizado: {amount}",
@@ -396,21 +396,79 @@
       "metadata": {
         "title": "Pedido confirmado"
       },
-      "title": "¡Gracias! Recibimos tu pedido",
       "orderNumberLabel": "Pedido",
-      "noPaymentTitle": "Sin pago todavía",
-      "noPaymentYet": "Aún no procesamos ningún pago. El pago es el siguiente paso y te contactaremos para completarlo.",
       "summaryHeading": "Resumen",
       "shippingHeading": "Envío",
       "keepShopping": "Seguir comprando",
       "notesLabel": "Notas",
-      "phoneLabel": "Tel"
+      "phoneLabel": "Tel",
+      "paidTitle": "¡Gracias! Tu pago fue recibido",
+      "receivedTitle": "Recibimos tu pedido"
     },
     "liveRegion": {
       "discountApplied": "Código aplicado. Ahorras {amount}.",
       "discountInvalid": "El código no es válido.",
       "processing": "Procesando pedido.",
       "orderReceived": "Pedido recibido, redirigiendo."
+    },
+    "payment": {
+      "heading": "Completa tu pago",
+      "subheading": "Elige tu método de pago en el siguiente paso.",
+      "totalLabel": "Total a pagar",
+      "payNow": "Pagar ahora",
+      "redirecting": "Redirigiendo…",
+      "secureNote": "Pago seguro con Mercado Pago · tarjeta, OXXO, SPEI",
+      "payDifferently": "Pagar de otra forma",
+      "paid": {
+        "title": "Pago recibido",
+        "methodCard": "Pagado con tarjeta",
+        "methodOxxo": "Pagado en OXXO",
+        "methodSpei": "Pagado por transferencia SPEI",
+        "methodWallet": "Pagado con Mercado Pago",
+        "methodGeneric": "Pago confirmado",
+        "refundedNote": "Reembolsado"
+      },
+      "failed": {
+        "title": "Tu pago fue rechazado",
+        "body": "No se completó el cobro. Inténtalo de nuevo.",
+        "retry": "Reintentar pago"
+      },
+      "expired": {
+        "body": "Tu pago no se completó a tiempo. Puedes intentar de nuevo."
+      },
+      "unavailable": {
+        "body": "El pago no está disponible por el momento. Inténtalo más tarde.",
+        "retry": "Reintentar"
+      },
+      "processing": {
+        "title": "Estamos confirmando tu pago",
+        "body": "Esto puede tardar un momento. Actualiza la página en unos segundos.",
+        "refresh": "Actualizar",
+        "retryHint": "¿Problemas? Reintentar el pago"
+      },
+      "voucher": {
+        "oxxoTitle": "Esperando tu pago",
+        "oxxoSubtitle": "Paga en efectivo en cualquier OXXO.",
+        "speiTitle": "Esperando tu pago",
+        "speiSubtitle": "Transfiere desde tu banca en línea a esta CLABE.",
+        "referenceLabel": "Referencia",
+        "clabeLabel": "CLABE interbancaria",
+        "amountLabel": "Monto",
+        "expiresLabel": "Vence",
+        "copy": "Copiar",
+        "copied": "Copiado",
+        "copyAria": "Copiar referencia de pago",
+        "viewVoucher": "Ver comprobante",
+        "viewVoucherAria": "Ver comprobante (se abre en una pestaña nueva)",
+        "noVoucherUrl": "Te enviamos el comprobante por correo.",
+        "generating": "Estamos generando tu comprobante de pago. Revisa tu correo."
+      },
+      "liveRegion": {
+        "redirecting": "Redirigiendo a Mercado Pago.",
+        "paid": "Pago recibido.",
+        "declined": "Tu pago fue rechazado.",
+        "copied": "Referencia copiada."
+      }
     }
   }
 }
