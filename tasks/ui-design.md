@@ -1,44 +1,73 @@
-# UI Design: T7 — Checkout & Order Creation
+# UI Design: T8 — Mercado Pago Payment (Checkout Pro / redirect)
 
-> Stage 3 (UI Design) artifact. Scope: the client-facing checkout surface only —
-> layout, components, states, interactions, motion, responsiveness, a11y, and the
-> i18n keys the UI consumes. The server action, RPC, and validation libs are dev
-> concerns (Stage 4); this spec defines the props/contract the UI needs from them
-> and the `CheckoutFormState` union the UI renders.
+> Stage 3 (UI Design) artifact — **overwrites the T7 checkout spec.** Scope: the
+> SHOPPER-FACING payment surfaces that T8 adds to the existing checkout +
+> confirmation UI. The webhook route, `advance_order_status` RPC, refund API,
+> signature verification, amount reconciliation and MP SDK are **dev/logic
+> concerns (Stage 4)** — this spec only defines the props/contract the UI needs
+> from them and every visual state the payment UI can be in.
+>
+> **T8 EXTENDS the confirmation page — it does NOT redesign it.** The success
+> hero, order-summary card, shipping card, container, grid, motion classes and
+> i18n structure documented for T7 all stay. T8 replaces exactly ONE block (the
+> "Sin pago todavía" muted box, `confirmacion/[token]/page.tsx:67-70`) with a
+> `<PaymentPanel>` and adds the pay/pending/failed/paid branches.
 >
 > **Taste authority applied:** `.claude/skills/emil-design-eng` +
-> `.claude/skills/apple-design`. Motion terms use `.claude/skills/animation-vocabulary`.
-> Every animation reuses an EXISTING globals.css class — this spec invents **no new
-> motion CSS** (the cart/PDP motion layer already covers every case here).
+> `.claude/skills/apple-design`. Motion terms follow `.claude/skills/animation-vocabulary`.
+> Every animation reuses an EXISTING `globals.css` class — this spec invents **no
+> new motion CSS** (verified: `.enter-fade`, `.cart-press`, `.cart-step-press`,
+> `--ease-out` already cover every case here).
+>
+> ⚠️ **HUMAN-REVIEW GATE (BUILD_PLAN rule 3).** This is payment code. Every
+> pipeline verdict on T8 is ADVISORY. No SHIP verdict authorizes merge — a human
+> must review payment code before it ships. Flagged here per ticket instruction.
+>
+> ⚠️ **LIVE-SANDBOX BLOCKED-ON-USER.** No working MP credentials exist; all
+> behavior below is designed against MOCKED MP responses. OXXO/SPEI approval
+> cannot be simulated in test. The voucher field paths (§Notes for Dev, ambiguous)
+> must be read DEFENSIVELY by dev — see the "build defensively" callouts.
 
 ---
 
 ## Design Principles for This Feature
 
-1. **Reassurance over flourish.** Checkout is a trust moment (Apple: safety /
-   responsibility). The visual language is calm, dense, and legible — no bounce,
-   no confetti, no celebratory motion. Motion is confined to feedback (press),
-   comprehension (crossfade of changing totals, field-error fade-in), and
-   preventing jarring swaps (skeleton→content). Everything ≤ 300ms, `ease-out`.
-2. **The order summary is the anchor.** The number the user is about to commit to
-   is always visible: sticky right column at `lg+`, a collapsible summary + sticky
-   bottom bar on mobile. It mirrors the cart's `OrderSummary` math EXACTLY
-   (`computeShipping` / `totalCents` / `formatMXN`) so the total never changes
-   between cart and checkout except by adding a valid discount.
-3. **Single-page, sectioned flow — not a wizard.** Justified below (§Page Layout).
-   All fields on one route; the summary + submit live in the anchor.
-4. **Match the house system verbatim.** Cards = `rounded-lg border border-border
-   bg-card p-4 md:p-5`. Inputs reuse the `fieldClasses` string from the Q&A form.
-   The `Select` is the vendored shadcn one. `formatMXN` is the ONLY money boundary;
-   all numbers `tabular-nums`. Icons are `@hugeicons/react` + core-free-icons only.
-5. **The server is the boundary; the client is UX.** Every client validation is a
-   convenience that mirrors the pure server guard (Q&A precedent). The form never
-   claims a code is valid, a price is current, or stock exists — it renders what
-   the action returns. No `$NaN`, ever (shipping `unavailable` → neutral label +
-   blocked submit).
-6. **Mobile-first, ≥44px tap targets, correct keyboards.** `h-11`/`min-h-11` on
-   every primary control; `inputMode="numeric"` on CP & phone; `type="email"` on
-   email. No horizontal scroll at 375px.
+1. **Truth lives in the DB, never in the URL.** The confirmation page renders the
+   order's LIVE `payment_status` / `status` read by token (webhook is
+   authoritative — ticket EC-6). `back_url` query params (`?status=…`) are
+   **display hints only, never trusted for state.** Consequence: the same page URL
+   shows pay-now / pending / failed / paid purely from DB state, so the
+   webhook-before-redirect race resolves itself — a reload always tells the truth.
+2. **Reassurance over flourish (Apple: safety / responsibility).** Payment is the
+   highest-trust moment in the store. Calm, dense, legible. No celebratory motion,
+   no bounce, no confetti. Motion is confined to press feedback (`.cart-press`),
+   comprehension (skeleton→content crossfade via `.enter-fade`), and the redirect
+   handoff. Everything ≤ 300ms, `ease-out`.
+3. **Never dress pending as success.** OXXO/SPEI "awaiting payment" uses a NEUTRAL
+   / amber visual language — never the green check. A green check means money
+   received. Miscolouring "pending" as "paid" is a trust bug (Apple: familiarity —
+   green = done, everywhere).
+4. **The order total is always restated next to the action.** The number the
+   shopper is about to pay is visible on every state — pay-now, pending, failed —
+   so they never redirect to MP unsure what they'll be charged.
+5. **Match the house system verbatim.** Cards = `rounded-lg border border-border
+   bg-card p-4 md:p-5`. Money = `formatMXN(cents)` only, `tabular-nums`. Error
+   banners = the existing `GlobalBanner` shape (`border-destructive/30` +
+   `bg-destructive/5` + `Alert02Icon` + `Refresh01Icon` retry). Icons =
+   `@hugeicons/react` + core-free-icons only. i18n under `checkout`, Spanish default.
+6. **Redirect is a handoff, not a dead end.** When we send the browser to MP we
+   keep the order summary visible until the last frame and show a disabled
+   "Redirigiendo…" state (text swap — the checkout precedent, no spinner glyph
+   invented), so the shopper knows what's happening and there's no layout shift.
+7. **Defensive rendering of ambiguous MP fields.** The voucher card renders ONLY
+   the fields that are present. If `voucherUrl`/`reference`/`expiresAt` are absent
+   (field-path ambiguity, research §5), the card degrades to a plain "we're
+   awaiting your payment — check your email for the voucher" message rather than
+   showing `undefined` or a broken link. No `$NaN`, no `Invalid Date`, no empty
+   `<a href>`, ever.
+8. **Mobile-first, ≥44px tap targets.** Pay CTA is full-width `h-11` on mobile.
+   Voucher reference is selectable monospace that wraps, never overflows. "View
+   voucher" link is a ≥44px tap target. No horizontal scroll at 375px.
 
 ---
 
@@ -46,903 +75,653 @@
 
 | Category | Tokens (Tailwind utility → CSS var) |
 | --- | --- |
-| Surfaces | `bg-background`, `bg-card`, `bg-muted`, `bg-input/20` (shadcn inputs), `bg-popover` (select) |
+| Surfaces | `bg-background`, `bg-card`, `bg-muted/40` (info block — existing "Sin pago" tint), `bg-destructive/5` (error banner), pending tint (see note) |
 | Text | `text-foreground`, `text-muted-foreground`, `text-primary-foreground`, `text-destructive` |
-| Accent (positive) | `text-emerald-600 dark:text-emerald-500` (free shipping, applied discount — matches `OrderSummary`) |
-| Accent (warn) | `text-amber-600 dark:text-amber-400` (per-line "price changed" — matches Q&A counter-warn tint) |
-| Borders / rings | `border-border`, `border-input`, `border-destructive`, `ring-ring/30`, `ring-destructive/20` |
-| Radius | `rounded-md` (fields/buttons), `rounded-lg` (cards), from `--radius: 0.625rem` |
-| Typography | `text-2xl md:text-3xl font-semibold tracking-tight` (h1), `text-sm font-medium` (section h2 / labels), `text-sm` body, `text-xs text-muted-foreground` (hints/errors), `tabular-nums` all money |
-| Motion easing | `--ease-out` (enter/press) only — never `ease-in`. Consumed through existing classes. |
-| Container | `mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 lg:px-8` (identical to cart page + header + footer) |
+| Accent (positive / paid) | `text-emerald-600 dark:text-emerald-500` (paid check — reuses the existing confirmation hero colour) |
+| Accent (pending / awaiting) | `text-amber-600 dark:text-amber-400`, border `border-amber-500/30` (matches the T7 "price changed" warn tint — already in the palette) |
+| Borders / rings | `border-border`, `border-destructive/30`, `border-amber-500/30`, `ring-ring/30`, `focus-visible:ring-2` |
+| Radius | `rounded-md` (buttons/banners/fields), `rounded-lg` (cards), from `--radius` |
+| Typography | `text-2xl font-semibold tracking-tight` (h1, unchanged), `text-sm font-medium` (card h2 / labels), `text-sm` body, `text-xs text-muted-foreground` (hints), `tabular-nums` all money, `font-mono` (voucher reference / CLABE) |
+| Motion easing | `--ease-out` only (enter/press) — never `ease-in`. Consumed through existing classes. |
+| Container | `mx-auto max-w-2xl px-4 py-12` (the EXISTING confirmation container — unchanged) |
 
-**Existing motion classes reused (NO new CSS):**
-`.enter-fade` (banners, empty state, success note, field errors), `.stagger`
-(summary line items), `.price-value` (crossfade of subtotal/discount/total on
-change), `.cart-press` (primary CTAs `scale(0.98)` on `:active`),
-`.cart-step-press` (small icon buttons), `.select-content-motion` (state select
-dropdown — already wired inside `SelectContent`), `.grid-pending`/`.grid-idle`
-(dim the form region while `pending`).
+> **Pending tint note.** The pending card uses the established warn tint already in
+> the T7 palette (`text-amber-600 dark:text-amber-400` + `border-amber-500/30`) on
+> a NEUTRAL `bg-muted/40` surface — this introduces ZERO new colour tokens and
+> guarantees pending reads as NOT-success. (A raw `bg-amber-50 dark:bg-amber-950/30`
+> surface is an acceptable alternative if dev prefers a warmer card, but the
+> neutral-surface + amber-border + amber-icon combination is the default and needs
+> no palette additions.)
+
+**Existing motion classes reused (NO new CSS — verified in `globals.css`):**
+- `.enter-fade` — opacity + `translateY(8px)` on mount, 200ms `--ease-out`, has a
+  built-in `prefers-reduced-motion` branch (opacity-only). Used by: `<PaymentPanel>`
+  on mount, the voucher card, the error banner (already used by `GlobalBanner`),
+  the paid confirmation note.
+- `.cart-press` — `scale(0.98)` on `:active`, 100ms `--ease-out`. Used by the
+  "Pagar ahora" / "Reintentar pago" / "Ver comprobante" primary CTAs.
+- `.cart-step-press` — `scale(0.97)` on `:active:not(:disabled)`, 90ms. Used by the
+  secondary "pagar de otra forma" link and the copy-reference button.
+- **No spinner glyph.** The redirect / creating-preference state reuses the
+  checkout precedent: a disabled button with a TEXT SWAP ("Pagar ahora" →
+  "Redirigiendo…"). The existing `.animate-pulse bg-muted` (Tailwind, per
+  `checkout-skeleton.tsx`) is available if a skeleton is needed while the panel's
+  initial state resolves.
 
 ---
 
 ## shadcn / Component Inventory Status (verified in `src/components/ui/`)
 
-| Component | Exists? | Use in checkout |
+| Component | Exists? | Use in T8 |
 | --- | --- | --- |
-| `Button` + `buttonVariants` | ✅ | primary submit, empty CTA, banner recovery, discount "Aplicar" |
-| `Input` | ✅ | (shadcn h-7) — NOTE: checkout uses the Q&A `fieldClasses` raw inputs, not `<Input>`, for visual parity (see below) |
-| `Label` | ✅ | (renders `text-xs`) — checkout uses raw `<label class="text-sm font-medium">` for Q&A parity |
-| `Select` + Trigger/Content/Item/Value | ✅ | the 32-state picker (Radix, keyboard/SR accessible, motion already wired) |
-| `Badge` (variants: default/secondary/destructive/outline/ghost/link) | ✅ | applied-discount pill, "sin pago aún" pill on confirmation |
-| Textarea | ❌ none | delivery notes → **raw `<textarea>` + `fieldClasses` + `min-h-24 resize-y`** (exactly how Q&A does it; do NOT add a ui component) |
-| Card / Separator / Alert / Skeleton | ❌ none | cards = `rounded-lg border border-border bg-card p-4 md:p-5`; dividers = `border-t border-border`; alerts = `<p role="alert" class="enter-fade text-destructive">`; skeleton = inline `animate-pulse bg-muted`. **House convention — introduce no new primitives.** |
-
-> **Field & label parity decision.** The Q&A form (the nearest form sibling) uses
-> raw `<input>/<textarea>` with the `fieldClasses` string and raw
-> `<label className="text-sm font-medium">`. The shadcn `Input`/`Label` render at
-> smaller `h-7`/`text-xs` sizes tuned for dense admin UIs. For a comfortable,
-> touch-friendly public checkout, **checkout mirrors the Q&A form**: `fieldClasses`
-> inputs bumped to `min-h-11`, raw `text-sm` labels. Consistency with the nearest
-> form beats reaching for the denser primitive.
-
-**Shared field class (single-source it — copy from Q&A `qa-form.tsx`):**
-```
-"w-full min-h-11 rounded-md border border-border bg-background px-3 py-2 text-sm
- text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring
- focus-visible:ring-2 focus-visible:ring-ring/30 aria-invalid:border-destructive
- aria-invalid:ring-2 aria-invalid:ring-destructive/20"
-```
-(`min-h-11` added vs. the Q&A original so tap targets are ≥44px on mobile.)
+| `Button` + `buttonVariants` | ✅ | primary "Pagar ahora" / retry (`variant:"default"`), secondary "pagar de otra forma" (`variant:"outline"` or `link`). Existing confirmation builds its CTA as `buttonVariants({variant:"default"})` + `cart-press h-11 gap-1.5 px-6 text-sm` on a `<Link>` — mirror those exact classes on the pay `<button>` for parity (button base size is `h-7`; override to `h-11` like `keepShopping` does). |
+| `Badge` (default/secondary/destructive/outline) | ✅ | small status pill if desired ("Esperando pago" via `outline` + amber text). Paid uses an inline emerald span + check, NOT the destructive badge. |
+| Card / Alert / Separator / Skeleton | ❌ none | House convention (T7): cards = `rounded-lg border border-border bg-card p-4 md:p-5`; dividers = `border-t border-border`; alert = the `GlobalBanner`-shaped `role="alert"` div; skeleton = inline `animate-pulse bg-muted`. **Introduce no new primitives.** |
 
 **Icons (existing inventory — reuse, never mix sets):**
-`ArrowRight01Icon` (submit / continue shopping), `ArrowLeft01Icon` (back to cart),
-`Alert02Icon` (error banner + field/line errors, matches Q&A), `CheckmarkCircle02Icon`
-(confirmation success + applied-discount), `Tick02Icon` (discount applied inline),
-`Cancel01Icon` (dismiss banner / remove discount), `ShoppingCart01Icon` (empty state,
-matches `CartEmptyState`), `Image01Icon` (summary line thumb fallback). Submitting
-indicator = the Q&A **text swap** ("Realizar pedido" → "Procesando…") on a disabled
-button — the established precedent; no spinner glyph.
+- `CheckmarkCircle02Icon` — paid confirmation (already the confirmation hero icon).
+- `Alert02Icon` — error / declined banner (already in `GlobalBanner`).
+- `Refresh01Icon` — retry-payment button (already the `GlobalBanner` retry icon).
+- `ArrowRight01Icon` — "Pagar ahora" trailing icon (already the "Seguir comprando" icon).
+- `Copy01Icon` — copy the OXXO reference / SPEI CLABE. **Not yet used in repo.**
+- `Clock01Icon` (or `Time04Icon`) — "awaiting payment" / "confirming" marker. **Not yet used.**
+- `ExternalLink01Icon` (or `LinkSquare01Icon`) — "Ver comprobante" opens `voucherUrl` new tab. **Not yet used.**
+
+> **Icon-name caveat for dev:** the three payment-only icons (`Copy01Icon`,
+> `Clock01Icon`, `ExternalLink01Icon`) are NOT yet used in the repo — dev must
+> confirm the exact `@hugeicons/core-free-icons` export names and pick the listed
+> fallback if the primary name doesn't exist. Never mix in a different icon set.
 
 ---
 
-## Page Layout
+## The Payment State Model (single source the UI renders)
 
-### Decision: single-page sectioned form (NOT a multi-step wizard)
+The confirmation page is driven by ONE derived discriminated state, computed from
+the order's live DB fields (never from URL params). Dev computes this in the
+payment-view read (`order-payment-read.ts`) or in the page from the order row.
 
-The ticket says "multi-step or single-page — decide and justify."
+```typescript
+// The payment-facing view the confirmation page reads by confirmation_token.
+// Extends the T7 OrderView (order-read.ts) — same money/shipping/items fields.
+interface OrderPaymentView {
+  // ...all existing OrderView fields (orderNumber, totals, items, shipping)...
+  paymentStatus: "pending" | "authorized" | "paid" | "failed" | "refunded";
+  orderStatus: "pending_payment" | "paid" | "preparing" | "shipped" | "delivered" | "cancelled";
+  paymentMethod: PaymentMethodKey | null; // "card" | "oxxo" | "spei" | "wallet" | null
+  // Voucher fields — ALL OPTIONAL; read defensively (research §5, ambiguous paths).
+  voucher: {
+    reference: string | null;          // transaction_details.payment_method_reference_id (barcode/CLABE)
+    voucherUrl: string | null;         // transaction_details.external_resource_url (printable voucher)
+    expiresAt: string | null;          // ISO — top-level date_of_expiration
+    verificationCode: string | null;   // transaction_details.verification_code (optional)
+  } | null;
+}
 
-**Chosen: one route (`/checkout`) with three stacked, titled sections** —
-Contact → Shipping → Delivery notes — plus the discount field and the order
-summary. **Reasons:**
+type PaymentMethodKey = "card" | "oxxo" | "spei" | "wallet";
 
-- **Apple Simplicity + fewest steps.** Guest checkout has ~9 fields. A wizard adds
-  navigation overhead (next/back, per-step validation, lost context) for no gain
-  at this field count. Stripe/Shopify express checkouts are single-page for exactly
-  this reason.
-- **The `useActionState` precedent is one form, one action.** The Q&A form is a
-  single `<form action={formAction}>`. A wizard fights that contract (holding
-  partial state across steps). One form → one `placeOrder` submit is the natural,
-  lower-risk shape and matches the codebase.
-- **The summary must stay visible while filling.** A single page lets the sticky
-  summary anchor the flow (Apple wayfinding — "where am I / what's the total").
-- **Server re-validation returns per-field AND per-line errors at once.** On one
-  page we can scroll/focus the first field error and highlight offending summary
-  lines simultaneously — impossible cleanly across wizard steps.
-
-"Sectioned" (grouped cards with `<h2>` headings) gives the *structure* of a
-wizard's clarity without its navigation cost.
-
-### Desktop (> 1024px, `lg`)
-
+// The state the <PaymentPanel> switches on (derived, in one place):
+type PaymentPanelState =
+  | { kind: "unpaid" }                                          // pending_payment + pending, no prior attempt
+  | { kind: "creating" }                                        // client: preference being created (transient)
+  | { kind: "redirecting" }                                     // client: about to hand off to MP init_point
+  | { kind: "pending-voucher"; method: "oxxo" | "spei"; voucher: OrderPaymentView["voucher"] }
+  | { kind: "failed" }                                          // payment failed (rejected/cancelled/expired) → retry
+  | { kind: "paid"; method: PaymentMethodKey | null }
+  | { kind: "unavailable" }                                     // MP env missing / preference-create error (EC-11)
+  | { kind: "processing" };                                     // webhook not landed yet — "we're confirming…" (EC-6)
 ```
-┌──────────────────────────────── max-w-(--breakpoint-xl) ─────────────────────────────────┐
-│  [← Volver al carrito]                                                                      │
-│  Finalizar compra                                                (h1, text-3xl)             │
-│                                                                                            │
-│  ┌────────────── FORM (2fr) ──────────────┐   ┌──────── SUMMARY (1fr, sticky top-20) ────┐ │
-│  │ ┌─ Contacto ────────────────────────┐  │   │  Resumen del pedido                       │ │
-│  │ │ Correo *      [ email          ]  │  │   │  ┌──────────────────────────────────────┐ │ │
-│  │ │ Teléfono      [ tel            ]  │  │   │  │ [img] Silla Ergo ×2       $3,000.00  │ │ │
-│  │ └───────────────────────────────────┘  │   │  │ [img] Cojín lumbar ×1       $450.00  │ │ │
-│  │ ┌─ Envío ───────────────────────────┐  │   │  └──────────────────────────────────────┘ │ │
-│  │ │ Nombre completo *  [ text       ]  │  │   │  ─────────────────────────────────────────│ │
-│  │ │ Calle y número *   [ text       ]  │  │   │  Código de descuento                      │ │
-│  │ │ Interior/Ref.      [ text       ]  │  │   │  [ code            ] [ Aplicar ]          │ │
-│  │ │ Colonia/Ciudad *[text] CP *[5-dig] │  │   │  ✓ AHORRA10 aplicado      −$300.00       │ │
-│  │ │ Estado *   [ Select 32 estados ▾ ] │  │   │  ─────────────────────────────────────────│ │
-│  │ └───────────────────────────────────┘  │   │  Subtotal                  $3,450.00      │ │
-│  │ ┌─ Notas de entrega (opcional) ─────┐  │   │  Descuento                 −$300.00       │ │
-│  │ │ [ textarea min-h-24 resize-y    ]  │  │   │  Envío                     Gratis         │ │
-│  │ │ RFC (opcional)     [ text       ]  │  │   │  ─────────────────────────────────────────│ │
-│  │ └───────────────────────────────────┘  │   │  Total                     $3,150.00      │ │
-│  │                                          │   │  [     Realizar pedido    →     ]        │ │
-│  │  (global error banner renders here)      │   │  🔒 Sin pago todavía. El pago es el paso │ │
-│  └──────────────────────────────────────────┘   │     siguiente.                            │ │
-│                                                    └──────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
-```
-Grid: `grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr] lg:gap-10` (identical to
-cart). Summary column wrapper: `lg:sticky lg:top-20 lg:self-start` (identical).
 
-### Tablet (640–1024px, `md`)
+**Deriving the kind (dev reference — the exact truth table):**
 
-Single-column form (field pairs may sit side-by-side at `sm+`, e.g. Colonia|CP).
-The summary card sits **below** the form for full detail, and a **sticky bottom
-action bar** (Total + submit) is shown for anything `< lg` so the total + submit
-are always reachable. One responsive rule (bar visible below `lg`), no fragile
-mid-width two-column.
+| order.status | order.payment_status | voucher present? | returnHint | → PaymentPanelState.kind |
+| --- | --- | --- | --- | --- |
+| `pending_payment` | `pending` | no | none | `unpaid` (first attempt) |
+| `pending_payment` | `pending` | yes (oxxo/spei) | — | `pending-voucher` |
+| `pending_payment` | `pending` | no | `success` (browser back, webhook pending) | `processing` |
+| `pending_payment` | `failed` | — | — | `failed` (retry) |
+| `paid` | `paid` | — | — | `paid` |
+| `pending_payment` | `authorized` | — | — | `processing` (card in review — rare) |
+| any | `refunded` | — | — | `paid` variant + "reembolsado" note (minimal; refund UI is T12) |
 
-### Mobile (375px, base)
-
-```
-┌───────────── 375px ─────────────┐
-│ [← Volver al carrito]           │
-│ Finalizar compra   (text-2xl)   │
-│ ┌─ Resumen (colapsable) ─────┐ │  ← collapsed by default; tap header to expand
-│ │ 2 artículos     $3,150.00 ▾│ │     (native <details>): item list + rows + discount
-│ └────────────────────────────┘ │
-│ ┌─ Contacto ─────────────────┐ │
-│ │ Correo   [ full-width      ]│ │
-│ │ Teléfono [ full-width      ]│ │
-│ └────────────────────────────┘ │
-│ ┌─ Envío ────────────────────┐ │
-│ │ Nombre   [ full-width      ]│ │
-│ │ Calle    [ full-width      ]│ │
-│ │ Interior [ full-width      ]│ │
-│ │ Colonia  [ full-width      ]│ │
-│ │ Ciudad   [ full-width      ]│ │
-│ │ CP       [ full-width num  ]│ │
-│ │ Estado   [ Select ▾        ]│ │
-│ └────────────────────────────┘ │
-│ ┌─ Notas + RFC ──────────────┐ │
-│ │ [ textarea                 ]│ │
-│ │ RFC      [ full-width      ]│ │
-│ └────────────────────────────┘ │
-│ ┌─ Descuento ────────────────┐ │
-│ │ [ code ] [ Aplicar ]        │ │
-│ └────────────────────────────┘ │
-│            ...scroll...          │
-├─────────────────────────────────┤ ← sticky bottom bar (translucent, safe-area)
-│ Total $3,150.00 [ Realizar → ] │
-└─────────────────────────────────┘
-```
-- All fields stack full-width (`grid-cols-1`). Desktop side-by-side pairs
-  (Colonia|CP) collapse to full-width rows.
-- **Sticky bottom action bar** (`sticky bottom-0` / `fixed inset-x-0 bottom-0`):
-  translucent per Apple §12 (`bg-background/85 backdrop-blur border-t border-border`),
-  content scrolls under. Left `Total $X` (`tabular-nums`, `.price-value` keyed);
-  right the submit `<button type="submit" class="h-11">`. `pb-[env(safe-area-inset-bottom)]`.
-- Full itemized summary + discount reachable via the **top collapsible summary**
-  so nothing is hidden. The in-card summary submit is `hidden lg:flex` (the sticky
-  bar button is the single canonical submit `< lg` — one submit per form).
+> **`processing` ("we're confirming your payment…") — the webhook-race state.**
+> Distinct from `unpaid`. Rendered when the shopper has clearly attempted payment
+> but the DB isn't `paid`/`failed`/`pending-voucher` yet — i.e. the browser
+> returned from MP (a `?status` hint is present) but the authoritative webhook
+> hasn't advanced the order. Because we NEVER trust the URL for truth, this is a
+> gentle "we're confirming your payment — this can take a moment" note with a
+> **manual "Actualizar / Refresh" affordance** (reloads the same URL), NOT
+> auto-polling (live-updating is explicitly out of scope, ticket §Out of Scope —
+> reload suffices in Phase 1). It ALSO offers the retry path in case the payment
+> genuinely failed, so the shopper is never trapped (Apple: wayfinding).
 
 ---
 
 ## Component Inventory
 
-### 1. `CheckoutPage` (server component)
+### 1. `<PaymentPanel>` (new — `src/components/checkout/payment-panel.tsx`)
 
-**Purpose:** Route entry — fetch settings, resolve metadata, render the client flow.
-**Location:** `src/app/[locale]/checkout/page.tsx`
-**shadcn base:** none.
+**Purpose:** The single client component that replaces the "Sin pago todavía"
+block on the confirmation page and renders the correct payment state. It owns the
+pay-now / retry action call and the redirect handoff.
 
-Mirrors `carrito/page.tsx` exactly:
-- `generateStaticParams()` (both locales), `setRequestLocale(locale)`.
-- `generateMetadata` → `getTranslations({ namespace: "checkout" })` → `t("metadata.title")`.
-- `const settings = await getStoreSettingsStatic();`
-- `<CheckoutFlowClient flatRateCents={settings?.shipping_flat_rate_cents ?? null}
-   freeThresholdCents={settings?.free_shipping_threshold_cents ?? null} />`.
+**Location:** Confirmation page, immediately below the order hero, above the
+`grid gap-6 md:grid-cols-2` summary/shipping cards — exactly where the old
+`bg-muted/40` info block was (`page.tsx:67-70`).
 
-No UI states of its own; the client island owns the container wrapper (as
-`CartPageClient` does) and all states.
+**shadcn base:** none new — composes `buttonVariants` + house cards. `"use client"`
+(needs the form action + `useTransition` for pending/redirect state + the window
+redirect to `init_point`).
 
----
-
-### 2. `CheckoutFlowClient` (`"use client"`)
-
-**Purpose:** The whole checkout body — reads `useCart()`, drives
-`useActionState(placeOrder, initialCheckoutFormState)`, renders skeleton / empty /
-form+summary and every error/success state; clears the cart on success.
-**Location:** `src/components/checkout/checkout-flow-client.tsx`
-**shadcn base:** composes `Button`, `Select`, `Badge`; raw `<input>/<textarea>/<label>`.
+**Layout (ASCII wireframe — `unpaid` state, desktop):**
+```
+┌───────────────────────────────────────────────────────────┐
+│  Completa tu pago                                           │  ← text-sm font-medium
+│  Elige tu método de pago en el siguiente paso.             │  ← text-xs muted
+│                                                             │
+│  Total a pagar                        $12,345.67 MXN        │  ← restated total, tabular-nums
+│  ─────────────────────────────────────────────────────    │  ← border-t border-border
+│  ┌───────────────────────────────────────────────────┐    │
+│  │           Pagar ahora            →                 │    │  ← h-11 full-width primary, cart-press
+│  └───────────────────────────────────────────────────┘    │
+│  Pago seguro con Mercado Pago · tarjeta, OXXO, SPEI        │  ← text-xs muted, trust line
+└───────────────────────────────────────────────────────────┘
+   (card: rounded-lg border border-border bg-card p-4 md:p-5, .enter-fade)
+```
 
 **Props:**
 ```typescript
-interface CheckoutFlowClientProps {
-  /** From getStoreSettingsStatic() on the server; null when unavailable (edge 5). */
-  flatRateCents: number | null;
-  freeThresholdCents: number | null;
+interface PaymentPanelProps {
+  confirmationToken: string;          // addresses the pay action (never order_number)
+  initialState: PaymentPanelState;    // derived server-side from live DB (never URL)
+  totalCents: number;                 // restated next to the CTA (formatMXN)
+  labels: PaymentPanelLabels;         // all i18n strings, resolved by the server page
+  returnHint?: "success" | "pending" | "failure" | null; // from back_url ?status — DISPLAY ONLY
 }
-```
 
-**Consumes from `useCart()`:** `{ lines, hydrated, subtotalCents }` (all confirmed
-on the provider) + a cart-clear on success.
-> **Cart-clear note for dev.** `useCart()` exposes `addItem/setQuantity/removeItem/
-> keyFor` (no `clear()` per ticket). The confirmation page clears via a one-shot
-> effect (empty localStorage through the provider, or loop `removeItem(keyFor(...))`).
-> UI contract: after `status:"success"` + redirect, the header cart badge shows 0.
-
-**Top-level render decision (mirrors `CartPageClient`):**
+// createPaymentPreference is a "use server" action, returning:
+type PayActionResult =
+  | { status: "redirect"; initPoint: string }
+  | { status: "unavailable" }         // MP env missing / MP 5xx (EC-11, error-table rows 1-2)
+  | { status: "error" };              // generic failure → retry
 ```
-!hydrated                                          → <CheckoutSkeleton/>   (never flash empty / $NaN)
-hydrated && lines.length === 0 && status!=="success" → <CheckoutEmptyState/> (AC-2)
-otherwise                                          → <CheckoutBody/> (form + summary + states)
-```
-On `status:"success"` → `redirect(confirmationPath(orderNumber))` (locale-aware).
-
-**One page-level `aria-live="polite"` region** (`sr-only`, `aria-atomic`) announces
-the discount result, global submit errors, and "Procesando pedido…" — modeled on
-`CartPageClient`'s region; no per-component duplicates.
 
 **States:**
 
 | State | Visual | Behavior |
 | --- | --- | --- |
-| Loading (pre-hydration) | `<CheckoutSkeleton>` sized to the real 2-col layout, `animate-pulse bg-muted`, `aria-hidden`; opacity crossfade to content (no reflow — mirror `CartSkeleton`) | No interaction; no submit; never `$NaN` |
-| Empty | `<CheckoutEmptyState>` (§9) | No form; primary CTA → `CATALOG_PATH` |
-| Ready (idle) | Form cards + summary; submit enabled | Client validation on submit (UX only) |
-| Submitting (`pending`) | Form region dimmed via `.grid-pending` + `aria-busy`; every input `disabled`; submit "Procesando…" `disabled`; live region "Procesando pedido…" | `<form>` non-interactive; action not re-callable (AC-14 client half) |
-| Field-invalid (`status:"invalid"`) | `.enter-fade` errors under each bad field; `aria-invalid`+`aria-describedby`; values preserved; focus → first invalid field | No DB write; user corrects & resubmits |
-| Price-changed (`status:"price-changed"`) | Global amber banner + per-line amber "Precio actualizado: $X" in summary; summary re-renders to LIVE totals (`.price-value` crossfade) | No order written; user reviews & resubmits |
-| Out-of-stock (`status:"out-of-stock"`) | Global destructive banner "un artículo se agotó" + affected summary line ringed `ring-destructive/40` + "Agotado" note | No order / no partial decrement (RPC rolled back) |
-| Shipping-unavailable (`status:"shipping-unavailable"`) | Global banner "No podemos calcular el envío ahora"; summary shipping row neutral "Se calcula al pagar"; **submit disabled** | Never writes `shipping=0` (edge 5); retry CTA |
-| Discount-invalid (inline, non-blocking) | `.enter-fade` note under discount field "Código no válido"; discount row hidden; totals at full price | Order still submittable (AC-7) |
-| Error / retryable (`status:"error"`) | Global banner "No pudimos realizar tu pedido, inténtalo de nuevo" + retry; values preserved | Raw PG never echoed; logged server-side |
-| Success (`status:"success"`) | Interim `role="status"` "Pedido recibido, redirigiendo…" before navigation | `redirect(confirmationPath(orderNumber))`; cart cleared |
+| `unpaid` | Card: heading + total restated + full-width "Pagar ahora" primary CTA + trust line. `.enter-fade` on mount. | Click → `useTransition` → `createPaymentPreference(token)`. Button swaps to disabled "Redirigiendo…"; on `{redirect}` → `window.location.assign(initPoint)`. |
+| `creating` / `redirecting` | Same card; CTA disabled, text "Redirigiendo…", `aria-busy="true"` on the action region. Order summary stays visible; NO layout shift (button keeps its height). | Short window; on success the browser leaves. On `{unavailable}`/`{error}` → transition to `unavailable`/`failed` in place. |
+| `pending-voucher` | `<OxxoSpeiInstructions>` (component 2) — amber/neutral, NOT green. | View voucher opens `voucherUrl`; "pagar de otra forma" → same pay action (new preference, same order). |
+| `failed` | `role="alert"` banner (GlobalBanner shape, destructive) "Tu pago fue rechazado. Inténtalo de nuevo." + **"Reintentar pago"** (`Refresh01Icon`). Total restated. | Retry → same `createPaymentPreference(token)` → NEW preference for the SAME order (no re-create, stock unchanged, token unchanged — AC-16). |
+| `paid` | Emerald "Pago recibido" note with `CheckmarkCircle02Icon` + method label ("Pagado con tarjeta"). `role="status"`. Replaces the pay CTA. | No action; the existing "Seguir comprando" link below remains the exit. |
+| `unavailable` | NEUTRAL banner (not destructive-red — a temporary system issue, not the user's fault): "El pago no está disponible por el momento. Inténtalo más tarde." + "Reintentar". | Retry re-attempts; recovery copy = "try again later". |
+| `processing` | Neutral card: `Clock01Icon` + "Estamos confirmando tu pago. Esto puede tardar un momento." + total. "Actualizar" link (reload same URL) + a quiet "¿Problemas? Reintentar el pago" secondary. `role="status"`. | Manual refresh only (no auto-poll — out of scope). Retry escape so the user is never trapped. |
+
+**Responsive:**
+
+| Breakpoint | Layout |
+| --- | --- |
+| < 640px (375px target) | Card full-width. CTA full-width `h-11` (thumb-reachable). Total row `flex justify-between` (wraps label if needed). |
+| 640–1024px (768px) | Panel full-width ABOVE the `md:grid-cols-2` summary/shipping grid (ticket UX req). CTA `sm:w-auto sm:min-w-56` for `unpaid`; full-width in the voucher card. |
+| > 1024px (desktop) | Same — container is `max-w-2xl` (single column); CTA `sm:w-auto`, centered/aligned to match the existing centered "Seguir comprando". |
+
+**Animations:**
+- Mount: `.enter-fade` (opacity 0→1, `translateY(8px)→0`, 200ms `--ease-out`). Trigger: panel renders. Property: `opacity`/`transform`. Reduced-motion: opacity-only (class handles it).
+- Press (CTA): `.cart-press` — `scale(0.98)` on `:active`, 100ms `--ease-out`. Trigger: activation. Property: `transform`. Reduced-motion: kept (press feedback is comprehension).
+- Redirect handoff: **no animation** — a text swap on a disabled button (Emil: don't animate an action whose outcome is a full-page navigation; the browser transition is the motion). `aria-busy` conveys state to AT.
+- State change (`failed`→`unpaid` on retry, skeleton→content): crossfade via `.enter-fade` re-mount. No new keyframes.
 
 ---
 
-### 3. `ContactSection`
+### 2. `<OxxoSpeiInstructions>` (new — `src/components/checkout/oxxo-spei-instructions.tsx`)
 
-**Purpose:** Email + phone.
-**Location:** `src/components/checkout/contact-section.tsx` (or inline in the flow).
-**shadcn base:** `fieldClasses` inputs.
+**Purpose:** The pending-payment voucher/instruction card for OXXO (cash) and SPEI
+(bank transfer). Shows the reference/barcode or CLABE, the printable-voucher link,
+and the expiry. It is the "esperando tu pago" state — deliberately NOT green.
 
+**Location:** Rendered by `<PaymentPanel>` when `kind==="pending-voucher"`.
+Full-width above the summary/shipping grid.
+
+**shadcn base:** none — house card + `Copy01Icon` copy button + `ExternalLink01Icon` link.
+
+**Layout (ASCII wireframe — OXXO, mobile 375px):**
 ```
-┌─ Contacto ──────────────────────────────┐
-│ Correo electrónico *                     │
-│ [ type=email inputMode=email          ]  │
-│ (error) ⚠ Ingresa un correo válido       │
-│ Teléfono (opcional)                      │
-│ [ type=tel inputMode=numeric          ]  │
-└──────────────────────────────────────────┘
-```
-
-| Field | `name` | type / attrs | required | client mirror of server pure guard |
-| --- | --- | --- | --- | --- |
-| Email | `email` | `type="email" inputMode="email" autoComplete="email"` | ✅ | non-blank trimmed, basic email shape |
-| Phone | `contact_phone` | `type="tel" inputMode="numeric" autoComplete="tel"` | ✗ | optional; bounded length if present |
-
-Card: `rounded-lg border border-border bg-card p-4 md:p-5`; `<h2 class="text-sm
-font-medium text-foreground">Contacto</h2>`; fields `flex flex-col gap-4`.
-
----
-
-### 4. `ShippingAddressSection`
-
-**Purpose:** Full Mexican shipping address incl. 5-digit CP + state Select.
-**Location:** `src/components/checkout/shipping-address-section.tsx`
-**shadcn base:** `fieldClasses` inputs + `Select`.
-
-```
-┌─ Envío ──────────────────────────────────────────┐
-│ Nombre completo *      [ text                    ] │
-│ Calle y número *       [ text                    ] │
-│ Interior / Referencia  [ text                    ] │  (address_line2, optional)
-│ ┌──────────────────────┐ ┌───────────────────────┐ │
-│ │ Colonia / Ciudad *   │ │ Código postal *       │ │  (sm+: two columns)
-│ │ [ text             ] │ │ [ 5-dig numeric      ]│ │
-│ └──────────────────────┘ └───────────────────────┘ │
-│ Estado *               [ Select ▾  32 estados    ] │
-└────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│ ⏱  Esperando tu pago                         │  ← amber accent, Clock01Icon, text-sm font-medium
+│ Paga en efectivo en cualquier OXXO.          │  ← text-xs muted
+│                                              │
+│ Referencia                                   │  ← text-xs muted label
+│ ┌──────────────────────────────┐  ┌───────┐ │
+│ │ 9860 1234 5678 9012          │  │ Copiar│ │  ← font-mono select-all + copy btn (≥44px)
+│ └──────────────────────────────┘  └───────┘ │
+│                                              │
+│ Monto            $12,345.67 MXN              │  ← tabular-nums
+│ Vence            14 jul 2026, 23:59          │  ← Intl.DateTimeFormat(locale)
+│                                              │
+│ ┌──────────────────────────────────────┐    │
+│ │  Ver comprobante            ↗         │    │  ← primary link, opens voucherUrl new tab, h-11
+│ └──────────────────────────────────────┘    │
+│                                              │
+│ ¿Prefieres pagar de otra forma?              │  ← secondary link → new preference
+└─────────────────────────────────────────────┘
+   (card: rounded-lg border border-amber-500/30 bg-muted/40 p-4 md:p-5, .enter-fade)
 ```
 
-| Field | `name` | type / attrs | required | validation |
-| --- | --- | --- | --- | --- |
-| Full name | `shipping_full_name` | text, `autoComplete="name"` | ✅ | non-blank trimmed (mirrors `customers_full_name_nonblank`) |
-| Address line 1 | `address_line1` | text, `autoComplete="address-line1"` | ✅ | non-blank |
-| Address line 2 | `address_line2` | text, `autoComplete="address-line2"` | ✗ | optional |
-| City | `city` | text, `autoComplete="address-level2"` | ✅ | non-blank |
-| Postal code | `postal_code` | text, `inputMode="numeric" maxLength={5} autoComplete="postal-code"` | ✅ | `MEXICAN_CP_PATTERN` = `/^\d{5}$/` |
-| State | `state` | **`Select`** | ✅ | ∈ `MEXICAN_STATES` (32) |
+SPEI variant: label "CLABE interbancaria" instead of "Referencia"; subtitle
+"Transfiere desde tu banca en línea a esta CLABE."; identical structure.
 
-**CP note:** text (not `type="number"` — number inputs allow `e/+/.` and strip
-leading zeros, wrong for postal codes). `inputMode="numeric"` gives the numeric
-keypad. Client may strip non-digits on input; the server regex is the boundary.
-
-**State Select markup:**
-```tsx
-<Select name="state" defaultValue={values?.state}>
-  <SelectTrigger className="h-11 w-full" aria-invalid={stateError || undefined}
-    aria-describedby={stateError ? stateErrorId : undefined} data-testid="checkout-state">
-    <SelectValue placeholder={t("shipping.statePlaceholder")} />
-  </SelectTrigger>
-  <SelectContent>
-    {MEXICAN_STATES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-  </SelectContent>
-</Select>
+**Props:**
+```typescript
+interface OxxoSpeiInstructionsProps {
+  method: "oxxo" | "spei";
+  reference: string | null;      // barcode (OXXO) / CLABE (SPEI) — render only if present
+  voucherUrl: string | null;     // printable voucher — render link only if present
+  expiresAt: string | null;      // ISO; formatted with Intl.DateTimeFormat(locale)
+  amountCents: number;           // restated, formatMXN
+  labels: VoucherLabels;
+  onPayDifferently: () => void;  // triggers the same pay action (new preference)
+}
 ```
-> **Dev note — Radix Select + FormData.** Radix `Select` does not auto-submit in a
-> plain `<form>`. Control the value and add a hidden `<input type="hidden"
-> name="state" value={state}>`, or use Radix form integration. UI contract: the
-> trigger shows the choice, the dropdown scales from the trigger
-> (`.select-content-motion`, already wired), and `state` reaches `FormData`. 32
-> items → the Select scrolls (max-height + scroll buttons already in `SelectContent`).
-> Trigger overridden to `h-11 w-full` (default is `h-7 w-fit`).
-
----
-
-### 5. `DeliveryNotesSection`
-
-**Purpose:** Free-text delivery notes + optional RFC.
-**Location:** `src/components/checkout/delivery-notes-section.tsx`
-**shadcn base:** raw `<textarea>` (no ui component) + `fieldClasses` input.
-
-```
-┌─ Notas de entrega (opcional) ────────────┐
-│ [ textarea min-h-24 resize-y            ] │
-│ RFC (opcional, para factura)              │
-│ [ text uppercase                        ] │
-│ Solo si necesitas factura (Fase 3).       │  (text-xs muted hint)
-└────────────────────────────────────────────┘
-```
-
-- Textarea: `name="delivery_notes"`, `className={cn(fieldClasses,"min-h-24 resize-y")}`
-  (exact Q&A treatment); `maxLength` bounded by `DELIVERY_NOTES_MAX`; optional live
-  counter can reuse the Q&A `CharacterCounter` if capped.
-- RFC: `name="rfc"`, optional, `autoCapitalize="characters"`, bounded length. No
-  RFC-shape validation in Phase 1 (CFDI is Phase 3) — captured/stored only.
-
----
-
-### 6. `DiscountCodeField`
-
-**Purpose:** Enter + apply a discount code; render idle / checking / applied /
-invalid / degraded.
-**Location:** `src/components/checkout/discount-code-field.tsx` (in the summary
-column at `lg`; own card section on mobile).
-**shadcn base:** `fieldClasses` input, `Button`, `Badge`.
-
-**Interaction model.** Validated **server-side** (AC-6/AC-7). Two viable
-implementations — dev picks; this spec designs BOTH:
-- **(A) Async pre-check (recommended):** a `checkDiscount` server action (or the
-  main action with an `intent` field) via `useTransition`, so the user sees
-  applied/invalid **before** placing the order; the applied code is carried in a
-  hidden input into the main submit and **re-validated there** (never trust the
-  client's "applied" claim).
-- **(B) Validate-on-submit only:** the code is just a field; its result returns with
-  `placeOrder`. Simpler but later feedback. **(A) is the better UX**; the states
-  below cover the async check.
 
 **States:**
 
 | State | Visual | Behavior |
 | --- | --- | --- |
-| Idle | `[ input "Código de descuento" ] [ Aplicar ]` (button `variant="outline"`, `h-11 shrink-0`) | Empty allowed (field optional) |
-| Checking | Button "Verificando…" `disabled`; input `disabled`; `.grid-pending` on the field group; live region "Verificando código" | Async check in flight; interruptible |
-| Applied (valid) | Input row replaced by `Badge` `✓ AHORRA10` (uppercased) + muted `−$300.00` + `Cancel01Icon` "Quitar" button; emerald tint; discount row appears in summary (`.price-value`) | Hidden input carries the normalized code into submit; "Quitar" clears → full price |
-| Invalid/expired/below-min/exhausted/unknown | `.enter-fade` inline note under field, `text-destructive`, `Alert02Icon`, reason-specific copy; field keeps its value | Order proceeds at full price (AC-7); NEVER blocks submit |
-| Degraded (lookup errored) | Neutral note "No pudimos verificar el código ahora — puedes continuar sin él." | Non-blocking; treat as no discount; retry or proceed |
+| Full data (reference + url + expiry) | The complete card above. | Copy button copies `reference`, swaps label "Copiar"→"Copiado" for ~1.5s (text swap, no toast — no toaster in repo). View voucher opens new tab. |
+| No `voucherUrl` (absent — defensive) | Card WITHOUT "Ver comprobante"; adds "Te enviamos el comprobante por correo." (email is T9; honest copy). | Reference + copy still shown if present. |
+| No `reference` (absent — defensive) | Degrades to heading + "Estamos generando tu comprobante de pago. Revisa tu correo." — no empty mono box, no broken copy button. | Only "pagar de otra forma" + refresh remain. |
+| No `expiresAt` | Omit the "Vence" row (never show "Vence Invalid Date"). | — |
+| Copy unsupported (no `navigator.clipboard`) | Copy button hidden; reference stays `select-all`. | Manual selection works. |
 
-Layout (`lg`, in summary): `flex gap-2`, button `shrink-0`. Mobile: own card,
-same row, both `h-11`.
+**Responsive:**
 
-**Applied wireframe:**
-```
-Código de descuento
-┌──────────────────────────────┐
-│ ✓  AHORRA10        −$300.00  ✕│   (emerald, Badge + amount + remove)
-└──────────────────────────────┘
-```
+| Breakpoint | Layout |
+| --- | --- |
+| < 640px | Reference box + copy button stack/wrap; reference `break-all font-mono`; copy ≥44px. "Ver comprobante" full-width `h-11`. |
+| ≥ 640px | Reference + copy inline (`flex items-center gap-2`); "Ver comprobante" `sm:w-auto`. Card full-width above the grid. |
 
----
-
-### 7. `CheckoutSummary`
-
-**Purpose:** Itemized review + discount + three-state shipping + total; hosts the
-discount field and (at `lg`) the submit. Visual + math twin of the cart
-`OrderSummary`, extended with line items and a discount row.
-**Location:** `src/components/checkout/checkout-summary.tsx`
-**shadcn base:** card pattern; `formatMXN` / `computeShipping` / `totalCents` reused verbatim.
-
-```
-┌─ Resumen del pedido ─────────────────────┐
-│  ┌──────────────────────────────────────┐│
-│  │ [img] Silla Ergonómica Pro           ││   ← line items (.stagger entrance)
-│  │       Negro · ×2          $3,000.00   ││      thumb + name + variant + qty + line total
-│  │ [img] Cojín Lumbar        ×1  $450.00 ││
-│  └──────────────────────────────────────┘│
-│  ─────────────────────────────────────────│
-│  Subtotal                    $3,450.00    │   ← tabular-nums, .price-value keyed
-│  Descuento                   −$300.00     │   ← emerald; only when discountCents>0
-│  Envío                       Gratis       │   ← ShippingValue (flat/free/unavailable)
-│  ─────────────────────────────────────────│
-│  Total                       $3,150.00    │   ← font-semibold text-base, .price-value keyed
-│  [       Realizar pedido      →       ]   │   ← h-11 w-full .cart-press; disabled when blocked
-│  🔒 Sin pago todavía. El pago es el       │   ← text-xs muted reassurance
-│     siguiente paso.                        │
-└────────────────────────────────────────────┘
-```
-
-**Props:**
-```typescript
-interface CheckoutSummaryLine {
-  key: string;                       // cartLineKey (productId::variantId)
-  name: string;
-  variantLabel: string | null;
-  quantity: number;
-  unitPriceCents: number;
-  lineTotalCents: number;
-  coverImageUrl: string | null;
-}
-
-interface CheckoutSummaryProps {
-  lines: CheckoutSummaryLine[];      // display snapshot; server re-validates
-  subtotalCents: number;
-  shipping: ShippingResult;          // { kind:"flat";cents } | { kind:"free" } | { kind:"unavailable" }
-  discountCents: number;             // 0 when no valid code
-  totalCents: number;                // subtotal + shipping - discount
-  submitDisabled: boolean;           // shipping unavailable OR pending
-  pending: boolean;
-  lineIssues?: Record<string, "price-changed" | "out-of-stock">; // keyed by cartLineKey
-  labels: CheckoutSummaryLabels;
-}
-```
-
-**Row rendering (mirror `OrderSummary`):**
-- Money via `formatMXN`; wrap the changing value in `<span key={value}
-  className="price-value" data-testid=...>` so it crossfades on change.
-- **Discount row** only when `discountCents > 0`: `text-emerald-600 dark:text-emerald-500`,
-  value prefixed `−`.
-- **Shipping row** = the exact `ShippingValue` switch from `OrderSummary`
-  (`free`→emerald "Gratis", `flat`→`formatMXN`, `unavailable`→muted "Se calcula al pagar").
-- Total: `border-t border-border pt-3`, `text-base font-semibold tabular-nums`.
-- **Submit:** `<Button type="submit" className="cart-press h-11 w-full gap-1.5 text-sm"
-  disabled={submitDisabled}>` + `ArrowRight01Icon`; text swaps to "Procesando…" when
-  `pending`. Lives INSIDE the single `<form>`. Hidden `hidden lg:flex` at `< lg`
-  (sticky-bar button is canonical there — one submit per form).
-- **Reassurance line:** `text-xs text-muted-foreground` from `summary.noPaymentYet`.
-
-**Per-line issue treatment:** when `lineIssues[key]` is set, wrap that line in
-`rounded-md ring-1` — `ring-destructive/40` (out-of-stock) or `ring-amber-500/40`
-(price-changed) — with a small `.enter-fade` note under it ("Agotado" /
-"Precio actualizado: $X"), `text-destructive` / `text-amber-600`.
-
-**Mobile:** the summary is the top collapsible accordion; collapsed header shows
-"{N} artículos · Total $X".
+**Animations:**
+- Mount: `.enter-fade`.
+- Copy button press: `.cart-step-press` (`scale(0.97)`) + label crossfade "Copiar"→"Copiado" (opacity swap ≤150ms `--ease-out`, revert after 1500ms). Trigger: copy success. Property: `opacity`/`transform`. Reduced-motion: label swaps instantly (feedback preserved via text).
+- No barcode animation, no pulse — a payment reference is read carefully, not glanced at (Emil: no motion without purpose).
 
 ---
 
-### 8. `CheckoutSkeleton`
+### 3. Confirmation page paid vs pending vs unpaid (MODIFY — `confirmacion/[token]/page.tsx`)
 
-**Purpose:** Pre-hydration placeholder; no empty-flash / `$NaN`.
-**Location:** inside `checkout-flow-client.tsx`. **shadcn base:** none.
+**Purpose:** Host `<PaymentPanel>` in place of the removed muted block, and adapt
+the hero so it doesn't claim "¡Gracias! Recibimos tu pedido" with a triumphant
+green check when the order is merely pending/unpaid. Summary + shipping cards
+UNCHANGED.
 
-Sized to the real 2-col layout (title, three form cards with `h-4/h-3` label bars +
-`h-11` field bars, and a `h-80` summary block) so the swap is a pure opacity
-crossfade (mirror `CartSkeleton`). `data-testid="checkout-skeleton"`, `aria-hidden`.
-
+**Layout (ASCII — the ONLY diff from T7, showing hero+panel variants):**
 ```
-┌ ▁▁▁▁▁▁ (title) ┐
-│ ┌ card ─────┐  ┌ summary ┐ │
-│ │ ▁▁  ▂▂▂▂▂ │  │ ▂▂▂▂▂▂  │ │   (animate-pulse bg-muted)
-│ │ ▁▁  ▂▂▂▂▂ │  │ ▂▂▂▂▂▂  │ │
-│ └───────────┘  │ ▂▂▂▂▂▂  │ │
-│ ┌ card ─────┐  └─────────┘ │
-└────────────────────────────┘
-```
+UNPAID / FAILED / PROCESSING (order created, not paid):
+┌─────────────────────────────────────────────┐
+│        (muted/amber check-outline icon)       │  ← NOT the solid green check
+│      Recibimos tu pedido                      │  h1 (softened — see copy note)
+│      Pedido  #PP-000123                       │
+├─────────────────────────────────────────────┤
+│      <PaymentPanel state=unpaid|failed|...>   │  ← replaces the muted "Sin pago" box
+├─────────────────────────────────────────────┤
+│   [Resumen del pedido]   [Envío]              │  ← existing md:grid-cols-2, UNCHANGED
+├─────────────────────────────────────────────┤
+│              [Seguir comprando →]             │  ← existing, UNCHANGED
+└─────────────────────────────────────────────┘
 
----
-
-### 9. `CheckoutEmptyState` (or reuse `CartEmptyState`)
-
-**Purpose:** Cart empty (or became empty) → block ordering, offer catalog CTA (AC-2).
-**Location:** `src/components/checkout/checkout-empty-state.tsx` OR reuse `CartEmptyState`.
-**shadcn base:** `buttonVariants` Link.
-
-> **Reuse note.** `CartEmptyState` already renders exactly this (icon + title +
-> subtitle + catalog CTA, `.enter-fade`, `cart-press`, `ShoppingCart01Icon size=40`).
-> **Prefer reusing it** with `checkout.empty.*` labels; fork only if copy diverges.
-
-```
-        ┌──────────────────────┐
-        │        🛒            │   ShoppingCart01Icon size 40, muted
-        │  Tu carrito está     │
-        │      vacío           │
-        │  Agrega artículos    │
-        │  antes de finalizar  │
-        │  la compra.          │
-        │  [   Ver sillas   ]  │   → CATALOG_PATH
-        └──────────────────────┘
-```
-`.enter-fade` entrance. No form, no summary, no submit anywhere in this state.
-
----
-
-### 10. `ConfirmationPage` + `OrderConfirmation`
-
-**Purpose:** Post-order confirmation by order number (AC-13). Server reads the
-order via the admin client; renders order number, summary, shipping address, and
-the "no payment yet" note; the client child clears the cart.
-**Location:** `src/app/[locale]/checkout/confirmacion/[orderNumber]/page.tsx`
-(server) + `src/components/checkout/order-confirmation.tsx` (client cart-clear).
-**shadcn base:** card pattern, `Badge`, `buttonVariants` Link.
-
-```
-┌──────────────────────── max-w-2xl centered ────────────────────────┐
-│                        ✓  (CheckmarkCircle02Icon, emerald, size 48) │
-│              ¡Gracias! Recibimos tu pedido        (h1, text-2xl)     │
-│              Pedido  #PP-2026-000123              (tabular-nums)      │
-│  ┌─ Sin pago todavía ─────────────────────────────────────────────┐│
-│  │ 🔒 Aún no procesamos ningún pago. El pago es el siguiente paso  ││  (muted card)
-│  │    y te contactaremos para completarlo.                         ││
-│  └─────────────────────────────────────────────────────────────────┘│
-│  ┌─ Resumen ──────────────┐   ┌─ Envío ─────────────────────────┐ │
-│  │ [img] Silla ×2 $3,000  │   │ Juan Pérez                       │ │
-│  │ [img] Cojín ×1  $450   │   │ Av. Reforma 123, Int 4           │ │
-│  │ ─────────────────────  │   │ Roma Norte                       │ │
-│  │ Subtotal    $3,450     │   │ Ciudad de México, CDMX  06700    │ │
-│  │ Descuento   −$300      │   │ Tel: 55 1234 5678                │ │
-│  │ Envío       Gratis     │   │ Notas: dejar con el portero      │ │
-│  │ Total       $3,150     │   └──────────────────────────────────┘ │
-│  └────────────────────────┘                                        │
-│              [   Seguir comprando   →   ]      → CATALOG_PATH         │
-└──────────────────────────────────────────────────────────────────────┘
+PAID (webhook confirmed):
+┌─────────────────────────────────────────────┐
+│        ✓ (solid emerald CheckmarkCircle)      │  ← existing green hero KEPT
+│      ¡Gracias! Tu pago fue recibido           │  h1 (paid variant of the title)
+│      Pedido  #PP-000123                       │
+├─────────────────────────────────────────────┤
+│      <PaymentPanel state=paid>                │  → "Pago recibido · Pagado con tarjeta"
+├─────────────────────────────────────────────┤
+│   [Resumen]   [Envío]        (unchanged)      │
+├─────────────────────────────────────────────┤
+│              [Seguir comprando →]             │
+└─────────────────────────────────────────────┘
 ```
 
-- Layout: centered `mx-auto max-w-2xl px-4 py-12`; two cards `grid gap-6
-  md:grid-cols-2`, stack on mobile; `.enter-fade` on the header block.
-- Order number: `text-lg font-semibold tabular-nums`, selectable; uses
-  `formatOrderNumber` output verbatim.
-- "No payment yet" note **required** (AC-13): muted card / `Badge` with a lock/
-  `Alert02Icon`, copy `confirmation.noPaymentYet`.
-- Cart clear: `OrderConfirmation` (tiny `"use client"`) runs a one-shot mount
-  effect that clears the cart via the provider (guarded to run once).
+> **Hero copy adaptation (important, low-risk).** Today the hero unconditionally
+> shows the solid emerald `CheckmarkCircle02Icon` + "¡Gracias! Recibimos tu pedido".
+> With payment now real, a triumphant green check on an UNPAID order is a trust bug
+> (principle 3). Minimal approved change — the layout, the `role="status"`, and the
+> `.enter-fade` hero stay exactly; only the icon colour and one title string branch
+> on `paymentStatus`:
+> - **paid:** keep the solid emerald icon + title `confirmation.paidTitle`
+>   ("¡Gracias! Tu pago fue recibido").
+> - **unpaid/failed/pending/processing:** SAME icon but muted/outline tone
+>   (`text-muted-foreground`, or amber for pending) + softened title
+>   `confirmation.receivedTitle` ("Recibimos tu pedido"). Order-number line unchanged.
 
-**Confirmation route states:**
+**Server data contract (dev):** the page already reads `getOrderByToken`. T8 extends
+it (or adds `getOrderPaymentByToken`) to also select `status`, `payment_status`,
+`payment_method`, and the voucher fields, then derives `PaymentPanelState` + the
+locale-formatted labels and passes them to `<PaymentPanel>`. The page stays a
+server component; `<PaymentPanel>` is the only new `"use client"` boundary.
+`notFound()` on missing order and the `UUID_PATTERN` pre-check are unchanged.
 
-| State | Visual | Behavior |
-| --- | --- | --- |
-| Valid order number | Full confirmation | Cart cleared on mount |
-| Unknown / malformed number | `notFound()` → existing 404 (`.enter-fade`) | No data leak |
-| Loading | Server-rendered → Next route loading handles it | — |
+**States (page-level):** loading (Suspense skeleton — reuse `animate-pulse` cards),
+not-found (`notFound()`, unchanged), and the five panel states above.
 
-> **Privacy note (Security stage).** The route reads an order by `order_number` via
-> the admin client; `order_number` is guessable-ish and Phase 1 has no accounts, so
-> anyone with the URL sees the confirmation. Flag for Security — an opaque token id
-> is a known follow-up (out of scope here). The UI renders only the order's own
-> snapshot (no cross-order data).
-
----
-
-## `CheckoutFormState` (the union the UI renders)
-
-**Location:** `src/app/[locale]/checkout/checkout-form-state.ts` (sibling to the
-`"use server"` action — Q&A `qa-form-state.ts` rule: a `"use server"` file may only
-export async functions).
-
-```typescript
-import type { AddressFieldErrorKey } from "@/lib/checkout/address";
-
-export type CheckoutStatus =
-  | "idle"
-  | "success"
-  | "invalid"              // field-level address/contact errors
-  | "price-changed"        // ≥1 line's live price ≠ snapshot
-  | "out-of-stock"         // ≥1 line lacks live stock / lost last-unit race
-  | "shipping-unavailable" // store_settings unreadable (edge 5)
-  | "error";              // generic retryable (DB/CHECK/network; never echo PG)
-
-export type CheckoutField =
-  | "email" | "contact_phone"
-  | "shipping_full_name" | "address_line1" | "address_line2"
-  | "city" | "postal_code" | "state"
-  | "delivery_notes" | "rfc";
-
-export type DiscountResult =
-  | { kind: "none" }
-  | { kind: "applied"; code: string; discountCents: number }
-  | { kind: "invalid"; reason: "unknown" | "expired" | "inactive" | "below-min" | "exhausted" }
-  | { kind: "degraded" };
-
-export interface CheckoutFormValues {
-  email: string; contact_phone: string;
-  shipping_full_name: string; address_line1: string; address_line2: string;
-  city: string; postal_code: string; state: string;
-  delivery_notes: string; rfc: string;
-  discountCode: string;
-}
-
-export interface CheckoutFormState {
-  status: CheckoutStatus;
-  /** Address/contact field → error key (localized in the form). */
-  fieldErrors?: Partial<Record<CheckoutField, AddressFieldErrorKey>>;
-  /** Per-line issues keyed by cartLineKey. */
-  lineErrors?: Record<string, "price-changed" | "out-of-stock">;
-  /** Discount outcome to render inline (never blocks submit). */
-  discount?: DiscountResult;
-  /** Preserved input so the form stays filled on failure (absent on success). */
-  values?: CheckoutFormValues;
-  /** Present only on success — drives the redirect. */
-  orderNumber?: string;
-  /** Increments on every action call (Q&A submissionId pattern). */
-  submissionId: number;
-}
-
-export const initialCheckoutFormState: CheckoutFormState = {
-  status: "idle",
-  submissionId: 0,
-};
-```
-
-**Form-message resolver** (mirror Q&A `resolveFormMessage`): non-field status →
-global banner copy — `price-changed`→`banner.priceChanged`,
-`out-of-stock`→`banner.outOfStock`, `shipping-unavailable`→`banner.shippingUnavailable`,
-`error`→`banner.error`; `invalid`/`success`/`idle` → no banner.
+**Animations:** hero `.enter-fade` (unchanged). No new page-level motion.
 
 ---
 
 ## Interaction Flows
 
-### Flow A — Happy path (place order)
-1. Arrive from cart CTA → `/checkout`. Skeleton until `hydrated` (opacity crossfade, no reflow).
-2. Form + sticky summary render; summary total == cart total (same math).
-3. Fill contact + shipping. On submit, client convenience validation flags obvious
-   errors (`.enter-fade`) but does not block typing.
-4. (Optional) Enter discount → "Aplicar" → **Checking** → **Applied**: badge +
-   `−$X` in summary (`.price-value`), live region announces the saving; total updates.
-5. Tap **Realizar pedido** → button "Procesando…" + `disabled`; form region
-   `.grid-pending` + `aria-busy`; live region "Procesando pedido…".
-6. Success → `status:"success"` + `orderNumber` → interim `role="status"` → `redirect(confirmationPath)`.
-7. Confirmation renders; `OrderConfirmation` clears cart on mount → header badge 0.
+### Flow A — Pay now (order-created → MP redirect handoff)
+1. Shopper lands on `confirmacion/[token]` (order `pending_payment`/`pending`) →
+   server derives `unpaid` → `<PaymentPanel state=unpaid>` with total + CTA.
+2. Tap **"Pagar ahora"** → `.cart-press` feedback → `useTransition` → button
+   disabled, text "Redirigiendo…", `aria-busy="true"`.
+3. `createPaymentPreference(token)` (server, builds preference, persists
+   `mp_preference_id`) → `{status:"redirect", initPoint}`.
+4. `window.location.assign(initPoint)` → browser leaves for MP hosted checkout.
+5. Shopper picks method (card / OXXO / SPEI / wallet) and pays.
+6. MP redirects to the locale `back_url` AND fires the webhook. **Page re-reads
+   live DB state on load** (URL `?status` is a hint only) → renders paid /
+   pending-voucher / failed / processing.
 
-### Flow B — Field validation failure
-1. Submit with a missing required field / bad CP / no state.
-2. Action → `status:"invalid"` + `fieldErrors` + preserved `values` + incremented `submissionId`.
-3. Values intact; `.enter-fade` errors; `aria-invalid`+`aria-describedby` wired;
-   **focus → first invalid field** (effect keyed on `submissionId`, Q&A pattern).
+### Flow B — Card declined → retry (AC-16, EC-4)
+1. Payment `rejected` → webhook maps to `payment_status=failed`, order stays
+   `pending_payment` → page derives `failed`.
+2. `<PaymentPanel state=failed>` shows destructive `role="alert"` banner + total +
+   **"Reintentar pago"** (`Refresh01Icon`).
+3. Retry → same `createPaymentPreference(token)` → NEW preference, SAME order (no
+   re-create, stock unchanged, token unchanged) → redirect to MP again.
+4. Successful retry → webhook → `paid` → next load shows the paid hero + panel.
 
-### Flow C — Price drift / out of stock (server re-validation)
-1. Address passes; server re-reads live product/variant rows.
-2. Mismatch → `price-changed` / `out-of-stock` + `lineErrors` (+ refreshed live totals).
-3. Global amber/destructive banner (`.enter-fade`, `Alert02Icon`, dismissible via
-   `Cancel01Icon`, "Revisar" affordance); affected lines ringed + inline note;
-   summary totals crossfade to live values. **No order written.** Resubmit.
+### Flow C — OXXO/SPEI pending (AC-17) → later approved (AC-18)
+1. Shopper chose OXXO/SPEI → MP issues a voucher; webhook lands `pending` with
+   voucher fields → page derives `pending-voucher`.
+2. `<OxxoSpeiInstructions>` shows reference/CLABE (copyable), "Ver comprobante"
+   (opens `voucherUrl`), and the expiry — amber/neutral, NOT green.
+3. Shopper pays at OXXO / via SPEI out-of-band. Later the approval webhook advances
+   the order to `paid`.
+4. On the shopper's NEXT load → derives `paid` → paid hero + "Pago recibido". (No
+   live update on the open page — reload suffices.)
 
-### Flow D — Shipping unavailable (edge 5)
-1. `store_settings` unreadable → shipping `unavailable`.
-2. Summary shipping row neutral "Se calcula al pagar" (never `$NaN`); global banner;
-   **submit disabled**; retry re-runs the action.
+### Flow D — Webhook-before-redirect race / confirming (EC-6)
+1. MP POSTs `approved` before the browser returns → order already `paid` when the
+   page loads → shows paid immediately. No special handling (truth is DB).
+2. Reverse: browser returns (`?status=success` hint) but webhook hasn't landed →
+   DB still `pending`/no-voucher → derive `processing` → "Estamos confirmando tu
+   pago…" + manual "Actualizar" + retry escape hatch. A reload once the webhook
+   lands flips to paid.
 
-### Flow E — Double submit (AC-14, edge 7)
-1. Double-click/retry → button `disabled` while `pending` + `aria-busy` form (client
-   guard); server idempotency key is the real backstop; an idempotent retry shows
-   the SAME confirmation.
+### Flow E — MP unavailable / credentials missing (EC-11)
+1. Pay action → `getMercadoPagoEnv()` throws or MP 5xx → `{status:"unavailable"}`
+   (never a stack trace).
+2. Panel shows the NEUTRAL "El pago no está disponible por el momento. Inténtalo
+   más tarde." + "Reintentar". No order mutation.
 
 ---
 
-## Responsive Summary
+## Error States Table (UI-facing subset of the ticket's table)
 
-| Breakpoint | Layout |
-| --- | --- |
-| **< 640px (375px)** | Single column, all fields full-width (Colonia/CP/State each own row). Summary = top collapsible accordion + **sticky bottom action bar** (Total + submit, translucent, safe-area). Fields `min-h-11`; numeric keypads. No horizontal scroll. In-card summary submit `hidden lg:flex`; sticky-bar button canonical. |
-| **640–1024px (768px)** | Single-column form (pairs may sit `sm+`, e.g. Colonia|CP). Summary card below the form; sticky bottom bar still shown (`< lg`) so Total + submit stay reachable. |
-| **> 1024px (desktop)** | `grid-cols-[2fr_1fr] gap-10`: form left, summary right `sticky top-20 self-start`. Bottom bar `lg:hidden`; in-card summary submit shown. |
+| Trigger | User sees (es / en) | Panel state | Recovery |
+| --- | --- | --- | --- |
+| MP env missing / MP 5xx at pay-now | "El pago no está disponible por el momento. Inténtalo más tarde." / "Payment is temporarily unavailable. Please try again later." | `unavailable` (neutral banner) | "Reintentar" (try later) |
+| Preference create network/timeout | same as above | `unavailable` | "Reintentar" |
+| Card declined (`rejected`) | "Tu pago fue rechazado. Inténtalo de nuevo." / "Your payment was declined. Try again." | `failed` (destructive `role="alert"`) | "Reintentar pago" (retry now, new preference) |
+| OXXO/SPEI voucher issued | "Esperando tu pago." + reference + comprobante + expiry / "Awaiting your payment." | `pending-voucher` (amber, not green) | "Ver comprobante" / "pagar de otra forma" |
+| Voucher fields absent (defensive) | "Estamos generando tu comprobante. Revisa tu correo." / "We're generating your voucher. Check your email." | `pending-voucher` degraded | "Actualizar" / "pagar de otra forma" |
+| Webhook not yet landed after return | "Estamos confirmando tu pago. Esto puede tardar un momento." / "We're confirming your payment. This can take a moment." | `processing` (neutral, `role="status"`) | "Actualizar" (reload) + retry escape |
+| Voucher expired / cancelled | "Tu pago no se completó a tiempo. Puedes intentar de nuevo." / "Your payment wasn't completed in time. You can try again." | `failed` | "Reintentar pago" (new preference) |
+| Paid | "Pago recibido · Pagado con {método}" / "Payment received · Paid with {method}" | `paid` (`role="status"`, emerald) | "Seguir comprando" |
 
 ---
 
-## Motion Spec (all reuse existing globals.css classes — NO new CSS)
+## Responsive Specs (375px / 768px / desktop)
 
-| # | Element | Effect (vocabulary) | Trigger | Property | Easing | Duration | Class | Reduced-motion |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| M1 | Skeleton → content | Crossfade | `hydrated` flips | `opacity` | ease-out | 200ms | `.enter-fade` on content; skeleton `animate-pulse` | opacity only (class gates) |
-| M2 | Summary line items | Stagger (rise + fade) | mount | `opacity`+`transform` | ease-out | 200ms, ≤40ms/item cap 240ms | `.stagger` (inline `transitionDelay`) | opacity only, no delay (class gates) |
-| M3 | Subtotal / discount / total | Crossfade (number change) | value change | `opacity` | ease-out | 150ms | `.price-value` keyed on value | instant (class gates) |
-| M4 | Primary submit / CTAs | Press feedback | `:active` | `scale(0.98)` | ease-out | 100ms | `.cart-press` | none (class gates) |
-| M5 | Discount "Aplicar" / small icon btns | Press feedback | `:active` | `scale(0.97)` | ease-out | 90ms | `.cart-step-press` | none |
-| M6 | State Select dropdown | Origin-aware Scale in ("Pop in", no bounce) | open/close | `opacity`+`transform` | ease-out | 200/150ms | `.select-content-motion` (already in `SelectContent`) | opacity only |
-| M7 | Field errors / banners / success note | Fade + slight rise | render | `opacity`+`transform` | ease-out | 200ms | `.enter-fade` | opacity only |
-| M8 | Form region while submitting | Pending dim | `pending` | `opacity → 0.6` | ease | 200ms | `.grid-pending` / `.grid-idle` | keeps dim, drops transition (class gates) |
-| M9 | Discount field while checking | Pending dim | checking | `opacity → 0.6` | ease | 200ms | `.grid-pending` | as M8 |
-| M10 | Mobile summary accordion | Accordion / Collapse | tap header | height/opacity | ease-out | ≤250ms | native `<details>` (or crossfade the panel opacity) | opacity only |
-| M11 | Mobile sticky bar | Translucent chrome (static) | — | `backdrop-blur` (no motion) | — | — | `bg-background/85 backdrop-blur border-t` | frostier under `prefers-reduced-transparency` |
+| Element | 375px (mobile) | 768px (tablet) | Desktop (`max-w-2xl`) |
+| --- | --- | --- | --- |
+| `<PaymentPanel>` card | full-width, `p-4` | full-width above the `md:grid-cols-2` grid, `p-5` | full-width (single-column container) |
+| Pay / retry CTA | full-width `h-11` (thumb-reachable) | `sm:w-auto sm:min-w-56` (unpaid); full-width in voucher card | `sm:w-auto`, aligned to match "Seguir comprando" |
+| Voucher reference | `font-mono break-all`, own row; copy btn ≥44px | reference + copy inline | inline |
+| "Ver comprobante" | full-width `h-11` | `sm:w-auto` | `sm:w-auto` |
+| Total restated | `flex justify-between`, wraps label if needed | inline | inline |
+| Hero | unchanged (`max-w-2xl px-4 py-12`) | unchanged | unchanged |
 
-> **No animation on:** typing, focus (only the built-in `focus-visible:ring`), or
-> the Select's per-item hover (Radix default). No bounce/celebratory motion — a
-> professional high-trust surface (Emil: match motion to mood). Enter animations
-> are `ease-out`; nothing uses `ease-in`.
+No horizontal scroll at 375px (voucher reference `break-all`; no fixed-width boxes).
 
 ---
 
 ## Accessibility Checklist
 
-- [ ] Every input has a visible `<label>` bound via `htmlFor`/`useId` (Q&A pattern).
-- [ ] State picker is Radix `Select` (keyboard + SR accessible); value reaches
-      `FormData` via hidden input or Radix form integration.
-- [ ] `aria-invalid` + `aria-describedby` on every field with an error; error text `role="alert"`.
-- [ ] Focus → first invalid field on `status:"invalid"` (effect keyed on `submissionId`).
-- [ ] One page-level `aria-live="polite"` region for discount result, global errors,
-      "Procesando pedido…" — no per-component duplicates.
-- [ ] Color is never the only signal: free ship / applied discount pair emerald with
-      text ("Gratis"/"aplicado"/`✓`); out-of-stock pairs the ring with "Agotado";
-      price-changed pairs amber with "Precio actualizado".
-- [ ] Logical tab order: back link → email → phone → name → address → city → CP →
-      state → notes → RFC → discount → submit.
-- [ ] Submit: `type="submit"`, `disabled` while `pending`/blocked; text swap not
-      spinner-only (announced via disabled + live-region).
-- [ ] `type="email"`, `inputMode="numeric"` (CP, phone) for correct mobile keyboards.
-- [ ] `prefers-reduced-motion` honored — every motion class already gates it.
-- [ ] Confirmation success uses `role="status"`; order number is selectable text.
-- [ ] ≥44px tap targets: `h-11`/`min-h-11` on primary controls; sticky bar `h-11` +
-      `pb-[env(safe-area-inset-bottom)]`.
-- [ ] No horizontal scroll at 375px (full-width fields; no fixed-width rows).
+- [ ] Pay/retry CTAs are real `<button>` in a `<form>` (or `buttonVariants` on a button) with visible focus ring (`focus-visible:ring-2 ring-ring/30` — house).
+- [ ] Redirect/creating state sets `aria-busy="true"` on the action region and disables the button; the disabled text ("Redirigiendo…") is announced.
+- [ ] `failed`/`unavailable` banners use `role="alert"` (existing GlobalBanner pattern) so AT announces them immediately.
+- [ ] `paid` and `processing` use `role="status"` (polite live region) — matches the existing confirmation hero.
+- [ ] Copy button has an accessible label ("Copiar referencia"); the copy confirmation ("Copiado") is announced (aria-live polite / `role="status"`).
+- [ ] "Ver comprobante" opens a new tab with `rel="noopener noreferrer"` + a label indicating it opens externally; ≥44px tap target.
+- [ ] Colour is never the only signal: pending pairs amber WITH `Clock01Icon` + "Esperando pago" text; paid pairs emerald WITH the check + "Pago recibido"; failed pairs red WITH `Alert02Icon` + explicit text.
+- [ ] Tab order: heading → total → primary CTA → secondary link. Logical top-down.
+- [ ] Voucher reference is selectable (`select-all`) even where copy is unavailable, so users can copy manually.
+- [ ] `prefers-reduced-motion`: honored by `.enter-fade` (built-in branch); press scale kept minimal; no auto-motion added.
+- [ ] All strings via `getTranslations`/`useTranslations` (`checkout` namespace) — no hardcoded copy; both locales.
 
 ---
 
-## i18n — new `checkout` namespace (BOTH `es-MX.json` default + `en.json`)
+## i18n Key Drafts (both locales — `checkout` namespace, Spanish default)
 
-Add a top-level `"checkout"` key alongside the existing 11 namespaces (`metadata`,
-`nav`, `toggle`, `footer`, `whatsapp`, `home`, `notFound`, `error`, `catalog`,
-`product`, `cart`). All copy here — **no hardcoded strings**. Money via `formatMXN`
-only. Interpolation uses the existing `interpolate` (`{amount}`/`{count}` via
-`t.raw`) and ICU plural patterns (the `cart` namespace uses both).
+New keys live under `checkout.payment.*`. The stale `confirmation.noPaymentTitle` /
+`confirmation.noPaymentYet` keys are REMOVED (replaced by the panel); a new
+`confirmation.paidTitle` + `confirmation.receivedTitle` split the hero title.
+`summary.noPaymentYet` (used in the checkout summary) is updated to consistent wording.
 
-```jsonc
-"checkout": {
-  "metadata": { "title": "Finalizar compra" },
-  "title": "Finalizar compra",
-  "backToCart": "Volver al carrito",
-
-  "empty": {
-    "title": "Tu carrito está vacío",
-    "subtitle": "Agrega artículos antes de finalizar la compra.",
-    "cta": "Ver sillas"
-  },
-
-  "contact": {
-    "heading": "Contacto",
-    "email": "Correo electrónico",
-    "emailPlaceholder": "tucorreo@ejemplo.com",
-    "phone": "Teléfono (opcional)",
-    "phonePlaceholder": "55 1234 5678"
-  },
-
-  "shipping": {
-    "heading": "Envío",
-    "fullName": "Nombre completo",
-    "addressLine1": "Calle y número",
-    "addressLine2": "Interior / Referencia (opcional)",
-    "city": "Colonia / Ciudad",
-    "postalCode": "Código postal",
-    "postalCodePlaceholder": "00000",
-    "state": "Estado",
-    "statePlaceholder": "Selecciona un estado"
-  },
-
-  "notes": {
-    "heading": "Notas de entrega (opcional)",
-    "placeholder": "Instrucciones para la entrega…",
-    "rfc": "RFC (opcional, para factura)",
-    "rfcHint": "Solo si necesitas factura (Fase 3)."
-  },
-
-  "discount": {
-    "label": "Código de descuento",
-    "placeholder": "Código de descuento",
-    "apply": "Aplicar",
-    "checking": "Verificando…",
-    "remove": "Quitar código",
-    "appliedLabel": "Código {code} aplicado",
-    "savings": "Ahorras {amount}",
-    "invalid": {
-      "unknown": "Código no válido.",
-      "expired": "Este código ya expiró.",
-      "inactive": "Este código no está disponible.",
-      "belowMin": "No alcanzas la compra mínima para este código.",
-      "exhausted": "Este código ya no está disponible."
+### `src/messages/es-MX.json` (add / update)
+```json
+{
+  "checkout": {
+    "confirmation": {
+      "paidTitle": "¡Gracias! Tu pago fue recibido",
+      "receivedTitle": "Recibimos tu pedido"
     },
-    "degraded": "No pudimos verificar el código ahora — puedes continuar sin él."
-  },
-
-  "summary": {
-    "heading": "Resumen del pedido",
-    "itemQuantity": "×{count}",
-    "subtotal": "Subtotal",
-    "discount": "Descuento",
-    "shipping": "Envío",
-    "shippingFree": "Gratis",
-    "shippingUnavailable": "Se calcula al pagar",
-    "total": "Total",
-    "itemsCount": "{count, plural, one {# artículo} other {# artículos}}",
-    "noPaymentYet": "Sin pago todavía. El pago es el siguiente paso.",
-    "lineOutOfStock": "Agotado",
-    "linePriceChanged": "Precio actualizado: {amount}"
-  },
-
-  "submit": "Realizar pedido",
-  "submitting": "Procesando…",
-
-  "validation": {
-    "emailRequired": "Ingresa tu correo electrónico.",
-    "emailInvalid": "Ingresa un correo válido.",
-    "fullNameRequired": "Ingresa tu nombre completo.",
-    "addressRequired": "Ingresa tu calle y número.",
-    "cityRequired": "Ingresa tu colonia o ciudad.",
-    "postalCodeRequired": "Ingresa tu código postal.",
-    "postalCodeInvalid": "El código postal debe tener 5 dígitos.",
-    "stateRequired": "Selecciona un estado."
-  },
-
-  "banner": {
-    "priceChanged": "El precio de un artículo cambió. Revisa tu pedido e inténtalo de nuevo.",
-    "outOfStock": "Un artículo se agotó. Revisa tu pedido e inténtalo de nuevo.",
-    "shippingUnavailable": "No podemos calcular el envío ahora. Inténtalo de nuevo.",
-    "error": "No pudimos realizar tu pedido. Inténtalo de nuevo.",
-    "dismiss": "Cerrar",
-    "review": "Revisar pedido",
-    "retry": "Reintentar"
-  },
-
-  "processing": "Procesando pedido…",
-
-  "confirmation": {
-    "metadata": { "title": "Pedido confirmado" },
-    "title": "¡Gracias! Recibimos tu pedido",
-    "orderNumberLabel": "Pedido",
-    "noPaymentTitle": "Sin pago todavía",
-    "noPaymentYet": "Aún no procesamos ningún pago. El pago es el siguiente paso y te contactaremos para completarlo.",
-    "summaryHeading": "Resumen",
-    "shippingHeading": "Envío",
-    "keepShopping": "Seguir comprando",
-    "notesLabel": "Notas",
-    "phoneLabel": "Tel"
-  },
-
-  "liveRegion": {
-    "discountApplied": "Código aplicado. Ahorras {amount}.",
-    "discountInvalid": "El código no es válido.",
-    "processing": "Procesando pedido.",
-    "orderReceived": "Pedido recibido, redirigiendo."
+    "payment": {
+      "heading": "Completa tu pago",
+      "subheading": "Elige tu método de pago en el siguiente paso.",
+      "totalLabel": "Total a pagar",
+      "payNow": "Pagar ahora",
+      "redirecting": "Redirigiendo…",
+      "secureNote": "Pago seguro con Mercado Pago · tarjeta, OXXO, SPEI",
+      "payDifferently": "Pagar de otra forma",
+      "paid": {
+        "title": "Pago recibido",
+        "methodCard": "Pagado con tarjeta",
+        "methodOxxo": "Pagado en OXXO",
+        "methodSpei": "Pagado por transferencia SPEI",
+        "methodWallet": "Pagado con Mercado Pago",
+        "methodGeneric": "Pago confirmado"
+      },
+      "failed": {
+        "title": "Tu pago fue rechazado",
+        "body": "No se completó el cobro. Inténtalo de nuevo.",
+        "retry": "Reintentar pago"
+      },
+      "expired": {
+        "body": "Tu pago no se completó a tiempo. Puedes intentar de nuevo."
+      },
+      "unavailable": {
+        "body": "El pago no está disponible por el momento. Inténtalo más tarde.",
+        "retry": "Reintentar"
+      },
+      "processing": {
+        "title": "Estamos confirmando tu pago",
+        "body": "Esto puede tardar un momento. Actualiza la página en unos segundos.",
+        "refresh": "Actualizar",
+        "retryHint": "¿Problemas? Reintentar el pago"
+      },
+      "voucher": {
+        "oxxoTitle": "Esperando tu pago",
+        "oxxoSubtitle": "Paga en efectivo en cualquier OXXO.",
+        "speiTitle": "Esperando tu pago",
+        "speiSubtitle": "Transfiere desde tu banca en línea a esta CLABE.",
+        "referenceLabel": "Referencia",
+        "clabeLabel": "CLABE interbancaria",
+        "amountLabel": "Monto",
+        "expiresLabel": "Vence",
+        "copy": "Copiar",
+        "copied": "Copiado",
+        "copyAria": "Copiar referencia de pago",
+        "viewVoucher": "Ver comprobante",
+        "viewVoucherAria": "Ver comprobante (se abre en una pestaña nueva)",
+        "noVoucherUrl": "Te enviamos el comprobante por correo.",
+        "generating": "Estamos generando tu comprobante de pago. Revisa tu correo."
+      },
+      "liveRegion": {
+        "redirecting": "Redirigiendo a Mercado Pago.",
+        "paid": "Pago recibido.",
+        "declined": "Tu pago fue rechazado.",
+        "copied": "Referencia copiada."
+      }
+    },
+    "summary": {
+      "noPaymentYet": "El pago es el siguiente paso."
+    }
   }
 }
 ```
-> `MEXICAN_STATES` are proper nouns (Aguascalientes … Ciudad de México … Zacatecas)
-> — identical in both locales, so they are a **config constant, not i18n keys**
-> (only the placeholder/label are translated).
+
+### `src/messages/en.json` (add / update)
+```json
+{
+  "checkout": {
+    "confirmation": {
+      "paidTitle": "Thank you! Your payment was received",
+      "receivedTitle": "We received your order"
+    },
+    "payment": {
+      "heading": "Complete your payment",
+      "subheading": "Choose your payment method in the next step.",
+      "totalLabel": "Total to pay",
+      "payNow": "Pay now",
+      "redirecting": "Redirecting…",
+      "secureNote": "Secure payment with Mercado Pago · card, OXXO, SPEI",
+      "payDifferently": "Pay a different way",
+      "paid": {
+        "title": "Payment received",
+        "methodCard": "Paid with card",
+        "methodOxxo": "Paid at OXXO",
+        "methodSpei": "Paid via SPEI transfer",
+        "methodWallet": "Paid with Mercado Pago",
+        "methodGeneric": "Payment confirmed"
+      },
+      "failed": {
+        "title": "Your payment was declined",
+        "body": "The charge didn't go through. Please try again.",
+        "retry": "Retry payment"
+      },
+      "expired": {
+        "body": "Your payment wasn't completed in time. You can try again."
+      },
+      "unavailable": {
+        "body": "Payment is temporarily unavailable. Please try again later.",
+        "retry": "Try again"
+      },
+      "processing": {
+        "title": "We're confirming your payment",
+        "body": "This can take a moment. Refresh the page in a few seconds.",
+        "refresh": "Refresh",
+        "retryHint": "Having trouble? Retry the payment"
+      },
+      "voucher": {
+        "oxxoTitle": "Awaiting your payment",
+        "oxxoSubtitle": "Pay in cash at any OXXO.",
+        "speiTitle": "Awaiting your payment",
+        "speiSubtitle": "Transfer from your online banking to this CLABE.",
+        "referenceLabel": "Reference",
+        "clabeLabel": "Interbank CLABE",
+        "amountLabel": "Amount",
+        "expiresLabel": "Expires",
+        "copy": "Copy",
+        "copied": "Copied",
+        "copyAria": "Copy payment reference",
+        "viewVoucher": "View voucher",
+        "viewVoucherAria": "View voucher (opens in a new tab)",
+        "noVoucherUrl": "We've emailed you the voucher.",
+        "generating": "We're generating your payment voucher. Check your email."
+      },
+      "liveRegion": {
+        "redirecting": "Redirecting to Mercado Pago.",
+        "paid": "Payment received.",
+        "declined": "Your payment was declined.",
+        "copied": "Reference copied."
+      }
+    },
+    "summary": {
+      "noPaymentYet": "Payment is the next step."
+    }
+  }
+}
+```
+
+> **Removed keys (dev must delete + fix references):**
+> `checkout.confirmation.noPaymentTitle`, `checkout.confirmation.noPaymentYet`.
+> The `keys-used` message test will fail if any component still references them —
+> the confirmation page's muted block is replaced by `<PaymentPanel>`, so those
+> refs go away. Keep `confirmation.orderNumberLabel`, `summaryHeading`,
+> `shippingHeading`, `keepShopping`, `notesLabel`, `phoneLabel` (still used).
 
 ---
 
-## Config constants the UI depends on (added in `src/lib/config.ts`, dev stage)
+## Component / File Manifest for Dev
 
-The UI consumes (dev creates with the "HOW TO SWAP" docstring style):
-`MEXICAN_STATES` (32, single-source for the Select), `MEXICAN_CP_PATTERN`
-(`/^\d{5}$/`), `CHECKOUT_CONFIRMATION_PATH` / `confirmationPath(orderNumber)`
-(locale-aware base for redirect + links), `ORDER_NUMBER_PREFIX` +
-`formatOrderNumber` (confirmation display), `TAX_RATE = 0`, and `DELIVERY_NOTES_MAX`
-if the notes textarea is capped. Already exist: `CHECKOUT_PATH`, `CATALOG_PATH`,
-`MAX_CART_ITEM_QUANTITY`, `UUID_PATTERN`.
+| File | Action | What it holds (UI) |
+| --- | --- | --- |
+| `src/components/checkout/payment-panel.tsx` | **create** | `"use client"` `<PaymentPanel>` — switches on `PaymentPanelState`; owns the pay/retry action call, redirect handoff (`window.location.assign(initPoint)`), all five visual states. |
+| `src/components/checkout/oxxo-spei-instructions.tsx` | **create** | `<OxxoSpeiInstructions>` — voucher/CLABE card, copy button, view-voucher link, expiry; defensive rendering of absent fields. |
+| `src/app/[locale]/checkout/confirmacion/[token]/page.tsx` | **modify** | Replace the `bg-muted/40` "Sin pago todavía" block (lines 67-70) with `<PaymentPanel>`; branch the hero icon/title on `paymentStatus`; pass derived state + labels. Keep summary/shipping cards + container + grid UNCHANGED. |
+| `src/lib/checkout/order-payment-read.ts` (or extend `order-read.ts`) | **create/modify** (dev/logic) | Extend the token read to also select `status`, `payment_status`, `payment_method`, voucher fields; expose the `OrderPaymentView` shape above. Noted here so the UI's data contract is unambiguous. |
+| `src/app/[locale]/checkout/pay-actions.ts` | **create** (dev/logic) | `"use server"` `createPaymentPreference(token)` returning `PayActionResult`. UI depends on this discriminated result. |
+| `src/messages/es-MX.json` + `src/messages/en.json` | **modify** | Add `checkout.payment.*` + `confirmation.paidTitle/receivedTitle`; update `summary.noPaymentYet`; remove `confirmation.noPaymentTitle/noPaymentYet`. |
+| `src/lib/config.ts` | **modify** (dev/logic) | Locale `back_urls` builders key off `confirmation_token` (already `confirmationPath`); the `?status` display-hint param name (UI reads it as `returnHint` — DISPLAY ONLY). |
+
+**Reused verbatim (no change):** `formatMXN` (`src/lib/money.ts`), `buttonVariants`
+(`ui/button.tsx`), `.enter-fade`/`.cart-press`/`.cart-step-press` (`globals.css`),
+`confirmationPath` (`config.ts`), the `GlobalBanner` destructive styling pattern
+(match the classes in `<PaymentPanel>`; a shared extraction is optional), the
+summary + shipping cards on the confirmation page.
 
 ---
 
-## Files this design implies (for the dev stage)
+## Notes for Dev — build defensively (ambiguous MP response fields)
 
-**Create (UI):**
-- `src/app/[locale]/checkout/page.tsx`
-- `src/app/[locale]/checkout/checkout-form-state.ts`
-- `src/components/checkout/checkout-flow-client.tsx`
-- `src/components/checkout/contact-section.tsx`
-- `src/components/checkout/shipping-address-section.tsx`
-- `src/components/checkout/delivery-notes-section.tsx`
-- `src/components/checkout/discount-code-field.tsx`
-- `src/components/checkout/checkout-summary.tsx`
-- `src/components/checkout/checkout-empty-state.tsx` (or reuse `CartEmptyState`)
-- `src/app/[locale]/checkout/confirmacion/[orderNumber]/page.tsx`
-- `src/components/checkout/order-confirmation.tsx` (client cart-clear)
-- component tests under `src/components/checkout/*.test.tsx`
+1. **Voucher field paths are UNVERIFIED (research §5).** Prefer
+   `transaction_details.external_resource_url` (voucherUrl),
+   `transaction_details.payment_method_reference_id` (reference/CLABE),
+   `transaction_details.verification_code`, top-level `date_of_expiration`
+   (expiresAt). Treat `point_of_interaction.transaction_data.*` as a FALLBACK only.
+   **The UI already assumes every voucher field can be `null`** and degrades
+   gracefully (see `<OxxoSpeiInstructions>` state table) — never render `undefined`,
+   `Invalid Date`, or an empty `<a href>`. Verify paths against a real sandbox
+   response before launch (blocked-on-user).
+2. **Never trust the `back_url` `?status` param for state.** The UI passes it only
+   as `returnHint` to CHOOSE FRIENDLY COPY when the DB is momentarily behind
+   (`processing`) — it must NEVER flip the panel to `paid`/`failed` on its own. The
+   panel state is derived from live DB `payment_status`/`status` exclusively.
+3. **Method label mapping:** `payment_method` → `payment.paid.method*` key. If
+   `payment_method` is null/unknown on a paid order, use `methodGeneric` ("Pago
+   confirmado") — never blank.
+4. **Expiry formatting:** format `expiresAt` with `Intl.DateTimeFormat(locale, …)`
+   (locale from the route), NOT a hardcoded string. Guard `Invalid Date`.
+5. **Copy button:** feature-detect `navigator.clipboard`; hide the button (keep
+   `select-all` reference) where unavailable. No toast (no toaster in repo) — use
+   the in-button "Copiado" text swap + a polite live-region announcement.
+6. **No new motion CSS.** If a state needs entrance motion, reuse `.enter-fade`. If
+   a skeleton is needed, reuse `animate-pulse bg-muted` (checkout-skeleton pattern).
 
-**Modify (UI-adjacent):**
-- `src/messages/es-MX.json` + `src/messages/en.json` — the `checkout` namespace above.
-- `src/lib/config.ts` — the constants listed above.
+---
 
-**No new shadcn ui components, no new globals.css, no new npm deps.**
+## Quality Bar Self-Check
+
+- Every payment UI state (unpaid, creating/redirecting, pending-voucher, failed, paid, unavailable, processing) has a defined visual + behavior + a11y role. ✅
+- Voucher card degrades for every absent field (defensive). ✅
+- Both locales drafted for every new string; stale keys flagged for removal. ✅
+- Responsive at 375 / 768 / desktop specified per element. ✅
+- Every animation names trigger + property + easing + duration + reduced-motion, and reuses an EXISTING globals.css class (no new motion CSS). ✅
+- No new shadcn primitive; house card/banner conventions matched. ✅
+- Truth-from-DB principle keeps the webhook-race state correct by construction. ✅
+- Human-review + live-sandbox gates flagged. ✅
