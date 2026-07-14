@@ -119,7 +119,7 @@ function OrderSummaryCard({ order, labels }: { order: OrderView; labels: Summary
       <ul className="flex flex-col gap-2 text-sm">
         {order.items.map((item, index) => (
           <li key={index} className="flex items-start justify-between gap-3">
-            <span className="min-w-0 text-muted-foreground">
+            <span className="min-w-0 break-words text-muted-foreground">
               <span className="text-foreground">{item.productName}</span>
               {item.variantLabel ? ` · ${item.variantLabel}` : ""}{" "}
               {interpolate(labels.itemQuantity, { count: item.quantity })}
@@ -178,20 +178,20 @@ function ShippingCard({ order, labels }: { order: OrderView; labels: ShippingLab
   return (
     <section className="flex flex-col gap-1 rounded-lg border border-border bg-card p-4 text-sm md:p-5" data-testid="confirmation-shipping">
       <h2 className="mb-2 text-sm font-medium text-foreground">{labels.heading}</h2>
-      <p className="font-medium text-foreground">{order.shippingFullName}</p>
-      <p className="text-muted-foreground">
+      <p className="break-words font-medium text-foreground">{order.shippingFullName}</p>
+      <p className="break-words text-muted-foreground">
         {order.addressLine1}
         {order.addressLine2 ? `, ${order.addressLine2}` : ""}
       </p>
-      <p className="text-muted-foreground">
+      <p className="break-words text-muted-foreground">
         {order.city}, {order.state} {order.postalCode}
       </p>
-      <p className="text-muted-foreground">{order.contactEmail}</p>
+      <p className="break-words text-muted-foreground">{order.contactEmail}</p>
       {order.contactPhone ? (
-        <p className="text-muted-foreground">{labels.phoneLabel}: {order.contactPhone}</p>
+        <p className="break-words text-muted-foreground">{labels.phoneLabel}: {order.contactPhone}</p>
       ) : null}
       {order.deliveryNotes ? (
-        <p className="mt-1 text-muted-foreground">{labels.notesLabel}: {order.deliveryNotes}</p>
+        <p className="mt-1 break-words text-muted-foreground">{labels.notesLabel}: {order.deliveryNotes}</p>
       ) : null}
     </section>
   );

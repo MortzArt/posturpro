@@ -257,11 +257,20 @@ function validateVariantLine(
 }
 
 /**
- * Fetch a single discount-code row by its normalized code (case-insensitive),
- * for the action to pass to `applyDiscount` (AC-6). Degrades to a distinct
- * `"error"` sentinel on a DB failure (so the action shows the "couldn't verify"
- * degraded message, never blocking checkout, AC-7). Returns `null` when no row
- * matches (unknown code).
+ * Fetch a single discount-code row by its normalized code, for the action to pass
+ * to `applyDiscount` (AC-6). Degrades to a distinct `"error"` sentinel on a DB
+ * failure (so the action shows the "couldn't verify" degraded message, never
+ * blocking checkout, AC-7). Returns `null` when no row matches (unknown code).
+ *
+ * MATCH SEMANTICS: an EXACT `.eq` lookup on the UPPER-CASED code, NOT `.ilike`.
+ * Codes are stored upper-cased (seed + `normalizeDiscountCode`), so this function
+ * upper-cases its own argument and matches by equality — correct, and
+ * case-insensitive in effect regardless of the caller's casing. `.ilike` was a
+ * wildcard-injection hole: LIKE treats `%`/`_` in user input as wildcards, so
+ * `AHORRA_0` would silently match `AHORRA10` (applying a code the user never knew)
+ * and `%` would match every row (then error on `.maybeSingle`). Equality has no
+ * such metacharacters. Uniqueness is DB-guaranteed by the
+ * `discount_codes (upper(code))` unique index.
  */
 export async function fetchDiscountCode(
   normalizedCode: string,
@@ -269,7 +278,11 @@ export async function fetchDiscountCode(
   | { status: "ok"; row: import("@/lib/checkout/discount").DiscountCodeRow | null }
   | { status: "error" }
 > {
-  if (normalizedCode.length === 0) {
+  // Canonicalize to the stored upper-case form so the equality match is
+  // case-insensitive in effect (mirrors `normalizeDiscountCode`) even if a caller
+  // passes a raw/lower-case code directly.
+  const code = normalizedCode.trim().toUpperCase();
+  if (code.length === 0) {
     return { status: "ok", row: null };
   }
   try {
@@ -279,7 +292,7 @@ export async function fetchDiscountCode(
       .select(
         "code, discount_type, value, min_subtotal_cents, max_redemptions, times_redeemed, starts_at, ends_at, is_active",
       )
-      .ilike("code", normalizedCode)
+      .eq("code", code)
       .maybeSingle();
     if (error) {
       console.error(`[checkout] discount lookup failed: ${error.message}`);

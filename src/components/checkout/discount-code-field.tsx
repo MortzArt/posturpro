@@ -133,7 +133,7 @@ function AppliedPill({
           disabled={disabled}
           aria-label={labels.remove}
           data-testid="checkout-discount-remove"
-          className="cart-step-press rounded px-1 text-xs underline underline-offset-2 disabled:opacity-60"
+          className="cart-step-press rounded px-1 text-xs underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
         >
           {labels.remove}
         </button>

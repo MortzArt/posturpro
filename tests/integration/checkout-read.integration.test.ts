@@ -148,6 +148,25 @@ describe("fetchDiscountCode — case-insensitive live lookup (AC-6, AC-7)", () =
     const result = await fetchDiscountCode("");
     expect(result).toEqual({ status: "ok", row: null });
   });
+
+  // Regression (hacker Stage 11): the lookup used `.ilike`, so LIKE wildcards in
+  // user input matched codes the user never knew — `AHORRA_0` (the `_` matches any
+  // single char) resolved to `AHORRA10`, and `%` matched every row. The exact
+  // `.eq` on the upper-cased code has no metacharacters.
+  it("does NOT treat an underscore as a LIKE wildcard (no wildcard injection)", async () => {
+    // `AHORRA_0` would match `AHORRA10` under LIKE; it must now be an unknown code.
+    const result = await fetchDiscountCode("AHORRA_0");
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") expect(result.row).toBeNull();
+  });
+
+  it("does NOT treat a percent sign as a LIKE wildcard (no match-all)", async () => {
+    // `%` would match every row under LIKE (and error on maybeSingle); it must now
+    // be a plain unknown code that resolves to null (order proceeds at full price).
+    const result = await fetchDiscountCode("%");
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") expect(result.row).toBeNull();
+  });
 });
 
 // ---- getOrderByToken: the M-6 IDOR fix, verified against a real order. ----
