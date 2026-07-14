@@ -171,3 +171,92 @@ describe("sendContactRelay (AC-17, not order-scoped)", () => {
     );
   });
 });
+
+/**
+ * Failure-mode DISCRIMINATION (QA S5, edge 2): the review confirmed the timeout
+ * uses `Promise.race`, but no test proved the timeout path is DISTINCT from the
+ * throw path. These use fake timers so a hung provider resolves via the timeout
+ * branch (`send timeout`), not a throw — and neither finalizes nor throws.
+ */
+describe("bounded-send failure discrimination (AC-13, edge 2)", () => {
+  it("resolves via the TIMEOUT branch (not a throw) when the provider hangs", async () => {
+    vi.useFakeTimers();
+    // A send that never settles → the timeout wins the race.
+    sendEmail.mockImplementation(() => new Promise(() => undefined));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { sendPaymentReceived } = await dispatch();
+    const pending = sendPaymentReceived(ORDER.orderId, "MP-HANG", 49999);
+    await vi.advanceTimersByTimeAsync(8_000); // EMAIL_SEND_TIMEOUT_MS
+    const result = await pending;
+    expect(result).toEqual({ ok: false, reason: "send timeout" });
+    // A timed-out send is NOT finalized (the ledger row stays un-finalized for a
+    // future retry) — proves the timeout branch, not the success branch.
+    expect(finalizeEmailSend).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("distinguishes a provider THROW from a provider {ok:false} — both isolated, neither finalizes", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    // Throw path: sendEmail rejects.
+    sendEmail.mockRejectedValueOnce(new Error("socket hang up"));
+    const { sendPaymentReceived } = await dispatch();
+    const thrown = await sendPaymentReceived(ORDER.orderId, "MP-THROW", 49999);
+    expect(thrown).toEqual({ ok: false, reason: "socket hang up" });
+    expect(finalizeEmailSend).not.toHaveBeenCalled();
+
+    // Reject path: sendEmail resolves {ok:false}. A DIFFERENT reason string.
+    sendEmail.mockResolvedValueOnce({ ok: false, reason: "rate_limit: slow down" });
+    const rejected = await sendPaymentReceived(ORDER.orderId, "MP-REJECT", 49999);
+    expect(rejected).toEqual({ ok: false, reason: "rate_limit: slow down" });
+    expect(finalizeEmailSend).not.toHaveBeenCalled();
+  });
+
+  it("returns ok:false 'claim failed' (never a send) when the ledger claim errors", async () => {
+    claimEmailSend.mockResolvedValue("error");
+    const { sendOrderConfirmation } = await dispatch();
+    const result = await sendOrderConfirmation(ORDER.orderId);
+    expect(result).toEqual({ ok: false, reason: "claim failed" });
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(finalizeEmailSend).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Locale END-TO-END through dispatch (edge 3, QA S5 focus #4). An order whose
+ * persisted `locale` is 'en' must build the CUSTOMER email against the /en
+ * confirmation URL (the locale is threaded from `orders.locale` — the sole source
+ * a server-to-server webhook has) — while the owner alert for the SAME order
+ * stays es-MX / prefix-free (single-locale, AC-12). The top-level next-intl mock
+ * (echo translator) is fine here: the observable locale signal is the URL prefix,
+ * which is derived from `order.locale` in dispatch, not from the translator.
+ */
+describe("locale end-to-end from orders.locale (edge 3, AC-12)", () => {
+  it("builds the customer email against the /en URL for an 'en' order", async () => {
+    getOrderForEmail.mockResolvedValue({ ...ORDER, locale: "en" });
+    const { sendPaymentReceived } = await dispatch();
+    await sendPaymentReceived(ORDER.orderId, "MP-EN", 49999);
+    const sent = sendEmail.mock.calls[0][0] as { to: string; html: string };
+    expect(sent.to).toBe("customer@test.com");
+    expect(sent.html).toContain("/en/checkout/confirmacion/");
+  });
+
+  it("keeps the owner alert prefix-free (es-MX) even when the order is 'en' (AC-12)", async () => {
+    getOrderForEmail.mockResolvedValue({ ...ORDER, locale: "en" });
+    const { sendNewOrderOwnerAlert } = await dispatch();
+    await sendNewOrderOwnerAlert(ORDER.orderId);
+    const sent = sendEmail.mock.calls[0][0] as { to: string; html: string };
+    expect(sent.to).toBe("owner@t.com");
+    // Owner alert always links prefix-free (OWNER_EMAIL_LOCALE = es-MX), never /en.
+    expect(sent.html).not.toContain("/en/checkout/confirmacion/");
+    expect(sent.html).toContain("/checkout/confirmacion/");
+  });
+
+  it("builds the customer email prefix-free for an 'es-MX' order (default locale)", async () => {
+    getOrderForEmail.mockResolvedValue({ ...ORDER, locale: "es-MX" });
+    const { sendOrderConfirmation } = await dispatch();
+    await sendOrderConfirmation(ORDER.orderId);
+    const sent = sendEmail.mock.calls[0][0] as { html: string };
+    expect(sent.html).not.toContain("/en/checkout/confirmacion/");
+    expect(sent.html).toContain("/checkout/confirmacion/");
+  });
+});

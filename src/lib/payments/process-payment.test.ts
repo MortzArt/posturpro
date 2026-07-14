@@ -418,6 +418,18 @@ describe("T9 email trigger (AC-13/AC-15/AC-16/AC-18)", () => {
     expect(state.finalizeCalls).toEqual([{ id: "111", status: "approved" }]);
   });
 
+  it("returns 'processed' 200 when the email dispatch RESOLVES ok:false (timeout/reject, not a throw) — AC-13", async () => {
+    // Discriminates the resolve-failure path from the throw path: a bounded-send
+    // timeout or provider reject surfaces as a resolved {ok:false} DispatchResult,
+    // never a throw. The webhook outcome must be identical: processed + 200 + the
+    // payment claim finalized (payment state is never coupled to email state).
+    paymentGet.mockResolvedValue(approved);
+    sendPaymentReceived.mockResolvedValue({ ok: false, reason: "send timeout" });
+    const result = await processPaymentNotification("111", null);
+    expect(result).toEqual({ kind: "processed", httpOk: true });
+    expect(state.finalizeCalls).toEqual([{ id: "111", status: "approved" }]);
+  });
+
   it("sends NO customer email on a refund (payment-only, edge 5)", async () => {
     paymentGet.mockResolvedValue({ id: 111, status: "refunded", external_reference: "ext-ref", transaction_amount: 8999.9 });
     advanceOrderStatus.mockResolvedValue({

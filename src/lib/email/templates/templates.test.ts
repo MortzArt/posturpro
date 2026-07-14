@@ -150,6 +150,51 @@ describe("new_order_owner (single-locale es-MX, AC-12)", () => {
   });
 });
 
+/**
+ * HTML-metacharacter escaping across EVERY live template's user/provider-supplied
+ * fields (QA S5 focus #5). `assertWellFormed` already covers `customerName` in all
+ * customer templates + the owner alert; these fill the remaining live inputs that
+ * reach HTML: variant label (item), cancel reason (admin), voucher reference (MP).
+ * A raw metachar must never survive into the markup.
+ */
+describe("user/provider input escaping across live templates (injection defense)", () => {
+  const XSS = `<script>alert(1)</script>`;
+  const ESCAPED = `&lt;script&gt;alert(1)&lt;/script&gt;`;
+
+  it("escapes a hostile VARIANT LABEL in order_confirmation (both parts)", () => {
+    const input: OrderEmailInput = {
+      ...BASE,
+      items: [{ productName: "Silla", variantLabel: XSS, quantity: 1, unitPriceCents: 100, lineTotalCents: 100 }],
+    };
+    const rendered = renderOrderConfirmation(input, testTranslator("es-MX"), CHROME);
+    expect(rendered.html).not.toContain(XSS);
+    expect(rendered.html).toContain(ESCAPED);
+    // Plain-text part is not HTML, so the raw string may appear there literally,
+    // but must NOT contain a rendered HTML element tag.
+    expect(rendered.text).not.toMatch(/<\/?(p|table|td|tr|div|span|a|h1|img|br)\b/i);
+  });
+
+  it("escapes a hostile CANCEL REASON in the cancelled template", () => {
+    const rendered = renderCancelled({ ...BASE, reason: XSS }, testTranslator("en"), CHROME);
+    expect(rendered.html).not.toContain(XSS);
+    expect(rendered.html).toContain(ESCAPED);
+  });
+
+  it("escapes a hostile VOUCHER REFERENCE in voucher_instructions", () => {
+    const voucher: VoucherData = {
+      method: "spei",
+      reference: XSS,
+      voucherUrl: null,
+      verificationCode: XSS,
+      expiresLabel: null,
+      amountCents: 100,
+    };
+    const rendered = renderVoucherInstructions({ ...BASE, voucher }, testTranslator("es-MX"), CHROME);
+    expect(rendered.html).not.toContain(XSS);
+    expect(rendered.html).toContain(ESCAPED);
+  });
+});
+
 describe("contact_relay (single-locale es-MX, AC-12/AC-17)", () => {
   it("quotes the customer message verbatim + escaped in the body", () => {
     const rendered = renderContactRelay(
