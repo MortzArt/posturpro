@@ -169,6 +169,28 @@ describe("refundOrderPayment", () => {
     );
   });
 
+  it("H-1: two DISTINCT same-amount partial refunds get DIFFERENT idempotency keys", async () => {
+    // Regression for H-1: keying by (order, amount) made two legitimately separate
+    // partial refunds of the SAME amount collide at MP — the second would be
+    // collapsed into the first and falsely reported as a fresh refund while no
+    // second money moved. Each ATTEMPT must get a unique key.
+    await refundOrderPayment(PAID_ORDER.id, 100000);
+    await refundOrderPayment(PAID_ORDER.id, 100000);
+    expect(refundCreate).toHaveBeenCalledTimes(2);
+    const firstKey = refundCreate.mock.calls[0][0].requestOptions.idempotencyKey;
+    const secondKey = refundCreate.mock.calls[1][0].requestOptions.idempotencyKey;
+    expect(firstKey).not.toBe(secondKey);
+  });
+
+  it("H-1: a caller-supplied idempotency key is threaded verbatim (retry-safe)", async () => {
+    // T12 threads a stable per-action key so a network retry of the SAME action
+    // is safe (MP collapses it correctly). Distinct actions pass distinct keys.
+    await refundOrderPayment(PAID_ORDER.id, 100000, "admin-refund-action-42");
+    expect(refundCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ requestOptions: { idempotencyKey: "admin-refund-action-42" } }),
+    );
+  });
+
   it("refuses a pending (non-approved) payment → not-refundable/not-paid (edge 8)", async () => {
     state.order = { ...PAID_ORDER, payment_status: "pending" };
     const result = await refundOrderPayment(PAID_ORDER.id, null);

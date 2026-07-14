@@ -441,6 +441,15 @@
         "body": "El pago no está disponible por el momento. Inténtalo más tarde.",
         "retry": "Reintentar"
       },
+      "rateLimited": {
+        "body": "Demasiados intentos. Espera un momento e inténtalo de nuevo.",
+        "retry": "Reintentar"
+      },
+      "stale": {
+        "title": "El estado de tu pedido cambió",
+        "body": "Este pedido ya no está pendiente de pago. Actualiza para ver su estado más reciente.",
+        "reload": "Actualizar estado"
+      },
       "processing": {
         "title": "Estamos confirmando tu pago",
         "body": "Esto puede tardar un momento. Actualiza la página en unos segundos.",

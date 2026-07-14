@@ -47,6 +47,11 @@ export interface PaymentPanelLabels {
   retry: string;
   unavailableBody: string;
   unavailableRetry: string;
+  rateLimitedBody: string;
+  rateLimitedRetry: string;
+  staleTitle: string;
+  staleBody: string;
+  staleReload: string;
   processingTitle: string;
   processingBody: string;
   refresh: string;
@@ -63,8 +68,18 @@ export interface PaymentPanelProps {
   labels: PaymentPanelLabels;
 }
 
-/** Transient client overlay when the pay action returns an error/unavailable. */
-type ClientOverlay = "none" | "unavailable" | "error";
+/**
+ * Transient client overlay when the pay action returns a non-redirect result.
+ *  - `unavailable`   : MP env missing / MP down → try again later.
+ *  - `rate-limited`  : too many attempts from this IP (SEC-H-1) → wait, try again.
+ *  - `stale`         : the order is no longer payable (paid via webhook mid-session,
+ *                      a second tab paid, or it's gone). NEVER shown as "declined" —
+ *                      the honest recovery is a reload to reveal the authoritative
+ *                      state (which is very often "paid"). Retrying the pay action
+ *                      would loop forever because the order can't be re-paid.
+ *  - `error`         : a generic failure → retry.
+ */
+type ClientOverlay = "none" | "unavailable" | "rate-limited" | "stale" | "error";
 
 export function PaymentPanel({
   confirmationToken,
@@ -84,12 +99,24 @@ export function PaymentPanel({
     });
   }, [confirmationToken, locale]);
 
-  // A client-side error/unavailable from the action overrides the DB-derived
-  // state until the user retries (they are never left staring at "pay now").
+  // A client-side result from the action overrides the DB-derived state until the
+  // user retries/reloads (they are never left staring at "pay now").
   if (overlay === "unavailable") {
     return (
-      <UnavailableCard labels={labels} pending={pending} onRetry={launch} />
+      <UnavailableCard labels={labels} pending={pending} onRetry={launch} body={labels.unavailableBody} retryLabel={labels.unavailableRetry} />
     );
+  }
+  if (overlay === "rate-limited") {
+    // Too many attempts — an honest "wait and retry", NOT a "declined" message.
+    return (
+      <UnavailableCard labels={labels} pending={pending} onRetry={launch} body={labels.rateLimitedBody} retryLabel={labels.rateLimitedRetry} />
+    );
+  }
+  if (overlay === "stale") {
+    // The order is no longer payable (paid via webhook mid-session / second tab /
+    // gone). Reloading reveals the authoritative state instead of a false decline
+    // + a retry that can never succeed (would loop `not-payable` forever).
+    return <StaleCard labels={labels} />;
   }
   if (overlay === "error") {
     return (
@@ -139,14 +166,16 @@ function handleResult(result: PayActionResult, setOverlay: (o: ClientOverlay) =>
       setOverlay("unavailable");
       return;
     case "not-payable":
-      // The order isn't payable anymore (already paid / gone). A reload shows the
-      // authoritative state; treat as a generic error so the user can refresh.
-      setOverlay("error");
+      // The order isn't payable anymore (paid via webhook mid-session, a second
+      // tab paid, or it's gone). NEVER show "declined" with a retry that loops —
+      // surface a "status changed, reload" card so the authoritative state (very
+      // often "paid") is revealed on refresh.
+      setOverlay("stale");
       return;
     case "rate-limited":
-      // Too many attempts from this IP (SEC-H-1). Show the retry banner; the user
-      // can try again shortly (the window is short and a real shopper never hits it).
-      setOverlay("error");
+      // Too many attempts from this IP (SEC-H-1). Show an honest "wait and retry"
+      // banner — NOT a "declined" message (the card was never even charged).
+      setOverlay("rate-limited");
       return;
     case "error":
       setOverlay("error");
@@ -247,10 +276,14 @@ function UnavailableCard({
   labels,
   pending,
   onRetry,
+  body,
+  retryLabel,
 }: {
   labels: PaymentPanelLabels;
   pending: boolean;
   onRetry: () => void;
+  body: string;
+  retryLabel: string;
 }) {
   return (
     <Card testId="payment-panel-unavailable" extra="border-amber-500/30 bg-muted/40">
@@ -259,9 +292,44 @@ function UnavailableCard({
           <span className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden>
             <HugeiconsIcon icon={Alert02Icon} size={18} strokeWidth={2} />
           </span>
-          <p>{labels.unavailableBody}</p>
+          <p>{body}</p>
         </div>
-        <RetryButton label={pending ? labels.redirecting : labels.unavailableRetry} pending={pending} onClick={onRetry} testId="payment-unavailable-retry" />
+        <RetryButton label={pending ? labels.redirecting : retryLabel} pending={pending} onClick={onRetry} testId="payment-unavailable-retry" />
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Shown when the order is no longer payable (paid via webhook mid-session, a
+ * second tab paid, or it's gone). Reloading reveals the authoritative DB state —
+ * this replaces the old dishonest "declined + retry loop" for `not-payable`.
+ */
+function StaleCard({ labels }: { labels: PaymentPanelLabels }) {
+  return (
+    <Card testId="payment-panel-stale" extra="border-amber-500/30 bg-muted/40">
+      <div className="flex flex-col gap-4" role="status">
+        <div className="flex items-start gap-2 text-sm text-foreground">
+          <span className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden>
+            <HugeiconsIcon icon={Alert02Icon} size={18} strokeWidth={2} />
+          </span>
+          <div className="flex flex-col gap-0.5">
+            <p className="font-medium">{labels.staleTitle}</p>
+            <p className="text-muted-foreground">{labels.staleBody}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          data-testid="payment-stale-reload"
+          className={cn(
+            buttonVariants({ variant: "default" }),
+            "cart-press h-11 w-full gap-1.5 px-6 text-sm sm:w-auto sm:min-w-56 sm:self-start",
+          )}
+        >
+          <HugeiconsIcon icon={Refresh01Icon} size={16} strokeWidth={2} aria-hidden />
+          {labels.staleReload}
+        </button>
       </div>
     </Card>
   );

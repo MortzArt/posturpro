@@ -48,8 +48,15 @@ export interface PanelStateInput {
  *   pending, no method, no success hint   → unpaid (first attempt)
  */
 export function derivePanelState(input: PanelStateInput): PaymentPanelState {
-  // Refunded / paid: money received (refunded is still a paid-hero variant).
-  if (input.paymentStatus === "refunded") {
+  // Paid (incl. a refund of a genuinely-paid order): money WAS received.
+  // `refunded` renders the paid-hero + "Reembolsado" variant ONLY when the order
+  // actually advanced past pending_payment (a real capture). A `refunded`
+  // payment_status on an order still `pending_payment` is an anomaly (e.g. MP
+  // refunded a payment the amount-mismatch guard never let mark the order paid) —
+  // showing "Payment received · Refunded" for a payment we NEVER accepted is a
+  // lie, so it falls through to the neutral pending/unpaid copy instead.
+  const orderWasPaid = input.orderStatus !== "pending_payment";
+  if (input.paymentStatus === "refunded" && orderWasPaid) {
     return { kind: "paid", method: input.paymentMethod, refunded: true };
   }
   if (input.paymentStatus === "paid" || input.orderStatus === "paid") {

@@ -441,6 +441,15 @@
         "body": "Payment is temporarily unavailable. Please try again later.",
         "retry": "Try again"
       },
+      "rateLimited": {
+        "body": "Too many attempts. Please wait a moment and try again.",
+        "retry": "Try again"
+      },
+      "stale": {
+        "title": "Your order status changed",
+        "body": "This order is no longer awaiting payment. Refresh to see its latest status.",
+        "reload": "Refresh status"
+      },
       "processing": {
         "title": "We're confirming your payment",
         "body": "This can take a moment. Refresh the page in a few seconds.",

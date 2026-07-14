@@ -22,9 +22,25 @@ describe("derivePanelState", () => {
     expect(s).toMatchObject({ kind: "paid", method: "card", refunded: false });
   });
 
-  it("paid variant: refunded", () => {
-    const s = derivePanelState(input({ paymentStatus: "refunded", paymentMethod: "card" }));
+  it("paid variant: refunded (of a genuinely-paid order)", () => {
+    // A NORMAL refund: the order was paid (order_status advanced past pending),
+    // then refunded → paid hero + Reembolsado badge.
+    const s = derivePanelState(input({ orderStatus: "paid", paymentStatus: "refunded", paymentMethod: "card" }));
     expect(s).toMatchObject({ kind: "paid", refunded: true });
+    // A refunded order that shipped is still the paid+refunded hero.
+    expect(
+      derivePanelState(input({ orderStatus: "shipped", paymentStatus: "refunded", paymentMethod: "card" })),
+    ).toMatchObject({ kind: "paid", refunded: true });
+  });
+
+  it("does NOT show 'paid · refunded' for a refunded payment on a NEVER-PAID order", () => {
+    // Anomaly: MP refunded a payment the amount-mismatch guard never let mark the
+    // order paid. The order is still pending_payment. Showing "Payment received ·
+    // Refunded" would be a lie about a payment we never accepted — it must NOT be
+    // the paid hero. Falls through to the neutral unpaid copy (they can retry).
+    const s = derivePanelState(input({ orderStatus: "pending_payment", paymentStatus: "refunded", paymentMethod: "card" }));
+    expect(s.kind).not.toBe("paid");
+    expect(s).toMatchObject({ kind: "unpaid" });
   });
 
   it("failed (card decline): payment failed, non-voucher method → reason 'declined'", () => {

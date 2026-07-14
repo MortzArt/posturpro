@@ -23,6 +23,7 @@
  *  - On MP failure the order/payment state is UNCHANGED (edge 10).
  */
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { UUID_PATTERN } from "@/lib/config";
 import { MissingEnvVarError } from "@/lib/env";
@@ -49,12 +50,25 @@ interface RefundableOrder {
  * Refund an order's payment. `amountCents === null` = full refund; a positive
  * integer = partial. Returns a typed result; never throws to the caller.
  *
+ * IDEMPOTENCY (AC-19, H-1 fix): the MP `X-Idempotency-Key` must be UNIQUE PER
+ * LOGICAL REFUND ATTEMPT, never per (order, amount). Two legitimately-separate
+ * partial refunds of the SAME amount on the SAME order MUST NOT collide at MP —
+ * a shared key makes MP collapse the second into the first (returning the first
+ * refund's cached response), which would be recorded as a `duplicate` in the
+ * ledger and falsely reported as a fresh refund while NO second money moved.
+ * So the caller (T12's admin action) SHOULD thread a stable per-action key
+ * (making a network retry of the SAME action safe); when omitted, a fresh UUID
+ * is minted per invocation so distinct refunds never collide.
+ *
  * @param orderId the order's uuid (validated)
  * @param amountCents integer cents to refund, or null for the full amount
+ * @param idempotencyKey optional stable per-attempt key (retry-safe). A fresh
+ *   UUID is generated when absent so two distinct refunds never share a key.
  */
 export async function refundOrderPayment(
   orderId: string,
   amountCents: number | null,
+  idempotencyKey?: string,
 ): Promise<RefundResult> {
   if (!UUID_PATTERN.test(orderId)) {
     return { status: "not-refundable", reason: "not-found" };
@@ -97,7 +111,10 @@ export async function refundOrderPayment(
   }
 
   const isFull = amountCents === null || refundCents === remainingCents;
-  return executeRefund(order, refundCents, isFull);
+  // A stable per-attempt key (caller-supplied) is retry-safe; a fresh UUID
+  // guarantees two distinct refunds never collide at MP (H-1).
+  const key = idempotencyKey?.trim() || `refund:${order.id}:${randomUUID()}`;
+  return executeRefund(order, refundCents, isFull, key);
 }
 
 /** Read the cumulative refunded cents for an order; null on a DB error. */
@@ -154,15 +171,15 @@ async function executeRefund(
   order: RefundableOrder,
   refundCents: number,
   isFull: boolean,
+  idempotencyKey: string,
 ): Promise<RefundResult> {
   const paymentId = order.mpPaymentId as string; // guarded by the caller
 
   let mpRefundId: string;
   try {
     const client = refundClient();
-    // A per-refund idempotency key makes retrying the SAME refund safe (AC-19).
-    // Keyed by order + amount so a distinct partial isn't collapsed into a prior.
-    const idempotencyKey = `refund:${order.id}:${isFull ? "full" : refundCents}`;
+    // A per-ATTEMPT idempotency key makes retrying the SAME refund safe (AC-19)
+    // without collapsing two DISTINCT same-amount refunds into one (H-1).
     const refund = await client.create({
       payment_id: paymentId,
       body: isFull ? undefined : { amount: centsToMpAmount(refundCents) },

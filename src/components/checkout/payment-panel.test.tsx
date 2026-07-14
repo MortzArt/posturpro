@@ -51,6 +51,11 @@ const LABELS: PaymentPanelLabels = {
   retry: "Retry payment",
   unavailableBody: "Payment is temporarily unavailable.",
   unavailableRetry: "Try again",
+  rateLimitedBody: "Too many attempts. Please wait a moment and try again.",
+  rateLimitedRetry: "Try again",
+  staleTitle: "Your order status changed",
+  staleBody: "This order is no longer awaiting payment. Refresh to see its latest status.",
+  staleReload: "Refresh status",
   processingTitle: "We're confirming your payment",
   processingBody: "This can take a moment.",
   refresh: "Refresh",
@@ -214,11 +219,30 @@ describe("PaymentPanel — pay action + redirect handoff", () => {
     await waitFor(() => expect(screen.getByTestId("payment-panel-failed")).toBeInTheDocument());
   });
 
-  it("treats not-payable as an error overlay (already paid / gone)", async () => {
+  it("not-payable shows a 'status changed, reload' card — NOT a false decline (edge 6)", async () => {
+    // An order paid via webhook mid-session (or a second tab) is no longer payable.
+    // The old behavior rendered a "declined" alert whose retry looped forever; the
+    // honest recovery is a reload that reveals the authoritative (often paid) state.
     createPaymentPreference.mockResolvedValue({ status: "not-payable" });
     renderPanel({ kind: "unpaid" });
     fireEvent.click(screen.getByTestId("payment-pay-now"));
-    await waitFor(() => expect(screen.getByTestId("payment-panel-failed")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("payment-panel-stale")).toBeInTheDocument());
+    // It must NOT masquerade as a decline, and offers no looping "retry".
+    expect(screen.queryByTestId("payment-panel-failed")).toBeNull();
+    expect(screen.queryByTestId("payment-retry")).toBeNull();
+    // The recovery is a reload (reveals the authoritative state).
+    fireEvent.click(screen.getByTestId("payment-stale-reload"));
+    expect(reloadSpy).toHaveBeenCalledOnce();
+  });
+
+  it("rate-limited shows an honest 'wait and try again' — NOT a decline (SEC-H-1)", async () => {
+    createPaymentPreference.mockResolvedValue({ status: "rate-limited" });
+    renderPanel({ kind: "unpaid" });
+    fireEvent.click(screen.getByTestId("payment-pay-now"));
+    await waitFor(() => expect(screen.getByTestId("payment-panel-unavailable")).toBeInTheDocument());
+    // The card was never charged — never say "declined".
+    expect(screen.getByTestId("payment-panel-unavailable")).toHaveTextContent("Too many attempts");
+    expect(screen.queryByTestId("payment-panel-failed")).toBeNull();
   });
 
   it("retry from the failed state re-launches the pay action (AC-16, edge 4)", async () => {

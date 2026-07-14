@@ -428,3 +428,108 @@ describe("record_refund ledger + cumulative guard (M-2/M-3, live local DB)", () 
     expect(total).toBe(30000); // counted ONCE
   });
 });
+
+describe("HACKER: webhook state-machine chaos (live local DB)", () => {
+  // A `refunded` webhook can fire for a payment that our webhook never let mark
+  // the order paid (e.g. an amount-mismatch approved payment was flagged, then MP
+  // refunded it). Payment-only mode must set payment_status=refunded but MUST NOT
+  // fabricate an order lifecycle advance — the order stays pending_payment. The
+  // confirmation page's derivePanelState is separately fixed so this anomaly is
+  // NOT rendered as "Payment received · Refunded" (that would lie about a payment
+  // we never accepted).
+  it("refunded on a NEVER-PAID order: payment_status=refunded, order stays pending", async () => {
+    const orderId = await makePendingOrder();
+    const { data } = await db.rpc("advance_order_status", {
+      p_order_id: orderId,
+      p_order_status: null, // payment-only
+      p_payment_status: "refunded",
+      p_note: "refund of a payment that was never accepted (amount mismatch)",
+    });
+    expect(data).toMatchObject({ applied: true, reason: "payment_updated" });
+
+    const { data: order } = await db
+      .from("orders")
+      .select("status, payment_status")
+      .eq("id", orderId)
+      .single();
+    // The order lifecycle was NEVER advanced by the refund — a paid state was
+    // never fabricated. payment_status reflects the refund for audit.
+    expect(order).toMatchObject({ status: "pending_payment", payment_status: "refunded" });
+  });
+
+  // charged_back arriving AFTER a refund must not corrupt state. The webhook maps
+  // charged_back to `flag` (no advance), so at the RPC level a payment-only
+  // refunded then a lateral no-op leaves a coherent state. Here we assert a
+  // refunded→refunded lateral is a benign no-op that writes no spurious history.
+  it("a duplicate refunded payment-only advance is a benign no-op (no dup history)", async () => {
+    const orderId = await makePendingOrder();
+    await db.rpc("advance_order_status", {
+      p_order_id: orderId, p_order_status: "paid", p_payment_status: "paid", p_note: "paid",
+    });
+    await db.rpc("advance_order_status", {
+      p_order_id: orderId, p_order_status: null, p_payment_status: "refunded", p_note: "refund 1",
+    });
+    // Same refunded payment-only advance again (a replayed refunded webhook).
+    const { data } = await db.rpc("advance_order_status", {
+      p_order_id: orderId, p_order_status: null, p_payment_status: "refunded", p_note: "refund 2 (replay)",
+    });
+    expect(data).toMatchObject({ reason: "payment_updated" });
+
+    const { data: history } = await db
+      .from("order_status_history")
+      .select("id, note")
+      .eq("order_id", orderId)
+      .order("created_at", { ascending: true });
+    // paid row + ONE refund row — the replayed refunded (payment unchanged) wrote
+    // no second history row (payment_status was already refunded).
+    expect(history).toHaveLength(2);
+  });
+
+  // Two IDENTICAL webhooks racing for the same (id, status). The claim-then-
+  // finalize spine must let EXACTLY ONE win the claim; the other sees the claim
+  // and is either reclaimable-once (unfinalized) or duplicate (finalized). Under
+  // a true concurrent insert, the unique(mp_payment_id, mp_status) index is the
+  // hard gate — at most one row exists.
+  it("two concurrent identical claims → at most one row (unique-index gate)", async () => {
+    const orderId = await makePendingOrder();
+    const paymentId = `RACE-${randomUUID().slice(0, 8)}`;
+    const claim = () =>
+      db.rpc("record_payment_event", {
+        p_mp_payment_id: paymentId,
+        p_mp_status: "approved",
+        p_order_id: orderId,
+      });
+    const results = await Promise.all([claim(), claim(), claim()]);
+    // Every call returns a defined verdict (new/duplicate), none errors.
+    for (const r of results) {
+      expect(r.error).toBeNull();
+      expect(["new", "duplicate"]).toContain(r.data);
+    }
+    // The unique index guarantees exactly ONE row for this (id, status).
+    const { data: rows } = await db
+      .from("mp_payment_events")
+      .select("id")
+      .eq("mp_payment_id", paymentId)
+      .eq("mp_status", "approved");
+    expect(rows).toHaveLength(1);
+  });
+
+  // Amount-mismatch defense-in-depth: the immutability trigger must block any
+  // attempt to overwrite total_cents (the reconciliation authority). Even a
+  // service-role write cannot tamper the financial snapshot.
+  it("total_cents is immutable — an amount-tamper write is rejected by the DB", async () => {
+    const orderId = await makePendingOrder(50000);
+    const { error } = await db
+      .from("orders")
+      .update({ total_cents: 1 }) // tamper the reconciliation baseline
+      .eq("id", orderId);
+    expect(error).not.toBeNull(); // immutability trigger fires
+
+    const { data: order } = await db
+      .from("orders")
+      .select("total_cents")
+      .eq("id", orderId)
+      .single();
+    expect(order).toMatchObject({ total_cents: 50000 }); // unchanged
+  });
+});
