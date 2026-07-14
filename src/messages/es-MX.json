@@ -386,6 +386,7 @@
       "priceChanged": "El precio de un artículo cambió. Revisa tu pedido e inténtalo de nuevo.",
       "outOfStock": "Un artículo se agotó. Revisa tu pedido e inténtalo de nuevo.",
       "shippingUnavailable": "No podemos calcular el envío ahora. Inténtalo de nuevo.",
+      "rateLimited": "Demasiados intentos. Espera un momento e inténtalo de nuevo.",
       "error": "No pudimos realizar tu pedido. Inténtalo de nuevo.",
       "retry": "Reintentar",
       "review": "Volver al carrito"

@@ -1,22 +1,227 @@
-# Architecture Review: T5 — Search, Filters & Sorting
+# Architecture Review: T7 — Checkout & Order Creation
 
-**Reviewer:** ultraarch (Stage 10) · **Scope:** commits 033dafe, 7fe75f5, a7cd15a, f5dceb1, c4ba5c2
-**Mode:** read-only on source (recommendations only) · **Parallel with:** Stage 9 (Security)
+**Reviewer:** ultraarch (Stage 10) · **Mode:** report-only on source (no edits) ·
+**Parallel with:** Stage 9 (Security)
 
 ## Summary
 
-T5 introduces a genuinely new subsystem — a DB-side filtered/sorted query path
-(`search_products` RPC) — and does it with unusual discipline: the security
-model mirrors `products_public`, the cache-cardinality DoS was reasoned about
-and defused, the read primitives were extracted before the third consumer
-copied them, and the SSR-first / JS-off constraint was honored at real cost to
-the team's preferred pattern (Suspense/streaming). This is a **sound
-foundation**, not a trap. The concerns are all *scale-latent* (they bite at
-catalog growth or when T7 starts writing orders, not today) and are precisely
-the kind an architect should backlog now so they don't surprise a future dev.
+Staff-level quality. The checkout subsystem is cleanly layered (pure math ->
+server reads -> server action -> single atomic RPC), the client/server trust
+boundary has a genuine single choke point, and the write path fits
+`0003_commerce.sql`'s immutable-order model almost perfectly. It is well-
+positioned for T8/T9/T12. The remaining risks are forward-looking (T8 webhook
+concurrency + missing MP-reference indexes), and there is only one trivial NOW
+item worth doing while the subsystem has zero production data.
 
-**Verdict: SOUND — 8.5/10.** Approve. No blocking refactor. Seven forward-mapped
-backlog entries added.
+**Grade: A- (9/10). Recommendation: APPROVE** (subject to the standing T7
+human-review gate — this review does not waive it).
+
+---
+
+## 1. Layering & Boundaries
+
+**Verdict: Excellent. The strongest part of the change.**
+
+The subsystem is layered with real discipline; each layer has one reason to
+change:
+
+| Layer | Modules | Concern | I/O? |
+|-------|---------|---------|------|
+| Pure math/rules | `address.ts`, `discount.ts`, `order.ts`, `checkout-helpers.ts` | Validation, eligibility, total assembly, cart->payload transforms | None (unit-tested) |
+| Server reads | `checkout-read.ts` (`revalidateLines`, `fetchDiscountCode`), `order-read.ts` | Live re-read + per-line re-validation; confirmation read | Admin client, `server-only` |
+| Orchestration | `actions.ts` (`placeOrder`) | Parse -> validate -> revalidate -> ship -> discount -> assemble -> RPC -> friendly status | Delegates all I/O |
+| Atomicity | `0008_checkout.sql` `create_order` | The whole reserve-and-create transaction | DB |
+| Contract | `checkout-form-state.ts`, `database.types.ts` | Serializable UI/RPC types | None |
+
+Strengths:
+
+- **Single trust choke point.** Every commerce read AND write for the boundary
+  goes through `createAdminClient()` inside `server-only` modules; the client
+  never sees anything but a serializable `CheckoutFormState`. The snapshot
+  (price/qty) is display-only and provably ignored: `revalidateLines` re-derives
+  the unit price from the live DB (`variant.price_override_cents ??
+  product.price_cents`), clamps quantity via `sanitizeQuantity`, and validates
+  every id against `UUID_PATTERN` before it touches the DB. Textbook.
+- **The action is a thin orchestrator.** `placeOrder` decomposes into small named
+  helpers (`runCheckout`, `resolveDiscount`, `createOrderViaRpc`,
+  `mapThrownError`), each well under the 30-line target. No business math in the
+  action; it delegates to the pure libs. Clean-code compliant.
+- **Pure libs are genuinely pure** — `applyDiscount` injects `now` for
+  determinism, `assembleOrder` re-clamps the discount defensively. These are the
+  correct SRP seams and the ones T8/T12 will reuse.
+- **RPC pattern follows house style.** `search_products`
+  (`src/lib/catalog/search.ts`, `SECURITY INVOKER`) is the read-path precedent;
+  `create_order` is its write-path analog (`SECURITY DEFINER`). The DEFINER vs
+  INVOKER split is deliberate and correct — the write path must own the tables
+  regardless of caller, the read path must respect RLS.
+
+Minor layering nit (LATER): `actions.ts` maps RPC failures by
+`message.includes("OUT_OF_STOCK:")` — a string-sniff boundary. It works and is
+defensive (raw PG never echoed) but couples the action to the RPC raise text.
+See TD-3.
+
+---
+
+## 2. Data Model Usage & Fit for the Immutable-Order Model
+
+**Verdict: Very good. The order write fits `0003_commerce.sql` cleanly; the CHECK
+constraints are a backstop, not the first line of defense.**
+
+- `assembleOrder` is engineered to satisfy every DB identity CHECK
+  (`orders_total_identity`, `orders_discount_within_subtotal`,
+  `order_items_line_total_identity`) in integer cents; the constraints are the
+  floor. Correct posture.
+- The immutability trigger (`orders_block_snapshot_update`) freezes the
+  financial/contact snapshot while leaving `status`, `payment_status`,
+  `payment_method`, and the `mp_*` columns mutable — **exactly** the shape T8
+  needs: the webhook can advance status/payment without fighting the trigger, and
+  the money snapshot written today can never be silently rewritten later.
+- `order_status_history` seeded with `from_status=null -> pending_payment` gives
+  T12's admin status pipeline a real audit spine from row one.
+- `order_items` FK `on delete set null` + the `order_items_block_update` trigger
+  (permits only FK-nulling) means order history survives product deletes/edits —
+  T12 refunds/cancels read a stable snapshot.
+- `sales_count` bumped inside the transaction (always the product row, never the
+  variant) is the correct single-counter design and the inverse T12 will
+  decrement on cancel/restock.
+- **RLS confirmed:** `customers`/`orders`/`order_items`/`order_status_history`/
+  `discount_codes` are RLS-enabled with **no anon grant and no anon policy** —
+  fully denied (`0005_rls_policies.sql`). `service_role` has full DML and the RPC
+  is `grant execute` to `service_role` only. Belt-and-suspenders least privilege.
+
+**Forward-shape (T12 inverse):** the guarded decrement
+`UPDATE ... SET stock = stock - qty WHERE ... AND stock >= qty` is **symmetric
+and reusable**. T12's cancel-with-restock is the exact inverse
+(`stock + qty`, `sales_count - qty`), and because each line snapshot stores
+`variant_id`/`product_id`/`quantity`, T12 can reverse a specific order without
+re-deriving anything. No shape problem here.
+
+---
+
+## 3. The `create_order` RPC Pattern
+
+**Verdict: The right call. One big SECURITY DEFINER function is correct here, and
+it grows well — with one caveat for T8.**
+
+Why one function is right:
+
+- The Supabase JS client cannot span a transaction across multiple `.insert()`
+  calls. Reserve-and-create is inherently one transaction (decrement + 4 inserts
+  + counter bump + redemption). A single plpgsql function is the only clean way
+  to get atomicity; splitting it reintroduces the partial-write bug it prevents.
+- `SECURITY DEFINER` + `set search_path = ''` + `revoke all ... grant execute to
+  service_role` matches the repo's established posture (`is_active_product`,
+  `search_products`) and the RLS model. Least privilege is correct.
+- Idempotency short-circuit at the top (select by `idempotency_key`, return the
+  existing order) is placed correctly — before any stock is touched.
+
+**Growth path for T8/T12:** `create_order` is a *creation* function and should
+stay that way. T8 (payment webhooks) and T12 (cancel/refund) are **different
+transactions** and must NOT be bolted on. The guarded-decrement idiom is the
+reusable primitive; the wrappers should be siblings:
+
+- `create_order` (exists) — decrement + create.
+- `advance_order_status(order_id, to_status, ...)` (T8/T12) — the payment/admin
+  state machine, writing `order_status_history` in the same txn.
+- `cancel_order_restock(order_id, ...)` (T12) — the inverse: increment stock +
+  decrement `sales_count` + status transition, one transaction.
+
+The current function blocks none of this and is already factored so the siblings
+can share the guarded-UPDATE idiom. See R-1/R-2.
+
+**Concurrency correctness (verified by reading):** the guarded
+`UPDATE ... WHERE stock >= qty RETURNING id` locks the matched row, serializing
+concurrent decrements; zero rows -> raise -> full rollback. The `stock >= 0` CHECK
+(confirmed on both `products` and `product_variants` in `0002_catalog.sql`) is
+the hard floor. Last-unit race resolves to exactly one winner. Correct.
+
+---
+
+## 4. Idempotency + Confirmation-Token Contracts (Durability for T8's Webhook World)
+
+**Verdict: Durable for user-retry. Needs one explicit T8 contract decision — flag
+now so it isn't discovered mid-T8.**
+
+Solid:
+
+- Client-generated UUID idempotency key + partial-unique index
+  (`orders_idempotency_key_key WHERE idempotency_key IS NOT NULL`) + top-of-RPC
+  short-circuit. A double-click/retry returns the ORIGINAL order (`reused:true`),
+  no second decrement. Verified in dev/QA smoke.
+- `readIdempotencyKey` validates the client key against `UUID_PATTERN` and falls
+  back to a server-minted UUID — never trusts the client blindly, never crashes on
+  a missing key.
+- Confirmation token (M-6) is the right IDOR remedy: the PII-bearing confirmation
+  page is addressed by an unguessable `gen_random_uuid()`, the sequential
+  `order_number` is display-only, `getOrderByToken` UUID-validates before the DB
+  hit, uniquely indexed. This is exactly the durable link T9's email should use
+  (email the token URL, never the order number).
+
+**The T8 gap to make explicit (R-3):** the idempotency guarantee today is scoped
+to *this order-creation submission*. In T8's webhook world the concurrency is
+different — a Mercado Pago webhook may confirm/advance an order **while the user is
+still retrying**, or MP may deliver the **same webhook twice**. That's a *payment*
+idempotency problem, not an *order-creation* one, and the current key does not
+cover it. T8 needs its own spine (unique `mp_payment_id`, or the MP idempotency
+header). Nothing in T7 blocks this; cheaper to note now than to discover as a
+double-capture bug.
+
+---
+
+## 5. Config / Constants, i18n Structure, Seed Strategy
+
+**Verdict: Exemplary config discipline (BUILD_PLAN rule 4). i18n and seed scale
+fine.**
+
+- Every T7 tunable is a named, documented constant in `config.ts` with a "HOW TO
+  SWAP" block: `MEXICAN_STATES` (+ set-backed `isMexicanState`),
+  `MEXICAN_CP_PATTERN`, `EMAIL_PATTERN`, field-max caps, `ORDER_NUMBER_PREFIX`,
+  `TAX_RATE=0` (written to the CFDI columns so Phase 3 needs no schema rework),
+  `CHECKOUT_CONFIRMATION_SEGMENT`, `confirmationPath()`. Best-documented config
+  file in this codebase.
+- **The one acceptable duplication:** `ORDER_NUMBER_PREFIX = "PP"` is duplicated
+  as the literal `'PP-'` in the RPC (plpgsql can't import TS). It's documented in
+  *both* places to change together. Pragmatic, not drift. TD-1 (a test asserting
+  the two agree would close it permanently).
+- i18n: single `checkout` namespace in both `es-MX.json` (default) and `en.json`,
+  kept symmetric across the Stage 6/8 deltas. State names are correctly config
+  (proper nouns, locale-invariant), not i18n keys. Self-contained; scales fine.
+- **Seed (verified):** `discounts.ts` adds 5 codes covering every eligibility
+  branch (active pct/fixed, expired, below-min, exhausted) + a zero-stock variant
+  for live oversell coverage. Codes are pre-**uppercased** and seeded via an
+  **idempotent upsert on `code`** (`seed.ts`), which the `upper(code)` unique
+  index (0008) backs. No concern — the earlier TD-4 verify item is **resolved**.
+
+---
+
+## 6. Scalability / Performance
+
+**Verdict: Appropriate for the domain. Checkout is a low-QPS, high-value path;
+the design correctly optimizes for correctness over throughput.**
+
+| Concern | Assessment |
+|---------|------------|
+| Checkout page fetch | `page.tsx` server component: cached single-row `getStoreSettingsStatic()` + renders the client flow. No unbounded fetch. |
+| `revalidateLines` reads | Batched into at most **two** `in(...)` queries (products, variants) via `Promise.all`, regardless of cart size — no N+1. |
+| RPC lock contention | Per-row lock for the txn duration; contention only under genuine last-unit races per variant — bounded and *desired* (it's the oversell guard). No action at this scale. |
+| Confirmation read | Two indexed point-reads (`confirmation_token`, then items by `order_id`). Fine. |
+| Order-number lookup | `order_number UNIQUE` -> implicit unique index -> covered. |
+| **Index gap (T8)** | `mp_payment_id` / `mp_external_reference` are **not indexed** (confirmed across all migrations). T8's webhook looks orders up by exactly these. See R-4. |
+
+No unbounded fetches, no expensive work in a hot path, no missing cache on a
+cacheable read. The write path is correctly not cached.
+
+---
+
+## 7. Frontend Architecture (brief — logic-heavy ticket)
+
+**Verdict: Compliant with house patterns.** DB calls live in the server action
+and `server-only` read modules, never in components; the client flow uses
+`useCart()` + `useActionState(placeOrder)`; pure transforms
+(`checkout-helpers.ts`) are extracted out of the flow component and unit-tested;
+types live in `checkout-form-state.ts` / `address.ts` / `discount.ts`. Composed
+component tree (flow -> fields/summary/discount/sticky-bar/skeleton), no god
+component. Faithful to the Q&A `useActionState` precedent.
 
 ---
 
@@ -24,261 +229,100 @@ backlog entries added.
 
 | Pattern | Status | Notes |
 |---------|--------|-------|
-| Separation of concerns | ✅ | Pure parse/serialize (`search-params.ts`), pure chip builder (`active-filter-chips.ts`), DB reads (`search.ts`/`facets.ts`), RPC in migration, components render. Business logic is out of components. |
-| Boundary validation | ✅ | Every URL value treated as hostile in `parseCatalogFilters`: unknown ids dropped against `KnownFacetValues`, `q` truncated, price sanitized, sort snapped to closed set, inverted price dropped. RPC fully parameterized. |
-| Typed contracts | ✅ | `CatalogFilters` is the single canonical shape UI + query layer consume; RPC typed in `database.types.ts`; no `any`, no `!`. `SearchRow`/`CoverRow`/`SearchArgs` interfaces at the boundary. |
-| Service layer (views → services → models) | ✅ | Page → `search.ts`/`facets.ts` → RPC/anon client. Page never touches Supabase directly. RPC reads only anon-safe surfaces (`products_public` + `product_variants` + `product_categories`). |
-| Type safety | ✅ | `tsc` clean; `SortKey` derived from `SORT_KEYS` const so the sort union can't drift from config. |
-| shadcn patterns | ✅ (justified deviation) | input/checkbox/select/slider/badge/label installed via CLI. `FilterSheet` built on Radix Dialog + repo `.drawer-panel` instead of shadcn `sheet` — deliberate, to reuse the already-proven interruptible MobileNav motion rather than retrofit `tw-animate-css` keyframes. Reasonable and documented. |
-| Cache-key discipline | ✅ | Free-text never cached; filter-only cached under a canonicalized bounded key (sorted known ids, closed sort, bucketed price, `canonicalPageKey`). Directly closes the T3 cache-DoS backlog item. |
-| No new deps | ✅ | Zero npm additions; extensions ship with the Supabase image. |
-
----
-
-## Data Model Review
-
-**No table/column changes** — additive migration only (2 extensions, 1 RPC, 7
-indexes). Backward-compatible, `if not exists`/`create or replace` throughout, so
-`db reset` (0001→0007) and live re-apply are both idempotent. This is the right
-shape for a read-path feature.
-
-**The RPC as a foundation — sound, with a versioning caveat.** `search_products`
-is the correct choice over PostgREST-embedded filters (can't filter parent by a
-child aggregate or return a filtered count) and over a materialized view (refresh
-machinery for no benefit at this scale, still can't take runtime params). The
-`COUNT(*) OVER ()` "page rows + filtered total in one round trip" is the right
-call. `SECURITY INVOKER` + `revoke from public` + `grant anon/authenticated` +
-`set search_path = public` is textbook and mirrors the `products_public` grant
-discipline. Anon cannot reach `cost_price_cents` by construction (view omits it,
-base table ungranted) — verified belt-and-suspenders.
-
-**Function-in-migration versioning story.** The RPC is `create or replace`, so
-0008+ can `ALTER` it by re-declaring the whole body in a new migration. The
-discipline to hold: the RPC's arg signature is repeated verbatim in the
-`revoke`/`grant` statements (12-type list) — any future arg change must update
-**three** places in lockstep (signature, revoke, grant) or the grant silently
-drops. There is also the usual drift risk: the live DB was patched via
-`docker exec psql` during dev, so the migration file is the source of truth only
-if every future change goes through a migration (never a live-only `create or
-replace`). Recommend a one-line convention note in 0007's header for 0008 authors.
-(Folded into T5-4/T5-7 discipline; no separate entry.)
-
-**AC-6 parity is structurally guaranteed, not just tested.** The RPC's
-`COALESCE(SUM(v.stock), pp.stock)` is byte-identical to `effectiveStock()`;
-SUM over zero variants is NULL → COALESCE falls to product stock exactly in the
-no-variant case. This is the one place a search path could silently diverge from
-the display path, and it's pinned correctly.
-
-**Index reality (EXPLAIN-verified against :54322, 30 products / 69 variants):**
-At seed scale the planner **seq-scans everything** — correct, because the tables
-are tiny (a 12ms–37ms function scan). The indexes are forward-looking. But two of
-them are **dead by construction**, not merely unused-at-scale:
-
-1. **pg_trgm GIN indexes can't serve the keyword branch.** The predicate wraps the
-   column in `unaccent(lower(...))`, so a plain-column trigram index is not
-   matchable. The migration's own comment admits this. `EXPLAIN ANALYZE` on
-   `?q=ergonomica` confirms: `Seq Scan on products` with a Filter (24 rows removed),
-   GIN untouched, ~22ms.
-2. **`product_variants_color_hex_idx` can never serve the color filter.**
-   `color_hex` is stored **mixed-case** (`#1D4ED8`, `#B91C1C` in the live DB); the
-   filter does `lower(v.color_hex) = any(<lowercased array>)`. The plain index is on
-   the raw (mixed-case) column, so the lowercased predicate can't use it — even at
-   scale. EXPLAIN confirms the color-EXISTS branch seq-scans.
-
-Neither is a correctness bug and neither hurts at 30 rows. Both become real full
-scans once the catalog is large. The fix in both cases is a **functional index**
-(`gin(f_unaccent(lower(name)) gin_trgm_ops)` requires an IMMUTABLE unaccent wrapper;
-`btree(lower(color_hex))` or normalize the stored casing). Backlogged for the
-growth milestone (T5-2, T5-3).
-
-**Best-selling semantics (Constraint 4) hold through T7.** `sales_count DESC,
-is_best_seller DESC, name ASC, id ASC` is deterministic today and becomes truthful
-automatically when T7 increments `sales_count` on paid orders — **no materialized
-count needed**, no re-sort logic to change. `listPopularProducts` reuses the exact
-ordering so the no-results strip never diverges. This ages well; the only future
-watch item (a concurrency-safe `sales_count` increment) belongs to the existing T7
-reservation backlog, not here.
-
----
-
-## API Review
-
-No new HTTP endpoints — access is the Supabase RPC via the cookie-free
-`createPublicClient()`, called server-side only. Consistent with the T3/T4 read
-layer. The RPC "contract" (typed args + `TABLE(...)` return) is versioned
-implicitly by the migration file and typed in `database.types.ts`.
-
-**The one genuine API-shape concern: the double RPC call per page.**
-`readSearchPage` runs a **probe at offset 0** to learn `total` and clamp `?page`,
-then runs the **real read** at the clamped offset. Page 1 reuses the probe (one
-call); pages 2+ pay **two** full RPC invocations, and each invocation materializes
-the entire filtered set (the `COUNT(*) OVER ()` window forces it before LIMIT). At
-30 rows this is invisible (probe = the whole catalog). At scale, a deep `?page=N`
-on a broad filter does the full filter+sort+count **twice**. This faithfully
-carries the T3 "count-first, then clamp" pattern (correct for avoiding 416s), but
-the RPC could return the count on the *clamped* page in a single call if the clamp
-were computed DB-side, or the probe could be a count-only variant. Backlogged
-(T5-4) as a scale optimization, not a correctness issue.
-
-Pagination hrefs correctly preserve filter state (`makeHrefForPage(base, query)`)
-and page-1 self-canonicalizes to the clean filtered URL. Param names single-sourced
-in `SEARCH_PARAM_KEYS`.
-
----
-
-## Frontend Architecture
-
-21 T5 feature components in `src/components/catalog/` (25 files incl. pre-T5). This
-is **cohesive, not sprawl** — every file is one concern (search-box, sort-select,
-color-swatch, filter-controls, filter-panel, filter-sheet, active-filters,
-no-results, catalog-toolbar, catalog-shell, search-results, catalog-grid-region,
-result-announcer). None over 301 lines. The server/client split is clean and the
-`"use client"` boundary is drawn at the smallest reasonable node.
-
-**One structural watch item: the client-context ladder.** `CatalogShell` wraps
-`FilterNavigationProvider` (shared `useTransition` + serialize/apply) **and**
-`ResultAnnouncerProvider` (persistent live region, added in the UX stage to fix
-M-7). Two providers today, both justified, both single-purpose — **not** yet a
-god-context, but the seed of one: the next dev who needs "another piece of shared
-catalog client state" will be tempted to bolt it onto one of these. Watch, don't
-fix (T5-5).
-
-The **SSR-first inline-`await`** decision (Stage 7b, dropping `<Suspense>`) is the
-correct trade for the no-JS constraint and is well-documented in `page.tsx`. It is
-**not** permanently incompatible with streaming — it's a consequence of Next's
-current dynamic-route `$RC` streaming-holder behavior with JS off; PPR/`cacheComponents`
-in a future Next upgrade re-opens streaming without breaking no-JS (T5-6).
+| Separation of concerns | PASS | Pure libs / server reads / action / RPC cleanly split; SRP-clean helpers |
+| Boundary validation | PASS | UUID + qty clamp + live re-read; snapshot price/qty never trusted |
+| Typed contracts | PASS | `CheckoutFormState`, `CreateOrderPayload/Result` typed end to end |
+| Service-layer analog | PASS | action = orchestrator; `checkout-read`/`order-read` = data layer; RPC = txn |
+| Type safety (no `any`/`!`) | PASS | No `any`, no non-null bang in the T7 modules |
+| shadcn / UI conventions | PASS (N/A-heavy) | Reuses `buttonVariants`, `cn`, existing motion classes; no new deps |
+| Config centralization (rule 4) | PASS | Every tunable a documented `config.ts` constant |
+| RLS / least privilege | PASS | Commerce tables anon-denied; RPC `grant execute` to `service_role` only |
+| DB CHECK as backstop | PASS | `assembleOrder` satisfies identities; CHECKs are the floor |
 
 ---
 
 ## Scalability Assessment
 
-| Concern | Severity | When it bites | Recommendation |
-|---------|----------|---------------|----------------|
-| pg_trgm GIN dead for accent-insensitive keyword search (column wrapped in `unaccent(lower())`) | Med | Catalog grows past a few hundred products; every `?q=` is then a full seq scan | IMMUTABLE unaccent wrapper + functional GIN index on name/description/brand.name. Backlog T5-2. |
-| `product_variants_color_hex_idx` unusable — mixed-case storage vs lowercased predicate | Med | Color filter on a large variant table = seq scan even with the index present | Normalize stored `color_hex` to lowercase (+CHECK) OR add `btree(lower(color_hex))`. Backlog T5-3. |
-| Double RPC per page (probe + read) + `COUNT(*) OVER ()` materializes full filtered set | Med | Deep pagination on a broad filter at scale runs the full filter+sort+count twice | Single-call DB-side clamp, or a count-only probe variant. Backlog T5-4. |
-| `/sillas` blocks on the RPC inline (no streaming) → TTFB = RPC latency | Low→Med | If RPC p95 climbs past ~150–200ms (large catalog, cold cache, remote DB), TTFB degrades with no skeleton to mask it | Next 16 `cacheComponents`/PPR (static shell + dynamic results hole) on upgrade; or an edge-cached shell. Version-specific, NOT permanent. Backlog T5-6. |
-| malla / mesh search-scope gap (materials unsurfaced by keyword) | Med | Now — a shopper searching "malla" misses mesh chairs whose mesh lives only in `material_*` | Materials-in-search-text (recommended) — see backlog T5-8. |
-| Filter-combo cache cardinality | Low | Handled — bounded canonical key; free-text bypasses cache entirely | None. Closes T3 backlog item. |
-| Facet reads full-scan variants/products | Low | Large catalog; but `catalog`-tag cached, recompute only on revalidate/admin-save | Acceptable; revisit only if facet reads dominate ISR recompute. |
-
-**No unbounded fetches introduced.** Every read is `LIMIT`-bounded (RPC `p_limit`,
-popular `POPULAR_PRODUCTS_MAX`, cover batch scoped to the page's ids). The category
-membership `.in()` scale ceiling is a **pre-existing** T3 item, correctly *not*
-re-solved here (search doesn't route through that path).
-
----
-
-## Forward-Compatibility (T6–T14)
-
-- **T6 Cart — no harmful coupling.** URL-state/filter architecture is entirely
-  read-side (`searchParams` → `CatalogFilters` → RPC). `ProductCard` stays a pure
-  server component with a single `<Link>` wrapper, so the backlogged T6 quick-add
-  client island slots in unchanged. Nothing in T5 constrains cart state. ✅
-- **T7 Checkout / best-selling truth — ages correctly** (see Data Model). No
-  materialized count required. ✅
-- **T11 Admin edits / cache invalidation — coherent, NOT a T4-style gap.** The
-  filter-combo cache entries are tagged `CATALOG_CACHE_TAG` (`"catalog"`), the same
-  tag all facet/taxonomy/listing reads use. There is currently **no**
-  `revalidateTag("catalog")` call anywhere (only doc comments reference it) — correct,
-  since no write path exists yet. When T11 lands its admin save and calls
-  `revalidateTag("catalog")`, the filter-combo entries bust **with** everything else.
-  No new invalidation surface, no orphan tag. Caveat: T11 must remember search
-  facet-value sets (colors/materials/price domain) are also `catalog`-tagged, so a
-  save that adds a variant color re-derives the known-color set on next read. Flagged
-  as a T11 note (T5-1). ✅
-- **T13 Homepage "featured/popular" — reusable, with a shape caveat.**
-  `listPopularProducts(limit)` is exported cleanly from `search.ts`, filter-
-  independent, always cached, best-selling order — T13 can reuse it directly for
-  "popular." BUT "featured" is a different intent; if T13 wants editorial ordering it
-  needs a new path (or a `sort` param on a shared helper), NOT a cargo-culted copy.
-  Recommend T13 reuse for popular and not overload it for featured (T5-1). ✅
-- **T14 SEO — centralized enough.** Canonical/noindex logic lives in one place
-  (`generateMetadata` in `sillas/page.tsx`). It is page-local, not a shared util, so
-  if T14 adds faceted URLs on other routes the rule must be lifted into a shared
-  helper rather than re-derived. Fine now; note for T14.
-
-**"Which read path do I use?" — the rule is clear enough to not cargo-cult.**
-`queries.ts` = view+stitch for taxonomy/unfiltered listings; `search.ts` = the RPC
-for anything variant-filtered/searched/availability-filtered/custom-sorted;
-`product-detail.ts` = single-product deep read. `search.ts`'s header documents when
-to use it. The soft spot: nothing *enforces* the rule — a future dev could reach for
-`search.ts` for a simple unfiltered list (works, but skips the cheaper view path).
-Worth a one-line decision-guide comment when `queries.ts` is split (existing T3 LOW).
-
----
-
-## Read-Layer Coherence
-
-The T4-flagged duplication **was** eliminated: `fail()`/`firstOrSelf()` now live
-once in `read-primitives.ts`, imported by `queries.ts`, `product-detail.ts`,
-`search.ts`, and `facets.ts` — no third/fourth copy; suite stayed green across the
-extraction. ✅
-
-**Partial-extraction nit (minor):** `read-primitives.ts` also exports `cachedRead()`,
-but only `facets.ts` uses it. `queries.ts` (~8 sites) and `search.ts` (2 sites) still
-call `unstable_cache(...)` **inline** with the `{ tags, revalidate }` shape written by
-hand. So "single-source the cache boilerplate" is half-done — the wrapper exists but
-the two biggest consumers didn't adopt it. Not a bug (identical behavior), and
-`search.ts` has one legit inline site (conditional caching), but a reader sees two
-cache idioms in the same module family. Backlogged as cleanup (T5-7), low effort.
-
-**Cache posture is ONE mental model, not three:** "bounded key ⇒ cache under the
-`catalog` tag; unbounded (free-text) ⇒ never cache." T3 entity reads, filter-combo
-reads, and facet reads all follow it; free-text search is the single documented
-exception. Coherent.
+| Concern | Severity | Recommendation |
+|---------|----------|----------------|
+| No index on `mp_payment_id`/`mp_external_reference` (T8 webhook lookup key) | Med | Add in T8's migration (T7 writes neither column). LATER-ok, logged. |
+| Single-variant lock contention under a flash sale | Low | Accept — serialization is the desired oversell guard. Revisit only on a real hot-variant event. |
+| RPC failure classification by string-match | Low | Prefer a structured `SQLSTATE` per raise (TD-3). |
 
 ---
 
 ## Tech Debt Ledger
 
-| Item | Type | Impact | Effort to Fix |
-|------|------|--------|---------------|
-| pg_trgm GIN indexes present but unusable (column-wrapping) | Introduced (documented) | Med (at scale) | M |
-| `color_hex` index unusable (mixed-case vs lowercased predicate) | Introduced (undocumented until now) | Med (at scale) | S–M |
-| Double RPC per page + full-set materialization | Introduced (T3 pattern carried) | Med (at scale) | M |
-| `cachedRead` wrapper adopted by only 1 of 3 consumers | Introduced | Low | S |
-| Free-text `unaccent` JS-vs-Postgres divergence (m-2, skipped) | Existing/deferred | Low (Spanish-only today) | S |
-| malla / mesh search-scope gap (materials not in searchable text) | Introduced (UX-deferred) | Med (real discovery miss) | S–M |
-| T3 cache-DoS cardinality item | **Reduced** (closed by Constraint 3) | — | — |
-| T4 read-primitive duplication | **Reduced** (closed by extraction) | — | — |
-| T3 filter/sort index gap | **Reduced** (indexes added; caveats above) | — | — |
-| queries.ts 710 lines (split before more logic) | Existing (T3 LOW) | Low | M |
+| Item | Type | Impact | Effort |
+|------|------|--------|--------|
+| TD-1: `ORDER_NUMBER_PREFIX` "PP" duplicated in TS + RPC literal | Introduced (documented, accepted) | Low | S — test asserting `formatOrderNumber` prefix matches an RPC-returned number |
+| TD-2: No rate limit on `placeOrder` (order/customers-row spam) | Introduced (deferred) | Low-Med | M — reuse Q&A `clientIp()` + limiter; RPC + stock floor bound real damage |
+| TD-3: Action maps RPC errors by `message.includes(...)` string-sniff | Introduced | Low | M — raise distinct `SQLSTATE`s, switch on `error.code` |
+| TD-4: Discount seed idempotency + upper-cased code | RESOLVED | — | Verified: idempotent upsert on `code`, pre-uppercased, backed by `upper(code)` unique index |
+| TD-5: RPC redemption guard intentionally skips `min_subtotal_cents` re-check | Introduced (accepted, documented) | Low | S — accept; revisit only if discounts become abusable |
+| TD-6: No CP<->state cross-validation (SEPOMEX) — 5-digit shape only | Existing (documented Phase-3) | Low | L — carrier/Phase-3 work |
+| TD-7: `coverImageUrl: null` from `checkout-read` (summary uses client snapshot image) | Introduced (documented) | Low | S — accept; write path correctly avoids an image join |
 
-**On the two Stage-5 skipped minors (m-1, m-2): still right to skip.**
-m-1 (`fail()` log prefix consolidation) is intentional and redacted — no live bug.
-m-2 (JS `unaccent` vs Postgres `unaccent` divergence) is Spanish-only today and the
-JS side is only used to derive the *material facet terms*, so a divergence would at
-worst mislabel a material option, never silently empty results — leaving it is fine
-until the catalog goes multi-locale content-wise. Confirmed as low, deferred.
-
-No time bombs. Dependency health: no new deps; extensions Supabase-bundled.
+None are time bombs. TD-2 (rate limit) is the one I'd most want closed before a
+public launch, but it's not a T7 blocker — the atomic RPC + stock floor cap the
+real damage of spam to junk rows, not oversell or double-charge.
 
 ---
 
-## Refactors Applied
+## Risks for T8 / T9 / T12 — NOW vs LATER
 
-**None.** Read-only architecture review (parallel with Stage 9 Security). No source
-changes. Every finding is scale-latent or a low-effort cleanup better sequenced into
-its target future task; none warrants a high-risk refactor of a green
-569-unit / 110-integ / 259-e2e suite at this gate.
+**R-1 (T8/T12) — Establish a status-transition RPC; don't hand-write status
+UPDATEs.** *LATER (T8), decide now.* The immutability trigger allows raw
+`status`/`payment_status` UPDATEs from the service key. T8 should advance state
+through `advance_order_status(...)` that also writes `order_status_history` in the
+same txn, so the audit spine T7 started is never bypassed. Ad-hoc
+`.update({ status })` in the webhook would silently skip history. *T7 needs no
+change.*
+
+**R-2 (T12) — Cancel/restock is a sibling transaction, not an extension of
+`create_order`.** *LATER (T12).* The guarded-decrement idiom is already reusable
+for the inverse. Keep `create_order` a pure creation function. *No T7 change.*
+
+**R-3 (T8) — Payment idempotency is a separate spine from order-creation
+idempotency.** *LATER (T8), design now.* A duplicated MP webhook, or a webhook
+confirming an order mid-retry, is not covered by `orders.idempotency_key`. T8
+needs its own guard (unique `mp_payment_id`, or the MP idempotency header). The
+confirmation-token contract T7 shipped is already the correct durable link for
+T9's email.
+
+**R-4 (T8) — Index the MP lookup columns.** *T8 (cheap).* `mp_payment_id` /
+`mp_external_reference` are unindexed; the webhook filters orders by them. Add
+`create index if not exists orders_mp_payment_id_idx on orders (mp_payment_id) where mp_payment_id is not null;`
+(and the same for `mp_external_reference`) in T8's migration — T7 writes neither
+column, so it belongs there. Pairs with the unique index from R-3.
+
+**Concrete NOW list (optional, cheap, zero production data):**
+1. TD-1 — add the prefix-agreement test (~5 min; closes the one real drift risk).
+
+Everything else is correctly deferred to the ticket that owns it.
 
 ---
 
-## Architecture Score: 8.5/10
+## Architecture Score: 9/10
 
-Will this make sense in 6 months with 2× the team? **Yes.** The subsystem is
-small-filed, single-concern, and documented at exactly the decision points a future
-dev will question (why RPC, why not cache free-text, why inline-await, why
-Radix-not-shadcn-sheet, why bucketed price). Security and cache models are coherent
-and reuse established patterns. The −1.5 is entirely for the two **dead-by-construction
-indexes** (they read as "covered" but aren't — the kind of thing that bites silently
-at scale) and the double-RPC-per-page pattern, all mapped to backlog with concrete
-fixes. Nothing here is a redesign risk; the RPC is a foundation cart/homepage/admin
-can build on without unwinding it.
+Will this make sense in 6 months with 2x the team? Yes. The layering is legible,
+each module has one reason to change, the trust boundary is a single choke point,
+and the data model was respected rather than worked around. The atomicity story
+is correct and verified. The point off is forward-facing: the payment-state
+machine and payment idempotency (R-1, R-3) are the natural next architectural
+seams and aren't stubbed yet — correct scoping for T7, but a T8 reviewer will have
+to establish them, so I'm flagging them loudly rather than letting them surprise.
+Nothing needs a redesign; this is a solid, extensible foundation for the money
+path.
 
-## Recommendation: **APPROVE**
+## Recommendation: APPROVE
 
-Ship T5. Carry the seven backlog entries forward to their mapped tasks. No blocking
-work.
+Ship-quality architecture (subject to the standing T7 human-review gate — this
+review does not waive it). No refactors required. One optional 5-minute NOW item
+(TD-1); R-1/R-3/R-4 handed forward to T8 as explicit design inputs.
+
+---
+
+*Report-only stage (ran in parallel with Security/Stage 9). No source files,
+`tasks/pipeline-state.md`, or `tasks/security-audit.md` were modified; no commit
+made — the orchestrator commits Stages 9+10 together.*

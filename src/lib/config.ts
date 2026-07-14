@@ -560,3 +560,48 @@ export const CHECKOUT_CONFIRMATION_SEGMENT = "confirmacion" as const;
 export function confirmationPath(confirmationToken: string): string {
   return `${CHECKOUT_PATH}/${CHECKOUT_CONFIRMATION_SEGMENT}/${encodeURIComponent(confirmationToken)}`;
 }
+
+/* ---------------------------------------------------------------------------
+ * Checkout abuse control (T7 Security stage).
+ *
+ * `placeOrder` is an UNAUTHENTICATED write path: each successful call creates a
+ * customer + order + items and DECREMENTS finite stock + a discount's redemption
+ * cap. The atomic RPC bounds *data corruption* (no oversell, no double-order),
+ * but nothing bounds *volume*: a script could spam `placeOrder` to mint unbounded
+ * `pending_payment` orders, deplete stock so real buyers can't purchase
+ * (griefing), and burn a discount's redemptions. A best-effort in-memory per-IP
+ * sliding-window throttle — the exact pattern proven on the Q&A write path — is a
+ * proportionate mitigation that needs NO new infra. It runs AFTER address
+ * validation + line revalidation (so a bad request never consumes a slot) and
+ * BEFORE the RPC. It is best-effort by design (per-instance memory, IP-keyed);
+ * the DB atomicity/stock-floor remain the hard backstops.
+ *
+ * E2E: the authoritative checkout e2e run places several real orders from one
+ * localhost IP in one window against a single server instance, which would
+ * legitimately trip the limiter. The QA harness sets the SERVER-only env var
+ * `CHECKOUT_RATE_LIMIT_DISABLED=1` to bypass it (never `NEXT_PUBLIC_`, unset in
+ * real deploys, so production always enforces the limit).
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Sliding-window length for the checkout rate limiter (T7). A stricter cap than
+ * Q&A: placing an order is a heavier, rarer action than asking a question.
+ */
+export const CHECKOUT_RATE_LIMIT_WINDOW_MS = 60_000;
+
+/**
+ * Max order-placement ATTEMPTS allowed per IP within
+ * {@link CHECKOUT_RATE_LIMIT_WINDOW_MS} (T7). A legitimate shopper places one
+ * order and occasionally retries; 5/min per IP leaves generous headroom for
+ * retries + shared NATs while cutting scripted spam to a trickle. Above this the
+ * action returns `rate-limited` before the RPC — no order, no stock decrement.
+ */
+export const CHECKOUT_MAX_ORDERS_PER_WINDOW = 5;
+
+/**
+ * Hard ceiling on distinct keys the in-memory checkout rate-limiter map may hold
+ * (T7 — cardinality-DoS bound, mirroring {@link QA_RATE_LIMIT_MAX_KEYS}). Keyed
+ * by IP only. When exceeded the limiter evicts idle/expired then oldest keys, so
+ * memory is bounded regardless of IP rotation.
+ */
+export const CHECKOUT_RATE_LIMIT_MAX_KEYS = 10_000;

@@ -21,6 +21,7 @@ export interface CheckoutLabels {
     priceChanged: string;
     outOfStock: string;
     shippingUnavailable: string;
+    rateLimited: string;
     error: string;
     retry: string;
     review: string;
@@ -98,6 +99,7 @@ export function useCheckoutLabels(): CheckoutLabels {
     priceChanged: t("banner.priceChanged"),
     outOfStock: t("banner.outOfStock"),
     shippingUnavailable: t("banner.shippingUnavailable"),
+    rateLimited: t("banner.rateLimited"),
     error: t("banner.error"),
     retry: t("banner.retry"),
     review: t("banner.review"),

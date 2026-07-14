@@ -353,6 +353,7 @@ function resolveBanner(
     priceChanged: string;
     outOfStock: string;
     shippingUnavailable: string;
+    rateLimited: string;
     error: string;
     retry: string;
     review: string;
@@ -365,6 +366,8 @@ function resolveBanner(
       return { message: banner.outOfStock, recovery: { kind: "review", label: banner.review, href: CART_PATH } };
     case "shipping-unavailable":
       return { message: banner.shippingUnavailable, recovery: { kind: "retry", label: banner.retry } };
+    case "rate-limited":
+      return { message: banner.rateLimited, recovery: { kind: "retry", label: banner.retry } };
     case "error":
       return { message: banner.error, recovery: { kind: "retry", label: banner.retry } };
     default:

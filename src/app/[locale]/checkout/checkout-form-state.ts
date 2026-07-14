@@ -15,6 +15,7 @@ export type CheckoutStatus =
   | "price-changed" // ≥1 line's live price ≠ snapshot
   | "out-of-stock" // ≥1 line lacks live stock / lost last-unit race
   | "shipping-unavailable" // store_settings unreadable (edge 5)
+  | "rate-limited" // too many order attempts from this IP in the window (abuse control)
   | "error"; // generic retryable (DB/CHECK/network; raw PG never echoed)
 
 /** Per-line issue kind rendered in the summary (keyed by cartLineKey). */

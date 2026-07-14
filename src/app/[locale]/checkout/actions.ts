@@ -23,8 +23,10 @@
  * Raw PG errors are NEVER echoed — mapped to friendly enums, logged with context.
  * All commerce writes go through the admin client (RLS denies anon, AC-12).
  */
+import { headers } from "next/headers";
 import { getStoreSettingsStatic } from "@/lib/store-settings";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { checkCheckoutRateLimit } from "@/lib/checkout/rate-limit";
 import { computeShipping } from "@/lib/cart/shipping";
 import { validateAddress, type RawAddressInput } from "@/lib/checkout/address";
 import { applyDiscount, normalizeDiscountCode } from "@/lib/checkout/discount";
@@ -50,6 +52,39 @@ import type { CreateOrderPayload } from "@/lib/supabase/database.types";
 const OUT_OF_STOCK_PREFIX = "OUT_OF_STOCK:";
 /** The RPC raise when a discount code hit its redemption cap during commit. */
 const DISCOUNT_EXHAUSTED = "DISCOUNT_EXHAUSTED";
+
+/**
+ * Best-effort client IP for the per-IP checkout rate limiter (T7 Security stage).
+ * Same trust model as the Q&A action (`producto/[slug]/actions.ts`): the leftmost
+ * `x-forwarded-for` hops are client-forgeable, so prefer, in order: Vercel's
+ * trusted single-value header, the RIGHTMOST XFF hop (the one our own edge wrote),
+ * `x-real-ip`, then a shared "unknown" bucket (conservative: no-IP callers share
+ * one limit, never bypass it). Residual risk (no trusted edge, spoofable XFF) is
+ * accepted for a best-effort limiter — the DB atomicity + stock floor are the
+ * hard backstops.
+ */
+async function clientIp(): Promise<string> {
+  const headerList = await headers();
+
+  const vercelForwarded = headerList.get("x-vercel-forwarded-for")?.trim();
+  if (vercelForwarded) {
+    return vercelForwarded;
+  }
+
+  const forwarded = headerList.get("x-forwarded-for");
+  if (forwarded) {
+    const hops = forwarded
+      .split(",")
+      .map((hop) => hop.trim())
+      .filter((hop) => hop.length > 0);
+    const rightmost = hops.at(-1);
+    if (rightmost) {
+      return rightmost;
+    }
+  }
+
+  return headerList.get("x-real-ip")?.trim() ?? "unknown";
+}
 
 /** Read the form values into the preserved-values shape (untrimmed). */
 function readFormValues(formData: FormData): CheckoutFormValues {
@@ -252,6 +287,17 @@ async function runCheckout(
       values,
       submissionId,
     };
+  }
+
+  // 4b. Abuse control: throttle order-placement per IP. Runs only AFTER the
+  //     request proved well-formed + its lines are live-valid (so a bad/tampered
+  //     request never consumes a slot) and BEFORE any write. Unauthenticated
+  //     `placeOrder` spam would otherwise mint unbounded orders, deplete stock
+  //     (griefing), and burn discount redemptions. Best-effort in-memory; the DB
+  //     atomicity + stock floor remain the hard backstops.
+  const ip = await clientIp();
+  if (!checkCheckoutRateLimit(ip)) {
+    return { status: "rate-limited", values, submissionId };
   }
 
   // 5. Shipping from live settings; unavailable → block (edge 5).
