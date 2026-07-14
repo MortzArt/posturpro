@@ -1,12 +1,13 @@
 # Pipeline State
 Task: T7 — Checkout & order creation
 Tier: full-cycle
-Stage: 4 (Dev COMPLETE)
-Agent: ultrareview (Stage 5 — Review) next
+Stage: 5 (Review COMPLETE)
+Agent: ultrafix (Stage 6 — Fix) next
 Complexity: high (classified stage 1)
 Feature Type: full-stack
 Last Updated: 2026-07-14
 Notes:
+- Stage 5 (Review) done: tasks/review-findings.md written. Verdict APPROVE-WITH-FIXES, score 8/10. 0 CRITICAL, 6 MAJOR, 7 MINOR, 7 NIT. Write path (RPC atomicity/rollback/idempotency/snapshot-revalidation/discount-clamp/DB-CHECK/admin-grant) verified correct; no SQLi, no priv-esc, no $NaN, no float. Defects concentrated in client a11y + one responsive bug + one PII exposure. ultrafix (Stage 6) must fix all 6 MAJORs: M-1 duplicate id/broken aria-describedby across ALL text fields (errorId == input id; fix to `${id}-error`); M-2 in-card submit missing `hidden lg:flex` → two live submit buttons below lg (add to checkout-summary.tsx:158); M-3 live-region "discount applied" interpolates amount:"" (pass formatMXN(discountCents)); M-4 focus-first-invalid wired for email only (StateField also takes no ref); M-5 delivery_notes textarea has no <label>; M-6 sequential order_number → enumerable PII on confirmation (coordinate with Security stage — opaque-token). Also address m-1 (price-drift totals do not refresh to live price — edge 1 partial) and consider m-2 discount TOCTOU.
 - Stage 1+2 (PlanResearch) done: tasks/next-ticket.md + tasks/research-report.md written.
 - Stage 3 (UI Design) done: tasks/ui-design.md written (T7 checkout — overwrote the leftover T6 spec).
 - Stage 4 (Dev) done: tasks/dev-done.md written. All 16 ACs implemented, 8 edge cases handled. 27 files created/modified. Migration 0008_checkout.sql (atomic create_order RPC) applied to LOCAL Docker Supabase + seed re-run (zero-stock variant + 5 discount codes). VERIFIED: tsc clean, eslint clean, next build clean (both locales), npm test 811 passed (764 existing + 47 new). RPC smoke-tested in DB container (happy path PP-000001, idempotency reused:true no double-decrement, OUT_OF_STOCK full rollback, DISCOUNT_EXHAUSTED). Dev-server smoke: /checkout 200 ES+EN, unknown confirmation 404, real confirmation renders. Smoke data cleaned up.
