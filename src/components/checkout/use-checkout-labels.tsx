@@ -80,6 +80,7 @@ export function useCheckoutLabels(): CheckoutLabels {
     },
     notes: {
       heading: t("notes.heading"),
+      label: t("notes.label"),
       placeholder: t("notes.placeholder"),
       rfc: t("notes.rfc"),
       rfcHint: t("notes.rfcHint"),

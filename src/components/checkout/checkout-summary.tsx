@@ -155,7 +155,7 @@ export function CheckoutSummary({
           type="submit"
           disabled={submitDisabled}
           data-testid="checkout-submit"
-          className="cart-press h-11 w-full gap-1.5 text-sm"
+          className="cart-press hidden h-11 w-full gap-1.5 text-sm lg:flex"
         >
           {pending ? labels.submitting : labels.submit}
           {pending ? null : (

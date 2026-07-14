@@ -16,12 +16,14 @@ import {
   initialCheckoutFormState,
   type CheckoutFormState,
 } from "@/app/[locale]/checkout/checkout-form-state";
+import type { AddressField } from "@/lib/checkout/address";
 import { CART_PATH, CATALOG_PATH, confirmationPath } from "@/lib/config";
 import { computeShipping, totalCents } from "@/lib/cart/shipping";
 import { subtotalCents } from "@/lib/cart/cart-line";
+import { formatMXN } from "@/lib/money";
 import { interpolate } from "@/lib/interpolate";
 import { useCheckoutLabels } from "@/components/checkout/use-checkout-labels";
-import { buildSummaryLines, buildSnapshotPrices, buildLinesPayload } from "@/components/checkout/checkout-helpers";
+import { buildSummaryLines, buildSnapshotPrices, buildLinesPayload, applyLivePrices } from "@/components/checkout/checkout-helpers";
 import { cn } from "@/lib/utils";
 
 /**
@@ -35,6 +37,35 @@ import { cn } from "@/lib/utils";
 interface CheckoutFlowClientProps {
   flatRateCents: number | null;
   freeThresholdCents: number | null;
+}
+
+/** A field control that can receive programmatic focus (input or Select trigger). */
+export type FocusableFieldElement = HTMLInputElement | HTMLButtonElement;
+
+/**
+ * The blocking address/contact fields in the order they render (DOM order), so
+ * "focus the first invalid field" lands a keyboard/AT user on the topmost error
+ * rather than always on `email`. Optional/unrendered-error fields are omitted.
+ */
+const FOCUSABLE_FIELD_ORDER: readonly AddressField[] = [
+  "email",
+  "contact_phone",
+  "shipping_full_name",
+  "address_line1",
+  "address_line2",
+  "city",
+  "postal_code",
+  "state",
+];
+
+/** The first field (in DOM order) that has an error, or null. */
+function firstInvalidFieldInDomOrder(
+  fieldErrors: CheckoutFormState["fieldErrors"],
+): AddressField | null {
+  if (!fieldErrors) {
+    return null;
+  }
+  return FOCUSABLE_FIELD_ORDER.find((field) => fieldErrors[field] !== undefined) ?? null;
 }
 
 export function CheckoutFlowClient({ flatRateCents, freeThresholdCents }: CheckoutFlowClientProps) {
@@ -84,31 +115,41 @@ function CheckoutBody({ flatRateCents, freeThresholdCents, state, formAction, pe
   const router = useRouter();
   const { lines } = useCart();
   const labels = useCheckoutLabels();
-  const emailRef = useRef<HTMLInputElement>(null);
+  const firstInvalidRef = useRef<FocusableFieldElement>(null);
   const [discountCode, setDiscountCode] = useState(state.values?.discountCode ?? "");
   const idempotencyKey = useIdempotencyKey(state.submissionId);
+  const firstInvalidField =
+    state.status === "invalid" ? firstInvalidFieldInDomOrder(state.fieldErrors) : null;
 
   // On success, redirect to the confirmation (which clears the cart on mount).
   useEffect(() => {
-    if (state.status === "success" && state.orderNumber) {
-      router.replace(confirmationPath(state.orderNumber));
+    if (state.status === "success" && state.confirmationToken) {
+      router.replace(confirmationPath(state.confirmationToken));
     }
-  }, [state.status, state.orderNumber, state.submissionId, router]);
+  }, [state.status, state.confirmationToken, state.submissionId, router]);
 
-  // Focus the first invalid field so a keyboard user lands on the error.
+  // Focus the first invalid field (in DOM order) so a keyboard/AT user lands on
+  // the error — email, phone, name, address, city, CP, or the state trigger.
   useEffect(() => {
-    if (state.status === "invalid" && state.fieldErrors?.email) {
-      emailRef.current?.focus();
+    if (state.status === "invalid" && firstInvalidField) {
+      firstInvalidRef.current?.focus();
     }
-  }, [state.status, state.fieldErrors, state.submissionId]);
+  }, [state.status, state.submissionId, firstInvalidField]);
 
-  const subtotal = subtotalCents(lines);
+  // On price drift the server returns the LIVE unit prices and blocks the submit
+  // (edge 1). Refresh the displayed lines + totals to those live prices so the
+  // numbers match the per-line "price changed" note (display only; the server
+  // stays authoritative). Every other state renders the cart snapshot.
+  const snapshotLines = buildSummaryLines(lines);
+  const { lines: summaryLines, subtotalCents: subtotal } =
+    state.status === "price-changed"
+      ? applyLivePrices(snapshotLines, state.liveUnitPrices)
+      : { lines: snapshotLines, subtotalCents: subtotalCents(lines) };
   const shipping = computeShipping(subtotal, { flatRateCents, freeThresholdCents });
   const discountCents = state.discount?.kind === "applied" ? state.discount.discountCents : 0;
   const total = Math.max(0, totalCents(subtotal, shipping) - discountCents);
   const submitDisabled = pending || shipping.kind === "unavailable";
   const banner = resolveBanner(state, labels.banner);
-  const summaryLines = buildSummaryLines(lines);
   const liveMessage = resolveLiveMessage(state, pending, t);
 
   return (
@@ -132,8 +173,8 @@ function CheckoutBody({ flatRateCents, freeThresholdCents, state, formAction, pe
             resolveError={labels.resolveValidation}
             disabled={pending}
             labels={labels.fields}
-            firstInvalidField={state.fieldErrors?.email ? "email" : null}
-            emailRef={emailRef}
+            firstInvalidField={firstInvalidField}
+            firstInvalidRef={firstInvalidRef}
           />
 
           <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:self-start">
@@ -269,7 +310,9 @@ function resolveLiveMessage(
     return t("liveRegion.orderReceived");
   }
   if (state.discount?.kind === "applied") {
-    return interpolate(t.raw("liveRegion.discountApplied"), { amount: "" });
+    return interpolate(t.raw("liveRegion.discountApplied"), {
+      amount: formatMXN(state.discount.discountCents),
+    });
   }
   if (state.discount?.kind === "invalid") {
     return t("liveRegion.discountInvalid");

@@ -328,6 +328,7 @@
     },
     "notes": {
       "heading": "Delivery notes (optional)",
+      "label": "Delivery notes",
       "placeholder": "Delivery instructions…",
       "rfc": "RFC (optional, for invoice)",
       "rfcHint": "Only if you need an invoice (Phase 3)."
@@ -335,8 +336,6 @@
     "discount": {
       "label": "Discount code",
       "placeholder": "Discount code",
-      "apply": "Apply",
-      "checking": "Checking…",
       "remove": "Remove code",
       "appliedLabel": "Code {code} applied",
       "savings": "You save {amount}",
@@ -358,7 +357,6 @@
       "shippingUnavailable": "Calculated at payment",
       "total": "Total",
       "itemQuantity": "×{count}",
-      "itemsCount": "{count, plural, one {# item} other {# items}}",
       "noPaymentYet": "No payment yet. Payment is the next step.",
       "lineOutOfStock": "Out of stock",
       "lineUnavailable": "Unavailable",
@@ -388,9 +386,7 @@
       "priceChanged": "An item's price changed. Review your order and try again.",
       "outOfStock": "An item sold out. Review your order and try again.",
       "shippingUnavailable": "We can't calculate shipping right now. Please try again.",
-      "error": "We couldn't place your order. Please try again.",
-      "dismiss": "Dismiss",
-      "retry": "Retry"
+      "error": "We couldn't place your order. Please try again."
     },
     "processing": "Processing order…",
     "confirmation": {

@@ -12,6 +12,7 @@ import { CheckoutCard, TextField, FieldError, fieldClasses } from "@/components/
 import { MEXICAN_STATES, CONTACT_PHONE_MAX, ADDRESS_FIELD_MAX, DELIVERY_NOTES_MAX, RFC_MAX } from "@/lib/config";
 import type { AddressField, AddressFieldErrorKey } from "@/lib/checkout/address";
 import type { CheckoutFormValues } from "@/app/[locale]/checkout/checkout-form-state";
+import type { FocusableFieldElement } from "@/components/checkout/checkout-flow-client";
 import { cn } from "@/lib/utils";
 
 /**
@@ -36,7 +37,7 @@ export interface CheckoutFieldLabels {
     state: string;
     statePlaceholder: string;
   };
-  notes: { heading: string; placeholder: string; rfc: string; rfcHint: string };
+  notes: { heading: string; label: string; placeholder: string; rfc: string; rfcHint: string };
 }
 
 interface CheckoutFieldsProps {
@@ -45,8 +46,10 @@ interface CheckoutFieldsProps {
   resolveError: (key: AddressFieldErrorKey | undefined) => string | null;
   disabled: boolean;
   labels: CheckoutFieldLabels;
+  /** The field to focus after a failed submit (first invalid in DOM order). */
   firstInvalidField: AddressField | null;
-  emailRef: React.Ref<HTMLInputElement>;
+  /** Ref attached to whichever control matches {@link firstInvalidField}. */
+  firstInvalidRef: React.Ref<FocusableFieldElement>;
 }
 
 export function CheckoutFields({
@@ -56,8 +59,11 @@ export function CheckoutFields({
   disabled,
   labels,
   firstInvalidField,
-  emailRef,
+  firstInvalidRef,
 }: CheckoutFieldsProps) {
+  /** The ref for `field` when it is the first invalid one, else undefined. */
+  const refFor = (field: AddressField): React.Ref<HTMLInputElement> | undefined =>
+    firstInvalidField === field ? (firstInvalidRef as React.Ref<HTMLInputElement>) : undefined;
   return (
     <div className="flex flex-col gap-6">
       <CheckoutCard heading={labels.contact.heading}>
@@ -73,24 +79,25 @@ export function CheckoutFields({
           defaultValue={values?.email}
           placeholder={labels.contact.emailPlaceholder}
           error={resolveError(fieldErrors?.email)}
-          errorId="checkout-email"
+          errorId="checkout-email-error"
           testId="checkout-email-input"
-          inputRef={firstInvalidField === "email" ? emailRef : undefined}
+          inputRef={refFor("email")}
         />
         <TextField
           id="checkout-phone"
           name="contact_phone"
           label={labels.contact.phone}
           type="tel"
-          inputMode="numeric"
+          inputMode="tel"
           autoComplete="tel"
           maxLength={CONTACT_PHONE_MAX}
           disabled={disabled}
           defaultValue={values?.contact_phone}
           placeholder={labels.contact.phonePlaceholder}
           error={resolveError(fieldErrors?.contact_phone)}
-          errorId="checkout-phone"
+          errorId="checkout-phone-error"
           testId="checkout-phone-input"
+          inputRef={refFor("contact_phone")}
         />
       </CheckoutCard>
 
@@ -100,6 +107,8 @@ export function CheckoutFields({
         resolveError={resolveError}
         disabled={disabled}
         labels={labels.shipping}
+        refFor={refFor}
+        stateRef={firstInvalidField === "state" ? (firstInvalidRef as React.Ref<HTMLButtonElement>) : undefined}
       />
 
       <NotesSection values={values} disabled={disabled} labels={labels.notes} />
@@ -113,12 +122,16 @@ function ShippingSection({
   resolveError,
   disabled,
   labels,
+  refFor,
+  stateRef,
 }: {
   values: CheckoutFormValues | undefined;
   fieldErrors: Partial<Record<AddressField, AddressFieldErrorKey>> | undefined;
   resolveError: (key: AddressFieldErrorKey | undefined) => string | null;
   disabled: boolean;
   labels: CheckoutFieldLabels["shipping"];
+  refFor: (field: AddressField) => React.Ref<HTMLInputElement> | undefined;
+  stateRef: React.Ref<HTMLButtonElement> | undefined;
 }) {
   const stateError = resolveError(fieldErrors?.state);
   return (
@@ -126,29 +139,29 @@ function ShippingSection({
       <TextField id="checkout-fullname" name="shipping_full_name" label={labels.fullName}
         autoComplete="name" required maxLength={ADDRESS_FIELD_MAX} disabled={disabled}
         defaultValue={values?.shipping_full_name}
-        error={resolveError(fieldErrors?.shipping_full_name)} errorId="checkout-fullname"
-        testId="checkout-fullname-input" />
+        error={resolveError(fieldErrors?.shipping_full_name)} errorId="checkout-fullname-error"
+        testId="checkout-fullname-input" inputRef={refFor("shipping_full_name")} />
       <TextField id="checkout-address1" name="address_line1" label={labels.addressLine1}
         autoComplete="address-line1" required maxLength={ADDRESS_FIELD_MAX} disabled={disabled}
         defaultValue={values?.address_line1}
-        error={resolveError(fieldErrors?.address_line1)} errorId="checkout-address1"
-        testId="checkout-address1-input" />
+        error={resolveError(fieldErrors?.address_line1)} errorId="checkout-address1-error"
+        testId="checkout-address1-input" inputRef={refFor("address_line1")} />
       <TextField id="checkout-address2" name="address_line2" label={labels.addressLine2}
         autoComplete="address-line2" maxLength={ADDRESS_FIELD_MAX} disabled={disabled}
         defaultValue={values?.address_line2}
-        error={resolveError(fieldErrors?.address_line2)} errorId="checkout-address2"
-        testId="checkout-address2-input" />
+        error={resolveError(fieldErrors?.address_line2)} errorId="checkout-address2-error"
+        testId="checkout-address2-input" inputRef={refFor("address_line2")} />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <TextField id="checkout-city" name="city" label={labels.city}
           autoComplete="address-level2" required maxLength={ADDRESS_FIELD_MAX} disabled={disabled}
           defaultValue={values?.city}
-          error={resolveError(fieldErrors?.city)} errorId="checkout-city"
-          testId="checkout-city-input" />
+          error={resolveError(fieldErrors?.city)} errorId="checkout-city-error"
+          testId="checkout-city-input" inputRef={refFor("city")} />
         <TextField id="checkout-cp" name="postal_code" label={labels.postalCode}
           inputMode="numeric" autoComplete="postal-code" maxLength={5} required disabled={disabled}
           defaultValue={values?.postal_code} placeholder={labels.postalCodePlaceholder}
-          error={resolveError(fieldErrors?.postal_code)} errorId="checkout-cp"
-          testId="checkout-cp-input" />
+          error={resolveError(fieldErrors?.postal_code)} errorId="checkout-cp-error"
+          testId="checkout-cp-input" inputRef={refFor("postal_code")} />
       </div>
       <StateField
         defaultValue={values?.state}
@@ -156,6 +169,7 @@ function ShippingSection({
         disabled={disabled}
         label={labels.state}
         placeholder={labels.statePlaceholder}
+        triggerRef={stateRef}
       />
     </CheckoutCard>
   );
@@ -167,12 +181,14 @@ function StateField({
   disabled,
   label,
   placeholder,
+  triggerRef,
 }: {
   defaultValue: string | undefined;
   error: string | null;
   disabled: boolean;
   label: string;
   placeholder: string;
+  triggerRef: React.Ref<HTMLButtonElement> | undefined;
 }) {
   const [state, setState] = useState(defaultValue ?? "");
   return (
@@ -184,6 +200,7 @@ function StateField({
       <input type="hidden" name="state" value={state} />
       <Select value={state || undefined} onValueChange={setState} disabled={disabled}>
         <SelectTrigger
+          ref={triggerRef}
           id="checkout-state"
           className="h-11 w-full"
           aria-invalid={error ? true : undefined}
@@ -217,7 +234,11 @@ function NotesSection({
   return (
     <CheckoutCard heading={labels.heading}>
       <div className="flex flex-col gap-1.5">
+        <label htmlFor="checkout-notes" className="text-sm font-medium text-foreground">
+          {labels.label}
+        </label>
         <textarea
+          id="checkout-notes"
           name="delivery_notes"
           maxLength={DELIVERY_NOTES_MAX}
           disabled={disabled}

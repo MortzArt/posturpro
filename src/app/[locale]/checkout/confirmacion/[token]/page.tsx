@@ -8,22 +8,23 @@ import { routing } from "@/i18n/routing";
 import { Link } from "@/i18n/navigation";
 import { buttonVariants } from "@/components/ui/button";
 import { OrderConfirmation } from "@/components/checkout/order-confirmation";
-import { getOrderByNumber, type OrderView } from "@/lib/checkout/order-read";
+import { getOrderByToken, type OrderView } from "@/lib/checkout/order-read";
 import { formatMXN } from "@/lib/money";
 import { interpolate } from "@/lib/interpolate";
 import { CATALOG_PATH } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
 /**
- * /checkout/confirmacion/[orderNumber] — post-order confirmation (T7 AC-13).
- * Server component: reads the order by number via the admin client (RLS-denied
- * to anon), renders order number + summary + shipping + the "no payment yet"
- * note; the `OrderConfirmation` client child clears the cart on mount. An unknown
- * order number → `notFound()` (no data leak).
+ * /checkout/confirmacion/[token] — post-order confirmation (T7 AC-13, M-6).
+ * Server component: reads the order by its UNGUESSABLE `confirmation_token` via
+ * the admin client (RLS-denied to anon), renders order number + summary +
+ * shipping + the "no payment yet" note; the `OrderConfirmation` client child
+ * clears the cart on mount. An unknown/malformed token → `notFound()` (no data
+ * leak, and the enumerable order number is never an entry point).
  */
 
 interface ConfirmationPageProps {
-  params: Promise<{ locale: string; orderNumber: string }>;
+  params: Promise<{ locale: string; token: string }>;
 }
 
 export async function generateMetadata({ params }: ConfirmationPageProps): Promise<Metadata> {
@@ -34,10 +35,10 @@ export async function generateMetadata({ params }: ConfirmationPageProps): Promi
 }
 
 export default async function ConfirmationPage({ params }: ConfirmationPageProps) {
-  const { locale, orderNumber } = await params;
+  const { locale, token } = await params;
   setRequestLocale(locale);
 
-  const order = await getOrderByNumber(decodeURIComponent(orderNumber));
+  const order = await getOrderByToken(decodeURIComponent(token));
   if (!order) {
     notFound();
   }

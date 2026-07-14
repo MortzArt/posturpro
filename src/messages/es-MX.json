@@ -328,6 +328,7 @@
     },
     "notes": {
       "heading": "Notas de entrega (opcional)",
+      "label": "Notas de entrega",
       "placeholder": "Instrucciones para la entrega…",
       "rfc": "RFC (opcional, para factura)",
       "rfcHint": "Solo si necesitas factura (Fase 3)."
@@ -335,8 +336,6 @@
     "discount": {
       "label": "Código de descuento",
       "placeholder": "Código de descuento",
-      "apply": "Aplicar",
-      "checking": "Verificando…",
       "remove": "Quitar código",
       "appliedLabel": "Código {code} aplicado",
       "savings": "Ahorras {amount}",
@@ -358,7 +357,6 @@
       "shippingUnavailable": "Se calcula al pagar",
       "total": "Total",
       "itemQuantity": "×{count}",
-      "itemsCount": "{count, plural, one {# artículo} other {# artículos}}",
       "noPaymentYet": "Sin pago todavía. El pago es el siguiente paso.",
       "lineOutOfStock": "Agotado",
       "lineUnavailable": "No disponible",
@@ -388,9 +386,7 @@
       "priceChanged": "El precio de un artículo cambió. Revisa tu pedido e inténtalo de nuevo.",
       "outOfStock": "Un artículo se agotó. Revisa tu pedido e inténtalo de nuevo.",
       "shippingUnavailable": "No podemos calcular el envío ahora. Inténtalo de nuevo.",
-      "error": "No pudimos realizar tu pedido. Inténtalo de nuevo.",
-      "dismiss": "Cerrar",
-      "retry": "Reintentar"
+      "error": "No pudimos realizar tu pedido. Inténtalo de nuevo."
     },
     "processing": "Procesando pedido…",
     "confirmation": {

@@ -424,7 +424,10 @@ export function truncateForMeta(text: string): string {
  *   logic (base computation, rounding rules, per-line vs. per-order) — treat as a
  *   project change, not a config swap.
  * - CHECKOUT_CONFIRMATION_SEGMENT / confirmationPath: the locale-agnostic
- *   confirmation route. The locale-aware `Link`/`redirect` add the `/en` prefix.
+ *   confirmation route. The dynamic segment is the order's UNGUESSABLE
+ *   `confirmation_token` (T7 M-6), NOT the enumerable order number — the page
+ *   re-reads by token so the range can't be walked to harvest PII. The
+ *   locale-aware `Link`/`redirect` add the `/en` prefix.
  * ========================================================================= */
 
 /**
@@ -543,16 +546,17 @@ export const TAX_RATE = 0;
 /**
  * Confirmation route segment appended under {@link CHECKOUT_PATH} (T7 AC-13).
  * Locale-agnostic Spanish path; the locale-aware `Link`/`redirect` add `/en`.
- * The order number is the final dynamic segment.
+ * The unguessable confirmation TOKEN is the final dynamic segment.
  */
 export const CHECKOUT_CONFIRMATION_SEGMENT = "confirmacion" as const;
 
 /**
- * Build the locale-agnostic confirmation path for an order number (T7 AC-13).
- * e.g. `PP-000123` → `/checkout/confirmacion/PP-000123`. The order number is
- * URL-encoded defensively (it is DB-generated and safe, but the boundary stays
- * honest). The locale-aware `redirect`/`Link` prefixes `/en` when needed.
+ * Build the locale-agnostic confirmation path for an order's confirmation TOKEN
+ * (T7 AC-13, M-6). e.g. token `d1f0…` → `/checkout/confirmacion/d1f0…`. The
+ * token — not the enumerable order number — addresses the PII-bearing page, so
+ * the sequence can't be walked (IDOR fix). URL-encoded defensively. The
+ * locale-aware `redirect`/`Link` prefixes `/en` when needed.
  */
-export function confirmationPath(orderNumber: string): string {
-  return `${CHECKOUT_PATH}/${CHECKOUT_CONFIRMATION_SEGMENT}/${encodeURIComponent(orderNumber)}`;
+export function confirmationPath(confirmationToken: string): string {
+  return `${CHECKOUT_PATH}/${CHECKOUT_CONFIRMATION_SEGMENT}/${encodeURIComponent(confirmationToken)}`;
 }

@@ -40,6 +40,32 @@ create unique index if not exists orders_idempotency_key_key
   where idempotency_key is not null;
 
 -- ---------------------------------------------------------------------------
+-- Confirmation token: an UNGUESSABLE per-order id used to address the public
+-- confirmation page (T7 M-6). The `order_number` (PP-000001…) is sequential and
+-- trivially enumerable, so routing the PII-bearing confirmation by it is an IDOR
+-- (anyone could walk the range and harvest name/address/email/phone). The
+-- confirmation URL carries this random uuid instead; the order number is still
+-- DISPLAYED on the page. `not null default gen_random_uuid()` backfills any
+-- pre-existing rows and auto-fills new inserts (the RPC returns it). Unique so a
+-- token maps to exactly one order.
+-- ---------------------------------------------------------------------------
+alter table orders
+  add column if not exists confirmation_token uuid not null default gen_random_uuid();
+create unique index if not exists orders_confirmation_token_key
+  on orders (confirmation_token);
+
+-- ---------------------------------------------------------------------------
+-- Case-insensitive uniqueness for discount codes (T7 m-3). The RPC matches a
+-- redemption by `upper(code) = upper(v_discount_code)`; `code` is only
+-- case-sensitively unique, so that match is single-row only by app convention
+-- (seed + normalizeDiscountCode store upper-case). This functional unique index
+-- makes it a DB-enforced invariant: no two rows can share a code case-insensitively,
+-- so the redemption UPDATE can never touch more than one row.
+-- ---------------------------------------------------------------------------
+create unique index if not exists discount_codes_upper_code_key
+  on discount_codes (upper(code));
+
+-- ---------------------------------------------------------------------------
 -- create_order(payload jsonb) -> jsonb
 --
 -- payload shape (all cents are integers; validated + assembled server-side):
@@ -60,7 +86,8 @@ create unique index if not exists orders_idempotency_key_key
 --   ]
 -- }
 --
--- Returns: { "order_number": "...", "order_id": "uuid", "reused": bool }
+-- Returns: { "order_number": "...", "order_id": "uuid",
+--            "confirmation_token": "uuid", "reused": bool }
 -- Raises (mapped to friendly enums by the action, never echoed raw):
 --   'OUT_OF_STOCK:<product_id>:<variant_id|->'  — a line lacked live stock
 --   'DISCOUNT_EXHAUSTED'                          — code hit its redemption cap
@@ -82,6 +109,7 @@ declare
   v_customer_id     uuid;
   v_order_id        uuid;
   v_order_number    text;
+  v_confirmation_token uuid;
   v_seq             bigint;
   v_item            jsonb;
   v_product_id      uuid;
@@ -103,9 +131,10 @@ begin
   limit 1;
   if found then
     return jsonb_build_object(
-      'order_number', v_existing.order_number,
-      'order_id',     v_existing.id,
-      'reused',       true
+      'order_number',       v_existing.order_number,
+      'order_id',           v_existing.id,
+      'confirmation_token', v_existing.confirmation_token,
+      'reused',             true
     );
   end if;
 
@@ -145,12 +174,23 @@ begin
       where id = v_product_id;
   end loop;
 
-  -- 2. Discount redemption bound check + increment (inside the transaction so a
-  --    concurrent over-redemption rolls back). Only when a code was applied.
+  -- 2. Discount redemption re-assert + increment (inside the transaction so a
+  --    concurrent over-redemption / late deactivation rolls back). Only when a
+  --    code was applied. The guard re-checks the eligibility invariants that can
+  --    flip between the action's snapshot and this commit (T7 m-2): the code is
+  --    still active, still inside its start/end window, and still under its
+  --    redemption cap. `min_subtotal_cents` is intentionally NOT re-checked here
+  --    (the action already clamped the discount to the validated subtotal; a
+  --    live-subtotal recompute here could reject a legitimate application) — an
+  --    accepted, documented gap. A failed guard → DISCOUNT_EXHAUSTED → the action
+  --    degrades gracefully (the user retries without the code, AC-7).
   if v_discount_code is not null then
     update public.discount_codes
       set times_redeemed = times_redeemed + 1
       where upper(code) = upper(v_discount_code)
+        and is_active
+        and (starts_at is null or starts_at <= now())
+        and (ends_at is null or ends_at >= now())
         and (max_redemptions is null or times_redeemed < max_redemptions);
     if not found then
       raise exception 'DISCOUNT_EXHAUSTED'
@@ -198,7 +238,7 @@ begin
     (payload->>'total_cents')::integer,
     'pending_payment', 'pending'
   )
-  returning id into v_order_id;
+  returning id, confirmation_token into v_order_id, v_confirmation_token;
 
   -- 6. Line snapshots (AC-11). line_total is trusted from the assembled payload
   --    and re-checked by order_items_line_total_identity.
@@ -226,9 +266,10 @@ begin
     values (v_order_id, null, 'pending_payment', 'Order created at checkout (T7)');
 
   return jsonb_build_object(
-    'order_number', v_order_number,
-    'order_id',     v_order_id,
-    'reused',       false
+    'order_number',       v_order_number,
+    'order_id',           v_order_id,
+    'confirmation_token', v_confirmation_token,
+    'reused',             false
   );
 end;
 $$;

@@ -287,10 +287,11 @@ async function runCheckout(
   // 8. Atomic reserve-and-create (AC-9, AC-11, AC-14).
   const idempotencyKey = readIdempotencyKey(formData);
   const appliedCode = discountResult.kind === "applied" ? discountResult.code : null;
-  const orderNumber = await createOrderViaRpc(totals, addressValues, idempotencyKey, appliedCode);
+  const confirmationToken = await createOrderViaRpc(totals, addressValues, idempotencyKey, appliedCode);
 
-  // 9. Success (carry the discount result so the UI can reflect what applied).
-  return { status: "success", orderNumber, discount: discountResult, submissionId };
+  // 9. Success — carry the unguessable confirmation token (the redirect target,
+  //    T7 M-6) + the discount result so the UI can reflect what applied.
+  return { status: "success", confirmationToken, discount: discountResult, submissionId };
 }
 
 /** Resolve the discount to a UI result + clamped cents (never throws). */
@@ -323,7 +324,7 @@ function readIdempotencyKey(formData: FormData): string {
   return crypto.randomUUID();
 }
 
-/** Call the atomic RPC and return the order number (throws on failure). */
+/** Call the atomic RPC and return the confirmation token (throws on failure). */
 async function createOrderViaRpc(
   totals: ReturnType<typeof assembleOrder>,
   address: ReturnType<typeof validateAddress>["values"],
@@ -370,7 +371,7 @@ async function createOrderViaRpc(
   if (!data) {
     throw new Error("create_order returned no data");
   }
-  return data.order_number;
+  return data.confirmation_token;
 }
 
 /** Map a thrown error to a friendly state (never echoes raw PG, AC-8/edge 8). */

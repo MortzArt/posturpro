@@ -55,8 +55,12 @@ export interface CheckoutFormState {
   discount?: DiscountResult;
   /** Preserved input so the form stays filled on failure (absent on success). */
   values?: CheckoutFormValues;
-  /** Present only on success — drives the redirect + cart clear. */
-  orderNumber?: string;
+  /**
+   * Present only on success — the unguessable confirmation token that addresses
+   * the confirmation page (T7 M-6). Drives the redirect; the page re-reads the
+   * order by this token (never by the enumerable order number).
+   */
+  confirmationToken?: string;
   /** Increments on every action call (Q&A submissionId pattern). */
   submissionId: number;
 }

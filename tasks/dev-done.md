@@ -107,9 +107,54 @@ RPC + routes smoke-tested end to end.
 - RFC captured/stored optional, upper-cased, shape unchecked (CFDI Phase 3).
 
 ## Known Limitations / Follow-ups
-- **Confirmation reads by guessable `order_number`** (no accounts in Phase 1) — anyone with the URL sees the confirmation. Flagged for the Security stage; an opaque-token id is a known follow-up (out of scope T7).
+- **Confirmation reads by guessable `order_number`** — ✅ RESOLVED in Stage 6 (M-6). Now addressed by an unguessable `confirmation_token`; the sequential order number is display-only and no longer a URL entry point. See "Fixes Applied (Stage 6)" below.
 - **No rate limit on `placeOrder`** — could reuse the Q&A `clientIp()` + limiter as best-effort order-spam mitigation (deferred; the atomic RPC + stock floor bound real damage).
 - **Discount async pre-check** (option A) is a possible UX upgrade.
+- **Global-error banner recovery action** — the UX-Requirements ask for a retry/"review your cart" action in the global banner; not yet wired (dead `banner.retry` key removed). Deferred to the UX stage (Stage 8).
 
 ## Dependencies Added
 - **None.** Hand-rolled pure validation (Q&A precedent); Mexican states/CP are local constants; existing `money.ts`/`shipping.ts`/`Select` reused.
+
+---
+
+## Fixes Applied (Stage 6)
+
+### Issue Tracker
+| ID | Severity | Title | Status | File | Notes |
+|----|----------|-------|--------|------|-------|
+| M-1 | MAJOR | Duplicate id / broken aria-describedby | FIXED | `checkout-fields.tsx` | every field `errorId="checkout-<field>-error"` (≠ input id) |
+| M-2 | MAJOR | Two live submit buttons `<lg` | FIXED | `checkout-summary.tsx` | in-card submit `hidden lg:flex` |
+| M-3 | MAJOR | Empty live-region discount amount | FIXED | `checkout-flow-client.tsx` | interpolate `formatMXN(discountCents)` |
+| M-4 | MAJOR | Focus-first-invalid email-only | FIXED | `checkout-flow-client.tsx`, `checkout-fields.tsx` | DOM-order first-invalid + `StateField` `triggerRef` |
+| M-5 | MAJOR | Unlabeled notes textarea | FIXED | `checkout-fields.tsx`, i18n, `use-checkout-labels.tsx` | `<label htmlFor="checkout-notes">` + `notes.label` key |
+| M-6 | MAJOR | Enumerable order # → PII IDOR | FIXED | `0008_checkout.sql`, `order-read.ts`, `confirmacion/[token]/page.tsx`, `actions.ts`, `checkout-form-state.ts`, `config.ts`, `database.types.ts` | `confirmation_token` column + RPC returns it + token-routed confirmation |
+| m-1 | MINOR | Totals don't refresh on drift | FIXED | `checkout-helpers.ts`, `checkout-flow-client.tsx` | `applyLivePrices` on `price-changed` |
+| m-2 | MINOR | Discount TOCTOU | FIXED | `0008_checkout.sql` | RPC re-asserts `is_active` + start/end window |
+| m-3 | MINOR | `upper(code)` multi-row risk | FIXED | `0008_checkout.sql` | `unique index (upper(code))` |
+| m-4 | MINOR | Client-snapshot displayed total | SKIPPED | — | accepted deviation; server authoritative; m-1 closes the drift case |
+| m-5 | MINOR | Radix Select vs native `<select>` | SKIPPED | — | allowed deviation (accessible combobox, ui-design.md) |
+| m-6 | MINOR | `noValidate` | SKIPPED | — | intentional server-action pattern |
+| m-7 | MINOR | `inputMode="numeric"` blocks `+` | FIXED | `checkout-fields.tsx` | `inputMode="tel"` |
+| n-1 | NIT | Dead i18n copy | PARTIAL | `messages/{es-MX,en}.json` | 5 dead keys deleted; banner recovery-action → UX stage |
+
+### Summary
+- Critical: 0/0 (none found in review)
+- Major: 6/6 fixed, 0 skipped
+- Minor: 5/7 fixed, 2 skipped (both justified accepted deviations)
+- Nit: n-1 dead copy removed (banner recovery action deferred to UX stage)
+
+### File manifest delta (Stage 6)
+- **Renamed**: `src/app/[locale]/checkout/confirmacion/[orderNumber]/page.tsx` → `.../[token]/page.tsx` (dynamic segment now the confirmation token).
+- **Migration 0008 amended** (local-Docker-only, idempotent — authorized by ticket): `orders.confirmation_token uuid not null default gen_random_uuid()` + unique index; `discount_codes` `unique index (upper(code))`; RPC returns `confirmation_token` and hardened redemption guard (`is_active` + window). Re-applied to local Docker + reseeded.
+- **Modified**: `checkout-fields.tsx`, `checkout-field.tsx` (unchanged — primitive already used `${id}-error` testid), `checkout-flow-client.tsx`, `checkout-summary.tsx`, `checkout-helpers.ts`, `use-checkout-labels.tsx`, `order-read.ts` (`getOrderByNumber` → `getOrderByToken`), `actions.ts`, `checkout-form-state.ts` (`orderNumber` → `confirmationToken`), `config.ts` (`confirmationPath(token)`), `database.types.ts`, `messages/es-MX.json`, `messages/en.json`.
+
+### Config / contract docs changed
+- `confirmationPath(confirmationToken)` now builds the URL from the order's **confirmation token**, not the order number (config header updated).
+- **Confirmation-token contract (for QA/e2e)**: `create_order` RPC result and `CreateOrderResult` now include `confirmation_token: string` (uuid). Success `CheckoutFormState.confirmationToken` drives the redirect to `/checkout/confirmacion/<token>`. The page reads by token (`getOrderByToken`, UUID-validated before DB); a malformed/unknown token → 404; the sequential order number is DISPLAY-only and is NOT a valid confirmation URL.
+- New i18n key `checkout.notes.label` (both locales). Removed dead keys: `checkout.discount.apply`, `checkout.discount.checking`, `checkout.banner.dismiss`, `checkout.banner.retry`, `checkout.summary.itemsCount`.
+
+### Test Results After Fixes
+- Total: 811 | Passed: 811 | Failed: 0 | Skipped: 0
+- `tsc --noEmit`: clean · `eslint`: clean · `next build`: clean (both locales)
+- RPC smoke (rolled-back txns): happy (token returned), idempotent (same token, `reused:true`), out-of-stock (rollback, stock unchanged, 0 orders), discount active/expired/exhausted correct.
+- Live prod-server confirmation: valid token 200, malformed token 404, sequential `PP-000003` 404. Smoke data cleaned; DB left seeded.

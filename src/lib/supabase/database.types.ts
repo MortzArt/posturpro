@@ -81,6 +81,8 @@ export interface CreateOrderPayload {
 export interface CreateOrderResult {
   order_number: string;
   order_id: string;
+  /** Unguessable token the confirmation page is addressed by (T7 M-6). */
+  confirmation_token: string;
   /** true when an existing order was returned via the idempotency key. */
   reused: boolean;
 }
@@ -517,6 +519,7 @@ export interface Database {
           mp_payment_id: string | null;
           mp_external_reference: string | null;
           idempotency_key: string | null;
+          confirmation_token: string;
           created_at: string;
           updated_at: string;
         };
@@ -549,6 +552,7 @@ export interface Database {
           mp_payment_id?: string | null;
           mp_external_reference?: string | null;
           idempotency_key?: string | null;
+          confirmation_token?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -581,6 +585,7 @@ export interface Database {
           mp_payment_id?: string | null;
           mp_external_reference?: string | null;
           idempotency_key?: string | null;
+          confirmation_token?: string;
           created_at?: string;
           updated_at?: string;
         };

@@ -30,6 +30,33 @@ export function buildSummaryLines(lines: readonly CartLine[]): CheckoutSummaryLi
   }));
 }
 
+/**
+ * Refresh summary lines + subtotal to the LIVE unit prices the server returned on
+ * price drift (T7 edge 1, m-1). For each line whose key is in `liveUnitPrices`,
+ * the unit + line total are recomputed from the live price; other lines are
+ * unchanged. DISPLAY ONLY — the server already blocked the submit and remains
+ * authoritative; this just stops the totals from showing a stale price while the
+ * per-line "price changed" note is up. Returns the new lines and their subtotal.
+ */
+export function applyLivePrices(
+  lines: readonly CheckoutSummaryLine[],
+  liveUnitPrices: Record<string, number> | undefined,
+): { lines: CheckoutSummaryLine[]; subtotalCents: number } {
+  const nextLines = lines.map((line) => {
+    const livePrice = liveUnitPrices?.[line.key];
+    if (livePrice === undefined) {
+      return line;
+    }
+    return {
+      ...line,
+      unitPriceCents: livePrice,
+      lineTotalCents: livePrice * line.quantity,
+    };
+  });
+  const subtotalCents = nextLines.reduce((sum, line) => sum + line.lineTotalCents, 0);
+  return { lines: nextLines, subtotalCents };
+}
+
 /** Map cart lines to the minimal submit payload (server re-reads the rest). */
 export function buildLinesPayload(lines: readonly CartLine[]): LinePayload[] {
   return lines.map((line) => ({
