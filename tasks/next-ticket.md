@@ -1,347 +1,153 @@
-# Task: T9 — Transactional emails
+# Task: T10 — Admin foundation
 
 ## Priority
 
-**High** — T9 is on the Phase-1 critical path: it is the "core automatic behavior" the spec
-explicitly scopes in (order emails + stock restore) and is a hard `blocked by` dependency of
-T12 (admin order management triggers shipped/cancelled/refund emails). T8 is code-complete, so
-T9 is unblocked. It is not "Critical" only because no revenue write depends on it — an email
-failure must never break checkout or the webhook.
+**Critical** — This is the trust boundary for the entire management dashboard. T11 (product management) and T12 (order management) are `blocked by: T10` and will inherit its auth model, layout, route-protection pattern, and settings-write pattern. Getting the auth architecture right here prevents rework across two full-cycle tasks and closes the single highest-value attack surface in the app. A weak admin auth here is a store-takeover vulnerability.
 
 ## Complexity
 
-**medium** — justification against the criteria:
+**medium** — Justification against the criteria:
 
-- New subsystem (`src/lib/email/`) but it follows established seams, not a new architecture: a
-  typed lib wrapper (like `src/lib/payments/*`), a mockable provider boundary (like `mp-client.ts`),
-  i18n via the existing `next-intl` message dictionaries, config via the existing `env.ts` accessor.
-- Estimated 12–15 files changed/created (one migration, one provider client, one dispatch module,
-  8 templates, i18n keys in 2 dictionaries, 3 trigger-seam edits, config additions). Top of the
-  `medium` band, not `high`.
-- It touches the payment webhook and checkout action (the two most sensitive write paths), so the
-  trigger wiring must be non-blocking and failure-isolated — but the SEAMS already exist (T8 arch
-  review confirmed them). No architectural change.
-- The one genuinely-new data concern (TD-2 `transition_kind` + an email ledger + an `orders.locale`
-  column) is a single small migration, not a new subsystem.
+- New subsystem (admin auth + admin shell), but scoped: **single Owner account, no user table, no roles, no registration, no password reset** (all explicitly Phase 2 per PRODUCT_SPEC "Deferred to Phase 2" line 92). This keeps it well below `high`.
+- Estimated **9–13 files** (new middleware branch, session lib, login page + action, admin layout + nav, settings page + action + validation lib, messages). Lands in the 5–15 band.
+- Introduces ONE genuinely new pattern (a self-managed signed session cookie) — but it reuses the existing `node:crypto` HMAC/`timingSafeEqual` discipline already proven in `src/lib/payments/webhook.ts`, the existing `src/lib/env.ts` secret boundary, and the existing admin (RLS-bypass) Supabase client. No new data model beyond the update path on the existing `store_settings` row.
+- It is NOT `high`: no new integration, no architectural rewrite, no new tables. It is NOT `low`: it adds a new auth pattern and a new protected route tree, more than a pattern-copy.
 
-It is NOT `high` (no new integration surface beyond one email provider, no state-machine change —
-`advance_order_status` gains one out-field, no 15+-file blast radius). It is NOT `low` (new
-subsystem, new provider boundary, new migration, touches two write paths).
+Because full-cycle auto-classifies `medium` → **skip the hacker stage**, run all other stages. Given this is an auth trust boundary, Security (9) and Arch (10) MUST run at full depth (not lightweight) despite `medium`.
 
 ## Feature Type
 
-**logic-only** — with an explicit S2 UI Design decision below.
-
-Emails have a *visual surface in the recipient's inbox*, but they have **no in-app UI**: no route,
-no component in the Next.js tree, no shopper- or admin-facing screen. The deliverables are server
-lib modules (provider client, dispatch, templates), i18n strings, a migration, and trigger wiring.
-There is no browser render, no responsive breakpoint in the app, no interaction state.
-
-### S2 UI Design decision: **SKIP S2 (UI Design) — with binding constraints carried into S3.**
-
-Rationale: the pipeline's UI Design stage (`ultradesign`) designs *app components, interaction
-patterns, wireframes, and motion* — none of which exist for a transactional email. Running it
-would produce an empty or misapplied artifact. **However**, email HTML is a real visual artifact
-with hard constraints, so instead of a design stage we impose the following as S3 DEV REQUIREMENTS:
-
-- Table-based layout, inline styles only (no `<style>` blocks, no external CSS, no flexbox/grid —
-  Outlook/Gmail strip them). Max content width 600px, centered.
-- Neutral brand tokens ONLY, sourced from a single `email/brand.ts` constants module so the client
-  logo/colors swap in one place later (spec: "neutral design system now; centralize all brand
-  tokens"). No `@hugeicons`, no Tailwind, no `cn()` — none of the app's UI stack applies to email.
-- A plain-text alternative part for EVERY email (deliverability + accessibility).
-- All monetary amounts formatted through the existing MXN path (`src/lib/money.ts`,
-  `CURRENCY_LOCALE`), never re-implemented.
+**full-stack** — New backend (session issuance/verification, settings write via admin client, possible migration) AND new frontend (login screen, admin shell/nav, Store Settings form). All pipeline stages relevant; UI Design (3) and UX (8) run at full depth for the login + settings surfaces.
 
 ## User Story
 
-As a **guest customer of the store**, I want to **receive clear, correctly-localized emails at each
-step of my order** (confirmation, payment received, OXXO/SPEI payment instructions), so that **I
-have a durable record of my purchase and know exactly how and when to pay** — even though I have no
-account to log into.
-
-As the **store owner**, I want to **be emailed the moment a new order is placed**, so that **I can
-begin fulfillment without watching the dashboard**.
+As the **store Owner**, I want a secure admin area — separate from any shopper session — where I log in once and edit my store's name, contact email, shipping flat rate, and free-shipping threshold, so that I can operate the store without a developer and without exposing the storefront to my credentials.
 
 ## Background
 
-**What exists today.** T7 built checkout (order creation via `create_order` RPC) and a
-confirmation page addressed by `orders.confirmation_token`. T8 built the Mercado Pago webhook: a
-single authoritative transition path (`advance_order_status` RPC) called from
-`src/lib/payments/process-payment.ts`, plus a durable idempotency spine (`mp_payment_events`,
-claim-then-finalize) and a refund ledger. Config/secrets go through `src/lib/env.ts` (typed,
-`MissingEnvVarError`, never `NEXT_PUBLIC_` for secrets). i18n is `next-intl` with `es-MX` (default)
-+ `en` dictionaries in `src/messages/`. Money is integer cents, formatted via `src/lib/money.ts`.
+**What exists today:**
 
-**What is missing.** There is no email capability of any kind — no provider, no templates, no
-dispatch. The word "email" appears only as a data field (`contact_email`) and in comments that
-defer sending to "T9" (e.g. `config.ts:525` — "the confirmation email is T9"). The spec lists eight
-neutral-branded templates; none exist.
+- The storefront is entirely guest/cookie-cart based. There is **no authentication of any kind** — no Supabase Auth users, no `auth` library, no session concept. The only "identities" are `anon` and the RLS-bypassing service role.
+- `store_settings` is a **DB-enforced singleton** (`store_settings_singleton` unique index on `((true))`, migration 0006) with columns `store_name`, `contact_email`, `shipping_flat_rate_cents`, `free_shipping_threshold_cents`, `currency`, `updated_at` (auto-touched by trigger `store_settings_set_updated_at`). Non-blank name enforced by CHECK `store_settings_name_nonblank` (1–200 chars). Both cents columns have CHECK `>= 0`.
+- The storefront **reads** `store_settings` via `getStoreSettingsStatic()` (`src/lib/store-settings.ts`), an `unstable_cache` read tagged `STORE_SETTINGS_CACHE_TAG = "store-settings"`. That file's doc comment already says the tag is bust-on-save "(admin save, T10)" — the wiring seam is pre-built. Checkout also reads it (`getStoreSettingsStatic` → `computeShipping`).
+- RLS: `store_settings` grants **`select` only** to `anon, authenticated`; there is **no `update`/`insert` grant to any client role** (migration 0005). All privileged writes in this app go through the RLS-bypassing admin client (`src/lib/supabase/admin.ts`, `server-only`).
+- Secrets are single-sourced and validated in `src/lib/env.ts` with a strict public/server split; no secret is ever `NEXT_PUBLIC_`. `node:crypto` `createHmac` + `timingSafeEqual` are already used correctly in `src/lib/payments/webhook.ts`.
+- Locale middleware (`src/middleware.ts`) is pure next-intl with matcher `/((?!api|_next|_vercel|.*\\..*).*)`. Storefront routes live under `src/app/[locale]/`.
 
-**Why this matters now.** (1) The spec scopes order emails as required Phase-1 automatic behavior.
-(2) T12 is `blocked by: T9` and expects the shipped/cancelled/refund send functions to already
-exist as callable seams. (3) The T8 architecture review flagged **TD-2** as a "fix before T9" item:
-the transition record has no structured type, so T9 email triggers would otherwise have to
-string-match free-text notes — a fragile anti-pattern across two subsystems.
+**What's missing:** any way for the Owner to authenticate and any UI to edit the store settings. Today changing shipping requires editing the DB row by hand.
 
-**Two structural gaps this ticket must close before any email can be correctly sent:**
+**Why it matters now:** T11/T12 cannot start without the admin shell + route guard this task establishes.
 
-1. **No transition type (TD-2).** `order_status_history` has `from_status`, `to_status`, `note`
-   (free text). A payment-only refund writes `from==to` (verified: `0009_payments.sql:249-251`) and
-   is distinguishable from a paid-order no-op ONLY by the free-text note. Emails must NOT string-match.
-2. **No persisted locale.** `orders` has NO `locale` column (verified against `0003_commerce.sql`).
-   Checkout runs under `/es-MX/` or `/en/`, but the webhook is a server-to-server MP call with **no
-   locale context**. Without a persisted per-order locale, payment-received / voucher emails cannot
-   be localized to the customer's chosen language. This ticket adds `orders.locale`.
+## Key Product & Architecture Decisions (binding for Dev)
+
+1. **Admin lives at a locale-free `/admin`, NOT under `/[locale]/admin`.** Justification: (a) PRODUCT_SPEC does not require admin i18n; the operator is a single Spanish-speaking owner (spec line 12). (b) Keeping admin out of `[locale]` avoids the `localePrefix: "as-needed"` ambiguity (is `/admin` the es-MX-unprefixed admin or a locale?) and keeps admin URLs stable/uncrawlable. (c) The next-intl middleware must be updated to **exclude `/admin` from locale handling** and instead run the admin session guard for it.
+2. **Admin UI is single-locale es-MX** (Spanish), NOT internationalized. Justification: single non-technical owner, Spanish market; i18n of admin is explicitly Phase-2-adjacent and adds cost with zero Phase-1 value. Admin copy is authored directly in Spanish (constants/JSX), NOT added to the `next-intl` storefront message catalogs (those stay symmetric es-MX/en for the storefront only). This keeps the storefront `messages.test.ts` symmetry tests green.
+3. **Auth mechanism: a self-managed, HMAC-signed, HttpOnly session cookie — NOT Supabase Auth.** Justification: Supabase Auth (a) requires provisioning an `auth.users` row and wiring GoTrue, a heavier dependency for a single hardcoded Owner; (b) would create a second "authenticated" identity that RLS policies (`grant ... to authenticated`) already reference for the storefront — mixing an admin `authenticated` session into that role risks silently widening storefront grants. A dedicated signed cookie keeps the admin session **fully separate from any shopper/Supabase session** (spec requirement) and never touches the `anon`/`authenticated` Postgres roles. Credentials: `ADMIN_EMAIL` + `ADMIN_PASSWORD_HASH` (scrypt hash) read via `src/lib/env.ts`; the session cookie payload is signed with `HMAC-SHA256(payload, ADMIN_SESSION_SECRET)`.
+4. **Route protection is defense-in-depth: middleware guard + layout guard.** The Next.js middleware verifies the session cookie for every `/admin/*` request except `/admin/login` and redirects unauthenticated requests to `/admin/login`. The admin **layout** (server component) ALSO verifies the session and redirects — so a route that somehow bypasses the matcher is still protected. Every admin mutation (server action) re-verifies the session server-side before touching the DB (never trust the middleware alone).
+5. **All admin writes go through the existing admin (RLS-bypass) client** (`createAdminClient`), server-only. No new Supabase client. No RLS `update` grant is added (would widen the `authenticated` role for everyone).
 
 ## Acceptance Criteria
 
-Each criterion is binary — PASS or FAIL.
-
-**Migration & data model (TD-2 + locale + ledger) — do FIRST**
-
-- [ ] AC-1: A new numbered migration `0010_email_transitions.sql` exists, is idempotent
-  (`create … if not exists`, `add column if not exists`), and applies cleanly via
-  `supabase db reset` against the LOCAL Docker stack. It is NEVER pushed to remote.
-- [ ] AC-2: `advance_order_status` returns an additional field `transition_kind` (text) in its
-  jsonb result, from a fixed set: `paid | payment_pending | payment_failed | payment_authorized |
-  refunded | shipped | cancelled | delivered | preparing | noop`. The value is derived from
-  `(from_status, to_status, payment_status, p_order_status IS NULL)` INSIDE the RPC — never from the
-  note text. `database.types.ts` `AdvanceOrderStatusResult` is updated to include it.
-- [ ] AC-3: `order_status_history` gains a nullable `transition_kind text` column written by the
-  RPC on every history-row insert, so the audit trail is self-describing (no note parsing ever).
-- [ ] AC-4: `orders` gains a `locale text not null default 'es-MX'` column constrained to the
-  shipped locale set (`check (locale in ('es-MX','en'))`), and the `create_order` RPC + checkout
-  payload persist the active request locale onto the order.
-- [ ] AC-5: A durable send-ledger table `email_sends` exists, keyed uniquely on
-  `(order_id, email_kind, dedupe_key)`, RLS-enabled, `grant all … to service_role`, with a claim
-  RPC `claim_email_send(order_id, email_kind, dedupe_key)` returning `'new' | 'duplicate'` (insert …
-  on conflict do nothing, mirroring `record_payment_event`) so a duplicate webhook delivery can
-  never double-send.
-
-**Provider & config**
-
-- [ ] AC-6: An email provider is integrated behind a single module `src/lib/email/provider.ts`
-  exposing one async `sendEmail({ to, subject, html, text, replyTo? })`. The provider is
-  instantiated in exactly ONE place (mirroring `mp-client.ts`), reads its API key via
-  `src/lib/env.ts` (`getEmailEnv()`), never `NEXT_PUBLIC_`, never hardcoded. `import "server-only"`.
-- [ ] AC-7: `getEmailEnv()` reads and validates these exact env vars, throwing `MissingEnvVarError`
-  when absent: `EMAIL_API_KEY` (secret), `EMAIL_FROM_ADDRESS`, `EMAIL_OWNER_ADDRESS`. A missing var
-  never throws into a critical path — dispatch swallows it (AC-13).
-- [ ] AC-8: When `EMAIL_DEV_PREVIEW=1` (or `EMAIL_API_KEY` is absent in dev), the provider does NOT
-  hit the network: it logs the rendered subject + recipient + writes the HTML to a documented
-  preview sink and returns success. Live send is BLOCKED-ON-USER and documented in `dev-done.md`
-  with exact var names + where to get creds.
-- [ ] AC-9: In ALL unit and integration tests the provider is mocked — no test performs a real
-  network send. A test asserts a missing `EMAIL_API_KEY` (non-preview) results in a logged,
-  swallowed failure and NO throw into checkout/webhook.
-
-**Templates & localization**
-
-- [ ] AC-10: Eight templates render to `{ subject, html, text }` from typed inputs:
-  `order_confirmation`, `payment_received`, `voucher_instructions` (OXXO/SPEI), `shipped`,
-  `cancelled`, `refund_issued`, `contact_relay`, `new_order_owner`.
-- [ ] AC-11: All SIX customer-facing templates render correctly in BOTH `es-MX` and `en`, sourcing
-  every string from a new `email` block in `src/messages/es-MX.json` and `src/messages/en.json`
-  (symmetric keys — the existing `keys-used.test.ts` invariant must stay green). Money is
-  MXN-formatted via `src/lib/money.ts`. Interpolation uses next-intl `{var}` (single-brace)
-  convention, consistent with the existing dictionaries.
-- [ ] AC-12: The two owner/relay templates are **single-locale es-MX** (decision: the owner is the
-  Mexican store operator; `contact_relay` is a relay TO the owner, so it uses es-MX chrome and
-  quotes the customer's message verbatim). Stated in `dev-done.md`.
-
-**Dispatch, triggers & idempotency**
-
-- [ ] AC-13: Email dispatch is **failure-isolated and non-blocking**: a send failure (provider
-  error, missing config, timeout) is caught, logged with context (`console.error`, order id + kind),
-  and NEVER propagates into the checkout action's return or changes the webhook's HTTP status.
-  Checkout still returns `success`; the webhook still returns its correct 200/500 based on payment
-  processing alone.
-- [ ] AC-14: On checkout success (`placeOrder` → `runCheckout` step 9), TWO emails are triggered:
-  `order_confirmation` to the customer (in the order's locale) and `new_order_owner` to the owner.
-  Neither blocks the `success` return.
-- [ ] AC-15: On the webhook advancing to a PAID transition (`transition_kind = 'paid'`),
-  `payment_received` is sent to the customer in the order's locale — exactly once per order even
-  across duplicate/redelivered webhooks (guarded by `email_sends`).
-- [ ] AC-16: When an order is first-known as OXXO/SPEI **pending** (`transition_kind =
-  'payment_pending'` with an OXXO/SPEI method), `voucher_instructions` is sent once, carrying the
-  voucher/reference data. If voucher data is not available at the trigger point, the email is not
-  sent and the seam is documented (no partial email). See Out of Scope for voucher-data sourcing.
-- [ ] AC-17: `shipped`, `cancelled`, `refund_issued` templates + typed `send*` functions exist and
-  are unit-tested, but are **NOT live-wired** in T9 (their triggers are T12 admin actions). Each is
-  exported and callable; a `// T12 wiring seam` comment marks the call-site gap. `contact_relay`
-  template + send function exist but are **NOT wired** (depends on the Contact page, T13); seam
-  documented.
-- [ ] AC-18: The webhook route (`route.ts`) contains ZERO email code — emails are triggered from the
-  transition outcome inside `process-payment.ts` (or a dispatch helper it calls), AFTER a successful
-  advance, so a slow send never blocks the webhook's 200 and never triggers MP retries.
-
-**Housekeeping**
-
-- [ ] AC-19: `tasks/hacker-report.md` is NOT touched by any T9 stage (stale T7 artifact; T8 hacker
-  work is committed in `4474f8b`). It is not treated as T9 context.
-- [ ] AC-20: T7 and T8 remain UNCHECKED in `BUILD_PLAN.md` (human-review gates open). T9 does not
-  check them off.
+- [ ] AC-1: Visiting `/admin` (or any `/admin/*` except `/admin/login`) while unauthenticated redirects (HTTP 307/302) to `/admin/login`. No admin markup is sent to the browser.
+- [ ] AC-2: Submitting the login form with the correct `ADMIN_EMAIL` + password sets an HttpOnly, `SameSite=Lax`, `Secure` (in production), `Path=/admin` session cookie and redirects to `/admin`. Email comparison is case-insensitive; password verification is constant-time against the scrypt hash.
+- [ ] AC-3: Submitting the login form with a wrong email OR wrong password shows a single generic error ("Correo o contraseña incorrectos") — the response does NOT reveal which field was wrong, and the timing does not distinguish "unknown email" from "wrong password" (verify the hash even on unknown email, or compare against a dummy hash).
+- [ ] AC-4: The session cookie value is tamper-evident: it carries an HMAC-SHA256 signature over its payload (issued-at + version) using `ADMIN_SESSION_SECRET`; any modification, truncation, or forged cookie fails `timingSafeEqual` verification and is treated as unauthenticated.
+- [ ] AC-5: The session expires after a bounded lifetime (`ADMIN_SESSION_MAX_AGE_SECONDS`, default 8 hours). An expired cookie (issued-at older than max-age) is rejected server-side even if its signature is valid, and the user is redirected to `/admin/login`.
+- [ ] AC-6: A "Cerrar sesión" (logout) control in the admin nav clears the session cookie (maxAge=0) and redirects to `/admin/login`. After logout, AC-1 holds again.
+- [ ] AC-7: While authenticated, `/admin/login` redirects to `/admin` (no reason to re-login).
+- [ ] AC-8: The Store Settings screen renders the four editable fields pre-populated from the live `store_settings` row: `store_name` (text), `contact_email` (email), shipping flat rate and free-shipping threshold (both shown/edited in **pesos**, e.g. `500.00`, converted to/from integer cents at the boundary via `pesosToCents`/`centsToPesos`).
+- [ ] AC-9: Saving valid settings updates the single `store_settings` row via the admin client, calls `revalidateTag(STORE_SETTINGS_CACHE_TAG)`, and shows a success confirmation. The storefront footer/checkout reflect the new values on their next render (no manual cache clear).
+- [ ] AC-10: Server-side validation rejects: blank store name, name > 200 chars, invalid email, negative or non-numeric money, money that isn't a clean 2-decimal peso value, and money values that overflow a safe integer. Field-level Spanish error messages are shown; the form stays filled with the user's input.
+- [ ] AC-11: The admin layout shows a navigation shell with the store name, links for the current + future admin sections (Store Settings live; Products/Orders present as **disabled/"próximamente"** placeholders so T11/T12 slot in without a nav rewrite), and the logout control. Nav marks the active section.
+- [ ] AC-12: `ADMIN_SESSION_SECRET`, `ADMIN_PASSWORD_HASH`, `ADMIN_EMAIL` are read ONLY through `src/lib/env.ts` server accessors, are `server-only`, and are NEVER prefixed `NEXT_PUBLIC_`. `grep NEXT_PUBLIC .env.local` shows none of them; the client bundle contains none of them (verify in the spirit of `src/lib/payments/secret-exposure.test.ts`).
+- [ ] AC-13: The admin session cookie is a DIFFERENT cookie name from `NEXT_LOCALE` and any cart cookie, is scoped to `Path=/admin`, and is never read/written by any storefront code. Storefront behavior is byte-for-byte unchanged (existing e2e still 100% green).
+- [ ] AC-14: A new migration `0011_*.sql` (idempotent) exists ONLY if a DB change is genuinely needed; the expectation is **no schema change** (row + CHECKs already exist; T10 writes are pure UPDATEs). Confirm and state explicitly in `dev-done.md`.
+- [ ] AC-15: Login is rate-limited per client IP (reuse the best-effort limiter pattern from `src/lib/checkout/rate-limit.ts`): after N failed attempts in a window, further attempts return a generic "demasiados intentos" error. Disabled behind the same env-flag escape hatch used in tests.
+- [ ] AC-16: `tsc` strict passes, ESLint `max-lines` passes (no file > 1000; new files target < 400), no `any`, no non-null `!`. Session/auth lib functions ≤ 30 lines.
 
 ## Edge Cases
 
-1. **Duplicate/redelivered webhook for the same payment.** MP redelivers the same
-   `(payment_id, status)`. The payment spine already no-ops the DB advance, but the first delivery
-   and a crash-retry could both reach the email trigger. Expected: `claim_email_send(order_id,
-   'payment_received', payment_id)` returns `'new'` exactly once; the second returns `'duplicate'`
-   and no email is sent. The customer receives ONE "payment received" email.
-
-2. **Email provider is down / times out during the webhook.** Expected: dispatch catches the error,
-   logs it, and the webhook STILL returns 200 (payment processed successfully) — MP does not retry
-   (retrying wouldn't fix email). The `email_sends` claim is left un-finalized (`sent_at` null) so a
-   later manual/redelivery retry can re-attempt. Payment state is never coupled to email state.
-   (Decision to confirm in dev-done: claim-then-finalize vs. best-effort claim.)
-
-3. **Order placed in `/en/`.** Expected: `orders.locale = 'en'`; the confirmation email AND the
-   later webhook-driven payment-received/voucher emails all render in English, even though the
-   webhook has no request-locale context (it reads `orders.locale`). Owner alert stays es-MX.
-
-4. **OXXO voucher paid at the store days later.** The `voucher_instructions` email was sent at
-   pending; days later MP fires `approved`. Expected: `payment_received` sends now (a DISTINCT
-   `email_kind`, distinct `email_sends` row), in the order's locale, exactly once. No duplicate.
-
-5. **Amount-mismatch / flagged payment (`charged_back`, `in_mediation`, unknown status).** Expected:
-   NO customer email is sent (the order was NOT marked paid — `transition_kind` is not `'paid'`).
-   These paths already log for human review in T8; T9 adds no auto-email (a mismatch email would
-   confuse the customer). Documented as intentional.
-
-6. **Undeliverable but syntactically valid `contact_email`.** `create_order` guarantees
-   `contact_email` NOT NULL, so "missing" cannot occur post-creation; an undeliverable address is a
-   provider-side bounce — dispatch logs the provider response, swallows it, order flow unaffected
-   (AC-13). No retry storm.
-
-7. **Locale mutation attempt after order creation.** The 0003 immutability trigger freezes the
-   financial/contact snapshot. `locale` is set once at creation and never mutated by
-   `advance_order_status` (the RPC's UPDATE sets never include `locale`). A test asserts locale is
-   stable across a full transition sequence.
+1. **Forged/tampered cookie** — attacker crafts a cookie with a valid-looking payload but wrong/absent signature → `timingSafeEqual` fails → treated as unauthenticated → redirect to `/admin/login`. No stack trace, no "invalid signature" leak.
+2. **Expired-but-signed cookie** — signature verifies but `issuedAt + maxAge < now` → rejected as expired → redirect to login. (Prevents an old stolen cookie living forever.)
+3. **`ADMIN_SESSION_SECRET` rotated/changed** — every previously issued cookie now fails HMAC verification → all sessions invalidated (owner must re-login). Documented as the intended "log everyone out" lever.
+4. **Missing admin env vars at runtime** (`ADMIN_PASSWORD_HASH` unset) → login action catches `MissingEnvVarError`, logs with context, shows a generic "no disponible" error — NEVER a stack trace, and NEVER treats "no hash configured" as "any password works."
+5. **Concurrent settings save** — two tabs save different values; last write wins on the singleton row (single owner, acceptable). `updated_at` reflects the latest write via the existing trigger.
+6. **Money edge: threshold = 0** (free shipping for everyone) and **flat rate = 0** (always free) are VALID (CHECK is `>= 0`) — must be accepted, not rejected as "empty."
+7. **Money edge: locale-formatted input** — user types `1,000.00` or `1.000,00` or `$500` in the peso field → parser must strip/normalize or reject with a clear message, never silently coerce to a wrong cents value.
+8. **`store_settings` row absent** when opening the settings page (fresh/broken DB) → page shows a clear "no se encontró la configuración" state seeded from `SEED_*` config defaults, and the first save UPSERTs/creates the singleton (or shows a recoverable error) rather than 500ing.
+9. **Direct POST to the settings server action without a session** (CSRF-style / API poking) → action re-verifies the session server-side first and rejects with unauthenticated; the DB is never touched.
+10. **Trailing-slash / case variants of `/admin`** (`/admin/`, `/Admin`) and `/admin` hitting the locale matcher — verify the middleware branch catches all admin paths and the storefront locale logic never rewrites them.
 
 ## Error States Table
 
-Emails have no in-app UI, so "user sees" is the recipient inbox / the operator's logs.
-
 | Trigger | User Sees | System Does |
 | ------- | --------- | ----------- |
-| Provider API 5xx / network error during send | Nothing changes in-app; email doesn't arrive | Catch, `console.error("[email] send failed: kind=… order=… reason=…")`, swallow; checkout/webhook outcome unchanged (AC-13); `email_sends` left un-finalized for retry |
-| `EMAIL_API_KEY` missing in production | Nothing changes in-app | `getEmailEnv()` throws `MissingEnvVarError`; dispatch catches, logs `email disabled: missing EMAIL_API_KEY`, swallows; no throw into critical path |
-| `EMAIL_DEV_PREVIEW=1` / key absent in dev | Dev sees rendered subject + HTML in preview sink | Provider short-circuits, no network call, returns `{ ok: true, preview: true }` (AC-8) |
-| Duplicate webhook delivery | Customer receives exactly one email | `claim_email_send` returns `'duplicate'`; dispatch returns early, no send |
-| Owner alert send fails | Owner misses alert; order still placed & visible later (T12) | Logged; customer confirmation attempted independently (per-send isolation, not all-or-nothing) |
-| Template render throws (bad input) | No email sent | Render is pure + typed; a defensive try/catch around each render logs and skips that ONE email |
-| Voucher data absent at pending trigger | No voucher email (avoids a broken email) | Logged `voucher email skipped: no voucher data for order …`; documented seam (AC-16) |
+| Wrong email or password | "Correo o contraseña incorrectos" (single generic message) | Constant-time verify; log a warning w/ client IP + timestamp (no credentials); increment failed-attempt counter; return error state |
+| Too many failed logins in window | "Demasiados intentos. Intenta de nuevo en unos minutos." | Best-effort per-IP limiter blocks; no DB/hash work performed |
+| Unauthenticated access to `/admin/*` | Redirect to `/admin/login` (no admin markup) | Middleware + layout guard both redirect |
+| Tampered/expired session cookie | Redirect to `/admin/login` | HMAC/expiry check fails silently; treated as anonymous |
+| Missing admin env config | "El acceso de administrador no está disponible." | Catch `MissingEnvVarError`, log with context, no auth granted |
+| Settings validation failure | Field-level Spanish errors; form stays filled | Server action returns `{status:"invalid", fieldErrors}`; no DB write |
+| Settings DB write error | "No se pudo guardar. Intenta de nuevo." | Map raw PG error to friendly enum; log with context; single-row UPDATE is atomic |
+| `store_settings` row missing | "No se encontró la configuración de la tienda." + prefilled defaults | Read returns null; form seeds from `SEED_*` constants; save creates/UPSERTs the singleton |
+| Settings saved OK | "Configuración guardada." success banner | UPDATE row; `revalidateTag("store-settings")`; re-render with fresh values |
 
 ## UX Requirements
 
-No in-app UI. The "UX" surface is the rendered email and the developer preview experience.
+Admin surfaces are es-MX only. Apply `emil-design-eng` (calm, restrained, purposeful) — this is an operator tool, not a marketing surface. shadcn/ui first (`Button`, `Input`, `Label` already vendored). Enter animations `ease-out`, respect `prefers-reduced-motion`.
 
-- **Loading**: N/A. Checkout/webhook never wait on email — the shopper's success screen and the
-  webhook 200 return independently of send completion.
-- **Empty**: N/A.
-- **Error**: The customer never sees an email error; a failed send is invisible to them by design
-  (AC-13). The operator's "error UI" is a structured log line with order id + email kind + reason.
-- **Success**: A well-formed, localized email. Every customer email includes the store name (from
-  store settings / `SEED_STORE_CONTACT_EMAIL` chrome), the order number (`PP-000123`), an itemized
-  summary with MXN-formatted line totals, and an absolute link back to the confirmation page
-  (`confirmationPath(token)`). Payment-received names the paid amount; voucher includes the
-  OXXO/SPEI reference + expiry + amount.
-- **Mobile (375px inbox)**: single 600px-max centered table that reflows to full width on narrow
-  clients; font-size ≥ 14px; the confirmation link/button ≥ 44px tall; no horizontal scroll.
-- **Tablet (768px)**: same 600px centered column with side gutters. Fluid tables, not app breakpoints.
-- **Reduced-motion / plain-text**: every email ships a plain-text alternative; no animation, no web
-  fonts, no remote CSS; renders identically with images off.
+- **Loading**: Login submit → button shows a disabled/pending state (`useActionState` `isPending`), no double-submit. Settings save → pending state on the save button; fields disabled while saving.
+- **Empty**: Settings page when `store_settings` row missing → informational state with prefilled seed defaults and a clear "save to create" affordance; NOT a blank crash.
+- **Error**: Login → single generic inline error above the form. Settings → field-level errors inline under each field + a top-level banner for non-field errors. Recovery is always "correct and resubmit."
+- **Success**: Login → redirect to `/admin`. Settings save → non-blocking success banner ("Configuración guardada"), values visibly updated, form remains editable.
+- **Mobile (375px)**: Login card centered, full-width fields, min 44px tap targets. Admin nav collapses to a top bar / simple stacked menu. Settings form single-column, money fields with `inputmode="decimal"`.
+- **Tablet (768px)**: Admin nav as a persistent sidebar or top bar; settings form comfortably single-column with max content width; no horizontal scroll.
 
 ## Technical Approach
 
 ### Files to Create
 
-- `supabase/migrations/0010_email_transitions.sql` — TD-2 `transition_kind` (RPC return + history
-  column), `orders.locale`, `email_sends` ledger + `claim_email_send` RPC. Idempotent, LOCAL-only.
-- `src/lib/email/provider.ts` — the single provider boundary. `sendEmail(...)`; dev-preview
-  short-circuit; instantiates the provider once. `import "server-only"`.
-- `src/lib/email/brand.ts` — neutral brand tokens for emails (colors, store-name fallback, logo
-  slot, footer text) — the single swap point (spec: centralize brand tokens).
-- `src/lib/email/layout.ts` — shared 600px table shell (header/footer chrome) each HTML template
-  composes into; keeps each template within its own concern (SRP, ≤400 lines/file).
-- `src/lib/email/render.ts` — pure render helpers: money via `money.ts`, item-table builder,
-  plain-text derivation. No I/O.
-- `src/lib/email/templates/*.ts` — 8 template modules, each a pure `(input, t?) => { subject, html,
-  text }`. Typed inputs; localized customer templates take a `next-intl` translator, owner/relay
-  templates use es-MX directly.
-- `src/lib/email/dispatch.ts` — orchestration: reads order fields, claims via `claim_email_send`,
-  renders, calls `sendEmail`, isolates failures. Exposes `sendOrderConfirmation`,
-  `sendNewOrderOwnerAlert`, `sendPaymentReceived`, `sendVoucherInstructions`, and the T12/T13 seams
-  `sendShipped`, `sendCancelled`, `sendRefundIssued`, `sendContactRelay`.
-- `src/lib/email/email-kinds.ts` — the `EmailKind` const (no magic strings).
-- `*.test.ts` alongside each module + an integration test exercising dispatch against the local DB
-  with a mocked provider.
+- `src/lib/admin/session.ts` — `server-only`. `createSessionCookieValue()`, `verifySessionCookieValue(value)`, `isSessionValid(value)` using `node:crypto` `createHmac` + `timingSafeEqual` (mirror `payments/webhook.ts`), enforcing `ADMIN_SESSION_MAX_AGE_SECONDS`. Pure functions on strings — no Next imports (unit-testable).
+- `src/lib/admin/auth.ts` — `server-only`. `verifyCredentials(email, password)` (case-insensitive email compare + scrypt constant-time password check against `ADMIN_PASSWORD_HASH`, dummy-hash on unknown email for timing parity). 
+- `src/lib/admin/constants.ts` — non-secret constants: `ADMIN_SESSION_COOKIE_NAME`, `ADMIN_LOGIN_PATH`, `ADMIN_ROOT_PATH`, `ADMIN_SESSION_MAX_AGE_SECONDS`, `ADMIN_LOGIN_MAX_ATTEMPTS`, nav item definitions. (No magic values elsewhere.)
+- `src/lib/admin/settings-input.ts` — pure validation: parse/validate the settings form (name, email, peso→cents), returns typed result + field errors. Unit-testable, no I/O.
+- `src/app/admin/layout.tsx` — server component. Verifies session (defense-in-depth), renders `<html lang="es-MX">` admin chrome + nav + logout. Separate from the storefront `[locale]` layout (no `NextIntlClientProvider`, no cart, no site header/footer).
+- `src/app/admin/page.tsx` — admin home = Store Settings screen (or redirect to `/admin/settings`; pick one, be consistent). Renders the settings form seeded from the live row.
+- `src/app/admin/login/page.tsx` — login screen (redirects to `/admin` if already authed, AC-7).
+- `src/app/admin/actions.ts` — `"use server"`. `login(prevState, formData)`, `logout()`, `saveStoreSettings(prevState, formData)`. Each mutation re-verifies session (except login). Sets/clears cookie via `next/headers` `cookies()`. Calls `revalidateTag`.
+- `src/app/admin/admin-form-state.ts` — serializable state contracts for `useActionState` (login + settings), mirroring `checkout/checkout-form-state.ts` (a `"use server"` file may only export async fns, so state types live here).
+- `src/components/admin/admin-nav.tsx` — nav shell (active state, disabled future links, logout button).
+- `src/components/admin/store-settings-form.tsx` — `"use client"` form using `useActionState`, pending/error/success states.
+- Tests alongside: `session.test.ts`, `auth.test.ts`, `settings-input.test.ts` (QA stage expands).
 
 ### Files to Modify
 
-- `src/lib/env.ts` — add `EmailEnv` + `getEmailEnv()` (mirrors `getMercadoPagoEnv`).
-- `src/lib/supabase/database.types.ts` — add `transition_kind` to `AdvanceOrderStatusResult`; add
-  `locale` to orders Row/Insert; add `email_sends` types + `claim_email_send` args/result.
-- `src/lib/payments/process-payment.ts` — after a successful advance, branch on
-  `advance.result.transition_kind` to dispatch `payment_received` / `voucher_instructions`
-  (isolated; does not affect the returned `ProcessResult`). Route stays email-free (AC-18).
-- `src/app/[locale]/checkout/actions.ts` — `runCheckout` step 9: after `createOrderViaRpc`, trigger
-  `sendOrderConfirmation` + `sendNewOrderOwnerAlert`, isolated, before returning `success`. Persist
-  the active locale into the `create_order` payload (locale from the action's route segment/params).
-- `src/lib/checkout/order-read.ts` — extend (or add a sibling reader) to surface the fields the
-  emails need (locale, payment_method, order_number, items) without changing the confirmation page's
-  view model.
-- `src/lib/config.ts` — add non-secret email constants (from-name fallback, owner-alert locale
-  constant, dev-preview flag name, `EMAIL_SEND_TIMEOUT_MS`) with a "how to swap" note.
-- `src/messages/es-MX.json` + `src/messages/en.json` — new `email` block (symmetric keys).
+- `src/middleware.ts` — add an `/admin` branch: keep next-intl for storefront paths, but for `/admin/*` run the session guard (redirect to `/admin/login` when unauthenticated; allow `/admin/login`). Ensure `/admin` is processed and NOT locale-rewritten by next-intl. Keep verification **Edge-runtime-safe** — see research report Risk R1: if `node:crypto` is unavailable in the Edge middleware runtime, do a lightweight Web Crypto signature check in middleware and the full authoritative check in the layout, and document the split.
+- `src/lib/env.ts` — add `getAdminEnv()` returning `{ email, passwordHash, sessionSecret }`, all required, `server-only`, following the exact `getMercadoPagoEnv`/`getEmailEnv` pattern (named `MissingEnvVarError`).
+- `.env.local` (+ document in `dev-done.md`) — add `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET` placeholder values and a note on generating the scrypt hash. Never `NEXT_PUBLIC_`.
+- `src/lib/store-settings.ts` — likely NO change (bust-on-save tag already exists); optionally add `updateStoreSettings(input)` here (admin-client write + `revalidateTag`) to co-locate the write path with the read path (SRP).
 
 ### Data Model Changes
 
-- `orders` — add `locale text not null default 'es-MX' check (locale in ('es-MX','en'))`.
-- `order_status_history` — add `transition_kind text` (nullable; written by the RPC).
-- `advance_order_status` — return jsonb gains `transition_kind`; derived in-RPC, never from note.
-- `email_sends` — `id uuid pk`, `order_id uuid fk on delete cascade`, `email_kind text`,
-  `dedupe_key text` (mp_payment_id for payment_received; `''` for one-per-order kinds),
-  `sent_at timestamptz`, `created_at`. `unique (order_id, email_kind, dedupe_key)`. RLS on,
-  service_role grant. `claim_email_send` = insert-on-conflict-do-nothing → `'new'`/`'duplicate'`.
-- `create_order` RPC — persist `payload->>'locale'` onto the new column.
+- **None expected.** `store_settings` singleton + all CHECKs, the singleton unique index, and the `updated_at` trigger already exist (migrations 0003/0006). T10 writes are pure UPDATEs via the admin client. If Dev finds a genuine gap (e.g. an UPSERT-safe path for the missing-row edge), add idempotent migration `0011_*.sql`; otherwise document "no migration needed" (AC-14).
 
 ### API Endpoints
 
-- None. T9 adds NO HTTP route. Sends are triggered from existing server code (checkout action,
-  webhook processing). The Contact relay endpoint is T13.
+No REST endpoints. All server-side work via **server actions** (`src/app/admin/actions.ts`), matching the checkout/Q&A pattern:
+- `login(prevState, FormData{email,password})` → `AdminLoginState`
+- `logout()` → redirect
+- `saveStoreSettings(prevState, FormData{store_name, contact_email, shipping_flat_rate, free_shipping_threshold})` → `AdminSettingsState`
 
 ### Dependencies
 
-- **New:** `resend` (see research report for rationale — first-class TypeScript SDK, trivially
-  mockable, native dev/test story, works from the Next.js Node server runtime). Add to
-  `dependencies`; pin the 4.x version at install and record it in `dev-done.md`.
-- No other new dependencies. i18n uses existing `next-intl`; money uses existing `src/lib/money.ts`.
+- **None new.** `node:crypto` (built-in) for HMAC/scrypt/timingSafeEqual (already used in `payments/webhook.ts` + `payments/refund.ts`). shadcn/ui primitives already vendored. `next-intl` unaffected. Do NOT add an auth library (`next-auth`, `lucia`) — overkill for one hardcoded Owner and would fight the RLS role model.
 
 ## Out of Scope
 
-- **Live email sending / real credentials.** No `EMAIL_*` creds exist; live-send verification is
-  BLOCKED-ON-USER. Tests mock the provider; dev uses preview mode.
-- **Live wiring of `shipped`, `cancelled`, `refund_issued`** — triggers are T12 admin actions. T9
-  builds templates + send functions + a documented seam only.
-- **`contact_relay` wiring** — depends on the Contact page (T13). Template + send function only.
-- **Branded (non-neutral) templates, pending-payment reminders, abandoned-cart emails** — Phase 2/3.
-- **Voucher-data capture/persistence.** T9 sends the voucher email from voucher data already
-  available at the trigger. If voucher fields are not persisted on the order, T9 sends only where
-  the data is present and documents the gap; it adds NO new voucher-persistence schema.
-- **An operator "email log" UI** — `email_sends` is data only; any admin view is T12.
-- **Retry/queue infrastructure** (durable job queue, backoff). Phase-1 dispatch is in-request,
-  isolated, best-effort; the `email_sends` ledger enables a future retry without double-sends.
-
-## Housekeeping (carry-forward)
-
-- `tasks/hacker-report.md` on disk is STALE (still the T7 report). T8 hacker work is committed in
-  `4474f8b` but the report was never regenerated. **S3 Dev must NOT touch it** and must NOT treat it
-  as T9 context.
-- Migrations are **LOCAL Docker Supabase only** — never `db push`. `0010` is a NEW numbered
-  migration (preferred over amend-in-place per TD-5).
-- T7 and T8 human-review gates remain OPEN; do not check them off in `BUILD_PLAN.md`.
-- `.env.local` currently holds the three `MERCADOPAGO_*` vars + Supabase vars. It has NO `EMAIL_*`
-  vars. Do not fabricate them; document the exact names in `dev-done.md`.
+- Multiple admin users, roles (Owner/Staff), invitations, registration — Phase 2.
+- Password reset / "forgot password" — Phase 2 (owner rotates via `ADMIN_PASSWORD_HASH` env + redeploy).
+- Product management, order management, Q&A answering, inventory — T11/T12 (this task only stubs their nav slots).
+- Admin i18n / English admin UI — deferred (single-locale es-MX by decision above).
+- Any change to storefront auth, cart, or the `anon`/`authenticated` RLS roles.
+- 2FA, session revocation lists, "remember me", device management — not in Phase 1 spec.
+- Store settings beyond the four named fields (currency stays MXN, seeded, not user-editable in Phase 1).
