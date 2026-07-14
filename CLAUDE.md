@@ -189,7 +189,7 @@ Vendored from [emilkowalski/skills](https://github.com/emilkowalski/skills) into
 Apply to ALL new code and every file you touch (Boy-Scout Rule: leave it cleaner than you found it). Open findings are tracked in \`tasks/clean-code-backlog.md\` — check items off there when you fix them.
 
 - **Small functions** — target ≤ 30 lines, one level of abstraction per function. Never add to a function already over 50 lines: extract first.
-- **Small files** — no new file over ~400 lines; never grow a 1,000+ line file, split instead.
+- **Small files** — no new file over ~400 lines. **Hard cap: no file over 1,000 lines** — enforced by ESLint `max-lines` (error); split before you reach it.
 - **One reason to change (SRP)** — a module owns one concern. Components render, hooks manage state/effects, lib/utils compute. No business logic buried in components.
 - **DRY with judgment** — before writing a component/helper, grep for an existing one. Don't copy-paste a sibling file.
 - **No magic values** — numbers and status strings get a named constant; timeouts/durations end in a unit (\`_MS\`, \`_SECONDS\`).
@@ -198,6 +198,7 @@ Apply to ALL new code and every file you touch (Boy-Scout Rule: leave it cleaner
 - **Boundaries stay typed** — public function signatures are fully typed; the frontend never uses \`any\` or \`!\` to silence the compiler.
 - **No dead code, no TODO-and-forget** — delete unused code (git remembers); a TODO must reference a ticket or a \`tasks/clean-code-backlog.md\` entry.
 - **Tests accompany refactors** — decomposing a complex function requires characterization tests first; behavior-preserving edits state how they were verified in the commit message.
+- **Python (none in repo today)** — any future Python must ship with and pass `mypy --strict` in CI from its first commit.
 
 ## Context Management
 

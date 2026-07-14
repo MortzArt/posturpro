@@ -278,7 +278,7 @@ payment-panel.tsx (479) rated do-NOT-split (1:1 state-machine render mapping).
 
 Actions (executing now):
 
-- [ ] **A1 — Split `database.types.ts` (1,248 lines; breaks the 1,000-line hard cap).**
+- [x] **A1 — Split `database.types.ts` (1,248 lines; breaks the 1,000-line hard cap).**
   Hand-maintained (header's "generated" claim is false — CLI unlinked, remote empty).
   Split into domain modules under `src/lib/supabase/types/` (json, enums/domain
   aliases, tables by domain, RPC Functions+Args/Results, Database assembly), with
@@ -294,9 +294,9 @@ Actions (executing now):
   `src/lib/checkout/form-parsing.ts`; switch both action files' local `clientIp`
   copies to the canonical `src/lib/request/client-ip.ts` (closes SEC-M-1).**
   NOTE: expands the T7/T9 human-review diff; behavior-preserving, test-covered.
-- [ ] **A5 — Enforce the 1,000-line hard cap: ESLint `max-lines` (error, 1000)
+- [x] **A5 — Enforce the 1,000-line hard cap: ESLint `max-lines` (error, 1000)
   repo-wide.**
-- [ ] **A6 — Fix the `database.types.ts` header lie + `db:types` script
+- [x] **A6 — Fix the `database.types.ts` header lie + `db:types` script
   (`--linked` → `--local`, documented as hand-maintained w/ domain aliases);
   CLAUDE.md: record "no Python today; any future Python ships with and passes
   `mypy --strict`" + make the 1,000-line hard cap explicit.**

@@ -19,6 +19,16 @@ const eslintConfig = defineConfig([
     // a generated artifact — never lint it (same rationale as `.next/**`).
     ".next-*/**",
   ]),
+  {
+    // Hard cap from CLAUDE.md Clean Code rules: no file over 1,000 lines —
+    // split before reaching it (guidance threshold is ~400 for new files).
+    rules: {
+      "max-lines": [
+        "error",
+        { max: 1000, skipBlankLines: false, skipComments: false },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;
