@@ -1,10 +1,11 @@
 # Pipeline State
 Task: T10 — Admin foundation
-Tier: full-cycle
-Stage: 1
-Agent: ultraplanner-research
+Tier: full-cycle (medium) — skip Stage 11 (Hacker); Security (9) + Arch (10) at FULL depth (trust boundary)
+Stage: 3
+Agent: ultradesign
 Last Updated: 2026-07-15
-Notes: Starting full cycle for T10 (user-directed /full-cycle override of BUILD_PLAN's standard tier — admin auth is a trust boundary). After T10 ships, continue immediately with /full-cycle for T11 — Admin: product management (user is AFK; run both autonomously end-to-end).
+Notes: After T10 ships, continue immediately with /full-cycle for T11 — Admin: product management (user is AFK; run both autonomously end-to-end).
+=== S1+2 COMPLETE — Complexity MEDIUM, Feature Type FULL-STACK. Auth: self-managed HMAC-SHA256-signed HttpOnly session cookie (NOT Supabase Auth); ADMIN_EMAIL + ADMIN_PASSWORD_HASH (scrypt) + ADMIN_SESSION_SECRET via getAdminEnv() in src/lib/env.ts, server-only. Defense-in-depth: middleware guard + layout guard + per-action re-verify. Admin = locale-free /admin sibling tree (own root layout, no next-intl), es-MX only, cookie Path=/admin. KEY RISKS: R1 middleware is Edge runtime → Web Crypto (crypto.subtle) verify there, node:crypto authoritative verify in layout/actions; R2 middleware change must not regress storefront locale/cart (full e2e prod build); R3/R5 login user-enumeration/blank-hash → dummy-hash timing parity, generic errors, missing-env throws; R7 money input parsing → strict pure parser + tests. NO new deps, NO migration expected (store_settings singleton from 0003/0006 already has CHECKs + updated_at trigger; STORE_SETTINGS_CACHE_TAG bust seam pre-wired in src/lib/store-settings.ts).
 
 === STANDING GATES (carry forward — do not drop) ===
 - HUMAN-REVIEW GATE (BUILD_PLAN rule 3): T7 and T8 both have advisory SHIP verdicts but remain UNCHECKED in BUILD_PLAN.md until the user manually reviews. Do not check them off.
