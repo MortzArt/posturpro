@@ -116,3 +116,37 @@ Until set: `EMAIL_DEV_PREVIEW=1` (or simply no `EMAIL_API_KEY`) makes the provid
 - **Voucher extraction reuses the existing T8 `extractVoucher`** rather than a new `email/voucher-extract.ts` (the ticket's file list implied a fresh module). Rationale: DRY (CLAUDE.md) — a well-tested extractor already existed; a duplicate would drift. The email-specific mapping lives in the small pure `voucher-data.ts` adapter instead.
 - **Added `finalize_email_send` RPC + `NEXT_PUBLIC_SITE_ORIGIN`** (not explicitly listed): claim-then-finalize needs a finalize step (mirrors the payment spine, edge 2), and absolute email links require a configurable origin. Both are additive and non-breaking.
 - **`CreateOrderPayload.locale` is required** (not optional): the checkout action always sends it, and the RPC clamps a bad/missing value to es-MX. Two existing integration test builders were updated to supply it.
+
+## Review + Fix Pass (S4 ReviewFix — commit bdd37bc reviewed)
+
+### Issues Found & Fixed
+
+| ID  | Severity | Title | Status | File | Fix Applied |
+| --- | -------- | ----- | ------ | ---- | ----------- |
+| M-1 | MAJOR | Unescaped `href` in email button (attribute-breakout / HTML injection) | FIXED | src/lib/email/layout.ts:132 | Wrapped href in `escapeHtml()`; two callers pass provider URLs (MP voucherUrl, carrier trackingUrl). Added `src/lib/email/layout.test.ts` (3 tests) incl. an explicit breakout payload |
+| m-1 | MINOR | config comment says `SITE_ORIGIN`, code reads `NEXT_PUBLIC_SITE_ORIGIN` | SKIPPED | src/lib/config.ts | Comment cosmetics only; code correct and consistent with docs |
+| m-2 | MINOR | `renderParagraph(text, false)` escape-bypass has no live caller | SKIPPED | src/lib/email/layout.ts:146 | Currently unreachable with unsafe input; default path is safe |
+| n-1 | NIT | run-integration.sh header comment stale ("0001..0005") | SKIPPED | scripts/run-integration.sh | Out-of-scope non-T9 file; `db reset` applies all migrations regardless |
+
+### Summary
+
+- Critical: 0/0
+- Major: 1/1 fixed
+- Minor: 0/2 fixed, 2 skipped (justified: cosmetic / unreachable)
+- Nit: 0/1 fixed, 1 skipped (out-of-scope)
+
+### Crash-between-claim-and-send verdict
+
+At-most-once by design — CONFIRMED, documented, justified. An unfinalized email claim is NOT
+reclaimable (unlike T8's payment claim); a crash between claim and send permanently suppresses that
+one email, and a future manual/queue retry can use the ledger row without double-sending. Correct
+choice for email (email ≠ money). No timeout leak: `Promise.race` handles the losing promise; timer
+cleared in `finally`.
+
+### Verification (post-fix)
+
+- tsc 0 errors; eslint clean
+- Unit: **1271 passed** (1268 baseline + 3 new layout.test.ts regression tests), 68 files
+- Integration: **168 passed** (13 files) via run-integration.sh (fresh reset+seed, exit 0)
+- `supabase db reset`: 0001..0010 apply clean (idempotent)
+- DB pristine-seeded (0 orders, 0 email_sends); tsconfig unchanged; no stray servers

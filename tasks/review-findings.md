@@ -1,376 +1,147 @@
-# Code Review: T8 — Mercado Pago integration (commit 1713f6c)
-
-> ⚠️ **HUMAN-REVIEW GATE (BUILD_PLAN rule 3).** This is PAYMENT code. Every
-> pipeline verdict on T8 is ADVISORY ONLY. The findings below are the reviewer's
-> input to the mandatory human review; an APPROVE verdict here does NOT authorize
-> merge. A human must independently review signature verification, amount
-> reconciliation, refund execution, order-state advancement, and secret handling.
+# Code Review + Fix: T9 — Transactional emails (commit bdd37bc)
 
 ## Summary
 
-A genuinely strong, defense-in-depth payment implementation: the trust boundary
-(signature-before-side-effect, authoritative Payment.get, mp_payment_events unique
-spine, regression-guarded RPC, exact cents↔decimal boundary, server-only secrets)
-is well-architected and the code quality is high. However, adversarial review
-surfaced **2 CRITICAL correctness bugs** (webhook signature manifest uses the
-wrong `data.id` source in the fallback path → self-inflicted 401s; the `refunded`
-webhook regresses/mislabels order state), **several MAJOR gaps** (payment-id
-dedupe drops the OXXO/SPEI pending→approved second webhook; no cumulative
-over-refund guard; no replay-window/`ts` staleness check; unbounded-body DoS
-surface; partial-refund leaves NO durable audit trail; a race between event-claim
-and order-advance), and a set of MINOR/NIT items. This needs Stage 6 fixes before
-it is fit for the human gate.
+T9 is a high-quality implementation. The money-adjacent write paths (checkout action,
+process-payment) keep email dispatch airtight-isolated; migration 0010 preserves every T8
+`advance_order_status` behavior and only adds `transition_kind`; the `email_sends` ledger is
+race-safe; user input is HTML-escaped in templates. One MAJOR defense-in-depth gap was found
+(unescaped `href` in the email button) and FIXED inline with a regression test. Everything else
+is minor/nit. All acceptance criteria met.
 
----
+## Issues Found & Resolved
 
-## Critical Issues (MUST FIX)
+### Critical Issues
 
-### C-1: Webhook signature manifest can be built from the WRONG `data.id` (body vs query), producing false 401s
-- **ID**: C-1
-- **Severity**: CRITICAL
-- **File**: `src/app/api/webhooks/mercadopago/route.ts:46-49`, `src/lib/payments/webhook.ts:78-92`
-- **Problem**: MP builds the signed manifest from the **query-string** `data.id`
-  (`?data.id=...`), lowercased. This route computes
-  `const dataId = queryDataId ?? normalizeId(body?.data?.id)` — it falls back to
-  the **body** `data.id` when the query param is absent, and passes THAT into
-  `verifyWebhookSignature`. When the query id is missing (real MP deliveries vary
-  in shape) the verifier rebuilds the manifest from a body id that MP did not use
-  to sign, so the recomputed HMAC will not match → **legitimate MP webhook
-  rejected 401 → MP retries → gives up → order never marked paid** (money received,
-  order stuck). `buildManifest` (webhook.ts:84) also OMITS the `id:` segment
-  entirely when `dataId` is null, diverging further from what MP signed. Tests
-  don't catch this because they construct the manifest from the same source the
-  verifier reads.
-- **Impact**: Breaks the happy path against the real gateway; silent
-  paid-but-stuck orders. Highest-risk defect on the trust boundary.
-- **Suggested Fix**: Verify using ONLY the query-string `data.id`
-  (`url.searchParams.get("data.id")`), lowercased — never the body. Keep the body
-  id solely as a `Payment.get` fetch fallback; pass the *query* id (or null) into
-  the verifier. Add a unit test where the signed query id ≠ body id and assert the
-  verifier ignores the body. Confirm against MP's live `x-signature` docs at the
-  human gate (BLOCKED-ON-USER).
+None.
 
-### C-2: The `refunded` MP webhook forces `order_status = 'paid'`, mislabeling / dropping refund state on advanced orders
-- **ID**: C-2
-- **Severity**: CRITICAL
-- **File**: `src/lib/payments/payments-status.ts:101-110`, applied via `src/lib/payments/process-payment.ts:137-145`
-- **Problem**: `mapMpStatus("refunded")` returns `orderStatus: "paid"`,
-  `paymentStatus: "refunded"`. MP fires `refunded` for both full and partial
-  refunds. In `process-payment.ts` this calls
-  `advance_order_status(p_order_status: 'paid', p_payment_status: 'refunded')`.
-  (1) If the order is past `paid` (`preparing`/`shipped` — reachable once the RPC
-  is reused by T12, which the dev explicitly designed for), the regression guard
-  (`order_status_rank`) returns `regression_blocked` and `payment_status` is
-  **never set to `refunded`** — the refund webhook is silently dropped.
-  (2) For a plain `paid` order it hits `noop_same_status`, which DOES set
-  `payment_status='refunded'` but writes **no history row** — no audit trail for a
-  material money-state change (AC-13 violation). The code hard-codes
-  `orderStatus: "paid"` while the adjacent comment says "order status is decided by
-  the refund flow, not here" — code contradicts comment.
-- **Impact**: Refunds on advanced orders silently fail to record; payment status
-  disagrees with reality; no audit trail. Money-state correctness bug on a
-  human-gate focus area.
-- **Suggested Fix**: The `refunded` mapping must NOT assert an order_status. Add a
-  mapping variant (e.g. `kind: "payment-only"`) or let `advance_order_status`
-  accept a null `p_order_status` meaning "set payment fields, don't touch status",
-  and WRITE a history row for the payment_status change. Add a test: `refunded`
-  webhook on a `shipped` order still marks `payment_status='refunded'`.
+### Major Issues
 
----
+#### M-1: `renderButton` injected `href` unescaped into the anchor attribute
 
-## Major Issues (SHOULD FIX)
-
-### M-1: `mp_payment_events` unique key is the payment id, so legitimate later status changes for one payment are dropped as "duplicate" — breaks OXXO/SPEI pending→approved (AC-18)
-- **ID**: M-1
-- **Severity**: MAJOR (arguably CRITICAL for OXXO/SPEI)
-- **File**: `supabase/migrations/0009_payments.sql:40-55`, `src/lib/payments/process-payment.ts:93-107`
-- **Problem**: The spine is `unique(mp_payment_id)`; the webhook claims the id and
-  treats a 23505 as "duplicate → 200, no further processing". But one payment id
-  emits MULTIPLE webhooks over its lifecycle: `pending` → `approved` (OXXO/SPEI
-  paid out-of-band later), or `approved` → `refunded` → `charged_back`. Only the
-  FIRST webhook for an id is ever processed; every later real status change is
-  swallowed. The `pending` OXXO/SPEI webhook claims the id first, so the
-  subsequent `approved` webhook is dropped and the **order never becomes paid** —
-  directly breaking AC-18 and edge 5. The dedupe (claim at line 94) happens before
-  the status is even mapped (line 116).
-- **Impact**: Breaks the headline OXXO/SPEI flow and refund/chargeback follow-on
-  webhooks. Also the mechanism the dev summary relies on for the partial-refund
-  audit trail (M-3) never fires.
-- **Suggested Fix**: Key the spine per **(mp_payment_id, mp_status)** or per MP
-  notification/delivery id — not payment id alone. Or make the event table an
-  append-only audit log and gate side effects on the RPC's own idempotency (the
-  RPC already prevents double-advance). Re-test AC-18 pending→approved end-to-end
-  (integration).
-
-### M-2: No cumulative over-refund guard — edge 9 (partial then a second partial exceeding remaining balance) is NOT handled
-- **ID**: M-2
 - **Severity**: MAJOR
-- **File**: `src/lib/payments/refund.ts:71-77`
-- **Problem**: The only local check is `amountCents > order.totalCents` (single
-  refund vs total). Edge 9 is a partial THEN a second partial exceeding the
-  *remaining* balance. Since partials keep `payment_status='paid'` and write
-  nothing durable (M-3), the function has no memory of prior refunds: two 60%
-  partials both pass `> totalCents` and are both sent to MP. The dev claim
-  "partial bounded ≤ total locally" only bounds a single partial. Relies entirely
-  on MP's own guard (the documented "second backstop"), contradicting the ticket's
-  "sum of refunds ≤ order total". Untested (`refund.test.ts:104` only covers the
-  single-refund case).
-- **Impact**: Over-refund possible; edge 9's stated "bounded locally" behavior is
-  false.
-- **Suggested Fix**: Before a partial, sum prior refunds for `mp_payment_id` (via
-  `GET /payments/{id}` `transaction_amount_refunded` / `refunds[]`, or a refund
-  ledger) and reject if `priorRefunded + amountCents > totalCents`. Add a
-  cumulative-refund test.
+- **File**: src/lib/email/layout.ts:132 (was `<a href="${href}" ...>`)
+- **Problem**: `renderButton(href, label)` interpolated `href` into `<a href="${href}">`
+  WITHOUT escaping. Two callers pass PROVIDER-sourced URLs, not app-built ones:
+  `voucher-instructions.ts:98` passes `voucher.voucherUrl` (from the Mercado Pago payment
+  response) and `shipped.ts:36` passes `input.trackingUrl` (carrier URL, T12). A URL containing
+  a double-quote would close the `href` attribute and inject arbitrary markup into the email body
+  (attribute-breakout → stored HTML injection in the recipient's inbox). The label was already
+  escaped; the href was the gap.
+- **Impact**: A malformed/hostile provider URL (or a future admin-supplied tracking URL) could
+  break out of the attribute and inject markup into a customer email. Email clients don't execute
+  `javascript:`, but markup injection (a fake link/image) is still a phishing/defacement vector.
+- **Fix Applied**: Wrapped the href in `escapeHtml(href)` so `"` becomes `&quot;`, closing the
+  attribute-breakout. `escapeHtml` is a no-op for well-formed URLs (verified: existing template
+  tests using `https://mp.test/v.pdf` and `https://track.test/TRK-1` still pass). Added
+  `src/lib/email/layout.test.ts` (3 tests) including an explicit breakout payload
+  (`https://x/"><img src=y onerror=alert(1)>`) asserting the raw `"><img` sequence never appears.
+- **Status**: FIXED
 
-### M-3: Partial refund leaves NO durable record — no history row, no event row, no ledger
-- **ID**: M-3
-- **Severity**: MAJOR
-- **File**: `src/lib/payments/refund.ts:157-165`
-- **Problem**: On a successful partial refund the code only `console.info` and
-  returns. It relies on "the `mp_payment_events` row written when MP fires the
-  `refunded` webhook" — but that webhook shares the original approval's
-  `mp_payment_id`, so it hits the unique-guard duplicate branch (M-1) and is never
-  recorded, and even if recorded the noop branch writes no history (C-2). Net: a
-  partial refund of real money leaves zero durable trace in our DB.
-- **Impact**: No reconciliation trail for partial refunds; combined with M-2,
-  over-refunds are undetectable after the fact.
-- **Suggested Fix**: Write an explicit refund record at success time in
-  `executeRefund` (a row keyed on the MP *refund id*, not the payment id, or a
-  history note via the RPC). Do not depend on the `refunded` webhook.
+### Minor Issues
 
-### M-4: No replay window / `ts` staleness check — a captured valid webhook can be replayed indefinitely
-- **ID**: M-4
-- **Severity**: MAJOR
-- **File**: `src/lib/payments/webhook.ts:100-125`
-- **Problem**: The verifier HMACs over `ts` but never checks `ts` is recent.
-  Anyone who once captured a valid `x-signature`+body can replay it forever and it
-  verifies `ok: true`. The DB dedupe limits damage only for an already-processed
-  id (and given M-1, first-seen wins). The module docstring calls itself
-  "replay-safe" (webhook.ts:4) — inaccurate; it is replay-safe only via DB dedupe,
-  not at the signature layer.
-- **Impact**: Replay attack surface on the trust boundary; misleading claim.
-- **Suggested Fix**: After HMAC verification, parse `ts` (handle the ms-vs-s
-  ambiguity noted in-file) and reject if `|now - ts| > WEBHOOK_REPLAY_TOLERANCE_MS`
-  (documented constant), 401. Add valid-but-stale and valid-and-fresh tests.
+#### m-1: `config.ts` comment names `SITE_ORIGIN`, code reads `NEXT_PUBLIC_SITE_ORIGIN`
 
-### M-5: Unbounded request body — DoS surface on a public unauthenticated endpoint
-- **ID**: M-5
-- **Severity**: MAJOR
-- **File**: `src/app/api/webhooks/mercadopago/route.ts:41`
-- **Problem**: `await request.text()` reads the entire body into memory with no
-  size cap, and it must run BEFORE signature verification (the body is needed to
-  extract id/type). This is the app's only public unauthenticated write endpoint.
-  An attacker can POST huge / many concurrent bodies to exhaust memory before the
-  signature check ever protects anything.
-- **Impact**: Memory-exhaustion / DoS.
-- **Suggested Fix**: Cap body size (reject `content-length` over a small limit such
-  as 64KB with 413 before reading, or read via a bounded stream). MP notifications
-  are tiny. Document the limit constant.
+- **File**: src/lib/config.ts (email config block, "HOW TO SWAP REAL VALUES")
+- **Suggestion**: The prose comment says links are built from `SITE_ORIGIN`; `siteOrigin()` reads
+  `NEXT_PUBLIC_SITE_ORIGIN`. Cosmetic only — code is correct and consistent with dev-done/env docs.
+- **Status**: SKIPPED — comment cosmetics, zero behavior/security impact.
 
-### M-6: Race between `mp_payment_events` claim and order advance — a failure between them permanently blocks reprocessing
-- **ID**: M-6
-- **Severity**: MAJOR
-- **File**: `src/lib/payments/process-payment.ts:94-150`
-- **Problem**: Claim (insert, commits) and advance (separate RPC txn) are not
-  atomic. If the advance fails after the claim committed, the route returns 500 so
-  MP retries — but the retry now finds the claim present → returns `duplicate`
-  (line 102) → 200 without advancing. Money received, order stuck, MP has stopped
-  retrying. Classic "claim before the real work commits" idempotency hazard.
-- **Impact**: A transient advance failure becomes a permanent stuck-order bug.
-- **Suggested Fix**: Make claim+advance a single transaction (one RPC inserts the
-  event AND advances, rolling back both on failure), or finalize the claim only
-  after a successful advance (claim `pending`, finalize after; retry reprocesses a
-  non-finalized claim). Fold with M-1's spine rework. Add an integration test:
-  advance-fails-then-retries must eventually advance.
+#### m-2: `renderParagraph(text, escape=false)` escape-bypass has no live caller
 
-### M-7: `advanceOrderStatus` callers never inspect `result.reason` — a blocked/no-op RPC is treated as success
-- **ID**: M-7
-- **Severity**: MAJOR
-- **File**: `src/lib/payments/advance-order.ts:31-35`; callers `process-payment.ts:146-150`, `refund.ts:141-154`
-- **Problem**: Callers only check `advance.ok` (a DB-error flag) and ignore
-  `result.reason`. A `regression_blocked` or `order_not_found` outcome is reported
-  as full success. For the refund full-path, if the RPC returns
-  `regression_blocked` (C-2 scenario) the refund still returns
-  `{ status: "refunded", kind: "full" }` while `payment_status` was never set —
-  the caller cannot tell. Also the RPC returns raw `jsonb`; the
-  `AdvanceOrderStatusResult` type is compile-time only, so `data` is unvalidated
-  at runtime.
-- **Impact**: Silent state divergence; compounds C-2.
-- **Suggested Fix**: Callers must branch on `result.reason` and treat
-  `regression_blocked`/`order_not_found` as failures (log + distinct outcome).
-  Optionally validate the jsonb shape at the boundary.
+- **File**: src/lib/email/layout.ts:146 (`renderParagraph(text, escape = true)`)
+- **Suggestion**: The `escape=false` branch exists but no caller uses it (verified by grep). Latent
+  foot-gun; left as-is because it's currently unreachable with unsafe input and the default is safe.
+- **Status**: SKIPPED — no live unsafe caller; default path is safe.
 
-### M-8: `payment_type_id === 'atm' → 'spei'` miscategorization; method mislabel drives wrong voucher UX
-- **ID**: M-8
-- **Severity**: MAJOR
-- **File**: `src/lib/payments/config.ts:117-147`; consumed at `order-payment-read.ts:94-96`
-- **Problem**: `PAYMENT_TYPE_TO_METHOD` maps `atm: "spei"`. MP's `atm` type is not
-  SPEI. The persisted `payment_method` gates the voucher fetch (only `oxxo`/`spei`
-  fetch a voucher), so a mislabel means either a real OXXO/SPEI pending payment
-  never renders its voucher (AC-17) or a card payment triggers a spurious voucher
-  fetch. The whole map is a heuristic over ambiguous MP fields (dev-flagged) and
-  BLOCKED-ON-USER, but `atm` is wrong on its face.
-- **Impact**: Wrong persisted method; wrong pending-voucher UX.
-- **Suggested Fix**: Remove/correct the `atm` mapping; prefer `payment_method_id`
-  (`oxxo`, `clabe`) as the primary signal. Flag the full map for live-sandbox
-  verification. Add `atm`/ambiguous-case tests.
+### Nits
 
----
+#### n-1: `scripts/run-integration.sh` header says "applies 0001..0005" (stale)
 
-## Minor Issues (NICE TO FIX)
+- **File**: scripts/run-integration.sh (header)
+- **Note**: `supabase db reset` applies ALL migrations regardless; behavior correct. Not a T9 file.
+- **Status**: SKIPPED — out-of-scope, comment-only.
 
-### m-1: `noop_same_status` branch discards `p_note` and writes no history for a payment_status change
-- **File**: `supabase/migrations/0009_payments.sql:165-180`
-- **Suggestion**: Persist a history/payment-history row (and the note) when
-  `payment_status` materially changes even if `order_status` does not (supports the
-  refund audit trail, AC-13).
+## Crash-Between-Claim-and-Send Verdict
 
-### m-2: `matchOrder` runs two round-trips with a misplaced comment; largely redundant
-- **File**: `src/lib/payments/process-payment.ts:154-189`
-- **Problem**: The "Fallback: confirmation_token" comment (169-171) sits above the
-  `if (data) return` block but describes the block below. Since
-  `persistPreference` always sets `mp_external_reference = confirmation_token`, the
-  two lookups are near-duplicates.
-- **Suggestion**: Collapse to one `.or()` query (both columns indexed) or fix the
-  comment.
+**Deliberate at-most-once — documented and justified. ACCEPTED (not a bug).**
 
-### m-3: Voucher `verification_code` read via untyped index on a widened SDK type
-- **File**: `src/lib/payments/order-payment-read.ts:114-145`
-- **Suggestion**: Add a realistic MP OXXO/SPEI response fixture test once live
-  paths are confirmed; keep defensive reads.
+`claim_email_send` does `insert … on conflict do nothing` and returns `'new'` only when a row was
+actually inserted (PL/pgSQL `FOUND` after `INSERT … ON CONFLICT DO NOTHING` is true only on a real
+insert — race-safe: concurrent duplicate webhooks → exactly one `'new'`). The claimed row lands
+`sent_at = NULL`; `finalize_email_send` stamps it only after the provider accepts.
 
-### m-4: `resolveOrigin` derives proto from a host substring — fragile for `::1`/`.local`
-- **File**: `src/app/[locale]/checkout/pay-actions.ts:74-76`
-- **Suggestion**: Trust `x-forwarded-proto` strictly; default https + rely on
-  `NEXT_PUBLIC_SITE_URL` for local, or broaden the local-host check.
+If the process crashes AFTER claim but BEFORE send/finalize, the row persists with `sent_at = NULL`,
+and a later redelivery's `claim_email_send` hits the unique conflict → `'duplicate'` → the email is
+permanently suppressed. This is **at-most-once**, and DIFFERS from the T8 payment spine (which
+reclaims unfinalized claims for at-least-once payment processing). The divergence is intentional and
+documented in three places: migration 0010 comments (316–320), dev-done.md "Key decisions", and
+ticket edge 2 (which asked the dev to confirm the choice). Rationale is sound: an email is not
+money; a lost email is far less harmful than a lost/duplicate payment, and the un-finalized ledger
+row is the substrate for a FUTURE manual/queue retry without double-sending. No fix required.
 
-### m-5: `auto_return: "approved"` string inline in the preference body (AC-3 wants all tunables centralized)
-- **File**: `src/lib/payments/preference.ts:174`
-- **Suggestion**: Move to `config.ts`.
-
-### m-6: `binary_mode: false` means card payments can land `in_process` (processing UX) — intentional, flag for human sign-off
-- **File**: `src/lib/payments/config.ts:62-67`, `preference.ts:175`
-- **Suggestion**: No code change; confirm UX in live test.
-
----
-
-## NIT
-
-- **N-1** `src/lib/env.ts:1-17`: docstring still says "single source of truth for
-  Supabase credentials" — stale now that MP env lives here.
-- **N-2** `src/app/[locale]/checkout/confirmacion/[token]/page.tsx:22-29`:
-  docstring still describes the old "no payment yet" note; update for PaymentPanel.
-- **N-3** `src/lib/payments/config.ts:50` `MP_STATEMENT_DESCRIPTOR = "POSTURPRO"`
-  is a placeholder trade name — set the real legal name before launch (documented).
-- **N-4** `process-payment.ts:78` comment "impossible — valid signature" is glib;
-  a spoofed query `data.id` after a valid signature is exactly C-1 — reword.
-- **N-5** `mp_payment_events.raw jsonb` (0009:48) is documented as an audit trail
-  but is NEVER written (`claimPaymentEvent` omits it). Populate (PII-free) or drop.
-
----
+Timeout-leak check: `sendWithTimeout` uses `Promise.race([sendEmail, timeout])` and clears the timer
+in `finally`. The race loser is not cancelled, but `Promise.race` attaches internal handlers to BOTH
+promises, so a late `sendEmail` rejection is NOT an unhandled rejection. No leak.
 
 ## Acceptance Criteria Verification
 
-| # | Criterion | Status | Evidence |
-|---|-----------|--------|----------|
-| AC-1 | getMercadoPagoEnv server-only, throws named error; public key not read | PASS | `env.ts:125-132` |
-| AC-2 | No NEXT_PUBLIC_ MP secret; import "server-only"; exposure test | PASS | `mp-client.ts:10`; `secret-exposure.test.ts:43-73` |
-| AC-3 | Non-secret tunables centralized + swap block | PARTIAL | good, but `auto_return` inline (m-5) |
-| AC-4 | Preference: cents→decimal exact, external_reference=token, notification_url, back_urls | PASS | `preference.ts:151-179`, `money-boundary.ts`, `urls.ts` |
-| AC-5 | Pay-now CTA for pending; replaces "no payment yet" | PASS | `page.tsx:93-99`, UnpaidCard |
-| AC-6 | All four methods available | PASS | no excluded methods in preference body |
-| AC-7 | POST route at /api/webhooks/mercadopago, first route.ts | PASS | `route.ts:38` |
-| AC-8 | Verify x-signature before side effect; timingSafeEqual; lowercase id; 401 | **FAIL** | body-fallback id source (C-1); no ts staleness (M-4) |
-| AC-9 | Authoritative Payment.get; map | PASS | `process-payment.ts:70` |
-| AC-10 | Idempotent via unique; duplicate no-op 200 | PARTIAL | exact-dupe works; later status changes dropped (M-1) |
-| AC-11 | Match by ext_ref/preference; unknown → 200 | PASS | `matchOrder`; `process-payment.ts:109-114` |
-| AC-12 | Zero-tolerance reconciliation gates paid | PASS | `process-payment.ts:126-134` |
-| AC-13 | advance_order_status ONLY status path; SECURITY DEFINER/empty search_path/service_role; history | PARTIAL | posture correct; refund/refunded skips history (C-2, m-1) |
-| AC-14 | Status mapping complete + tested | PARTIAL | present + tested, but refunded→paid order status wrong (C-2) |
-| AC-15 | RPC idempotent on repeat paid | PASS | noop_same_status (0009:168-180) |
-| AC-16 | Card-decline retry, same order, no re-create | PASS | `preference.ts:64`, FailedCard retry |
-| AC-17 | OXXO/SPEI pending voucher, defensive | PASS (UI) | `oxxo-spei-instructions.tsx`; method mislabel risk (M-8) |
-| AC-18 | Later approved webhook advances to paid | **FAIL** | payment-id unique guard drops second webhook (M-1) |
-| AC-19 | Refund full/partial; idempotency key; documented rule | PARTIAL | full ok; partial no audit + no cumulative guard (M-2, M-3) |
-| AC-20 | Refuse non-paid; typed result; never echo raw error; server-only | PASS | `refund.ts:64-69`, typed result, server-only |
-| AC-21 | Strings both locales; keys-used test | PASS (not re-run) | payment-labels + messages; QA to confirm |
-| AC-22 | test/integration/e2e pass; MP mocked | NOT VERIFIED | dev claims 1107/144/8; Stage 7 owns |
-| AC-23 | Strict TS, Clean Code, baseline; migration idempotent local-only | PARTIAL | migration idempotent; M-7 compile-time-only cast |
+| #     | Criterion | Status | Evidence |
+| ----- | --------- | ------ | -------- |
+| AC-1  | 0010 idempotent, applies on `db reset`, local-only | PASS | reset applied 0001..0010 clean; `if not exists` / `create or replace` throughout |
+| AC-2  | `advance_order_status` returns `transition_kind` from fixed set, derived in-RPC | PASS | 0010:82-126 helper; returned in all 5 jsonb paths; types updated |
+| AC-3  | history `transition_kind` written on every insert | PASS | all `insert into order_status_history` include it (189,228,255,529) |
+| AC-4  | `orders.locale` NOT NULL default es-MX + CHECK; create_order + payload persist | PASS | 0010:45-52; clamp 405-409; `CreateOrderPayload.locale` required; actions.ts `getLocale()` |
+| AC-5  | `email_sends` unique+RLS+grant+claim RPC | PASS | 0010:287-346 |
+| AC-6  | provider one module, `sendEmail`, env key, server-only | PASS | provider.ts single `deliver()`, `getEmailEnv()`, `import "server-only"` |
+| AC-7  | `getEmailEnv()` validates 3 vars, throws | PASS | env.ts:172-180 |
+| AC-8  | dev-preview no network, returns success | PASS | provider.ts `isPreviewMode` → `logPreview` → `{ok,preview}` |
+| AC-9  | provider mocked; missing key swallowed | PASS | provider.test + process-payment isolation test |
+| AC-10 | 8 templates `{subject,html,text}` typed | PASS | all 8 present |
+| AC-11 | 6 customer templates both locales; MXN; single-brace | PASS | keys symmetric 50/50; money.ts; no `{{` |
+| AC-12 | owner+relay single-locale es-MX | PASS | inline es-MX copy; OWNER_EMAIL_LOCALE |
+| AC-13 | dispatch failure-isolated + non-blocking | PASS | dispatch/trigger/checkout catches; isolation test proves 200 when send throws |
+| AC-14 | checkout → confirmation + owner, non-blocking | PASS | actions.ts:351-353 (only `!reused`) |
+| AC-15 | paid → payment_received once | PASS | process-payment `'paid'` branch; dedupe=mpPaymentId |
+| AC-16 | pending voucher once; skip if no data | PASS | `toVoucherData` null → logged skip |
+| AC-17 | shipped/cancelled/refund/contact seams built+tested, not wired | PASS | `// T12/T13 wiring seam` comments |
+| AC-18 | webhook route email-free; trigger post-advance | PASS | grep: no email import in route.ts |
+| AC-19 | hacker-report.md untouched | PASS | not modified |
+| AC-20 | T7/T8 unchecked | PASS | BUILD_PLAN not modified |
 
 ## Edge Case Verification
 
 | # | Edge Case | Status | Evidence |
-|---|-----------|--------|----------|
-| 1 | Webhook replay (same id twice) | HANDLED | unique guard → duplicate 200 |
-| 2 | Out-of-order (approved then stale pending) | HANDLED | order_status_rank guard (0009:156-163) |
-| 3 | Unknown/unmatched payment → 200, no mutation | HANDLED | `process-payment.ts:109-114` |
-| 4 | Card decline then retry | HANDLED | rejected→failed, retry re-creates preference |
-| 5 | OXXO/SPEI voucher expiry | PARTIAL | cancelled/expired maps, but pending→approved broken (M-1) |
-| 6 | Webhook-before-redirect race | HANDLED | truth-from-DB; hint never trusted (panel-state.ts) |
-| 7 | Amount mismatch | HANDLED | zero-tolerance, not paid, logged |
-| 8 | Refund a pending payment | HANDLED | not-refundable/not-paid before MP call |
-| 9 | Partial then over-refund (cumulative) | **MISSING** | only single-refund bound checked (M-2) |
-| 10 | Refund MP failure → state unchanged, not echoed | HANDLED | `refund.ts:126-136` |
-| 11 | Missing/placeholder creds | HANDLED | MissingEnvVarError → unavailable; webhook 401 |
-| 12 | Malformed / non-payment body | HANDLED | parseBody tolerant; non-payment → 200 |
-| — | Crash between claim and advance | **MISSING** | permanent stuck-order (M-6) |
-| — | Replay-window / ts staleness | **MISSING** | no ts freshness (M-4) |
-| — | Unbounded body DoS | **MISSING** | uncapped request.text() (M-5) |
+| - | --------- | ------ | -------- |
+| 1 | Duplicate webhook → one email | HANDLED | unique conflict → 'duplicate' short-circuits |
+| 2 | Provider down/timeout → 200, un-finalized | HANDLED | bounded timeout; isolation test; at-most-once documented |
+| 3 | /en/ → en emails | HANDLED | `orders.locale`; `getTranslations({locale})`; owner es-MX |
+| 4 | OXXO paid later → both once | HANDLED | distinct email_kind → distinct ledger rows |
+| 5 | charged_back/mismatch → no email | HANDLED | returns before advance; kind ≠ 'paid'; refund test |
+| 6 | Undeliverable valid email | HANDLED | bounce logged+swallowed; no address in logs |
+| 7 | Locale mutation attempt | HANDLED | locale not in advance UPDATE set |
 
-## Quality Score: 6.5/10
+## Fix Summary
 
-High-craft implementation with an excellent trust-boundary skeleton and money
-boundary, but adversarial review found 2 CRITICAL correctness bugs (signature id
-source, refund order-state) and a MAJOR that breaks the headline OXXO/SPEI
-pending→approved flow (M-1), plus real hardening gaps (replay window, body cap,
-claim/advance atomicity). These are exactly the classes of defect the human gate
-exists to catch, and they must be fixed before this is merge-eligible.
+- Critical: 0/0
+- Major: 1/1 fixed (M-1 href escaping)
+- Minor: 0/2 fixed, 2 skipped (m-1 comment cosmetics, m-2 unreachable escape-bypass) — justified
+- Nit: 0/1 fixed, 1 skipped (out-of-scope script comment)
 
----
+## Verification (post-fix)
 
-## Stage 6 (ultrafix) Resolution Log — 2026-07-14
+- `tsc --noEmit`: 0 errors
+- `eslint .`: clean
+- Unit: **1271 passed** (68 files) — 1268 baseline + 3 new `layout.test.ts` regression tests
+- Integration: **168 passed** (13 files) via `scripts/run-integration.sh` (fresh reset+seed, exit 0)
+- `supabase db reset`: 0001..0010 apply clean (idempotent)
+- DB left pristine-seeded (0 orders, 0 email_sends); tsconfig.json unchanged; no stray servers
 
-All CRITICAL + MAJOR findings FIXED and verified; MINOR/NIT resolved or documented.
-Verification: tsc 0 errors, eslint clean, next build clean (webhook route emitted),
-unit 1126/1126 (baseline 1107 + 19 new), integration 151/151 (baseline 144 + 7 new),
-migration 0009 applies clean on `supabase db reset` (idempotent — re-applies over an
-existing shape). DB left pristine-seeded; tsconfig restored; no stray servers.
+## Quality Score: 9/10
 
-| ID | Sev | Status | Resolution |
-|----|-----|--------|------------|
-| C-1 | CRITICAL | **FIXED** | `route.ts` now passes ONLY the query-string `data.id` (`signatureDataId`) into `verifyWebhookSignature`; the body id is used solely as a `Payment.get` fetch fallback (`fetchDataId`), never for the manifest. `webhook.test.ts` builds manifests INDEPENDENTLY (literal MP format) and adds a mutation-style test proving a signature signed with the query id is REJECTED when verified with the body id. |
-| C-2 | CRITICAL | **FIXED** | `mapMpStatus("refunded")` now returns `orderStatus: null` (payment-only). `advance_order_status` RPC gained a payment-only mode (`p_order_status` NULL): sets payment fields + writes an audit history row without touching order_status → works on plain-paid AND shipped orders. Integration tests prove `payment_status=refunded` on both a paid and a shipped order with history written. |
-| M-1 | MAJOR | **FIXED** | Idempotency spine re-keyed to `unique(mp_payment_id, mp_status)`. Status PROGRESSIONS (OXXO/SPEI pending→approved) each claim a distinct row → processed (AC-18). New `record_payment_event` RPC. Unit + integration regression tests cover the exact pending→approved sequence. |
-| M-2 | MAJOR | **FIXED** | Cumulative over-refund guard in SQL: `payment_refunds` ledger + `record_refund` RPC locks the order, sums prior refunds, rejects if `prior + amount > total` (race-safe). `refund.ts` also pre-checks via `refunded_total`. Unit + integration tests cover second-partial-over-remaining, full-after-partial, and the MP-succeeded-but-guard-rejected race. |
-| M-3 | MAJOR | **FIXED** | Every successful refund (full AND partial) writes a durable `payment_refunds` row keyed by the MP refund id (retry-idempotent) at success time in `executeRefund` — no longer depends on the `refunded` webhook. |
-| M-4 | MAJOR | **FIXED** | `webhook.ts` parses `ts` (seconds/ms disambiguated) AFTER the HMAC check and rejects `|now - ts| > WEBHOOK_REPLAY_TOLERANCE_MS` (5 min) → `stale_timestamp`. Injectable `now`/`toleranceMs` keep it pure/testable. Fresh/stale/future/unparseable-ts tests added. |
-| M-5 | MAJOR | **FIXED** | `route.ts` caps the body at 64 KB: rejects an oversized `content-length` with 413 before reading, AND streams with a running-total cap (`readBoundedBody`) so a lying/absent length can't smuggle an unbounded body. |
-| M-6 | MAJOR | **FIXED** | Claim-then-finalize: `record_payment_event` inserts with `processed_at` NULL; the claim is FINALIZED (`finalize_payment_event`) only after a successful advance. A transient advance failure leaves the claim unfinalized → MP's retry reclaims and reprocesses (advance is idempotent). Unit tests assert finalize-only-on-success and no-finalize-on-error. |
-| M-7 | MAJOR | **FIXED** | `process-payment.ts` inspects `advance.result.reason`: `regression_blocked`/`order_not_found` → new `advance-blocked` outcome (httpOk:false, claim left unfinalized), not silent success. Unit test covers it. |
-| M-8 | MAJOR | **FIXED** | Removed the `atm: "spei"` mapping (MP `atm` is not SPEI). `payment_method_id` (`oxxo`/`clabe`) remains the primary signal; the type map is a fallback; `atm` with no disambiguating method id → null. Test asserts `atm`→null and clabe-wins. |
-| m-1 | MINOR | **FIXED** | `advance_order_status` now writes a history row on a `noop_same_status`/payment-only transition IFF `payment_status` materially changed — supports the refund/refunded audit trail (AC-13). |
-| m-2 | MINOR | **FIXED** | `matchOrder` fallback comment moved to describe the block it precedes; logic unchanged (two indexed lookups; a single `.or()` would lose the ability to log which matched — kept explicit). |
-| m-3 | MINOR | **SKIPPED** | Realistic MP OXXO/SPEI voucher fixture test deferred — the voucher field paths are BLOCKED-ON-USER (live-sandbox verification). Defensive reads already unit-tested (`extract-voucher.test.ts`). Documented in dev-done BLOCKED-ON-USER. |
-| m-4 | MINOR | **FIXED** | `resolveOrigin` now uses an `isLocalHost` helper covering `localhost`, `127.*`, `[::1]`, and `.local`; trusts `x-forwarded-proto` first. |
-| m-5 | MINOR | **FIXED** | `auto_return: "approved"` moved to `config.ts` as `MP_AUTO_RETURN`. |
-| m-6 | MINOR | **SKIPPED (no code change, as advised)** | `binary_mode: false` is intentional (required for OXXO/SPEI). Flagged for human/live-sandbox UX sign-off; no code change per the reviewer's own suggestion. |
-| N-1 | NIT | **FIXED** | `env.ts` docstring updated — now names MP secrets alongside Supabase. |
-| N-2 | NIT | **FIXED** | Confirmation page docstring updated for `<PaymentPanel>` (drops the "no payment yet" note). |
-| N-3 | NIT | **SKIPPED (documented)** | `MP_STATEMENT_DESCRIPTOR="POSTURPRO"` placeholder retained; the swap instructions are already in `config.ts`. Setting the real legal name is a launch-time config task (BLOCKED-ON-USER). |
-| N-4 | NIT | **FIXED** | The glib "impossible — valid signature" comment reworded: a signed query id can point at no payment; a 404 is expected, not an error. |
-| N-5 | NIT | **FIXED** | Dropped the never-written `raw jsonb` column from `mp_payment_events` (migration + types). The recorded columns are the PII-free audit trail. |
+## Recommendation: APPROVE
 
-### AC re-verification after fixes
-- **AC-8** (was FAIL): now PASS — query-only signature id (C-1) + ts replay window (M-4). Evidence: `route.ts` `signatureDataId`; `webhook.test.ts` C-1 + replay-window suites.
-- **AC-18** (was FAIL): now PASS — `(mp_payment_id, mp_status)` spine processes pending→approved. Evidence: `process-payment.test.ts` progression test; integration `record_payment_event` progression test.
-- **AC-10/13/14/19/23** (were PARTIAL): now PASS — dedupe still idempotent per (id,status); refund/refunded write history; refunded mapping correct; cumulative guard + durable ledger; strict TS holds.
-
-## Recommendation: REQUEST CHANGES — RESOLVED (advisory re-verification: PASS)
-
-Do NOT advance to merge. Stage 6 (ultrafix) must resolve **C-1, C-2, and M-1 at
-minimum** (they break correctness against the real gateway and the OXXO/SPEI
-requirement), then M-2/M-3/M-4/M-5/M-6/M-7/M-8. After fixes, re-run the full test
-suite (AC-22) and add tests exercising the multi-webhook lifecycle and the
-query-vs-body signature id. **Regardless of any subsequent SHIP verdict, the
-standing HUMAN-REVIEW GATE remains OPEN — this payment code requires human
-sign-off before merge.**
+The one MAJOR finding (unescaped email button `href`) is FIXED inline with a dedicated regression
+test. Failure isolation on both money paths is airtight, the migration is behavior-preserving over
+T8, the ledger is race-safe, and the at-most-once email choice is deliberate and documented. Ready
+to proceed to QA (S5).

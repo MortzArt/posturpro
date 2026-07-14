@@ -117,6 +117,12 @@ export function wrapEmail(shell: EmailShell): { html: string; text: string } {
 /**
  * Render an absolute-URL primary button (>= 44px tall, AC mobile tap target).
  * Table-cell button for Outlook compatibility. `href` MUST be absolute.
+ *
+ * The `href` is ATTRIBUTE-ESCAPED (defense-in-depth): most callers pass a safe
+ * app-built URL (siteOrigin + confirmationPath), but two callers pass provider-
+ * sourced URLs — the MP voucher URL (voucher-instructions) and the carrier
+ * tracking URL (shipped, T12). Those are external data; escaping the `"` closes
+ * any attribute-breakout so a malformed provider URL can never inject markup.
  */
 export function renderButton(href: string, label: string): string {
   const cell =
@@ -129,7 +135,7 @@ export function renderButton(href: string, label: string): string {
   return (
     `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0">` +
     `<tr><td style="${cell}">` +
-    `<a href="${href}" style="${anchor}">${escapeHtml(label)}</a>` +
+    `<a href="${escapeHtml(href)}" style="${anchor}">${escapeHtml(label)}</a>` +
     `</td></tr></table>`
   );
 }
