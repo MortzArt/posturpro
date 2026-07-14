@@ -1,282 +1,296 @@
-# Research Report: T6 — Cart
+# Research Report: T7 — Checkout & Order Creation
+
+One-pass codebase scan. Verified against local files (not assumed). Where a
+finding is uncertain it is flagged explicitly.
 
 ## Codebase Analysis
 
 ### Existing Patterns
 
-- **Guest localStorage persistence** — `src/lib/recently-viewed.ts` (128 lines). The
-  canonical guest-persistence pattern: a config-owned storage key + cap
-  (`RECENTLY_VIEWED_STORAGE_KEY`, `RECENTLY_VIEWED_MAX`), an `hasStorage()` SSR guard
-  (`typeof window !== "undefined" && typeof window.localStorage !== "undefined"`,
-  lines 75–77), `readRecentlyViewed()` that JSON-parses, checks `Array.isArray`, filters
-  through an `isEntry()` shape guard, and caps (lines 83–101), a `recordRecentlyViewed()`
-  that de-dupes + caps + writes (lines 108–127), and `warnOnce()` (a
-  `warnedThisSession` boolean, lines 63–72) so a failing storage warns at most once.
-  **Reuse strategy:** clone this file structure verbatim as `src/lib/cart/cart-storage.ts`
-  — same guards, same `warnOnce`, same `isEntry`→`isCartLine`. Add a `sanitizeQuantity`
-  because cart entries carry an editable integer quantity (recently-viewed does not).
-- **Client island that hydrates from storage without mismatch** —
-  `src/components/product/recently-viewed.tsx` (lines 1–78). `"use client"`, state
-  initialized to `null`, a single `useEffect` reads storage and sets state, returns
-  `null` until hydrated. **Reuse strategy:** the cart provider and the header badge use
-  the same mounted/`hydrated` gate so no server/client HTML divergence and no `window`
-  access on the server (ticket edge 8, AC-4/AC-14).
-- **Integer-cents money + single format boundary** — `src/lib/money.ts`. `formatMXN(cents)`
-  throws on a non-integer (line 27) — it is the ONLY cents→string boundary; all cart
-  math stays in integer cents. **Reuse strategy:** every cart price display calls
-  `formatMXN`; line/subtotal/shipping math are pure integer functions in
-  `src/lib/cart/cart-line.ts` + `shipping.ts` (AC-12).
-- **Store-settings read with graceful degradation** — `src/lib/store-settings.ts`.
-  `getStoreSettingsStatic()` (lines 129–136) is a cookie-free `unstable_cache` read
-  (tag `store-settings`, revalidate `CATALOG_REVALIDATE_SECONDS`) returning the typed row
-  or `null` (never throws). The row carries `shipping_flat_rate_cents` and
-  `free_shipping_threshold_cents`. **Reuse strategy:** the `/carrito` server page calls
-  `getStoreSettingsStatic()` and passes the two cents values (or `null`) into
-  `CartPageClient`; a `null` result hides the free-shipping progress bar and shows a
-  neutral shipping label (AC-8/AC-9, edge 6).
-- **Config as the single home for placeholders/tunables** — `src/lib/config.ts`. Money
-  constants end in `_CENTS`; durations end in `_MS`; storage keys are versioned
-  (`RECENTLY_VIEWED_STORAGE_KEY = "posturpro:recently-viewed:v1"`, line 282); route
-  segments are Spanish and locale-agnostic (`CATALOG_PATH = "/sillas"`, `productPath()`).
-  **Reuse strategy:** add `CART_STORAGE_KEY`, `MAX_CART_ITEM_QUANTITY`, `CART_PATH`,
-  `CHECKOUT_PATH`, `ADD_TO_CART_CONFIRM_MS` here (BUILD_PLAN Rule 4).
-- **Server resolves i18n, client fills templates** — server components use
-  `await getTranslations(ns)` (`site-header.tsx:31`, PDP page); trivial client
-  interpolation uses the pure `interpolate("{token}", values)` helper
-  (`src/lib/interpolate.ts`). Stateful client components with many strings use
-  `useTranslations(ns)` directly (`mobile-nav.tsx:48`, `filter-sheet.tsx`, `error.tsx`).
-  **Reuse strategy:** the cart page body is a heavy stateful client island, so it uses
-  `useTranslations("cart")` directly (cleaner than threading ~20 strings), consistent
-  with `mobile-nav`/`filter-sheet`. The transient "added" label uses `interpolate` for
-  the count token.
-- **i18n key parity is test-enforced** — `src/messages/messages.test.ts` (ES/EN identical
-  key sets) and `keys-used.test.ts` (every dotted key referenced in code exists in both
-  locales). **Reuse strategy:** add the `cart` namespace to BOTH `es-MX.json` and
-  `en.json` in the same edit; run these tests (AC-11).
-- **Whole-card locale-aware Link + hugeicons** — `product-card.tsx` (`Link` from
-  `@/i18n/navigation`, `HugeiconsIcon` + `Image01Icon`). **Reuse strategy:** the header
-  cart badge is a locale-aware `Link` to `CART_PATH` with a hugeicons cart glyph
-  (`ShoppingCart01Icon`); never mix icon sets (CLAUDE.md).
+- **Server-action form with `useActionState` (THE precedent for checkout).**
+  `src/app/[locale]/producto/[slug]/actions.ts` (`submitQuestion`, lines 90–170)
+  + `qa-form.tsx` + `qa-form-state.ts`. Contract: the action is
+  `(slug, prevState, formData) => Promise<QaFormState>`; the form binds args and
+  calls `useActionState(action, initialQaFormState)` for
+  `[state, formAction, pending]`. The result is a **status union**
+  (`"idle" | "success" | "invalid" | "rate-limited" | "unavailable" | "error"`)
+  + optional `fieldErrors` + preserved `values` + an incrementing `submissionId`.
+  Errors are mapped to friendly enums and NEVER echo `error.message`. **Reuse
+  strategy:** copy this shape verbatim as `CheckoutFormState` with checkout-
+  specific statuses (`success`, `invalid`, `out-of-stock`, `price-changed`,
+  `shipping-unavailable`, `error`) and a per-line error array.
+- **`"use server"` file cannot export non-async values.** The serializable
+  state/type + initial-state object live in a SIBLING file (`qa-form-state.ts`),
+  imported by both action and form. **Reuse:** create
+  `checkout/checkout-form-state.ts` the same way.
+- **Pure, unit-tested validation guards.** `src/lib/qa/submit-guard.ts`:
+  validation trims BEFORE length checks, mirrors the DB CHECKs, returns
+  `{ ok, values, fieldErrors }`, and is I/O-free. **Reuse:** model
+  `src/lib/checkout/address.ts` + `discount.ts` + `order.ts` on this — pure,
+  testable, DB CHECK is the floor not the first defense.
+- **Pure money/shipping math, integer cents.** `src/lib/money.ts` (`formatMXN`
+  is the ONLY cents→string boundary; throws on non-integer) and
+  `src/lib/cart/shipping.ts` (`computeShipping`, `totalCents`,
+  `freeShippingProgress`; three-state `flat`/`free`/`unavailable`; free =
+  `subtotal >= threshold`). **Reuse:** checkout MUST call these, never re-derive.
+- **Settings fetched server-side, passed as props.** `carrito/page.tsx` calls
+  `getStoreSettingsStatic()` and passes `shipping_flat_rate_cents` /
+  `free_shipping_threshold_cents` (or `null`) to the client. **Reuse:**
+  `checkout/page.tsx` does the identical fetch+prop pattern.
+- **Client-cart hydration gate.** `cart-provider.tsx` exposes a `hydrated` flag;
+  the cart page renders a skeleton until hydrated (opacity crossfade,
+  `aria-hidden`) to avoid a flash. **Reuse:** checkout renders a skeleton until
+  `hydrated`, never a premature empty-state/`$NaN`.
+- **Config single-sourcing (BUILD_PLAN rule 4).** `src/lib/config.ts` centralizes
+  every non-secret tunable with a "HOW TO SWAP" docstring; `_CENTS` suffix
+  convention; `UUID_PATTERN` already present. **Reuse:** add order-number format,
+  CP regex, 32 states, tax rate here.
+- **Admin (RLS-bypassing) client for privileged writes.**
+  `src/lib/supabase/admin.ts` — `createAdminClient()`, `import "server-only"`
+  guarded, docstring literally names "order/customer writes (T7)". **Reuse:**
+  the ONLY write path for `orders`/`order_items`/`customers`.
+- **Locale-aware navigation.** Import `Link`, `redirect`, `getPathname` from
+  `@/i18n/navigation` (`createNavigation(routing)`); hrefs are prefix-free (the
+  `/en` prefix is auto-added). **Reuse:** confirmation redirect + all links.
 
 ### Relevant Files
 
-| File                                                        | Purpose                                    | Relevance                                             | Action    |
-| ----------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------- | --------- |
-| `src/lib/recently-viewed.ts`                                | Guarded localStorage guest persistence     | The exact pattern the cart storage lib clones         | Reference |
-| `src/lib/recently-viewed.test.ts`                           | Storage-guard unit tests                   | Test template for `cart-storage.test.ts`              | Reference |
-| `src/components/product/recently-viewed.tsx`                | Hydrate-from-storage client island         | Mounted-flag / null-until-hydrated pattern            | Reference |
-| `src/lib/money.ts`                                          | `formatMXN`, integer-cents boundary        | All cart price display + math discipline              | Reference |
-| `src/lib/store-settings.ts`                                 | `getStoreSettingsStatic()` (flat/threshold)| The cart's ONLY backend read (AC-8/AC-9)              | Reference |
-| `src/lib/config.ts`                                         | Centralized tunables                       | Add cart storage key / cap / paths / confirm delay    | Modify    |
-| `src/app/[locale]/layout.tsx`                               | Shell (header/footer/WhatsApp), providers  | Wrap in `<CartProvider>` inside NextIntlClientProvider | Modify    |
-| `src/components/layout/site-header.tsx`                     | Persistent top chrome                      | Mount the cart-count badge (~line 85 cluster)         | Modify    |
-| `src/components/layout/mobile-nav.tsx`                      | Mobile drawer                              | Add a `/carrito` link                                 | Modify    |
-| `src/components/product/product-purchase-panel.tsx`         | PDP selection island (variant SOT)         | Render `AddToCartButton` using selected variant       | Modify    |
-| `src/app/[locale]/producto/[slug]/page.tsx`                 | PDP server page                            | Thread sku + cover image into the panel props         | Modify    |
-| `src/lib/catalog/product-detail.types.ts`                   | `ProductDetail`, `ProductVariantView`      | Source fields for the cart-line snapshot              | Reference |
-| `src/lib/catalog/types.ts`                                  | `CatalogProductCard`, `StockState`         | Snapshot field shapes; stock-state enum               | Reference |
-| `src/messages/es-MX.json`, `src/messages/en.json`           | i18n dictionaries                          | Add `cart` namespace (both, same edit)                | Modify    |
-| `src/messages/keys-used.test.ts`                            | Key-usage parity test                      | Extend for new keys                                   | Modify    |
-| `src/i18n/navigation.ts` / `routing.ts`                     | Locale-aware `Link`, `getPathname`         | `/carrito` becomes `/en/carrito` automatically        | Reference |
-| `src/components/ui/{button,input,badge}.tsx`                | shadcn primitives                          | Stepper (Button+Input), badge count, buttons          | Reference |
-| `playwright.config.ts` / `e2e/product-detail.spec.ts`       | E2E harness (baseURL :3000, chromium+mobile)| Template for `e2e/cart.spec.ts`                       | Reference |
+| File | Purpose | Relevance | Action |
+| --- | --- | --- | --- |
+| `supabase/migrations/0003_commerce.sql` | orders/order_items/customers/discount_codes/store_settings + CHECKs + immutability triggers | The exact write target + constraints checkout must satisfy | Reference |
+| `supabase/migrations/0002_catalog.sql` | products/product_variants with `stock`, `price_cents`, `price_override_cents` | Source of live price/stock for re-validation & decrement | Reference |
+| `supabase/migrations/0005_rls_policies.sql` | Commerce tables fully denied to anon; only `service_role` writes | Proves checkout MUST use the admin client | Reference |
+| `supabase/migrations/0006_data_integrity_hardening.sql` | non-blank name CHECK, discount window CHECK, slug format | Mirror these in validation | Reference |
+| `supabase/migrations/0008_checkout.sql` | NEW atomic reserve-and-create RPC + order-number helper | Overselling protection + single-transaction write | Create |
+| `src/lib/cart/shipping.ts` | `computeShipping`/`totalCents`/`freeShippingProgress` | Reused verbatim for checkout totals | Reference |
+| `src/lib/cart/cart-line.ts` | `CartLine` snapshot + `sanitizeQuantity` | Snapshot shape; quantity clamp reused server-side | Reference |
+| `src/lib/money.ts` | `formatMXN` / integer-cents | The only display boundary | Reference |
+| `src/lib/store-settings.ts` | `getStoreSettingsStatic()` | Server settings fetch for the page | Reference |
+| `src/lib/supabase/admin.ts` | `createAdminClient()` | The write client | Reference |
+| `src/lib/catalog/stock.ts` | `effectiveStock` (SUMS variants), `stockState` | Display stock; NOTE below on reservation | Reference |
+| `src/lib/catalog/product-detail.ts` | `getProduct(slug)` (slug-only reads) | Model for a new by-id read | Reference |
+| `src/app/[locale]/producto/[slug]/actions.ts` | Q&A server action | The action template | Reference |
+| `src/app/[locale]/producto/[slug]/qa-form-state.ts` | serializable state contract | The form-state-file rule | Reference |
+| `src/app/[locale]/carrito/page.tsx` | settings fetch + props | The page template | Reference |
+| `src/components/cart/cart-provider.tsx` | `useCart()` / `hydrated` | Cart read contract | Reference |
+| `src/components/cart/order-summary.tsx` | subtotal/shipping/total render | Mirror for checkout summary | Reference |
+| `src/lib/config.ts` | tunables | New constants | Modify |
+| `src/messages/es-MX.json` + `en.json` | i18n | New `checkout` namespace | Modify |
+| `scripts/seed.ts` + `scripts/seed-data/products.ts` | seed | Zero-stock variant + discount codes | Modify |
+| `src/lib/supabase/database.types.ts` | generated types | Add RPC signature | Modify |
+| `src/lib/checkout/*` | validation/discount/totals/read | New lib cluster | Create |
+| `src/app/[locale]/checkout/*` + `src/components/checkout/*` | route + flow + confirmation | New UI | Create |
 
 ### Data Flow
 
-**Add to cart (PDP):**
-`ProductPurchasePanel` owns `selectedVariantId` (client state) → user clicks
-`AddToCartButton` → `useCart().addItem(snapshot)` where `snapshot` = `{ productId, slug,
-name, variantId, variantLabel, unitPriceCents (= priceOverrideCents ?? product.priceCents),
-coverImageUrl, sku, quantity: 1 }` → `CartProvider` reducer calls `addLine(lines, snapshot)`
-(dedupe by `cartLineKey(productId, variantId)`, increment + clamp) → `setState` → effect
-persists via `writeCart(lines)` (localStorage) → context value changes → `CartCountBadge`
-and the cart page re-render.
+**Render:** `/checkout` request → `checkout/page.tsx` (server, `setRequestLocale`)
+→ `getStoreSettingsStatic()` (cookie-free, cached, RLS-safe anon read) → renders
+`checkout-flow-client.tsx` with `flatRateCents`/`freeThresholdCents` props →
+client reads `useCart()` (localStorage snapshot, `hydrated` gate) → computes
+display totals with `computeShipping`/`totalCents` → shows contact/shipping/
+discount/summary.
 
-**Cart page render (`/carrito`):**
-Server `page.tsx` → `getStoreSettingsStatic()` → `{ flatRateCents, freeThresholdCents } |
-null` → passes to `<CartPageClient flatRateCents freeThresholdCents />` → client reads
-`useCart()` for `lines` (hydrated from `readCart()` on mount) → computes `subtotalCents =
-subtotalCents(lines)`, `shipping = computeShipping({subtotal, flat, threshold})`,
-`progress = freeShippingProgress(...)` → renders line rows + summary + progress bar or,
-when `lines.length === 0`, the empty state.
+**Submit:** user fills form → `useActionState` → `placeOrder(prevState, formData)`
+(`"use server"`) →
+1. Parse form fields + the serialized cart lines (hidden field / bound arg).
+2. `validateAddress(...)` (pure) — bad → `{ status: "invalid", fieldErrors }`.
+3. `checkout-read.ts` re-reads live product/variant rows **by id** (admin
+   client) → re-validate: active, unit price == effective price, stock ≥ qty →
+   any mismatch → `{ status: "price-changed" | "out-of-stock", lineErrors }`.
+4. `getStoreSettingsStatic()` → `computeShipping(subtotal, settings)`; if
+   `unavailable` → `{ status: "shipping-unavailable" }` (never write).
+5. `applyDiscount(subtotal, fetchedCode)` (pure) → discount cents (clamped).
+6. `assembleOrder(...)` (pure) → totals satisfying the DB identity CHECK.
+7. `admin.rpc('create_order_…', payload)` → **single transaction**: guarded
+   stock decrement per line + insert `customers`, `orders`, `order_items`,
+   `order_status_history`, bump `sales_count`. Any line short → rollback →
+   `{ status: "out-of-stock", lineErrors }`.
+8. Success → `{ status: "success", orderNumber }` → client clears cart →
+   `redirect(confirmationPath(orderNumber))`.
 
-**Cross-tab sync:** tab A `writeCart()` fires a `storage` event → tab B's `CartProvider`
-`storage` listener re-runs `readCart()` → `setState` → badge/page re-render (edge 5).
-
-**Persistence round-trip:** refresh → `CartProvider` mount effect `readCart()` → parse →
-`isCartLine` filter → `sanitizeQuantity` clamp → state (AC-3). Corrupt/foreign payload →
-`[]` + one warn (AC-14).
+**Confirmation:** `confirmacion/[orderNumber]/page.tsx` (server) → admin client
+reads the order + items by `order_number` → renders summary/shipping/"payment
+next".
 
 ### Similar Features (Reference Implementations)
 
-- **Recently-viewed strip** (`src/lib/recently-viewed.ts` + `recently-viewed.tsx`) — the
-  closest analog: guest, client-only, localStorage, shape-guarded, hydration-safe,
-  degrade-silently. Patterns to follow: config-owned key+cap, `hasStorage`/`isEntry`/
-  `warnOnce`, `null`-until-mounted rendering, storing a *view-model snapshot* (not just
-  an id) so the UI renders without a re-fetch. Cart adds: editable quantity (needs
-  `sanitizeQuantity`), a header badge, and a React context (recently-viewed is a single
-  local island; the cart must be read from three places — header, PDP, cart page —
-  hence a provider).
-- **PDP purchase panel** (`product-purchase-panel.tsx`) — already the single source of
-  truth for `selectedVariantId` (lines 82–91) and computes the displayed price/stock per
-  variant. The add-to-cart button hangs off this same selection so "what you see is what
-  you add." Follow its "server resolves display strings, island stays presentational"
-  discipline — but the add button legitimately needs `useCart()`, so it is a small
-  logic-bearing island.
-- **Footer free-shipping line** (`footer.freeShipping` key + `getStoreSettingsStatic`) —
-  proves the threshold is already surfaced from store settings with a `{threshold}`
-  template; the cart's progress copy is the same value in a richer widget.
+- **Q&A submission** (`producto/[slug]/actions.ts`, `qa-form.tsx`,
+  `submit-guard.ts`, `qa-form-state.ts`) — the closest sibling: a public form →
+  pure validation → server write → friendly status union → `useActionState` +
+  `pending` + preserved values + field errors + `updateTag`. Key patterns to
+  follow: status enum mapping, `clientIp()` helper (reuse if rate-limiting
+  checkout), "never echo `error.message`", the sibling form-state file.
+- **Cart page** (`carrito/page.tsx`, `cart-page-client.tsx`, `order-summary.tsx`)
+  — settings fetch + prop-drill, `computeShipping`/`totalCents` usage, hydration
+  skeleton, `formatMXN` rendering, i18n `cart` namespace. Checkout mirrors this
+  layout and math.
+- **Idempotent seed** (`scripts/seed.ts`) — upsert on natural keys; add the
+  zero-stock variant + discount codes here following `seedVariants`/the store-
+  settings singleton pattern.
 
 ## Dependency Analysis
 
 ### Existing Dependencies to Leverage
 
-- `next-intl` (^4.13.2) — `useTranslations` (client) / `getTranslations` (server).
-- `@hugeicons/react` (^1.1.9) + `@hugeicons/core-free-icons` (^4.2.2) — cart icon
-  (`ShoppingCart01Icon`); never mix icon sets.
-- shadcn `Button`, `Input`, `Badge` (`src/components/ui/`) — stepper + badge + CTAs.
-- React 19 (built-in `createContext`/`useReducer`/`useSyncExternalStore` if preferred).
-- `src/lib/money.ts` `formatMXN`; `src/lib/interpolate.ts` `interpolate`; `cn()` utility.
-- `@/i18n/navigation` `Link` — locale-aware routing for `/carrito`.
-- `@supabase/*` — NOT needed by the cart (no server read beyond store-settings, which is
-  already wrapped). The browser client (`client.ts`) is available if T7 later needs live
-  re-validation, but T6 does not touch it.
+- `@supabase/supabase-js` (admin + public clients) — order writes via
+  `createAdminClient()`, `.rpc(...)` for the atomic function.
+- `next-intl` — `useTranslations`/`getTranslations` + `@/i18n/navigation` for the
+  new `checkout` namespace and locale-aware redirect.
+- shadcn/ui + Tailwind + `cn()` — form inputs/buttons; `@hugeicons/react`
+  (+ core-free-icons) for icons (never mix icon sets).
+- Existing `money.ts`, `cart/shipping.ts`, `store-settings.ts`, `config.ts`.
 
 ### New Dependencies Needed
 
-**None.** State via React context; persistence via localStorage; progress bar via
-Tailwind (`transform: scaleX`, compositor-friendly). No `Sheet`/`Dialog` — mini-cart is
-out of scope. Introducing a state library (Zustand/Jotai) is unwarranted for one cart
-and would break the "no new deps without cause" grain of the codebase.
+- **None.** No zod/react-hook-form/valibot in the project (confirmed via
+  `package.json` grep) and the Q&A path established hand-rolled pure validation as
+  the convention. Mexican CP is a trivial `/^\d{5}$/`; a full CP→state authority
+  table is Phase-3 carrier work and out of scope (see Key Decisions).
 
 ### Internal Dependencies
 
-- `CartProvider` must sit inside `NextIntlClientProvider` in `[locale]/layout.tsx` so
-  child islands can call both `useCart` and `useTranslations`. Implication: one provider
-  at the shell level; every route (including PDP and `/carrito`) is a descendant.
-- `AddToCartButton` depends on `CartProvider` being mounted — it is, via the shell.
-- The cart page depends on `getStoreSettingsStatic()`; that read already degrades to
-  `null`, so the dependency is safe (no crash if the row/DB is missing).
-- `cart-line.ts` / `shipping.ts` are pure and depend only on `config` constants — unit-
-  testable in isolation with no DOM or network.
+- Checkout depends on T6 cart (`useCart`, `CartLine`, `shipping.ts`) — complete.
+- Checkout depends on `store_settings` being present — degrade to
+  "shipping-unavailable" when absent (edge 5).
+- T8 (Mercado Pago) depends on the order landing in `pending_payment` — do NOT
+  advance status or capture payment here.
+- T12 (admin orders) will read what T7 writes — the `order_status_history` seed
+  row + immutable snapshot make that clean.
 
 ## External Research
 
 ### API Documentation
 
-- **None required.** T6 introduces no external API. Mercado Pago is T8; the only backend
-  touchpoint is the already-built Supabase `store_settings` read.
+- **None required.** No third-party API in T7 (Mercado Pago is T8). All work is
+  local Postgres + Next server actions.
 
 ### Library Documentation
 
-- **localStorage / `storage` event (MDN)** — the `storage` event fires on *other* tabs of
-  the same origin, not the tab that wrote it; use it for cross-tab sync (edge 5). Wrapping
-  every access in try/catch is mandatory (private-mode Safari throws on `setItem`; quota
-  can throw `QuotaExceededError`) — already the `recently-viewed` discipline.
-- **next-intl (v4)** — client components must be under `NextIntlClientProvider` (already
-  in the shell) to call `useTranslations`; server pages use `getTranslations({ locale, ns })`.
-  Locale-aware navigation uses `@/i18n/navigation` `Link`, which auto-prefixes `/en`.
-- **React 19** — functional state updates (`setLines(prev => …)`) are required to coalesce
-  rapid add/`+` clicks correctly (edge 9). `useSyncExternalStore` is the idiomatic way to
-  subscribe to an external store (localStorage) with SSR-safe `getServerSnapshot` returning
-  an empty cart — an alternative to the mounted-flag pattern; either is acceptable, but the
-  mounted-flag mirrors the existing `recently-viewed` island most closely.
+- **Supabase RPC / transactions.** Multi-statement atomicity in Supabase is
+  achieved with a Postgres function (all statements in one function body run in a
+  single implicit transaction; any `raise exception` rolls back the whole call).
+  This is the correct primitive for AC-9 — the JS client cannot span a
+  transaction across multiple `.from().insert()` calls, so the reserve-and-create
+  MUST be one `create or replace function ... language plpgsql` invoked via
+  `admin.rpc(...)`. Follow the existing migrations' `SECURITY`/`set search_path =
+  ''` + schema-qualified table refs style.
+- **Guarded atomic decrement pattern.** `UPDATE product_variants SET stock =
+  stock - $qty WHERE id = $id AND stock >= $qty RETURNING id;` — if zero rows
+  return, the row lacked stock → `raise exception` → rollback. This is the
+  race-safe primitive for the last-unit case (AC-9, edge 2); the row lock Postgres
+  takes on the matched row serializes concurrent decrements.
 
 ## Risk Assessment
 
 ### Technical Risks
 
-| Risk                                                              | Likelihood | Impact | Mitigation                                                                                     |
-| ----------------------------------------------------------------- | ---------- | ------ | ---------------------------------------------------------------------------------------------- |
-| Hydration mismatch from reading localStorage during SSR           | Med        | High   | Provider/badge render `null`/empty until a mount effect sets `hydrated`; mirror recently-viewed |
-| Scope creep into checkout (order creation, stock reservation)     | Med        | High   | Ticket "Out of Scope" is explicit; CTA only *links* to `CHECKOUT_PATH`; no table writes         |
-| Building a mini-cart drawer (it feels natural)                    | Med        | Med    | PRODUCT_SPEC lists mini-cart as SKIP; confirmation is header badge + inline button only         |
-| Hardcoding MX$500 / MX$10,000 instead of reading store settings   | Low        | High   | AC-8 forbids it; read `getStoreSettingsStatic()`; config holds only *seed defaults*             |
-| Floating-point money / `$NaN` on tampered data                    | Low        | High   | Integer-cents math; `formatMXN` throws on non-integer; `sanitizeQuantity` + line-drop guards    |
-| Cross-tab desync / lost updates on rapid clicks                   | Med        | Low    | `storage` listener re-sync; functional state updates; last-write-wins is acceptable for a cart  |
-| Stale snapshot price treated as authoritative at checkout         | Med        | Med    | Documented as a T7 concern; T7 re-validates against live prices/stock before order creation     |
-| i18n key drift (ES/EN out of sync)                                | Low        | Med    | Add both dictionaries in one edit; `messages.test.ts` + `keys-used.test.ts` fail on drift       |
-| URL/search-filter coupling regressing T5                          | Low        | Med    | AC-17: cart state never touches query params; e2e asserts filtered URL nav leaves cart intact   |
+| Risk | Likelihood | Impact | Mitigation |
+| --- | --- | --- | --- |
+| Non-atomic writes across multiple `.insert()` calls → partial order / oversell | High | High | Single Postgres function (`0008_checkout.sql`); guarded decrement + inserts in one transaction; `raise exception` rolls back |
+| Totals-assembly bug fails a DB CHECK, opaque error to user | Med | High | Pure `order.ts` with unit tests for the identity math; action maps the CHECK error to a friendly enum; the CHECK itself is the backstop |
+| Client tampers cart price/qty/id | Med | High | Server ignores snapshot price, recomputes from live DB; qty clamped; id validated as UUID; edge 4 |
+| Double-submit creates two orders / double-decrements | Med | High | `pending`-disabled button + a server idempotency key (client-generated) with a unique guard; AC-14 |
+| `LOCAL Docker Supabase` only; remote is empty/unlinked | High | Med | All dev/test/e2e run against local (per memory + T6 QA notes). Migration `0008` applies locally; do NOT attempt remote push. Document in dev-done. |
+| `store_settings` missing → silent `shipping_cents = 0` sale | Low | High | Block submit on `unavailable` (edge 5); settings required to place an order |
+| Discount race (concurrent redemptions exceed `max_redemptions`) | Low | Med | Increment `times_redeemed` inside the same transaction with a bound check; over-limit → rollback. (Schema deliberately does NOT constrain this — the app owns it.) |
+| `getProduct` is slug-only; no by-id read | High | Low | Add `checkout-read.ts` by-id read (admin client / `products_public`); cart snapshot already carries `productId`+`slug` |
 
 ### Performance Considerations
 
-- **No network cost.** Cart is localStorage + in-memory; the only DB read
-  (`getStoreSettingsStatic`) is already `unstable_cache`d with ISR.
-- **Progress bar** must animate `transform: scaleX` / `opacity` (compositor), never
-  `width` (layout) — respect `prefers-reduced-motion` (CLAUDE.md baseline rules).
-- **Provider re-renders**: memoize the context value and derived totals so a quantity
-  change re-renders only the affected rows + summary, not every card on the page.
+- **Batch the live re-read.** Fetch all cart-line products/variants in one or two
+  `in (...)` queries, not N round-trips. Cart is small (≤ a handful of lines).
+- **The RPC is one round-trip** for the entire order — good. Keep the function
+  body tight; no per-row client calls.
+- **No caching on the write path.** The confirmation read is a direct admin read
+  by `order_number` (unique index exists) — fast, uncached (order data must be
+  fresh and is never public/anon-cacheable).
 
 ### Security Considerations
 
-- **All localStorage is attacker-controlled** — treat it as hostile: validate shape
-  (`isCartLine`), clamp quantity, drop lines with a missing/`NaN` `unitPriceCents`. This
-  is display-only data client-side; the money that matters is recomputed server-side at
-  T7 checkout from live product prices — the cart snapshot is never trusted for the order
-  total.
-- **No secrets, no XSS surface** — cart copy is i18n strings; product names/images come
-  from the already-sanitized catalog view models; render as text/`next/image`, never
-  `dangerouslySetInnerHTML`.
-- **No PII** — the cart stores product snapshots only; contact/shipping data is a T7
-  checkout concern, not stored in the cart.
+- **Admin (secret) client is server-only.** `admin.ts` has `import
+  "server-only"`; the action file must stay server-side. Never import it into a
+  `"use client"` module. AC-12.
+- **RLS is genuinely closed for commerce tables** (confirmed 0005 lines 252–258:
+  no grant + no policy for `customers`/`orders`/`order_items`/
+  `order_status_history`/`discount_codes`). The write path bypasses RLS via the
+  secret key — so the SERVER is the entire trust boundary; validate everything
+  server-side.
+- **Never echo raw PG errors** to the client (Q&A precedent) — map to enums, log
+  with context.
+- **Input hostility:** treat every cart line + form field as attacker-controlled
+  (edge 4). Recompute money from the DB; validate ids as UUIDs; clamp quantities;
+  bound free-text (delivery notes, names) to sane lengths mirroring the DB CHECKs.
+- **Consider a best-effort rate limit** on `placeOrder` (reuse `clientIp()` +
+  the `submit-guard` limiter pattern) to blunt order-spam; document as best-effort
+  (in-memory, per-instance) like Q&A.
 
 ## Implementation Recommendations
 
 ### Suggested Order of Implementation
 
-1. **`src/lib/config.ts` constants** — everything downstream references them; add first.
-2. **`src/lib/cart/cart-storage.ts` + `cart-line.ts` + `shipping.ts` (+ tests)** — pure,
-   DOM-free logic; TDD against the recently-viewed/money test templates. Depends only on
-   config.
-3. **`CartProvider` + `useCart`** — wire storage + state + `storage`-event sync; the
-   integration seam every UI piece needs.
-4. **Mount `<CartProvider>` in `[locale]/layout.tsx`** — enables all islands.
-5. **`CartCountBadge` in the header** — smallest UI surface; verifies the provider works
-   end-to-end (add elsewhere → badge updates).
-6. **`AddToCartButton` + wire into `ProductPurchasePanel` / PDP page** — first real add
-   path; depends on the provider and the panel's selection state.
-7. **`/carrito` page + `CartPageClient` + line row + stepper + progress** — the main
-   surface; depends on everything above + store-settings read.
-8. **i18n `cart` namespace in both locales + extend key tests.**
-9. **`e2e/cart.spec.ts` + unit test gaps** — verify AC-1…AC-18 end to end.
+1. **Config + i18n scaffolding** (`config.ts` constants, `checkout` namespace in
+   both message files) — everything else references these; no logic risk.
+2. **Pure libs first** (`address.ts`, `discount.ts`, `order.ts` + tests) — they
+   are I/O-free, fully testable, and encode the DB CHECK math. TDD them.
+3. **Migration `0008_checkout.sql`** (atomic reserve-and-create RPC + order-number
+   helper) — apply to LOCAL Supabase; verify with a manual `.rpc` call and the
+   last-unit race. This is the correctness core.
+4. **`checkout-read.ts`** (by-id live re-validation read) — depends on nothing
+   above except types.
+5. **Server action** (`actions.ts` + `checkout-form-state.ts`) — composes 2–4
+   into the status union.
+6. **UI** (`page.tsx`, `checkout-flow-client.tsx`, `checkout-summary.tsx`, all
+   states) — mirrors the cart page + Q&A form.
+7. **Confirmation page.**
+8. **Seed additions** (zero-stock variant + discount codes) — enables live e2e.
+9. **Tests last at the integration/e2e layer** (QA stage) — unit tests land with
+   steps 2–5.
 
 ### Key Decisions
 
-- **State container: React context + `useReducer`** (recommended) over a new state
-  library — one cart, three consumers, no new dep; matches the codebase's "built-ins
-  first" grain. `useSyncExternalStore` is a valid alternative for storage subscription but
-  the mounted-flag mirrors the shipped `recently-viewed` island most closely.
-- **Cart line stores a snapshot** (name, unit price, image, sku, variant label) —
-  recommended, mirroring `RecentlyViewedEntry`; the cart renders instantly with no
-  re-fetch, and T7 re-validates prices/stock at checkout. Storing only ids would force a
-  network read to render the cart, contradicting the client-only Phase-1 grain.
-- **Line identity = `productId + variantId`** — recommended; a product with no variant
-  uses a sentinel (e.g. `variantId = null` → key `productId`), so a no-variant product and
-  a specific variant never collide (AC-2).
-- **Copy delivery on the cart page: `useTranslations("cart")` inside the client body** —
-  recommended over threading ~20 strings as props, consistent with `mobile-nav`/
-  `filter-sheet`. The PDP `AddToCartButton` is small enough to receive its 3 labels as
-  props (matching the panel's presentational discipline) OR use `useTranslations` — either
-  is fine; prefer props to keep the panel's "no client i18n" invariant.
-- **Free-shipping comparison is `≥`** (edge 7).
+- **Reserve stock at ORDER CREATION (default), not at payment.** The spec says
+  "stock reservation during checkout to prevent overselling the last unit" and
+  BUILD_PLAN puts reservation in T7. Decrement now; T12 handles restore on
+  cancel. (If the team prefers reserve-on-payment, that pushes overselling risk
+  into T8 and contradicts the T6 forward note — NOT recommended; document if
+  chosen.)
+- **`effectiveStock` SUMS variant stock (verified in `stock.ts`) — it is a
+  DISPLAY helper, NOT a reservation helper.** Reservation MUST decrement the
+  SPECIFIC variant the line bought (or the product row for no-variant lines).
+  Do not reserve against the summed number.
+- **Mexican CP = `/^\d{5}$/` only; no CP→state cross-validation in Phase 1.** A
+  full authoritative CP↔state table (SEPOMEX) is carrier/Phase-3 territory and
+  out of scope. State is validated against the closed 32-state list. Flag this
+  boundary in dev-done so a later CP-verification upgrade is a known follow-up.
+- **Use the admin client for ALL commerce reads AND writes in the action.** The
+  live re-read can use `products_public` (anon-safe) OR the admin client; using
+  the admin client for both read and write in one place keeps the trust boundary
+  in one file. (Reading via `products_public` is also fine since `stock` is
+  visible there.)
+- **`order_number` format** — a documented config constant (e.g. prefix +
+  zero-padded sequence or date + short random). Generate inside the RPC (or via a
+  sequence) so uniqueness is DB-guaranteed, satisfying `NOT NULL UNIQUE`.
+- **Tax = 0 in Phase 1**, written to `tax_cents`/`tax_base_cents` so CFDI (Phase
+  3) needs no schema change. Documented constant.
+- **Server action, NOT a route handler** — the codebase has zero route handlers;
+  all mutations are `"use server"`. Do not introduce `app/api/**/route.ts`.
 
 ### Anti-Patterns to Avoid
 
-- **Don't** hardcode MX$500 / MX$10,000 anywhere — read `store_settings`; config holds
-  only seed defaults (AC-8).
-- **Don't** compute money in floats or `parseFloat` a peso string — stay in integer cents;
-  `formatMXN` is the only boundary (AC-12).
-- **Don't** access `window`/`localStorage` at module top level or during render — guard
-  with `hasStorage()` and a mount effect (edge 8).
-- **Don't** build a mini-cart drawer, a discount-code field, or any checkout logic — all
-  out of scope (SKIP / T7).
-- **Don't** put cart state in the URL / search params (AC-17, T5 carry-over) — keep it in
-  localStorage + context so filtered-catalog navigation never mutates the cart.
-- **Don't** write to `orders`/`order_items` — those are the immutable T7 checkout snapshot
-  (DB triggers block mutation anyway).
-- **Don't** trust stored quantities/prices — validate + clamp + drop malformed lines; the
-  server recomputes the authoritative total at checkout.
-- **Don't** animate the progress bar's `width` — animate `transform: scaleX`; respect
-  reduced-motion.
-- **Don't** let a `null` store-settings read produce `$NaN` — hide the progress bar and
-  show a neutral shipping label (edge 6).
+- Don't trust the cart snapshot's `unitPriceCents`/`quantity` for the order —
+  recompute from the live DB (edge 4). The snapshot is display-only.
+- Don't write `orders` and `order_items` with two separate `.insert()` calls —
+  a crash between them leaves a headless order. One transaction (the RPC).
+- Don't decrement stock in app code with read-then-write — that races (edge 2).
+  Use the guarded `WHERE stock >= qty` decrement inside the transaction.
+- Don't silently sell with `shipping_cents = 0` when settings are unavailable —
+  block (edge 5).
+- Don't echo `error.message`/PG codes to the user — map to friendly enums, log
+  server-side (Q&A precedent).
+- Don't let a bad discount code block checkout — it degrades to full price
+  (AC-7).
+- Don't format money anywhere but `formatMXN`; don't do float arithmetic.
+- Don't attempt a REMOTE Supabase push/migrate — the app runs on LOCAL Docker
+  Supabase; the remote project is empty and unlinked (project memory).
+- Don't hardcode the checkout/confirmation paths, states, CP regex, or order
+  format — single-source them in `config.ts` (BUILD_PLAN rule 4).
