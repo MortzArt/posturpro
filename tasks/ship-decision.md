@@ -1,104 +1,159 @@
-# Ship Decision: T5 — Search, Filters & Sorting
+# Ship Decision: T7 — Checkout & Order Creation
 
 ## Verdict: SHIP
+
+> **⚠️ HUMAN-REVIEW GATE (BUILD_PLAN rule 3) — DOES NOT AUTO-MERGE.**
+> Checkout is ALWAYS flagged for human review before merge, regardless of this
+> SHIP verdict. The pipeline MUST NOT auto-merge and MUST NOT check `[x]` T7 in
+> `BUILD_PLAN.md`. The green verdict below means the code cleared every automated
+> gate; the merge decision is the user's. See "Human-Review Gate" section for the
+> exact list the reviewer should look at first.
 
 ## Confidence: HIGH
 
 ## Quality Score: 9/10
 
-Stage 12 (ultraverify). Every gate re-run fresh against my own prod build on `:3000`
-(seeded local Supabase `:54321`); every acceptance criterion verified against the live
-app (HTTP + direct RPC + a real `javaScriptEnabled:false` browser), not against reported
-numbers. Trust-nothing pass. User's `:3206` dev server and Docker Supabase left untouched;
-my server stopped, temp build dir removed, `next build`'s tsconfig reformat reverted, DB
-verified clean (30 products, 0 synthetic leftovers).
+Deducted 1 point only for accepted, LOW/documented items (best-effort per-instance
+rate limiter pending a distributed one at T8+; two accepted UX deviations; a
+tamper-only duplicate-line LOW with no financial impact) plus one pipeline-hygiene
+discrepancy I found and fixed (see Discrepancies). No CRITICAL or HIGH open.
 
-## Test Results
-
+## Test Results (all run by me in this Verify session)
 | Suite | Total | Passed | Failed | Skipped |
 |-------|-------|--------|--------|---------|
-| Unit / Component (Vitest) | 570 | 570 | 0 | 0 |
-| Integration (Vitest, read-only, live DB) | 110 | 110 | 0 | 0 |
-| E2E (Playwright, chromium + mobile, `--workers=2`) | 268 | 263 | 0 | 5 |
-| **Total** | **948** | **943** | **0** | **5** |
+| Unit / Component (Vitest) | 924 | 924 | 0 | 0 |
+| Integration (Vitest, local Docker Supabase) | 137 | 137 | 0 | 0 |
+| Checkout E2E (Playwright, PROD build) | 24 | 24 | 0 | 0 |
+| **Total** | **1085** | **1085** | **0** | **0** |
 
-Gates re-run by me: `npm run lint` clean (exit 0) · `npx tsc --noEmit` clean (exit 0) ·
-`next build` succeeds. Counts match the contract exactly (570 / 110 / 263 + 5 intentional
-skips). The 5 e2e skips are config-gated (documented intentional). No failures, no flakes at
-`--workers=2`.
+- Static gates: `eslint` clean, `tsc --noEmit` clean, `next build` clean for BOTH
+  locales — `/[locale]/checkout` prerenders static (es-MX + en), the confirmation
+  route `/[locale]/checkout/confirmacion/[token]` is dynamic (ƒ). Exactly as spec.
+- E2E ran against a **production build** in a separate dist dir
+  (`NEXT_QA_DIST_DIR=.next-t7-verify`, `next start`, `CHECKOUT_RATE_LIMIT_DISABLED=1`)
+  on freshly-reseeded local Docker Supabase: 12×chromium + 12×mobile, 24/24 green.
+- The documented pre-existing T3/T4 PDP "resolved to 2 elements" flake is NOT in the
+  checkout spec; I ran the checkout spec in isolation and it was deterministically
+  green, so it does not gate T7.
 
-**Build render-mode regression check (both prior tasks green):**
-- `ƒ /[locale]/sillas` — Dynamic (correct for filtered/searched requests).
-- `● /[locale]/{categorias,estilos,marcas}` — SSG/ISR (5m revalidate). **No T3 regression.**
-- `● /[locale]/producto/[slug]` — SSG, 60 paths (30 active products × 2 locales). **No T4 regression.**
+## Acceptance Criteria Final Check (16/16 PASS)
+| # | Criterion | Code | Verified By | Verdict |
+|---|-----------|------|-------------|---------|
+| AC-1 | `/checkout` + `/en/checkout` render flow w/ shipping math | `checkout/page.tsx`, `checkout-flow-client.tsx`, `checkout-summary.tsx` (reuses `cart/shipping.ts`) | e2e "renders fields, summary, correct flat-rate totals" (chromium+mobile) | ✅ |
+| AC-2 | Empty cart → empty-state + catalog CTA, no submit | `checkout-flow-client.tsx` | e2e "empty cart guard" | ✅ |
+| AC-3 | Server-side `getStoreSettingsStatic()`, 3-state shipping | `page.tsx`, `checkout-summary.tsx` | e2e totals + build (server-rendered settings) | ✅ |
+| AC-4 | CP `/^\d{5}$/` + 32-state closed list, field errors | `lib/checkout/address.ts`, `config.ts` MEXICAN_STATES/CP | unit `address.test.ts` + e2e "rejects bad CP / missing state" | ✅ |
+| AC-5 | Email + required trimmed fields, pure & server re-run | `address.ts` (pure), `actions.ts` re-validates | unit + e2e "empty form field-scoped errors" | ✅ |
+| AC-6 | Discount validated server-side; %/fixed; clamp ≤ subtotal | `lib/checkout/discount.ts`, `checkout-read.ts` fetchDiscountCode | unit `discount.test.ts` + integration + e2e "valid % code applies" + LIVE AHORRA10 redeemed 0→2 | ✅ |
+| AC-7 | Bad code never blocks; friendly localized note | `discount.ts`, `discount-code-field.tsx` | e2e "invalid code inline note, never blocks" | ✅ |
+| AC-8 | Server re-reads live product/variant by id; price+stock | `checkout-read.ts` revalidateLines, `actions.ts` | integration `checkout-read.integration.test.ts` + e2e OOS-tamper | ✅ |
+| AC-9 | Atomic guarded decrement + inserts in one txn; no oversell | `0008_checkout.sql` create_order (guarded UPDATE ... WHERE stock>=qty) | integration `checkout-rpc` last-unit race + LIVE stock 702→694 (exactly −8) | ✅ |
+| AC-10 | `sales_count += qty` same txn | `0008_checkout.sql` | integration + LIVE sales_count bumped | ✅ |
+| AC-11 | customers+orders+order_items+status_history, full snapshot, all DB CHECKs | `0008_checkout.sql`, `actions.ts` | LIVE: 8 orders all pass total-identity + discount≤subtotal + MXN + pending/pending; 8 items, 8 customers, 8 history | ✅ |
+| AC-12 | All writes via `createAdminClient` (RLS-bypassing, server-only) | `lib/supabase/admin.ts` (`import "server-only"`) | code read + RPC granted service_role only | ✅ |
+| AC-13 | Confirmation page: order#, summary, address, "payment next", cart cleared | `confirmacion/[token]/page.tsx` | e2e "lands on token-addressed confirmation with cleared cart" | ✅ |
+| AC-14 | Double-submit → one order, no double-decrement | client UUID idempotency key + partial-unique index; RPC idempotent | integration idempotency (reused:true) + e2e | ✅ |
+| AC-15 | Every tunable a named config constant; TAX_RATE=0 documented | `lib/config.ts` | code read (ORDER_NUMBER_PREFIX, MEXICAN_CP_PATTERN, MEXICAN_STATES, confirmationPath, TAX_RATE) | ✅ |
+| AC-16 | `checkout` namespace both locales, no hardcoded copy, formatMXN | `messages/es-MX.json` + `en.json` | e2e i18n EN places an order; build | ✅ |
 
-## Acceptance Criteria Final Check
-
-| # | Criterion | Code | Test / Live Evidence | Verdict |
-|---|-----------|------|----------------------|---------|
-| AC-1 | Migration: extensions + RPC (INVOKER, revoke public/grant anon+auth) + 7 indexes | `0007_search.sql` | Live: `prosecdef=false`, `provolatile=s`, `proacl={postgres,anon,authenticated}` (PUBLIC revoked); all 7 indexes + `unaccent`/`pg_trgm` present | ✅ |
-| AC-2 | RPC reads only public surfaces; base denied; no cost | `search.ts`, RPC | Live as anon: RPC returns 30 rows; `SELECT FROM products` → permission denied; no cost column in return; 0 `cost_price` in filtered DOM | ✅ |
-| AC-3 | Keyword name/brand/desc, case+accent-insensitive; empty→filter-only | RPC `unaccent(lower())` | Live: ergonomica=ergonómica=ERGONOMICA=6; renders "Ergonómica" card es-MX + /en | ✅ |
-| AC-4 | Facets individual + combined; AND-across / OR-within | RPC `WHERE` | Live: color=#111111 → 26/30; integration facet block (11 tests) | ✅ |
-| AC-5 | Default in-stock only; explicit OOS opt-in | RPC `p_in_stock_only default true` | Integration synthetic all-OOS product hidden by default, shown with `p_in_stock_only=false`; native opt-in checkbox | ✅ |
-| AC-6 | `effective_stock` == `effectiveStock()`; 3 badges | RPC `COALESCE(SUM,stock)` | Live parity: **0 mismatches** across all 30 products | ✅ |
-| AC-7 | Six deterministic sorts; default best-selling | RPC CASE + tiebreak | Live: all 6 sorts identical across repeated calls; unknown sort → default (no error) | ✅ |
-| AC-8 | Pagination on filtered set; COUNT OVER; clamp; filter→page1 | `readSearchPage` | Live: total_count window=30 consistent; page-2=12 rows; offset-past-end=0 (no 416); page=99999 → 200 | ✅ |
-| AC-9 | Shareable crawlable params; single-sourced names | `search-params.ts`, `SEARCH_PARAM_KEYS` | Round-trip unit tests; e2e cold-load; live shareable URL | ✅ |
-| AC-10 | Enhances in place; dynamic w/ params; unfiltered cached | `sillas/page.tsx` | Build: `ƒ /sillas`; unfiltered from cached reads; SSR-first inline await | ✅ |
-| AC-11 | canonical→clean; filtered=noindex,follow; unfiltered indexable | `generateMetadata` | Live: `/sillas` canonical `/sillas` no robots; `?q=malla` → `noindex, follow` + canonical `/sillas` | ✅ |
-| AC-12 | Header search → /sillas?q; keyboard; locale-aware; JS-off native | `search-box.tsx`, `site-header.tsx` | Live: `role="search"` + `name="q"` on PDP; `action="/en/sillas"` on /en | ✅ |
-| AC-13 | Filter panel (sidebar ≥lg / Sheet mobile); options from DB | `filter-panel.tsx` | No-JS browser at lg: sidebar (`data-context="sidebar"`) visible; mobile Sheet + `<noscript>` | ✅ |
-| AC-14 | Removable chips + Clear-all; filtered count | `active-filters.tsx` | `active-filter-chips` unit + e2e remove/clear-all | ✅ |
-| AC-15 | ≥1 match → grid + pagination preserving filters | `page-helpers.ts` | `makeHrefForPage` unit + e2e pagination-preserves-filters | ✅ |
-| AC-16 | 0 match → no-results + popular strip (best-selling ≤8) | `no-results.tsx` | Live: popular strip returns 8 best-selling; e2e no-results block | ✅ |
-| AC-17 | New strings both dicts; keys-used/messages pass | `es-MX.json`/`en.json` | keys-used/messages unit tests green (in 570) | ✅ |
-| AC-18 | Motion per skills; RM; no transition:all | `globals.css`, `badge.tsx` | badge `transition-[color,box-shadow,border-color]`; e2e reduced-motion Sheet | ✅ |
-
-**All 18/18 ACs PASS. All 12 edge cases verified** (hostile params, NUL-byte, inverted price,
-variant-less+color, all-OOS, accent/case, empty popular, JS-off, long-chip-row all confirmed via
-integration/e2e/live probes).
+All 8 edge cases covered (price drift, last-unit race, cart mutated, tampered
+snapshot, settings-unavailable → block, discount>subtotal clamp, double-submit,
+DB-CHECK backstop) — verified across unit/integration/e2e per QA + Hacker reports
+and my live spot-checks.
 
 ## Report Summary
-
 | Report | Score | Key Finding |
 |--------|-------|-------------|
-| Code Review | 7.5/10 → RESOLVED | 2 CRITICAL + 7 MAJOR (JS-off gaps) all FIXED Stage 6; 5/7 minor fixed, 2 justified-skip |
-| QA | HIGH | 156 new tests; QA-BUG-1 (no-JS perpetual skeleton) FIXED Stage 7b — re-verified live |
-| UX | 9/10 | Frozen sheet counts + rapid-toggle clobber FIXED; malla search-scope gap deferred (T5-8) |
-| Security | SECURE-WITH-NOTES | 0 crit/high/med; injection/XSS/cache-DoS re-proven inert; 2 accepted LOW notes |
-| Architecture | 8.5/10 SOUND | RPC foundation sound; 2 dead-by-construction indexes + double-RPC backlogged (T5-2/3/4) |
-| Hacker | 2/10 chaos (target ≤3) | NUL-byte 500 + facet-burst clobber + 2×320px overflow all FIXED + regression-tested |
+| Code Review (Stage 5) | 8/10 APPROVE-WITH-FIXES | 0 critical, 6 major (all fixed), incl. M-6 IDOR closed via opaque token |
+| QA (Stage 7) | SHIP / HIGH | 153 new tests, 0 production bugs; e2e depletes seed stock (reseed noted) |
+| UX (Stage 8) | 9.5/10 | banner recovery action added; 2 accepted deviations |
+| Security (Stage 9) | SECURE | 0 crit, 1 HIGH fixed (rate limiter); 3 accepted risks (AR-1/2/3) |
+| Architecture (Stage 10) | A- (9/10) APPROVE | clean single trust choke point; T8 design inputs recorded |
+| Hacker (Stage 11) | 2/10 chaos (PASS) | 1 real bug fixed (discount LIKE-injection → `.eq`); 1 LOW tamper-only open |
 
-## Remaining Concerns
+## Independent Verification Highlights (I did not trust the reports)
+- **IDOR (M-6) live:** real `confirmation_token` URL → 200; sequential `PP-000007`
+  order number → **404**; malformed token → 404; unknown UUID → 404. `getOrderByToken`
+  gates on `UUID_PATTERN` before any DB hit.
+- **Discount LIKE-injection fix present:** `checkout-read.ts` uses
+  `.eq("code", code)` on the upper-cased arg — no `.ilike`.
+- **Atomicity live:** 8 e2e orders decremented variant stock exactly 702→694;
+  sales_count incremented; AHORRA10 `times_redeemed` 0→2.
+- **Financial integrity live:** all 8 orders satisfy `total = subtotal+shipping+tax−discount`,
+  `discount ≤ subtotal`, `currency='MXN'`, `pending_payment`/`pending`.
+- **RPC security:** `create_order` is `security definer`, `set search_path = ''`,
+  `revoke all ... from public` + `grant execute ... to service_role`.
+- **Secret hygiene:** admin client `import "server-only"`; no `NEXT_PUBLIC_` secret;
+  no hardcoded secret in the T7 diff; `CHECKOUT_RATE_LIMIT_DISABLED` is server-only
+  and wired ONLY in `playwright.config.ts`.
+- **Migration 0008** applied to LOCAL Docker only (remote never touched).
 
-All below are **explicitly accepted** (per the verify brief's "known accepted items") and do
-**not** count against SHIP:
+## Discrepancies Found vs Prior Reports
+1. **tsconfig.json carried dead build-artifact globs.** The committed `tsconfig.json`
+   `include` array still contained `.next-t7-qa/types/**/*.ts` and
+   `.next-t7-qa/dev/types/**/*.ts` — QA-stage build scaffolding for a directory that
+   no longer exists. Stage 8's note claimed "tsconfig build-artifact edit reverted
+   (kept clean)", but these two lines survived into the tree. Harmless (globs match
+   nothing; tsc/build/lint all pass with or without them) but not part of the T7
+   feature. **Fixed in this Verify commit** (removed both lines; re-ran tsc + lint,
+   both clean). No behavior change.
+   - Note for future runs: `next build` with `NEXT_QA_DIST_DIR` auto-injects the QA
+     dist-dir types glob into tsconfig — always `git checkout -- tsconfig.json` after
+     a QA/verify prod build so it doesn't leak into the diff.
+2. **Test-count drift across reports is expected** (stages added tests): 811 → 924
+   unit, 135 → 137 integration, 24 e2e stable. Latest authoritative baseline (which I
+   reproduced exactly) is **924 / 137 / 24**.
 
-- **SEC-L-1** material-array DoS: unreachable via app (`keepKnown` bounds the array); catalog-growth follow-up. LOW.
-- **SEC-L-2** transitive `postcss` build-tool advisory: not a runtime vector; awaits a Next minor. LOW.
-- **T5-2 / T5-3** two dead-by-construction indexes (pg_trgm on wrapped column; mixed-case `color_hex`): correct at seed scale, backlogged for catalog growth. Not a correctness bug.
-- **T5-4** double-RPC on page 2+: T3 count-first pattern; invisible at seed scale.
-- **T5-6** inline-await TTFB trade-off: deliberate, the only pattern that keeps results SSR-visible with no JS.
-- **T5-8** "malla" keyword doesn't match `material_*` (AC-3 scopes search to name/brand/description — spec-conformant; no-results safety net covers it). Follow-up ticket.
-- **m-1 / m-2** review minors (log-prefix consolidation; JS-vs-Postgres unaccent for non-Spanish glyphs): no live bug.
-- Edge 9/10 (RPC/facet fault-injection) not newly e2e-tested; the `fail()`→`error.tsx` contract is unchanged from T3/T4 and covered there. LOW.
+## Remaining Concerns (all LOW / accepted — none block ship)
+- **AR-3 rate limiter is best-effort, per-instance in-memory:** correct for the
+  pre-payment phase; a distributed limiter is a T8+ follow-up. DB atomicity is the
+  hard backstop. — LOW, accepted, revisit before horizontal scale / launch.
+- **Hacker Logic Bug #2 (duplicate line via tampered `lines` payload):** creates a
+  valid 2-identical-line order via localStorage tampering only; unreachable from the
+  real cart (dedupes by key); financial integrity holds. — LOW, deferred de-dupe merge.
+- **AR-1:** 2 moderate `npm audit` findings (postcss <8.5.10, transitive via Next,
+  dev/build-only, pre-existing). — LOW, accepted.
+- **TD-1:** `ORDER_NUMBER_PREFIX` ("PP") is duplicated in TS config and the RPC
+  literal with no agreement test (~5 min). — NIT, non-blocking.
+- **Two UX deviations** (mobile sticky bar instead of top accordion; Radix Select
+  state picker instead of native mobile wheel) — documented/allowed.
 
-No open critical/high/medium issue. No data-leak path. No scope creep (no T6/T7/admin/Phase-2 build-ahead observed).
+## What Was Built (changelog / release notes)
+Guest checkout for the Mexican store: a single-page `/checkout` flow (contact +
+Mexican shipping address + delivery notes + discount field + live order summary)
+that re-validates every cart line's price and stock against the live DB, applies
+and clamps discount codes, and creates the order through one atomic `create_order`
+Postgres function that guarded-decrements stock, writes the immutable order/items/
+customer/status-history snapshot, bumps sales_count, and is idempotent on retry.
+Orders land at `pending_payment` (payment is T8). Confirmation is served on an
+unguessable token URL. Bilingual (es-MX default / en), integer-cents money math,
+per-IP submit rate limiting.
 
-## What Was Built
+## Human-Review Gate — What the reviewer must look at FIRST
+Per BUILD_PLAN rule 3, a human must review before merge. Prioritize:
+1. **The SECURITY DEFINER migration** `supabase/migrations/0008_checkout.sql` —
+   the `create_order` function: pinned `search_path=''`, guarded decrement, txn
+   boundary/rollback, `service_role`-only grant, total-identity/discount CHECKs.
+2. **The server-action trust boundary** `src/app/[locale]/checkout/actions.ts` —
+   snapshot is NOT trusted; price/stock re-read live by id; discount validated
+   server-side; raw PG errors never echoed.
+3. **The rate limiter** `src/lib/checkout/rate-limit.ts` — per-IP sliding window,
+   best-effort caveat (AR-3), and the `CHECKOUT_RATE_LIMIT_DISABLED=1` escape hatch
+   (server-only; confirm it is UNSET in every real deploy).
+4. **The money math** `src/lib/checkout/order.ts` + `discount.ts` + reused
+   `cart/shipping.ts` — integer cents, clamp `discount ≤ subtotal`, `total ≥ 0`.
 
-A DB-side filtered/sorted catalog query subsystem: a new `search_products` Postgres RPC
-(`SECURITY INVOKER`, anon-safe, fully parameterized) that keyword-searches (accent-insensitive),
-filters by category/brand/style/price/color/material/availability, sorts six ways, and returns
-the page rows plus the filtered total in one round trip. The `/sillas` page enhances in place with
-a desktop filter sidebar / mobile filter Sheet, a locale-aware header search box, removable
-active-filter chips, a friendly no-results state with a popular-chairs strip, and crawlable
-filter-preserving pagination — all working server-side with JavaScript disabled and correctly
-`noindex, follow` on filtered URLs.
+### T8 design inputs recorded by Architecture (carry forward — NOT T7 changes)
+- **R-1:** order status transitions must go through a new `advance_order_status` RPC
+  that writes `order_status_history` (never ad-hoc `.update`).
+- **R-3:** payment idempotency is a SEPARATE spine — a unique `mp_payment_id` guard
+  is needed (T7's `orders.idempotency_key` only covers creation retry).
+- **R-4:** index `mp_payment_id` / `mp_external_reference` in T8's migration.
 
 ## Summary
-
-T5 clears every ship gate: 943/943 tests pass (0 failures), all 18 ACs and 12 edge cases verified
-against the live app, no security/architecture blockers, and the two prior-task render modes (T3
-SSG index pages, T4 60-path SSG PDPs) show no regression. Ship it.
+T7 checkout cleared every automated gate — 1085/1085 tests green (924 unit, 137
+integration, 24 checkout e2e on a production build), all 16 ACs and 8 edge cases
+verified in code and live, no open CRITICAL/HIGH, financial integrity and IDOR and
+atomic stock reservation confirmed by direct DB inspection. **SHIP — but do NOT
+auto-merge; the checkout human-review gate is mandatory and T7 stays unchecked in
+BUILD_PLAN until the user approves.**
