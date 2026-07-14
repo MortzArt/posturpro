@@ -284,8 +284,12 @@ Actions (executing now):
   aliases, tables by domain, RPC Functions+Args/Results, Database assembly), with
   `database.types.ts` as a re-export barrel so no import changes. RPC Args/Results
   MUST stay `type` aliases (T8 gotcha). Each new file ≤400 lines.
-- [ ] **A2 — Split `config.ts` (689) into domain config modules** (catalog / cart /
+- [x] **A2 — Split `config.ts` (689) into domain config modules** (catalog / cart /
   checkout / email / product-detail / shared), `config.ts` stays as barrel.
+  Done 2026-07-14: content moved verbatim into `src/lib/config/{shared,catalog,
+  product-detail,cart,checkout,email}.ts`; `config.ts` is now a pure re-export
+  barrel. All 71 exports preserved (diff-verified). tsc 0, eslint clean,
+  1281/1281 tests green, `next build` OK. Behavior-preserving, no importer changed.
 - [ ] **A3 — Split `queries.ts` (710) + adopt `cachedRead` (closes T3 split item +
   T5-7).** Extract internal stitching/orchestration per audit seams; migrate the
   hand-written `unstable_cache` sites in queries.ts/search.ts to `cachedRead`
