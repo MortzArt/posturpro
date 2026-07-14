@@ -30,7 +30,7 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 - [ ] **T8 — Mercado Pago integration (sandbox)** (tier: full-cycle)
   Card, OXXO, SPEI, MP wallet via sandbox credentials from env vars. Pending-payment state for OXXO/SPEI with instructions; webhook endpoint with signature verification and idempotent handling to confirm payments and advance orders; card-decline retry flow; refund execution API used by admin (T12). CRITICAL: payment code requires human review before merge — flag for the user. `blocked by: T7`
 
-- [ ] **T9 — Transactional emails** (tier: standard)
+- [x] **T9 — Transactional emails** (tier: standard)
   Neutral-branded templates: order confirmation, payment received, OXXO/SPEI instructions, shipped with tracking, cancelled, refund issued, contact-form relay, new-order alert to owner. Email provider wired via env vars. `blocked by: T8`
 
 - [ ] **T10 — Admin foundation** (tier: standard)
