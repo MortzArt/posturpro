@@ -21,7 +21,7 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 - [x] **T5 — Search, filters & sorting** (tier: standard)
   Keyword search; filters: category, brand, style, price range, color, material, availability (default in-stock); sorting: price asc/desc, newest, best-selling, name; no-results page with popular chairs. `blocked by: T3`
 
-- [ ] **T6 — Cart** (tier: standard)
+- [x] **T6 — Cart** (tier: standard)
   Persistent cart for guests (survives refresh/return), cart page with quantity edit/remove/line totals, free-shipping progress toward threshold. `blocked by: T4`
 
 - [ ] **T7 — Checkout & order creation** (tier: full-cycle)
