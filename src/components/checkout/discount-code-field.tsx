@@ -124,7 +124,9 @@ function AppliedPill({
         <span className="truncate font-medium">{interpolate(labels.appliedLabel, { code })}</span>
       </span>
       <span className="flex shrink-0 items-center gap-2">
-        <span className="tabular-nums">−{formatMXN(discountCents)}</span>
+        <span className="tabular-nums" data-testid="checkout-discount-savings">
+          {interpolate(labels.savings, { amount: formatMXN(discountCents) })}
+        </span>
         <button
           type="button"
           onClick={onRemove}

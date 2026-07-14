@@ -51,7 +51,7 @@ vi.mock("@/app/[locale]/checkout/actions", () => ({
   placeOrder: vi.fn(async () => ({ status: "idle", submissionId: 1 })),
 }));
 
-import { CheckoutFlowClient } from "./checkout-flow-client";
+import { CheckoutFlowClient, GlobalBanner } from "./checkout-flow-client";
 import { CartProvider } from "@/components/cart/cart-provider";
 
 const PRODUCT = "11111111-1111-1111-1111-111111111111";
@@ -152,6 +152,57 @@ describe("CheckoutFlowClient — populated cart (AC-1, AC-3)", () => {
     renderFlow(SETTINGS);
     await waitFor(() => expect(screen.getByTestId("checkout-live-region")).toBeInTheDocument());
     expect(screen.getByTestId("checkout-live-region")).toHaveAttribute("aria-live", "polite");
+  });
+});
+
+describe("GlobalBanner — recovery action (UX-Requirements: retry / review your cart)", () => {
+  it("renders a retry submit button for a transient error", () => {
+    render(
+      <form>
+        <GlobalBanner
+          message="No pudimos realizar tu pedido."
+          recovery={{ kind: "retry", label: "Reintentar" }}
+          pending={false}
+          testId="checkout-banner"
+        />
+      </form>,
+    );
+    const action = screen.getByTestId("checkout-banner-action");
+    expect(action).toHaveTextContent("Reintentar");
+    // A transient failure retries by resubmitting the same form.
+    expect(action).toHaveAttribute("type", "submit");
+    expect(action).not.toBeDisabled();
+    expect(screen.getByTestId("checkout-banner")).toHaveAttribute("role", "alert");
+  });
+
+  it("disables the retry action while a submit is pending", () => {
+    render(
+      <form>
+        <GlobalBanner
+          message="No pudimos realizar tu pedido."
+          recovery={{ kind: "retry", label: "Reintentar" }}
+          pending
+          testId="checkout-banner"
+        />
+      </form>,
+    );
+    expect(screen.getByTestId("checkout-banner-action")).toBeDisabled();
+  });
+
+  it("renders a 'back to cart' link (not a submit) when the user must change the order", () => {
+    render(
+      <GlobalBanner
+        message="Un artículo se agotó."
+        recovery={{ kind: "review", label: "Volver al carrito", href: "/carrito" }}
+        pending={false}
+        testId="checkout-banner"
+      />,
+    );
+    const action = screen.getByTestId("checkout-banner-action");
+    expect(action).toHaveTextContent("Volver al carrito");
+    // Resubmitting the same order would just fail again → send them to the cart.
+    expect(action).toHaveAttribute("href", "/carrito");
+    expect(action.tagName).toBe("A");
   });
 });
 

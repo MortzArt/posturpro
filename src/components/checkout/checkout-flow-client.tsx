@@ -2,9 +2,10 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Alert02Icon, ArrowLeft01Icon } from "@hugeicons/core-free-icons";
+import { Alert02Icon, ArrowLeft01Icon, Refresh01Icon } from "@hugeicons/core-free-icons";
 import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
+import { buttonVariants } from "@/components/ui/button";
 import { useCart } from "@/components/cart/cart-provider";
 import { CheckoutEmptyState } from "@/components/checkout/checkout-empty-state";
 import { CheckoutFields } from "@/components/checkout/checkout-fields";
@@ -178,7 +179,14 @@ function CheckoutBody({ flatRateCents, freeThresholdCents, state, formAction, pe
           />
 
           <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:self-start">
-            {banner ? <GlobalBanner message={banner} testId="checkout-banner" /> : null}
+            {banner ? (
+              <GlobalBanner
+                message={banner.message}
+                recovery={banner.recovery}
+                pending={pending}
+                testId="checkout-banner"
+              />
+            ) : null}
             <CheckoutSummary
               lines={summaryLines}
               subtotalCents={subtotal}
@@ -269,29 +277,96 @@ function PageHeading({ title }: { title: string }) {
   );
 }
 
-function GlobalBanner({ message, testId }: { message: string; testId: string }) {
+/**
+ * A recovery action offered inside the global-error banner (UX-Requirements:
+ * "a recovery action — retry / review your cart"):
+ * - `retry`   → a `type="submit"` button that re-runs `placeOrder` (right for a
+ *   transient failure: a network/DB error or shipping temporarily unreadable).
+ * - `review`  → a Link back to the cart (right when the user must actually change
+ *   something first — a price changed or an item sold out; resubmitting the same
+ *   order would just fail again).
+ */
+export type BannerRecovery =
+  | { kind: "retry"; label: string }
+  | { kind: "review"; label: string; href: string };
+
+interface ResolvedBanner {
+  message: string;
+  recovery: BannerRecovery;
+}
+
+/** Exported for unit testing the recovery-action rendering (UX-Requirements). */
+export function GlobalBanner({
+  message,
+  recovery,
+  pending,
+  testId,
+}: {
+  message: string;
+  recovery: BannerRecovery;
+  pending: boolean;
+  testId: string;
+}) {
   return (
-    <p role="alert" data-testid={testId} className="enter-fade flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-      <HugeiconsIcon icon={Alert02Icon} size={16} strokeWidth={2} aria-hidden className="mt-0.5 shrink-0" />
-      {message}
-    </p>
+    <div
+      role="alert"
+      data-testid={testId}
+      className="enter-fade flex flex-col gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+    >
+      <p className="flex items-start gap-2">
+        <HugeiconsIcon icon={Alert02Icon} size={16} strokeWidth={2} aria-hidden className="mt-0.5 shrink-0" />
+        {message}
+      </p>
+      <div className="pl-6">
+        {recovery.kind === "retry" ? (
+          <button
+            type="submit"
+            disabled={pending}
+            data-testid="checkout-banner-action"
+            className="cart-step-press inline-flex h-8 items-center gap-1.5 rounded-md border border-destructive/30 bg-background px-3 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-60"
+          >
+            <HugeiconsIcon icon={Refresh01Icon} size={13} strokeWidth={2} aria-hidden />
+            {recovery.label}
+          </button>
+        ) : (
+          <Link
+            href={recovery.href}
+            data-testid="checkout-banner-action"
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "cart-step-press h-8 gap-1.5 border-destructive/30 px-3 text-xs font-medium text-destructive hover:bg-destructive/10",
+            )}
+          >
+            <HugeiconsIcon icon={ArrowLeft01Icon} size={13} strokeWidth={2} aria-hidden />
+            {recovery.label}
+          </Link>
+        )}
+      </div>
+    </div>
   );
 }
 
-/** Map a non-field status to its global banner copy (or null). */
+/** Map a non-field status to its global banner copy + recovery action (or null). */
 function resolveBanner(
   state: CheckoutFormState,
-  banner: { priceChanged: string; outOfStock: string; shippingUnavailable: string; error: string },
-): string | null {
+  banner: {
+    priceChanged: string;
+    outOfStock: string;
+    shippingUnavailable: string;
+    error: string;
+    retry: string;
+    review: string;
+  },
+): ResolvedBanner | null {
   switch (state.status) {
     case "price-changed":
-      return banner.priceChanged;
+      return { message: banner.priceChanged, recovery: { kind: "review", label: banner.review, href: CART_PATH } };
     case "out-of-stock":
-      return banner.outOfStock;
+      return { message: banner.outOfStock, recovery: { kind: "review", label: banner.review, href: CART_PATH } };
     case "shipping-unavailable":
-      return banner.shippingUnavailable;
+      return { message: banner.shippingUnavailable, recovery: { kind: "retry", label: banner.retry } };
     case "error":
-      return banner.error;
+      return { message: banner.error, recovery: { kind: "retry", label: banner.retry } };
     default:
       return null;
   }

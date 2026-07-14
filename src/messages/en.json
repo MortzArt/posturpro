@@ -386,7 +386,9 @@
       "priceChanged": "An item's price changed. Review your order and try again.",
       "outOfStock": "An item sold out. Review your order and try again.",
       "shippingUnavailable": "We can't calculate shipping right now. Please try again.",
-      "error": "We couldn't place your order. Please try again."
+      "error": "We couldn't place your order. Please try again.",
+      "retry": "Try again",
+      "review": "Back to cart"
     },
     "processing": "Processing order…",
     "confirmation": {

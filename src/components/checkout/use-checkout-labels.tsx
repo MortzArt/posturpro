@@ -17,7 +17,14 @@ import type { DiscountFieldLabels } from "@/components/checkout/discount-code-fi
 export interface CheckoutLabels {
   fields: CheckoutFieldLabels;
   summary: CheckoutSummaryLabels;
-  banner: { priceChanged: string; outOfStock: string; shippingUnavailable: string; error: string };
+  banner: {
+    priceChanged: string;
+    outOfStock: string;
+    shippingUnavailable: string;
+    error: string;
+    retry: string;
+    review: string;
+  };
   resolveValidation: (key: AddressFieldErrorKey | undefined) => string | null;
 }
 
@@ -92,6 +99,8 @@ export function useCheckoutLabels(): CheckoutLabels {
     outOfStock: t("banner.outOfStock"),
     shippingUnavailable: t("banner.shippingUnavailable"),
     error: t("banner.error"),
+    retry: t("banner.retry"),
+    review: t("banner.review"),
   };
 
   const resolveValidation = (key: AddressFieldErrorKey | undefined): string | null =>
