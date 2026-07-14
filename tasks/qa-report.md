@@ -1,182 +1,130 @@
-# QA Report: T6 — Cart
+# QA Report: T7 — Checkout & Order Creation
 
-Stage 5 (ultraqa) — the QUALITY GATE for the standard tier (no verify stage
-follows). Comprehensive unit + component + e2e coverage for the persistent guest
-cart: localStorage lib, pure line/shipping math, the React context provider
-(incl. the freshly-fixed cross-tab sync), and the full `/carrito` UI in both
-locales.
+Stage 7 (ultraqa). Full-cycle pipeline. Verdict basis: comprehensive unit,
+component, integration (live local Docker Supabase), and production-build e2e
+coverage of every AC and every edge case.
 
 ## Test Suite Summary
 
-| Type            | Before | Written | After | Passed | Failed | Skipped |
-| --------------- | ------ | ------- | ----- | ------ | ------ | ------- |
-| Unit            | 634    | +130    | 764   | 764    | 0      | 0       |
-| Integration     | 110    | +0      | 110   | 110    | 0      | 0       |
-| E2E (cart)      | 0      | +46     | 46    | 46     | 0      | 0       |
-| E2E (full suite)| 263    | +46     | 309** | 306+ (2 flaky→pass) | 0 (real) | 5*  |
+| Type | Written (new) | Passed | Failed | Skipped |
+|------|---------------|--------|--------|---------|
+| Unit + Component | 104 | 104 | 0 | 0 |
+| Integration (live DB) | 25 | 25 | 0 | 0 |
+| E2E (prod build, ×2 projects) | 24 (12×2) | 24 | 0 | 0 |
+| **New total** | **153** | **153** | **0** | **0** |
 
-\* The 5 skips are the pre-existing intentional project-scoped viewport guards
-in the T4/T5 suites (mobile-only / desktop-only); no cart test is skipped.
+Full-suite regression status:
+- **Unit/component**: 915 passed / 915 (was 811 baseline → +104). 46 files, 0 fail.
+- **Integration**: 135 passed / 135 (11 files, 0 fail). Runs against a reset+seeded local Docker Supabase.
+- **E2E checkout**: 24/24 green across `chromium` + `mobile (Pixel 7)`, run twice consecutively for determinism.
+- **E2E full suite**: the pre-existing, documented `getByTestId('breadcrumbs'/'product-gallery') resolved to 2 elements` strict-mode flake in the T3/T4 `product-detail.spec.ts` / `catalog.spec.ts` fires non-deterministically under parallel load with `retries:0` (a different subset fails each run; each fails in isolation on the mobile project only). This is a pre-existing PDP-spec selector bug (dual breadcrumb navs), NOT introduced by T7, and matches the binding T6 QA infra note verbatim. `checkout.spec.ts` has ZERO failures in every run.
 
-\*\* Defined total 314 = 309 runnable + 5 skipped. At the CI retry budget
-(`--retries=2`), 306 pass outright, 2 clear as flaky-on-retry, and 1 pre-existing
-T3 catalog test (`catalog.spec.ts:35`) exhausted retries under load but **passes
-in isolation (1.7 s)** — the well-known streaming double-render flake, NOT a T6
-regression (served HTML has exactly one `#main-content`; T6 touches no
-catalog/PDP render path). Cart e2e: 46/46 in every configuration.
+## Tests Written
 
-**Cart-owned tests: 176 written / 176 passed / 0 failed** (130 unit+component +
-46 e2e). No cart test failed or flaked in any run.
+### Unit / Component Tests (Vitest + RTL)
+- `src/lib/checkout/address.test.ts` (+37): all 32 Mexican states accepted (parametrized), state list is exactly 32 + no dupes, wrong-casing/whitespace handling, CP 5-digit boundary (5 ok / 6 rejected / leading-letter rejected / whitespace-trimmed), required-field max-length boundaries, delivery-notes/address-line2/RFC/phone caps at their exact limits, and "reports EVERY invalid field at once".
+- `src/lib/checkout/discount.test.ts` (+8): redemption-cap boundary (`< max` applies, `== max` exhausted), min-subtotal boundary (`>= min`), `ends_at` instant boundary, applied-outcome preserves the stored upper-cased code, fixed_amount == subtotal clamp (total→0), and `normalizeDiscountCode` case-insensitive normalization.
+- `src/lib/checkout/order.test.ts` (+5): flat-rate shipping charge, defensive `unavailable`→0 (no $NaN), full identity with shipping AND clamped discount together, no-variant line totals.
+- `src/components/checkout/checkout-helpers.test.ts` (NEW, 14): `buildSummaryLines` (variant/no-variant keying, order, empty), `buildLinesPayload` (ids+qty only, never the snapshot price), `buildSnapshotPrices`, and `applyLivePrices` (m-1 drift refresh up/down, untouched non-drift lines, undefined/empty map).
+- `src/components/checkout/discount-code-field.test.tsx` (NEW, 13): idle/applied-pill/savings, every invalid reason message + `aria-invalid`, muted degraded note, remove clears the code, disabled while pending, and "never renders a submit-blocking control" (AC-7).
+- `src/components/checkout/checkout-fields.test.tsx` (NEW, 13): every input labeled, **M-5** notes `<label>` association, **m-7** `inputMode=tel`, CP `inputMode=numeric`+maxlength 5, **M-1** distinct `checkout-<field>-error` ids + `aria-describedby` resolution + no describedby on clean fields, state Select trigger error wiring, and **M-4** first-invalid focus ref plumbing to inputs AND the state Select `<button>` trigger.
+- `src/components/checkout/checkout-flow-client.test.tsx` (NEW, 7): empty-state (AC-2/edge 3) with catalog CTA + no form, populated body renders form/summary/sticky bar, flat & free shipping totals via `computeShipping`/`totalCents` (no $NaN), **M-2** exactly one in-card `checkout-submit` + one `checkout-submit-sticky` with the `hidden lg:flex` / `lg:hidden` classes, polite live region, and shipping-unavailable → both submits disabled (edge 5).
+- `src/components/checkout/checkout-states.test.tsx` (NEW, 5): empty-state CTA href, aria-hidden skeleton with title (loading), sticky-bar total + submit label + pending state + `lg:hidden`.
 
-Gates: `tsc --noEmit` clean · `eslint` clean · unit 764/764 · integration
-110/110 · full e2e green at the CI retry budget (`--retries=2`, as CI runs).
-**The cart spec is 46/46 green on both projects in every run** (chromium 23/23,
-mobile 23/23), including at `--workers=1`. The T3/T4/T5 specs exhibit a
-pre-existing, non-deterministic "resolved to 2 elements" strict-mode flake under
-load (see E2E note) — a **shifting** set of ~13–18 PDP/catalog/search tests fails
-on any single `retries=0` pass and passes on rerun; it is NOT a T6 regression
-(the served HTML has exactly one `#main-content`; my changes touch no PDP/catalog
-render path). It clears with the CI retry budget.
+### Integration Tests (live local Docker Supabase, service-role client)
+- `tests/integration/checkout-rpc.integration.test.ts` (NEW, 11): the atomic `create_order` RPC end-to-end — happy path (customer+order+items+status-history written, stock −qty, `sales_count` +qty, `confirmation_token` uuid returned, `pending_payment`/`pending`, tax=0, currency MXN); idempotency (same key → same order, `reused:true`, no double decrement); zero-stock line raise + FULL rollback (0 orders, stock stays 0); multi-line rollback (one OOS line rolls back the other's decrement+sales bump); **last-unit race** (two concurrent calls, exactly one wins, stock lands at 0, never negative); discount redemption increment for an active code; `DISCOUNT_EXHAUSTED` + rollback for exhausted AND expired codes (m-2 RPC re-assert of `is_active`+window); DB total-identity CHECK backstop + rollback (edge 8); required non-empty idempotency key; and anon-role execute denied (AC-12).
+- `tests/integration/checkout-read.integration.test.ts` (NEW, 12): the server trust boundary — `revalidateLines` (validates an in-stock line to the LIVE price/label, flags zero-stock + over-qty as out-of-stock, marks tampered non-UUID / non-existent product / variant-not-belonging-to-product as `unavailable`, edge 4/AC-8); `fetchDiscountCode` (case-insensitive lookup, null for unknown/empty, never throws, AC-6/7); and **`getOrderByToken`** (reads the full order by token; returns `null` for a malformed token AND for the sequential `PP-…` order number AND for an unknown uuid — the M-6 IDOR fix verified against a real order).
+- `tests/integration/seed.integration.test.ts` (+2, and 1 fixed): asserts the 5 T7 discount codes are seeded, exactly one zero-stock variant exists, and **fixed the stale count** (variants 69→70, images 99→100) that the T7 seed addition invalidated.
 
-### How each suite was run
-- **Unit / component**: `npx vitest run` (jsdom). New component tests render with
-  `@testing-library/react`; `@testing-library/dom` (an unmet peer dep of the
-  already-declared `@testing-library/react`) was installed as a devDependency to
-  enable them — no runtime/app dependency added. The two pre-existing moderate
-  npm-audit findings (PostCSS-via-Next, dev-only) predate this and were not
-  introduced by the install.
-- **Integration**: unchanged — T6 has NO backend (no migration, no server write).
-  110/110 re-run green against the seeded local stack.
-- **E2E**: own **production** server on `:3000` (`next build` + `next start`,
-  `NEXT_QA_DIST_DIR=.next-t6-qa`, well-known LOCAL Supabase keys overriding
-  `.env.local`'s dead remote), chromium + Pixel-7 projects. The user's `:3206`
-  server and Docker Supabase were left untouched.
-  - **Runs performed:** cart-spec-only (chromium 23/23 + mobile 23/23 = 46/46,
-    warm dev server) → full suite prod `retries=0` (291 pass / 18 non-deterministic
-    flakes, 0 cart) → failing-specs `--workers=1` (a DIFFERENT 13 fail — shifting
-    set = flake signature) → full suite prod `--retries=2` (306 pass, 2 flaky→pass,
-    1 residual `catalog:35`) → `catalog:35` in isolation (PASS 1.7 s).
-  - **Operational note for T7 (not a T6 defect):** the Next **dev** server is not
-    stable enough for a 314-test 4-worker parallel run — under sustained load it
-    returns 500s / `RootNotFound` mid-run (a `.next` dev-cache race, amplified when
-    a stray Playwright-managed `npm run dev` cold-starts on a conflicting port and
-    writes the same `.next`). Use the production build + `next start` (as T5 did)
-    for the authoritative regression run; never let two servers share one `.next`.
-    The T3/T4/T5 PDP/catalog specs additionally carry a pre-existing "resolved to 2
-    elements" strict-mode flake under load that CI absorbs via `retries: 2`; it is
-    orthogonal to T6.
-
-## New Test Files (130 unit/component + 46 e2e)
-- `src/lib/cart/cart-line.test.ts` — 34 unit tests: identity/dedupe keys,
-  `sanitizeQuantity` / `isDroppableQuantity` clamp+drop (incl. fuzz), line/
-  subtotal/count math, `addLine`/`setLineQuantity`/`removeLine` immutability +
-  coalescing.
-- `src/lib/cart/cart-storage.test.ts` — 26 unit tests: hostile/corrupt payloads
-  (non-JSON, wrong shape, foreign key, tampered price > ceiling, junk quantity),
-  huge-array (5k) DoS resistance, round-trip, storage-throws degradation,
-  warn-once.
-- `src/lib/cart/shipping.test.ts` — 21 unit tests: free-vs-flat, `>=` boundary,
-  settings-null degradation, progress clamp `0..1`, never-`NaN`.
-- `src/lib/cart/cart-messages.test.ts` — 11 unit tests: ES/EN parity,
-  no-empty-string, token presence (`{amount}`/`{count}`/`{name}`), `badgeLabel`
-  ICU-plural correctness.
-- `src/components/cart/cart-provider.test.tsx` — 14 tests: hydration ordering
-  (no `[]` clobber), persistence, rapid-add coalescing, and the C-1 cross-tab
-  loop guard (mocked `storage` events, last-write-wins, no write echo).
-- `src/components/cart/order-summary.test.tsx` — 9 tests: 3 shipping states,
-  checkout CTA target, progress hide-when-null / achieved / partial, no-`$NaN`.
-- `src/components/cart/quantity-stepper.test.tsx` — 9 tests: bounds disable,
-  emitted next value, keyboard activation, accessible labels.
-- `src/components/cart/add-to-cart-button.test.tsx` — 6 tests: add/increment,
-  out-of-stock guard (disabled + no-op), aria-live announce, confirm→revert.
-- `e2e/cart.spec.ts` — 23 tests × 2 projects (46): add-from-PDP, dedupe,
-  persistence, qty/remove, empty state, summary/shipping/progress, checkout CTA,
-  two-tab cross-sync, ES/EN, corrupt-storage, a11y/keyboard, 320px, no-URL-coupling.
+### E2E Tests (Playwright, PRODUCTION build + `next start`, separate `.next-t7-qa`, local Docker Supabase)
+`e2e/checkout.spec.ts` (NEW, 12 tests × chromium + mobile):
+- empty-cart guard → empty-state + catalog CTA, no form (AC-2, edge 3).
+- non-empty render → fields + summary + flat-rate totals ($8,999 + $500 = $9,499), no $NaN (AC-1, AC-3).
+- empty-form submit → field-scoped error, stays on `/checkout` (AC-4, AC-5).
+- bad CP + missing state → both field errors (AC-4).
+- invalid discount code → proceeds to confirmation at full price (AC-7).
+- valid `AHORRA10` → 10% ($899.90) discount row on confirmation (AC-6).
+- tampered zero-stock line (real ids read via anon REST) → out-of-stock banner, no order (AC-8, AC-9, edge 2/4).
+- happy path → redirect to `/checkout/confirmacion/<uuid-token>` (NOT `PP-…`, M-6), order number displayed, total, shipping name, cart badge cleared, keep-shopping CTA (AC-11, AC-13, AC-14).
+- `PP-000001` sequential number → HTTP 404 (IDOR closed, M-6).
+- malformed token → HTTP 404 (M-6).
+- English `/en/checkout` renders + places an order (AC-16).
+- 375px: no horizontal overflow, sticky bar owns submit.
 
 ## Acceptance Criteria Coverage
 
-| #     | Criterion                                            | Test(s)                                                                                   | Status |
-| ----- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------ |
-| AC-1  | Add-to-cart button adds selected variant at qty 1    | e2e "adds the selected variant"; add-to-cart-button "adds the selected line"              | PASS   |
-| AC-2  | Same product+variant increments; variants distinct   | cart-line "dedupe+increment", "two variants two lines"; e2e "re-adding increments", "two variants two lines" | PASS   |
-| AC-3  | Persists across reload + sessions (localStorage)     | cart-storage round-trip; cart-provider hydration; e2e "survives a full page refresh"      | PASS   |
-| AC-4  | Live header badge, every page, no reload             | cart-provider itemCount; e2e "increments the header badge", "readable on a different route" | PASS   |
-| AC-5  | `/carrito` lists image/name/variant/price/qty/remove/total | e2e cart-page tests (line-row testids asserted)                                     | PASS   |
-| AC-6  | Qty control recomputes line/subtotal/badge/progress  | cart-line setLineQuantity; e2e "stepper changes quantity and recomputes totals + badge"   | PASS   |
-| AC-7  | Below-1 impossible via stepper; Remove deletes line  | stepper "− disables at min"; e2e "− disables at quantity 1", "Remove control deletes"     | PASS   |
-| AC-8  | Summary subtotal/shipping/total from store settings  | shipping computeShipping; order-summary states; e2e "flat rate", "free shipping"          | PASS   |
-| AC-9  | Free-shipping progress + achieved; hidden if null    | shipping freeShippingProgress; order-summary progress tests; e2e progress data-achieved   | PASS   |
-| AC-10 | Empty state + CTA, no summary/checkout/progress      | e2e "empty cart shows the friendly message", "last item → empty state"                    | PASS   |
-| AC-11 | Cart copy in ES + EN; toggle switches; parity tests  | cart-messages parity + ICU plural; e2e "/en/carrito copy switches", "empty state localized" | PASS   |
-| AC-12 | All display via `formatMXN`; integer cents; no `$NaN` | cart-line integer math; order-summary/progress no-NaN; e2e "no monetary cell renders NaN" | PASS   |
-| AC-13 | Quantity clamped [1, MAX]; `+` disables at cap        | sanitizeQuantity fuzz; storage clamp-on-read; stepper "+ disables at cap"                 | PASS   |
-| AC-14 | Corrupt/absent/foreign storage → empty; one warn      | cart-storage corrupt/foreign/throws + warn-once; e2e "garbage payload renders empty"      | PASS   |
-| AC-15 | Checkout CTA when non-empty → `CHECKOUT_PATH`         | order-summary CTA; e2e "checkout CTA points at the checkout route"                        | PASS   |
-| AC-16 | Keyboard-operable; aria-live; badge accessible label | stepper keyboard + labels; e2e "stepper keyboard-operable + aria-live", "badge aria-label" | PASS   |
-| AC-17 | No URL/search-filter coupling                        | e2e "navigating a filtered catalog URL never mutates the cart"                            | PASS   |
-| AC-18 | Out-of-stock add prevented (disabled + "Agotado")    | add-to-cart-button "disabled + Agotado", "does not add when out of stock" (see note)      | PASS†  |
+| # | Criterion | Test(s) | Status |
+|---|-----------|---------|--------|
+| AC-1 | `/checkout` (+`/en`) renders full flow via `computeShipping`/`totalCents` | e2e "checkout renders"; flow-client "renders form/summary/sticky", "flat/free totals" | PASS |
+| AC-2 | Empty cart → empty-state + `CATALOG_PATH`; no zero-line order | e2e "empty cart guard"; flow-client "empty state"; states "CheckoutEmptyState" | PASS |
+| AC-3 | Server settings → three-state shipping (flat/free/unavailable) | e2e "flat-rate totals"; flow-client "free shipping", "shipping unavailable"; summary three-state | PASS |
+| AC-4 | CP `/^\d{5}$/` + 32-state closed list, field-scoped, re-run on server | address (32 states + CP boundaries); fields "CP inputMode/maxlength"; e2e "bad CP + missing state" | PASS |
+| AC-5 | Email + required trimmed; optionals bounded; pure + server re-run | address (required/optional bounds, "reports every invalid field"); e2e "empty form" | PASS |
+| AC-6 | Server discount %/fixed application clamped ≤ subtotal | discount (percentage/fixed/clamp/boundaries); checkout-read `fetchDiscountCode`; rpc "increments times_redeemed"; e2e "AHORRA10" | PASS |
+| AC-7 | Bad code → friendly note, proceeds at full price, never blocks | discount-code-field (every invalid reason + "never blocks"); e2e "invalid code proceeds" | PASS |
+| AC-8 | Server re-reads live variant by id; active + price + stock | checkout-read `revalidateLines` (live price, OOS, over-qty, tamper); e2e "tampered zero-stock" | PASS |
+| AC-9 | Single-tx guarded decrement + inserts; last-unit race; no negative | rpc (happy, OOS rollback, multi-line rollback, **last-unit race**, stock=0 floor) | PASS |
+| AC-10 | `sales_count += qty` in same transaction | rpc "happy path" (sales_count assertion + restore) | PASS |
+| AC-11 | customers+orders(pending/pending, unique #, snapshot, tax=0)+items+history | rpc "happy path" (all rows + status/tax/currency asserted); e2e confirmation | PASS |
+| AC-12 | All commerce writes via admin/service_role client | rpc "anon denied"; RPC granted service_role only (constraints/rls-matrix suites) | PASS |
+| AC-13 | Confirmation #, summary, shipping, "no payment yet"; cart cleared | e2e "happy path" (number/total/shipping/badge-cleared/CTA); checkout-read `getOrderByToken` | PASS |
+| AC-14 | Double-submit → single order / no double-decrement | rpc "idempotency" (same order, reused:true, single decrement); flow-client idempotency-key host | PASS |
+| AC-15 | Every tunable a named documented `config.ts` constant; tax=0 written | address/discount/order import the config constants; rpc asserts tax=0/tax_base=0 | PASS |
+| AC-16 | `checkout` namespace both locales; `formatMXN` only; integer cents | e2e "English /en"; summary/flow-client/states "no $NaN"; all money via `formatMXN` | PASS |
 
-† **AC-18 seed note (not a defect):** every seeded variant has stock ≥ 8
-(`8 + colorIndex*3`), so NO product is out of stock — the guard is unreachable
-from a normal e2e flow against seed data. It is verified directly at the
-component level (`add-to-cart-button.test.tsx` drives the `outOfStock` prop:
-button `disabled`, label "Agotado", click is a guarded no-op). Recommend T7/seed
-work add one zero-stock variant so a future e2e can also cover it live.
+**All 16 ACs have ≥1 passing test.**
 
 ## Edge Case Coverage
 
-| #  | Edge Case                                    | Test                                                                      | Status |
-| -- | -------------------------------------------- | ------------------------------------------------------------------------- | ------ |
-| 1  | Corrupt localStorage JSON / wrong shape      | cart-storage "non-JSON garbage", "object not array"; e2e garbage payload  | PASS   |
-| 2  | Storage disabled / quota exceeded            | cart-storage "getItem throws → []", "setItem throws swallowed"            | PASS   |
-| 3  | Tampered qty (0/neg/NaN/>cap) / missing price | sanitizeQuantity + isDroppableQuantity fuzz; storage drop/clamp tests     | PASS   |
-| 4  | Stale snapshot (product changed/removed)     | Renders from snapshot (documented T7 re-validation); cart-line snapshot   | PASS   |
-| 5  | Two browser tabs — storage-event re-sync     | cart-provider cross-tab (re-read, last-write-wins, loop guard); e2e 2-tab | PASS   |
-| 6  | `store_settings` null → subtotal only, no bar | shipping unavailable/null; order-summary unavailable; progress hides      | PASS   |
-| 7  | Subtotal exactly == threshold → free          | shipping ">= boundary", "achieved at threshold"; e2e "at/above threshold" | PASS   |
-| 8  | SSR / pre-hydration inert shell               | cart-provider "no [] clobber"; add-button disabled-until-hydrated         | PASS   |
-| 9  | Rapid repeated clicks coalesce, respect cap   | addLine coalesce; cart-provider "N adds sum to N", "never exceed cap"     | PASS   |
-| 10 | Removing the last item → empty state          | removeLine; e2e "last item → empty state" + cross-tab empty               | PASS   |
+| # | Edge Case | Test | Status |
+|---|-----------|------|--------|
+| 1 | Price drift snapshot ≠ live | checkout-helpers `applyLivePrices` (m-1 refresh); summary "price-changed line"; drift path in action | PASS |
+| 2 | Last-unit race / oversell | rpc "last-unit race" (1 wins/1 rolls back), "zero-stock rollback"; e2e "tampered zero-stock" | PASS |
+| 3 | Cart emptied in another tab | flow-client "empty state" (hydrated+no lines); e2e "empty cart guard" | PASS |
+| 4 | Tampered snapshot (price/qty/id) | checkout-read `revalidateLines` (non-UUID/non-existent/variant-mismatch); helpers "payload omits price"; e2e "tampered zero-stock" | PASS |
+| 5 | `store_settings` unavailable | flow-client "shipping unavailable → submit disabled, no $NaN"; order "defensive unavailable→0" | PASS |
+| 6 | Discount > subtotal | discount "clamp fixed to subtotal"; order "clamp over-large / negative" | PASS |
+| 7 | Double-submit / retry | rpc "idempotency"; flow-client idempotency-key regeneration on new submissionId | PASS |
+| 8 | DB CHECK rejection | rpc "total-identity CHECK backstop + rollback"; order "identity math" | PASS |
+
+**All 8 edge cases have ≥1 passing test.**
 
 ## Bugs Found & Fixed
-**None.** The T6 implementation (dev `88bf52c` + reviewfix `633cb76`) held up
-under adversarial testing: hostile-storage fuzzing, huge-array DoS, cross-tab
-loop simulation, rapid-click coalescing, threshold boundaries, settings-null
-degradation, and 320px overflow all passed on first run against the code as
-shipped. The C-1 cross-tab loop-guard fix is now regression-locked by
-`cart-provider.test.tsx` ("does NOT echo a content-identical cross-tab read").
+- **Stale seed-count test (test bug, fixed).** `tests/integration/seed.integration.test.ts` still expected 69 variants / 99 images; the T7 seed addition (zero-stock variant + its cover image) legitimately makes it 70 / 100. Updated the expected counts and ADDED coverage that the change was intentional (5 discount codes seeded, exactly one zero-stock variant).
+- **`count()` helper type union (test bug, fixed).** The seed-test helper's table union excluded `discount_codes`; added it so the new discount-count assertion type-checks (`tsc` clean).
+- **No production code bugs found.** The write path (RPC atomicity/rollback/idempotency, live re-validation, discount clamp, DB-CHECK alignment, M-6 IDOR token) behaves exactly as specified under live-DB integration and prod-build e2e. The Stage-6 MAJOR fixes (M-1..M-6) and MINORs (m-1/m-2/m-3/m-7) all carry explicit regression-lock tests and hold.
 
-Two authoring bugs in my OWN draft tests (contradictory `Infinity` expectations
-for `sanitizeQuantity`/`isDroppableQuantity`) were caught by the first run and
-corrected to match the correct, documented code behaviour — the code was right.
+## Notes on Test Infrastructure
+- E2E ran against a **production build** (`NEXT_QA_DIST_DIR=.next-t7-qa`), a separate dist dir from dev's `.next` (never shared), on `next start -p 3000`, against local Docker Supabase with the well-known public local keys. The QA build dir was removed and the DB reset+seeded afterward — the user's Docker Supabase is left cleanly seeded (0 orders/customers, Milano Negro stock=8, AHORRA10 redeemed=0).
+- **E2E stock note (for downstream/Verify):** each order-placing e2e test writes a REAL order that decrements the finite seed stock (~8 orders per full checkout-spec run against the Negro base variant). A single suite run is safe on a fresh seed; running the checkout spec repeatedly without reseeding will eventually deplete the default variant and disable its add-to-cart (surfacing as `toBeEnabled` timeouts in `gotoPDP`). This is a fixture-lifecycle property of live-order e2e, not a code or test defect — **reseed (or `supabase db reset` + seed) before an authoritative e2e run.** Two consecutive runs on a stock-restored DB were both 24/24 green.
 
 ## Confidence: HIGH
 
-- 18/18 acceptance criteria have at least one test and PASS (AC-18 at the
-  component level with a documented, non-defect seed-coverage note).
-- 10/10 required edge cases covered, including the two review-flagged risk areas
-  (cross-tab sync C-1 loop, hostile localStorage) with dedicated tests.
-- The freshly-fixed CRITICAL path (cross-tab `lastPersistedRef` echo suppression
-  + last-write-wins) is proven both in unit-level provider tests (mocked storage
-  events) and in a real two-tab e2e (`context.newPage()`).
-- No cart regressions: unit 764/764, integration 110/110, **cart e2e 46/46 in
-  every run** on both browser projects. The only e2e non-green results are the
-  pre-existing, non-deterministic T3/T4/T5 streaming flake (shifts run-to-run,
-  passes in isolation and at the CI retry budget) — proven orthogonal to T6.
-- Money invariant (integer cents, no `$NaN`) is enforced at three layers — pure
-  math, storage shape guard, and the `formatMXN` render boundary — each tested.
-- The confidence is HIGH **for T6 cart specifically**; the pre-existing T3/T4/T5
-  flake is flagged as an operational note for T7 (use a prod-build e2e run), not
-  a blocker introduced here.
+Every AC and every edge case has at least one passing test; the dangerous parts
+(atomicity, last-unit race, idempotency, snapshot-untrust, discount clamp, DB
+CHECKs, M-6 IDOR) are verified against a LIVE database and a production build, not
+just mocks. The Stage-6 MAJOR/MINOR fixes are regression-locked. `tsc` clean,
+`eslint` clean, 915 unit + 135 integration + 24 checkout e2e all green. The only
+red in the full e2e suite is a pre-existing, documented T3/T4 PDP-spec flake
+unrelated to T7.
+
+## Verdict (QA perspective): SHIP
+
+From QA's perspective T7 is shippable. **This remains subject to the BUILD_PLAN
+rule-3 HUMAN-REVIEW GATE** — checkout is always flagged for human review before
+merge regardless of any pipeline SHIP verdict; the Verify stage must surface this
+and must NOT auto-merge.
 
 ## Untested Areas
-- **AC-18 live out-of-stock e2e** — unreachable against current seed (all stock
-  ≥ 8); covered at the component level instead. LOW risk. Suggest a zero-stock
-  seed variant for T7.
-- **Remove-row collapse animation** — dev deferred it to an opacity-only unmount
-  (spec-allowed, flagged for UX Stage 8). Not a T6 AC. LOW risk.
-- **Real quota-exceeded write in a browser** — simulated via a `setItem` throw in
-  unit tests (deterministic); a true browser-quota e2e is impractical and lower
-  value than the deterministic unit proof. LOW risk.
-- **Stale-snapshot live re-validation** — explicitly a T7 checkout concern (the
-  cart renders from its client snapshot by design). Out of T6 scope.
+- **`placeOrder` server action wiring end-to-end in isolation** — the action's
+  orchestration is covered transitively by the prod-build e2e (which drives the
+  real action) and unit-covered at every pure step it composes (`validateAddress`,
+  `applyDiscount`, `assembleOrder`, `revalidateLines`, `fetchDiscountCode`,
+  `create_order` RPC). A direct unit test of the action would require mocking
+  `server-only` + `next-intl/server` + the admin client; the e2e path exercises it
+  authentically instead. Risk: LOW.
+- **Rate limiting on `placeOrder`** — none exists (documented dev follow-up; the
+  atomic RPC + stock floor bound real damage). Out of T7 scope. Risk: LOW.
+- **Confirmation-page PII rendering with an authenticated cross-user** — N/A in
+  Phase 1 (guest-only, no accounts); the M-6 token is the sole access control and
+  is integration+e2e verified. Risk: LOW.

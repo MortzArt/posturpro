@@ -16,7 +16,9 @@ import {
 
 const db = serviceClient();
 
-async function count(table: "products" | "product_variants" | "product_images" | "categories" | "brands"): Promise<number> {
+async function count(
+  table: "products" | "product_variants" | "product_images" | "categories" | "brands" | "discount_codes",
+): Promise<number> {
   const { count: n, error } = await db
     .from(table)
     .select("*", { count: "exact", head: true });
@@ -34,8 +36,31 @@ describe("seeded catalog counts (AC-13)", () => {
       .select("id", { count: "exact", head: true })
       .like("slug", "silla-%");
     expect(seededProducts.count).toBe(30);
-    expect(await count("product_variants")).toBe(69);
-    expect(await count("product_images")).toBe(99);
+    // T7 added a zero-stock variant (+ its cover image) to silla-ergonomica-kids-junior
+    // for the live oversell e2e: 69→70 variants, 99→100 images.
+    expect(await count("product_variants")).toBe(70);
+    expect(await count("product_images")).toBe(100);
+  });
+
+  it("seeds the 5 discount codes T7 checkout validates against (AC-6)", async () => {
+    // active pct, active fixed, expired, below-min, exhausted.
+    expect(await count("discount_codes")).toBe(5);
+    const { data } = await db.from("discount_codes").select("code").order("code");
+    expect((data ?? []).map((row) => row.code)).toEqual([
+      "AGOTADO",
+      "AHORRA10",
+      "EXPIRADO",
+      "MENOS200",
+      "MINIMO5000",
+    ]);
+  });
+
+  it("includes exactly one zero-stock variant (the oversell fixture)", async () => {
+    const { count: zeroCount } = await db
+      .from("product_variants")
+      .select("id", { count: "exact", head: true })
+      .eq("stock", 0);
+    expect(zeroCount).toBe(1);
   });
 
   it("has at least one nested category (parent_id not null)", async () => {

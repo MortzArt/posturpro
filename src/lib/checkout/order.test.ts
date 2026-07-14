@@ -66,6 +66,34 @@ describe("assembleOrder", () => {
     );
     expect(totals.subtotalCents).toBe(100_000 + 60_000);
   });
+
+  it("charges the flat rate cents from the ShippingResult", () => {
+    const totals = assembleOrder([line({ quantity: 1, unitPriceCents: 100_000 })], FLAT, 0);
+    expect(totals.shippingCents).toBe(50_000);
+    expect(totals.totalCents).toBe(150_000);
+  });
+
+  it("defensively treats unavailable shipping as 0 (action blocks before here, edge 5)", () => {
+    const totals = assembleOrder([line({ quantity: 1, unitPriceCents: 100_000 })], { kind: "unavailable" }, 0);
+    expect(totals.shippingCents).toBe(0);
+    expect(Number.isNaN(totals.totalCents)).toBe(false);
+  });
+
+  it("preserves the DB total identity with shipping AND a clamped discount together", () => {
+    const totals = assembleOrder([line({ quantity: 1, unitPriceCents: 100_000 })], FLAT, 30_000);
+    // identity: total = subtotal + shipping + tax - discount
+    expect(totals.totalCents).toBe(
+      totals.subtotalCents + totals.shippingCents + totals.taxCents - totals.discountCents,
+    );
+    expect(totals.discountCents).toBeLessThanOrEqual(totals.subtotalCents);
+    expect(totals.totalCents).toBeGreaterThanOrEqual(0);
+  });
+
+  it("handles a no-variant line (variantId null) in totals", () => {
+    const totals = assembleOrder([line({ variantId: null, quantity: 2, unitPriceCents: 50_000 })], FREE, 0);
+    expect(totals.lines[0].variantId).toBeNull();
+    expect(totals.lines[0].lineTotalCents).toBe(100_000);
+  });
 });
 
 describe("formatOrderNumber", () => {

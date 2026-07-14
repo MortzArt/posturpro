@@ -94,4 +94,46 @@ describe("applyDiscount", () => {
   it("returns none for a zero-cent effective discount", () => {
     expect(applyDiscount(code({ value: 0 }), 100_000, NOW)).toEqual({ kind: "none" });
   });
+
+  it("applies right up to (but not at) the redemption cap boundary", () => {
+    // times_redeemed < max_redemptions → still valid.
+    expect(applyDiscount(code({ max_redemptions: 5, times_redeemed: 4 }), 100_000, NOW).kind).toBe("applied");
+    // exactly at the cap → exhausted.
+    expect(applyDiscount(code({ max_redemptions: 5, times_redeemed: 5 }), 100_000, NOW).kind).toBe("invalid");
+  });
+
+  it("applies exactly at the min-subtotal boundary (>= min)", () => {
+    expect(applyDiscount(code({ min_subtotal_cents: 100_000 }), 100_000, NOW).kind).toBe("applied");
+    expect(applyDiscount(code({ min_subtotal_cents: 100_000 }), 99_999, NOW).kind).toBe("invalid");
+  });
+
+  it("applies right at the ends_at instant and rejects just after it", () => {
+    const ends = "2026-06-01T00:00:00.000Z"; // == NOW
+    expect(applyDiscount(code({ ends_at: ends }), 100_000, NOW).kind).toBe("applied");
+    expect(applyDiscount(code({ ends_at: ends }), 100_000, NOW + 1).kind).toBe("invalid");
+  });
+
+  it("preserves the row's stored (upper-cased) code in the applied outcome", () => {
+    const outcome = applyDiscount(code({ code: "AHORRA10", value: 10 }), 100_000, NOW);
+    expect(outcome).toEqual({ kind: "applied", code: "AHORRA10", discountCents: 10_000 });
+  });
+
+  it("clamps a fixed_amount discount exactly equal to the subtotal (total → 0, edge 6)", () => {
+    const outcome = applyDiscount(
+      code({ discount_type: "fixed_amount", value: 100_000 }),
+      100_000,
+      NOW,
+    );
+    expect(outcome).toEqual({ kind: "applied", code: "AHORRA10", discountCents: 100_000 });
+  });
+});
+
+describe("normalizeDiscountCode (case-insensitive matching, AC-6)", () => {
+  it("normalizes mixed-case + surrounding space to the canonical upper form", () => {
+    expect(normalizeDiscountCode(" AhOrRa10 ")).toBe("AHORRA10");
+  });
+
+  it("leaves an already-canonical code unchanged", () => {
+    expect(normalizeDiscountCode("MENOS200")).toBe("MENOS200");
+  });
 });
