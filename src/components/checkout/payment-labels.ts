@@ -31,6 +31,8 @@ export function buildPaymentPanelLabels(t: Translator): PaymentPanelLabels {
     refundedNote: t("payment.paid.refundedNote"),
     failedTitle: t("payment.failed.title"),
     failedBody: t("payment.failed.body"),
+    expiredTitle: t("payment.expired.title"),
+    expiredBody: t("payment.expired.body"),
     retry: t("payment.failed.retry"),
     unavailableBody: t("payment.unavailable.body"),
     unavailableRetry: t("payment.unavailable.retry"),

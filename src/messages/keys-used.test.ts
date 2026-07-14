@@ -218,6 +218,8 @@ const CONSUMED_KEYS: readonly string[] = [
   "checkout.payment.paid.refundedNote",
   "checkout.payment.failed.title",
   "checkout.payment.failed.body",
+  "checkout.payment.expired.title",
+  "checkout.payment.expired.body",
   "checkout.payment.failed.retry",
   "checkout.payment.unavailable.body",
   "checkout.payment.unavailable.retry",

@@ -27,8 +27,28 @@ describe("derivePanelState", () => {
     expect(s).toMatchObject({ kind: "paid", refunded: true });
   });
 
-  it("failed: payment failed → retry", () => {
-    expect(derivePanelState(input({ paymentStatus: "failed" })).kind).toBe("failed");
+  it("failed (card decline): payment failed, non-voucher method → reason 'declined'", () => {
+    expect(derivePanelState(input({ paymentStatus: "failed", paymentMethod: "card" }))).toMatchObject({
+      kind: "failed",
+      reason: "declined",
+    });
+    // No method (e.g. failed before a method was captured) also reads as declined.
+    expect(derivePanelState(input({ paymentStatus: "failed" }))).toMatchObject({
+      kind: "failed",
+      reason: "declined",
+    });
+  });
+
+  it("failed (voucher expired): failed OXXO/SPEI → reason 'expired' (honest, non-blaming)", () => {
+    // A voucher that expires unpaid is NOT a decline — drives different copy.
+    expect(derivePanelState(input({ paymentStatus: "failed", paymentMethod: "oxxo" }))).toMatchObject({
+      kind: "failed",
+      reason: "expired",
+    });
+    expect(derivePanelState(input({ paymentStatus: "failed", paymentMethod: "spei" }))).toMatchObject({
+      kind: "failed",
+      reason: "expired",
+    });
   });
 
   it("pending-voucher: pending oxxo", () => {

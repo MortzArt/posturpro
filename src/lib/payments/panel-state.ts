@@ -12,11 +12,19 @@ import type { OrderStatus, PaymentStatus } from "@/lib/supabase/database.types";
 /** The back_url status hint (display only). */
 export type ReturnHint = "success" | "pending" | "failure" | null;
 
+/**
+ * Why a payment landed in the `failed` state — drives HONEST, non-blaming copy.
+ * `declined` = the charge was rejected (card decline); `expired` = an OXXO/SPEI
+ * voucher was never paid in time (the shopper didn't fail — the window closed).
+ * Showing "your payment was declined" for an expired voucher is inaccurate.
+ */
+export type FailureReason = "declined" | "expired";
+
 /** The discriminated state the <PaymentPanel> switches on. */
 export type PaymentPanelState =
   | { kind: "unpaid" }
   | { kind: "pending-voucher"; method: "oxxo" | "spei"; voucher: VoucherView | null }
-  | { kind: "failed" }
+  | { kind: "failed"; reason: FailureReason }
   | { kind: "paid"; method: PaymentMethodKey | null; refunded: boolean }
   | { kind: "processing" };
 
@@ -48,9 +56,11 @@ export function derivePanelState(input: PanelStateInput): PaymentPanelState {
     return { kind: "paid", method: input.paymentMethod, refunded: false };
   }
 
-  // Failed: allow a retry for the same order.
+  // Failed: allow a retry for the same order. A failed OXXO/SPEI payment means the
+  // voucher expired unpaid (the window closed) — NOT a decline; use honest copy.
   if (input.paymentStatus === "failed") {
-    return { kind: "failed" };
+    const isVoucherMethod = input.paymentMethod === "oxxo" || input.paymentMethod === "spei";
+    return { kind: "failed", reason: isVoucherMethod ? "expired" : "declined" };
   }
 
   // Card authorized-but-not-captured is rare; show "confirming".

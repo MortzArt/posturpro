@@ -131,11 +131,13 @@ describe("OxxoSpeiInstructions — defensive degradation", () => {
     expect(screen.queryByTestId("payment-voucher-expires")).toBeNull();
   });
 
-  it("ALL fields missing → renders the amount + fallbacks, never crashes", () => {
+  it("ALL fields missing → 'generating' copy + amount, no duplicate email line, never crashes", () => {
     renderVoucher({ reference: null, voucherUrl: null, expiresAt: null });
     expect(screen.getByTestId("payment-voucher")).toBeInTheDocument();
     expect(screen.getByTestId("payment-voucher-generating")).toBeInTheDocument();
-    expect(screen.getByTestId("payment-voucher-no-url")).toBeInTheDocument();
+    // The redundant "emailed you the voucher" line is suppressed when there is no
+    // reference — the `generating` copy already says "check your email".
+    expect(screen.queryByTestId("payment-voucher-no-url")).toBeNull();
     expect(screen.getByTestId("payment-voucher-amount")).toHaveTextContent("8,999.90");
     expect(document.body.textContent).not.toContain("Invalid Date");
     expect(document.body.textContent).not.toContain("undefined");

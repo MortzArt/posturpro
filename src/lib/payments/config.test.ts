@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AMOUNT_RECONCILIATION_TOLERANCE_CENTS,
   MP_CURRENCY_ID,
+  parsePaymentMethodKey,
   resolvePaymentMethod,
 } from "./config";
 
@@ -52,5 +53,32 @@ describe("resolvePaymentMethod", () => {
 
   it("is case-insensitive on the method id", () => {
     expect(resolvePaymentMethod("ticket", "OXXO")).toBe("oxxo");
+  });
+});
+
+describe("parsePaymentMethodKey (read-side, stored compact key)", () => {
+  // Regression: reading a stored compact key back must NOT re-run the MP-type
+  // heuristic. A persisted "card"/"wallet" (MP type names credit_card/account_money)
+  // previously fell through to null → the paid card lost its method label and
+  // showed the generic "Pago confirmado" (UX bug). Every stored key must round-trip.
+  it("round-trips every persisted compact key", () => {
+    expect(parsePaymentMethodKey("card")).toBe("card");
+    expect(parsePaymentMethodKey("wallet")).toBe("wallet");
+    expect(parsePaymentMethodKey("oxxo")).toBe("oxxo");
+    expect(parsePaymentMethodKey("spei")).toBe("spei");
+  });
+
+  it("is case-insensitive and null-safe", () => {
+    expect(parsePaymentMethodKey("CARD")).toBe("card");
+    expect(parsePaymentMethodKey(null)).toBeNull();
+    expect(parsePaymentMethodKey(undefined)).toBeNull();
+    expect(parsePaymentMethodKey("")).toBeNull();
+  });
+
+  it("returns null for an MP raw type name (not a stored compact key)", () => {
+    // credit_card is the MP type, never what we persist — must not be accepted here.
+    expect(parsePaymentMethodKey("credit_card")).toBeNull();
+    expect(parsePaymentMethodKey("account_money")).toBeNull();
+    expect(parsePaymentMethodKey("bogus")).toBeNull();
   });
 });

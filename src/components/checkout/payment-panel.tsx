@@ -25,7 +25,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { formatMXN } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { createPaymentPreference, type PayActionResult } from "@/app/[locale]/checkout/pay-actions";
-import type { PaymentPanelState } from "@/lib/payments/panel-state";
+import type { FailureReason, PaymentPanelState } from "@/lib/payments/panel-state";
 import type { PaymentMethodKey } from "@/lib/payments/config";
 import { OxxoSpeiInstructions, type VoucherLabels } from "@/components/checkout/oxxo-spei-instructions";
 
@@ -42,6 +42,8 @@ export interface PaymentPanelLabels {
   refundedNote: string;
   failedTitle: string;
   failedBody: string;
+  expiredTitle: string;
+  expiredBody: string;
   retry: string;
   unavailableBody: string;
   unavailableRetry: string;
@@ -91,7 +93,7 @@ export function PaymentPanel({
   }
   if (overlay === "error") {
     return (
-      <FailedCard labels={labels} totalCents={totalCents} pending={pending} onRetry={launch} />
+      <FailedCard labels={labels} reason="declined" totalCents={totalCents} pending={pending} onRetry={launch} />
     );
   }
 
@@ -102,7 +104,7 @@ export function PaymentPanel({
       );
     case "failed":
       return (
-        <FailedCard labels={labels} totalCents={totalCents} pending={pending} onRetry={launch} />
+        <FailedCard labels={labels} reason={initialState.reason} totalCents={totalCents} pending={pending} onRetry={launch} />
       );
     case "processing":
       return <ProcessingCard labels={labels} pending={pending} onRetry={launch} />;
@@ -205,23 +207,28 @@ function UnpaidCard({
 
 function FailedCard({
   labels,
+  reason,
   totalCents,
   pending,
   onRetry,
 }: {
   labels: PaymentPanelLabels;
+  reason: FailureReason;
   totalCents: number;
   pending: boolean;
   onRetry: () => void;
 }) {
+  // Honest, non-blaming copy: an expired OXXO/SPEI voucher wasn't "declined".
+  const title = reason === "expired" ? labels.expiredTitle : labels.failedTitle;
+  const body = reason === "expired" ? labels.expiredBody : labels.failedBody;
   return (
     <Card testId="payment-panel-failed" extra="border-destructive/30 bg-destructive/5">
-      <div className="flex flex-col gap-4" aria-busy={pending} role="alert">
+      <div className="flex flex-col gap-4" aria-busy={pending} role="alert" data-failure-reason={reason}>
         <div className="flex items-start gap-2 text-sm text-destructive">
           <HugeiconsIcon icon={Alert02Icon} size={18} strokeWidth={2} aria-hidden className="mt-0.5 shrink-0" />
           <div className="flex flex-col gap-0.5">
-            <p className="font-medium">{labels.failedTitle}</p>
-            <p className="text-destructive/90">{labels.failedBody}</p>
+            <p className="font-medium">{title}</p>
+            <p className="text-destructive/90">{body}</p>
           </div>
         </div>
         <TotalRow label={labels.totalLabel} totalCents={totalCents} />
@@ -281,7 +288,7 @@ function ProcessingCard({
             type="button"
             onClick={() => window.location.reload()}
             data-testid="payment-refresh"
-            className="cart-step-press text-sm font-medium text-primary underline-offset-4 hover:underline"
+            className="cart-step-press rounded-sm text-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/40"
           >
             {labels.refresh}
           </button>
@@ -290,7 +297,7 @@ function ProcessingCard({
             onClick={onRetry}
             disabled={pending}
             data-testid="payment-processing-retry"
-            className="cart-step-press text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline disabled:opacity-60"
+            className="cart-step-press rounded-sm text-xs font-medium text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
           >
             {labels.processingRetryHint}
           </button>
@@ -348,7 +355,10 @@ function PayButton({
       data-testid={testId}
       className={cn(
         buttonVariants({ variant: "default" }),
-        "cart-press h-11 w-full gap-1.5 px-6 text-sm sm:w-auto sm:min-w-56",
+        // `sm:self-start` lets `sm:w-auto` win over the parent flex-col's default
+        // `align-items: stretch` — full-width thumb target on mobile, sized-to-
+        // content on ≥sm (matches the checkout/"Seguir comprando" CTA proportions).
+        "cart-press h-11 w-full gap-1.5 px-6 text-sm sm:w-auto sm:min-w-56 sm:self-start",
       )}
     >
       {label}
@@ -377,7 +387,7 @@ function RetryButton({
       data-testid={testId}
       className={cn(
         buttonVariants({ variant: "default" }),
-        "cart-press h-11 w-full gap-1.5 px-6 text-sm sm:w-auto sm:min-w-56",
+        "cart-press h-11 w-full gap-1.5 px-6 text-sm sm:w-auto sm:min-w-56 sm:self-start",
       )}
     >
       <HugeiconsIcon icon={Refresh01Icon} size={16} strokeWidth={2} aria-hidden />

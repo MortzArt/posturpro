@@ -160,3 +160,25 @@ export function resolvePaymentMethod(
   const typeId = paymentTypeId?.toLowerCase() ?? "";
   return PAYMENT_TYPE_TO_METHOD[typeId] ?? null;
 }
+
+/**
+ * Narrow a value that is ALREADY one of our stored compact keys (read back from
+ * `orders.payment_method`, which the webhook persists via {@link resolvePaymentMethod})
+ * to a {@link PaymentMethodKey}, or `null` when absent/unrecognized. This is the
+ * READ-side counterpart to {@link resolvePaymentMethod} (which maps MP's raw
+ * `payment_type_id`/`payment_method_id`) — reading a stored key back must NOT
+ * re-run the MP-type heuristic, or a persisted `"card"`/`"wallet"` (whose MP type
+ * names are `credit_card`/`account_money`) would fail to match and fall back to the
+ * generic label. Kept here so the compact-key vocabulary has one owner.
+ */
+export function parsePaymentMethodKey(
+  value: string | null | undefined,
+): PaymentMethodKey | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.toLowerCase();
+  return (PAYMENT_METHOD_KEYS as readonly string[]).includes(normalized)
+    ? (normalized as PaymentMethodKey)
+    : null;
+}

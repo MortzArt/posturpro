@@ -46,6 +46,8 @@ const LABELS: PaymentPanelLabels = {
   refundedNote: "Refunded",
   failedTitle: "Your payment was declined",
   failedBody: "The charge didn't go through. Please try again.",
+  expiredTitle: "Your payment wasn't completed",
+  expiredBody: "Your payment wasn't completed in time. You can try again.",
   retry: "Retry payment",
   unavailableBody: "Payment is temporarily unavailable.",
   unavailableRetry: "Try again",
@@ -137,11 +139,21 @@ describe("PaymentPanel — DB-derived states", () => {
     expect(screen.getByTestId("payment-method-label")).toHaveTextContent("Refunded");
   });
 
-  it("failed: renders a role=alert destructive card with a retry CTA (AC-16)", () => {
-    renderPanel({ kind: "failed" });
+  it("failed (declined): renders a role=alert destructive card with a retry CTA (AC-16)", () => {
+    renderPanel({ kind: "failed", reason: "declined" });
     const card = screen.getByTestId("payment-panel-failed");
     expect(card.querySelector('[role="alert"]')).not.toBeNull();
     expect(card).toHaveTextContent("Your payment was declined");
+    expect(screen.getByTestId("payment-retry")).toBeInTheDocument();
+  });
+
+  it("failed (expired voucher): shows non-blaming 'not completed in time' copy, not 'declined'", () => {
+    // An OXXO/SPEI voucher that expires unpaid is NOT a decline — the copy must
+    // reflect that (honest, non-blaming). Regression lock for the reason branch.
+    renderPanel({ kind: "failed", reason: "expired" });
+    const card = screen.getByTestId("payment-panel-failed");
+    expect(card).toHaveTextContent("Your payment wasn't completed");
+    expect(card).not.toHaveTextContent("declined");
     expect(screen.getByTestId("payment-retry")).toBeInTheDocument();
   });
 
@@ -211,7 +223,7 @@ describe("PaymentPanel — pay action + redirect handoff", () => {
 
   it("retry from the failed state re-launches the pay action (AC-16, edge 4)", async () => {
     createPaymentPreference.mockResolvedValue({ status: "redirect", initPoint: "https://mp/retry" });
-    renderPanel({ kind: "failed" });
+    renderPanel({ kind: "failed", reason: "declined" });
     fireEvent.click(screen.getByTestId("payment-retry"));
     await waitFor(() => expect(assignSpy).toHaveBeenCalledWith("https://mp/retry"));
     // The token is unchanged across the retry (same order, no re-create).

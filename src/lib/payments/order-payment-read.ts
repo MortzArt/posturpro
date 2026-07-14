@@ -15,7 +15,7 @@ import type { PaymentResponse } from "mercadopago/dist/clients/payment/commonTyp
 import { createAdminClient } from "@/lib/supabase/admin";
 import { UUID_PATTERN } from "@/lib/config";
 import { paymentClient } from "@/lib/payments/mp-client";
-import { resolvePaymentMethod, type PaymentMethodKey } from "@/lib/payments/config";
+import { parsePaymentMethodKey, type PaymentMethodKey } from "@/lib/payments/config";
 import type { OrderStatus, PaymentStatus } from "@/lib/supabase/database.types";
 
 /** The voucher fields for an OXXO/SPEI pending payment — ALL nullable. */
@@ -154,7 +154,12 @@ function firstNonEmpty(...values: Array<string | null | undefined>): string | nu
   return null;
 }
 
-/** Narrow a stored payment_method string to our compact key (null if unknown). */
+/**
+ * Narrow the payment_method value STORED on the order to our compact key. The
+ * webhook already persisted a compact key ({@link resolvePaymentMethod}), so this
+ * only validates it — it must NOT re-run the MP-type heuristic, or a stored
+ * `"card"`/`"wallet"` would fail to match and lose its method label on the paid card.
+ */
 function toPaymentMethodKey(value: string | null): PaymentMethodKey | null {
-  return resolvePaymentMethod(value, value);
+  return parsePaymentMethodKey(value);
 }

@@ -124,24 +124,29 @@ export function OxxoSpeiInstructions({
           data-testid="payment-voucher-link"
           className={cn(
             buttonVariants({ variant: "default" }),
-            "cart-press h-11 w-full gap-1.5 text-sm sm:w-auto sm:min-w-56",
+            // `sm:self-start` lets `sm:w-auto` win over the card's flex-col stretch.
+            "cart-press h-11 w-full gap-1.5 text-sm sm:w-auto sm:min-w-56 sm:self-start",
           )}
         >
           {labels.viewVoucher}
           <HugeiconsIcon icon={LinkSquare01Icon} size={16} strokeWidth={2} aria-hidden />
         </a>
-      ) : (
+      ) : reference ? (
+        // Only surface the "emailed you the voucher" fallback when we DO have a
+        // reference (a real voucher, just no printable link). If the reference is
+        // also absent, the `generating` copy above already says "check your email"
+        // — showing both reads as duplicate email guidance.
         <p className="text-xs text-muted-foreground" data-testid="payment-voucher-no-url">
           {labels.noVoucherUrl}
         </p>
-      )}
+      ) : null}
 
       <button
         type="button"
         onClick={onPayDifferently}
         disabled={payDifferentlyPending}
         data-testid="payment-voucher-pay-differently"
-        className="cart-step-press self-start text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline disabled:opacity-60"
+        className="cart-step-press self-start rounded-sm text-xs font-medium text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
       >
         {labels.payDifferently}
       </button>
@@ -206,7 +211,7 @@ function ReferenceRow({
             onClick={onCopy}
             aria-label={labels.copyAria}
             data-testid="payment-voucher-copy"
-            className="cart-step-press inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-4 text-sm font-medium text-foreground hover:bg-muted"
+            className="cart-step-press inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-4 text-sm font-medium text-foreground outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
           >
             <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} size={15} strokeWidth={2} aria-hidden />
             {copied ? labels.copied : labels.copy}

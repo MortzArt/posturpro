@@ -434,6 +434,7 @@
         "retry": "Reintentar pago"
       },
       "expired": {
+        "title": "Tu pago no se completó",
         "body": "Tu pago no se completó a tiempo. Puedes intentar de nuevo."
       },
       "unavailable": {

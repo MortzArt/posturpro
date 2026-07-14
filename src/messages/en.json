@@ -434,6 +434,7 @@
         "retry": "Retry payment"
       },
       "expired": {
+        "title": "Your payment wasn't completed",
         "body": "Your payment wasn't completed in time. You can try again."
       },
       "unavailable": {
