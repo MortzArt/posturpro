@@ -303,10 +303,23 @@ Actions (executing now):
   unit (test file unmodified), 180/180 integration, `next build` clean (catalog
   pages static/ISR 5m unchanged), tsconfig.json unchanged. Closes the T3 split item
   and T5-7 (both checked off above).
-- [ ] **A4 — Extract pure form-parsing helpers from `checkout/actions.ts` (512) to
+- [x] **A4 — Extract pure form-parsing helpers from `checkout/actions.ts` (512) to
   `src/lib/checkout/form-parsing.ts`; switch both action files' local `clientIp`
   copies to the canonical `src/lib/request/client-ip.ts` (closes SEC-M-1).**
-  NOTE: expands the T7/T9 human-review diff; behavior-preserving, test-covered.
+  DONE 2026-07-14: moved 11 pure helpers verbatim to `src/lib/checkout/form-parsing.ts`
+  (221 lines) — readFormValues, toAddressInput, parseSubmittedLines, toLineErrorMaps,
+  detectPriceDrift, toDiscountResult, parseSnapshotPrices, readIdempotencyKey,
+  mapThrownError, parseOutOfStockLine + the OUT_OF_STOCK_PREFIX/DISCOUNT_EXHAUSTED
+  constants; `actions.ts` 512→245 lines (orchestration only: placeOrder, runCheckout,
+  triggerOrderEmails, resolveDiscount, createOrderViaRpc + CreatedOrder — all impure,
+  stayed). CLIENT-IP VERDICT: **SWAPPED** — both local `clientIp` copies
+  (checkout/actions.ts + producto/[slug]/actions.ts) were behavior-IDENTICAL to the
+  canonical helper (same header order x-vercel-forwarded-for → rightmost x-forwarded-for
+  hop → x-real-ip → "unknown"; same trim/split/filter; same rightmost `.at(-1)` XFF
+  selection; same fallback), so both were deleted and repointed to
+  `@/lib/request/client-ip`. No divergence, no trust-behavior change. Verified:
+  tsc 0, eslint clean, unit 1281/1281, integration 180/180, checkout e2e 24/24 on prod
+  build (seed→build→start→spec sequencing per pipeline-state). Closes SEC-M-1.
 - [x] **A5 — Enforce the 1,000-line hard cap: ESLint `max-lines` (error, 1000)
   repo-wide.**
 - [x] **A6 — Fix the `database.types.ts` header lie + `db:types` script

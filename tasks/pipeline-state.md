@@ -16,6 +16,7 @@ Notes: POST-QA ORTHOGONALITY CHECK (orchestrator-launched bisect agent) RESOLVED
 - T8 human-review focus (from ship-decision.md): webhook signature verification, amount reconciliation, refund execution, RPC transition/idempotency, secret handling.
 - T8 LIVE-SANDBOX verification BLOCKED-ON-USER (only placeholder MERCADOPAGO_* keys in .env.local; all tests mock MP).
 - T9 rule-3 addendum: T9 modified the checkout action (src/app/[locale]/checkout/actions.ts — locale persistence + email triggers) and src/lib/payments/process-payment.ts (transition_kind email dispatch) — include these diffs (bdd37bc, 6c19265) in the same human review pass as T7/T8. T9 itself is checked off (QA gate passed); the review flag is about the touched checkout/payment files.
+- Clean-code A4 addendum (2026-07-14): the A4 refactor commit also touches the flagged checkout files — pure form-parsing helpers extracted verbatim from actions.ts to src/lib/checkout/form-parsing.ts, and both local clientIp copies replaced by the canonical src/lib/request/client-ip.ts after a proven behavior-identical diff (closes SEC-M-1, zero rate-limit keying change). Include the A4 commit in the human-review pass; verified by checkout e2e 24/24 on prod build.
 - T9 LIVE-SEND verification BLOCKED-ON-USER: no EMAIL_* vars in .env.local; all tests mock the provider. Env vars documented in dev-done.md: EMAIL_API_KEY (secret, Resend), EMAIL_FROM_ADDRESS, EMAIL_OWNER_ADDRESS, NEXT_PUBLIC_SITE_ORIGIN; dev preview via EMAIL_DEV_PREVIEW=1.
 
 === T9 SEAMS FOR LATER TASKS ===

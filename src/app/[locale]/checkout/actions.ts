@@ -23,7 +23,6 @@
  * Raw PG errors are NEVER echoed — mapped to friendly enums, logged with context.
  * All commerce writes go through the admin client (RLS denies anon, AC-12).
  */
-import { headers } from "next/headers";
 import { getLocale } from "next-intl/server";
 import { getStoreSettingsStatic } from "@/lib/store-settings";
 import {
@@ -31,187 +30,34 @@ import {
   sendNewOrderOwnerAlert,
 } from "@/lib/email/dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { clientIp } from "@/lib/request/client-ip";
 import { checkCheckoutRateLimit } from "@/lib/checkout/rate-limit";
 import { computeShipping } from "@/lib/cart/shipping";
-import { validateAddress, type RawAddressInput } from "@/lib/checkout/address";
+import { validateAddress } from "@/lib/checkout/address";
 import { applyDiscount, normalizeDiscountCode } from "@/lib/checkout/discount";
 import { assembleOrder, type OrderLine } from "@/lib/checkout/order";
 import {
   fetchDiscountCode,
   revalidateLines,
-  type LineIssue,
   type SubmittedLine,
-  type ValidatedLine,
 } from "@/lib/checkout/checkout-read";
-import { cartLineKey, sanitizeQuantity } from "@/lib/cart/cart-line";
-import { UUID_PATTERN } from "@/lib/config";
+import {
+  detectPriceDrift,
+  mapThrownError,
+  parseSnapshotPrices,
+  parseSubmittedLines,
+  readFormValues,
+  readIdempotencyKey,
+  toAddressInput,
+  toDiscountResult,
+  toLineErrorMaps,
+} from "@/lib/checkout/form-parsing";
 import type {
   CheckoutFormState,
   CheckoutFormValues,
-  CheckoutLineIssue,
   DiscountResult,
 } from "./checkout-form-state";
 import type { CreateOrderPayload } from "@/lib/supabase/database.types";
-
-/** Prefix the RPC raises for an out-of-stock line (edge 2). */
-const OUT_OF_STOCK_PREFIX = "OUT_OF_STOCK:";
-/** The RPC raise when a discount code hit its redemption cap during commit. */
-const DISCOUNT_EXHAUSTED = "DISCOUNT_EXHAUSTED";
-
-/**
- * Best-effort client IP for the per-IP checkout rate limiter (T7 Security stage).
- * Same trust model as the Q&A action (`producto/[slug]/actions.ts`): the leftmost
- * `x-forwarded-for` hops are client-forgeable, so prefer, in order: Vercel's
- * trusted single-value header, the RIGHTMOST XFF hop (the one our own edge wrote),
- * `x-real-ip`, then a shared "unknown" bucket (conservative: no-IP callers share
- * one limit, never bypass it). Residual risk (no trusted edge, spoofable XFF) is
- * accepted for a best-effort limiter — the DB atomicity + stock floor are the
- * hard backstops.
- */
-async function clientIp(): Promise<string> {
-  const headerList = await headers();
-
-  const vercelForwarded = headerList.get("x-vercel-forwarded-for")?.trim();
-  if (vercelForwarded) {
-    return vercelForwarded;
-  }
-
-  const forwarded = headerList.get("x-forwarded-for");
-  if (forwarded) {
-    const hops = forwarded
-      .split(",")
-      .map((hop) => hop.trim())
-      .filter((hop) => hop.length > 0);
-    const rightmost = hops.at(-1);
-    if (rightmost) {
-      return rightmost;
-    }
-  }
-
-  return headerList.get("x-real-ip")?.trim() ?? "unknown";
-}
-
-/** Read the form values into the preserved-values shape (untrimmed). */
-function readFormValues(formData: FormData): CheckoutFormValues {
-  const get = (name: string): string => String(formData.get(name) ?? "");
-  return {
-    email: get("email"),
-    contact_phone: get("contact_phone"),
-    shipping_full_name: get("shipping_full_name"),
-    address_line1: get("address_line1"),
-    address_line2: get("address_line2"),
-    city: get("city"),
-    postal_code: get("postal_code"),
-    state: get("state"),
-    delivery_notes: get("delivery_notes"),
-    rfc: get("rfc"),
-    discountCode: get("discountCode"),
-  };
-}
-
-/** Map preserved values to the raw address-validation input. */
-function toAddressInput(values: CheckoutFormValues): RawAddressInput {
-  return {
-    email: values.email,
-    contact_phone: values.contact_phone,
-    shipping_full_name: values.shipping_full_name,
-    address_line1: values.address_line1,
-    address_line2: values.address_line2,
-    city: values.city,
-    postal_code: values.postal_code,
-    state: values.state,
-    delivery_notes: values.delivery_notes,
-    rfc: values.rfc,
-  };
-}
-
-/** Parse the serialized `lines` hidden field into submitted lines (edge 4). */
-function parseSubmittedLines(raw: string): SubmittedLine[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(parsed)) {
-    return [];
-  }
-  const lines: SubmittedLine[] = [];
-  for (const entry of parsed) {
-    if (typeof entry !== "object" || entry === null) {
-      continue;
-    }
-    const record = entry as Record<string, unknown>;
-    const productId = typeof record.productId === "string" ? record.productId : "";
-    const variantId = typeof record.variantId === "string" ? record.variantId : null;
-    const quantity =
-      typeof record.quantity === "number" ? sanitizeQuantity(record.quantity) : 1;
-    if (!UUID_PATTERN.test(productId)) {
-      // A non-UUID product id can only be tampering — drop it; if that empties
-      // the cart the empty-cart guard aborts (edge 3, 4).
-      continue;
-    }
-    lines.push({ productId, variantId, quantity });
-  }
-  return lines;
-}
-
-/** Build the per-line error + live-price maps from revalidation issues. */
-function toLineErrorMaps(issues: readonly LineIssue[]): {
-  lineErrors: Record<string, CheckoutLineIssue>;
-  liveUnitPrices: Record<string, number>;
-} {
-  const lineErrors: Record<string, CheckoutLineIssue> = {};
-  const liveUnitPrices: Record<string, number> = {};
-  for (const issue of issues) {
-    const key = cartLineKey(issue.productId, issue.variantId);
-    lineErrors[key] = issue.kind;
-    if (issue.liveUnitPriceCents !== undefined) {
-      liveUnitPrices[key] = issue.liveUnitPriceCents;
-    }
-  }
-  return { lineErrors, liveUnitPrices };
-}
-
-/**
- * Detect price drift: a validated line whose LIVE price differs from the
- * snapshot the client submitted (edge 1). We compare against the submitted
- * per-line snapshot price map. Returns the keys that drifted.
- */
-function detectPriceDrift(
-  validated: readonly ValidatedLine[],
-  snapshotPrices: ReadonlyMap<string, number>,
-): { lineErrors: Record<string, "price-changed">; liveUnitPrices: Record<string, number> } {
-  const lineErrors: Record<string, "price-changed"> = {};
-  const liveUnitPrices: Record<string, number> = {};
-  for (const line of validated) {
-    const key = cartLineKey(line.productId, line.variantId);
-    const snapshot = snapshotPrices.get(key);
-    if (snapshot !== undefined && snapshot !== line.unitPriceCents) {
-      lineErrors[key] = "price-changed";
-      liveUnitPrices[key] = line.unitPriceCents;
-    }
-  }
-  return { lineErrors, liveUnitPrices };
-}
-
-/** Convert a discount outcome to the serializable UI result. */
-function toDiscountResult(
-  outcome: ReturnType<typeof applyDiscount>,
-  degraded: boolean,
-): DiscountResult {
-  if (degraded) {
-    return { kind: "degraded" };
-  }
-  switch (outcome.kind) {
-    case "none":
-      return { kind: "none" };
-    case "applied":
-      return { kind: "applied", code: outcome.code, discountCents: outcome.discountCents };
-    case "invalid":
-      return { kind: "invalid", reason: outcome.reason };
-  }
-}
 
 /**
  * Place the order. `prevState`/`formData` follow the `useActionState` contract.
@@ -243,26 +89,6 @@ export async function placeOrder(
   } catch (caught) {
     return mapThrownError(caught, values, submissionId);
   }
-}
-
-/** Parse the per-line snapshot price map (`cartLineKey` → cents). */
-function parseSnapshotPrices(raw: string): Map<string, number> {
-  const map = new Map<string, number>();
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return map;
-  }
-  if (typeof parsed !== "object" || parsed === null) {
-    return map;
-  }
-  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-    if (typeof value === "number" && Number.isInteger(value)) {
-      map.set(key, value);
-    }
-  }
-  return map;
 }
 
 /** The core (address-validated, non-empty) checkout pipeline (steps 4–9). */
@@ -398,18 +224,6 @@ async function resolveDiscount(
   return { discountResult, discountCents };
 }
 
-/** A validated, non-empty client idempotency key (UUID), or a generated one. */
-function readIdempotencyKey(formData: FormData): string {
-  const key = String(formData.get("idempotencyKey") ?? "").trim();
-  if (UUID_PATTERN.test(key)) {
-    return key;
-  }
-  // Fallback: the client always sends one, but never trust it blindly. A fresh
-  // key means this submit is treated as new (the button-disable is the client
-  // backstop; the DB unique index is the server backstop for the real key).
-  return crypto.randomUUID();
-}
-
 /** The subset of the create_order result the action + email triggers need. */
 interface CreatedOrder {
   orderId: string;
@@ -471,42 +285,4 @@ async function createOrderViaRpc(
     confirmationToken: data.confirmation_token,
     reused: data.reused,
   };
-}
-
-/** Map a thrown error to a friendly state (never echoes raw PG, AC-8/edge 8). */
-function mapThrownError(
-  caught: unknown,
-  values: CheckoutFormValues,
-  submissionId: number,
-): CheckoutFormState {
-  const message = caught instanceof Error ? caught.message : String(caught);
-
-  // The RPC lost the last-unit race for a line (edge 2). Surface out-of-stock.
-  if (message.includes(OUT_OF_STOCK_PREFIX)) {
-    const lineErrors = parseOutOfStockLine(message);
-    console.warn(`[checkout] out of stock at reservation: ${message}`);
-    return { status: "out-of-stock", lineErrors, values, submissionId };
-  }
-
-  // The discount code hit its cap concurrently — degrade gracefully (AC-7): the
-  // user can retry without the code. Treated as a generic retryable error.
-  if (message.includes(DISCOUNT_EXHAUSTED)) {
-    console.warn("[checkout] discount exhausted at reservation.");
-    return { status: "error", discount: { kind: "invalid", reason: "exhausted" }, values, submissionId };
-  }
-
-  console.error(`[checkout] order creation failed: ${message}`);
-  return { status: "error", values, submissionId };
-}
-
-/** Parse `OUT_OF_STOCK:<productId>:<variantId|->` into a lineErrors map. */
-function parseOutOfStockLine(message: string): Record<string, "out-of-stock"> {
-  const start = message.indexOf(OUT_OF_STOCK_PREFIX);
-  const body = message.slice(start + OUT_OF_STOCK_PREFIX.length);
-  const [productId, variantToken] = body.split(":");
-  if (!productId || !UUID_PATTERN.test(productId)) {
-    return {};
-  }
-  const variantId = variantToken && variantToken !== "-" ? variantToken : null;
-  return { [cartLineKey(productId, variantId)]: "out-of-stock" };
 }

@@ -21,9 +21,9 @@
  * touches a cache key.
  */
 import { updateTag } from "next/cache";
-import { headers } from "next/headers";
 import { createPublicClient } from "@/lib/supabase/public";
 import { productCacheTag } from "@/lib/catalog/product-detail";
+import { clientIp } from "@/lib/request/client-ip";
 import {
   checkRateLimit,
   isHoneypotTripped,
@@ -34,53 +34,6 @@ import type { QaFormState } from "./qa-form-state";
 
 /** PostgREST code for an RLS `WITH CHECK` / privilege denial. */
 const RLS_DENIAL_CODE = "42501";
-
-/**
- * Best-effort client IP for the per-IP rate limiter (M-3).
- *
- * TRUST MODEL — this app deploys behind Vercel's edge (README: Vercel/Geist).
- * The `x-forwarded-for` header a caller sends is fully attacker-controlled in
- * its LEFTMOST hops, so trusting `split(",")[0]` lets any client mint a fresh IP
- * per request and never trip the limit. We therefore prefer, in order:
- *
- *   1. `x-vercel-forwarded-for` — a SINGLE value injected by Vercel's trusted
- *      edge and stripped from any client-supplied copy; not spoofable behind
- *      Vercel. This is the correct source in the deployment target.
- *   2. the RIGHTMOST hop of `x-forwarded-for` — the address appended by the
- *      closest trusted proxy. Leftmost hops are client-forgeable; the rightmost
- *      is the last one our own edge wrote, so it is the most defensible when the
- *      platform header is absent (e.g. a self-hosted reverse proxy).
- *   3. `x-real-ip` — some proxies set this to the single origin IP.
- *   4. `"unknown"` — collapses all no-IP callers into ONE shared bucket (a
- *      conservative default: worst case they share a limit, never bypass it).
- *
- * RESIDUAL RISK: on a deployment WITHOUT a trusted edge that overwrites/append
- * XFF, the rightmost hop is still whatever the client sent — the limiter is then
- * only best-effort (as the ticket accepts) and the honeypot + M-2's hard map cap
- * are the backstops that prevent spoofing from amplifying into memory growth.
- */
-async function clientIp(): Promise<string> {
-  const headerList = await headers();
-
-  const vercelForwarded = headerList.get("x-vercel-forwarded-for")?.trim();
-  if (vercelForwarded) {
-    return vercelForwarded;
-  }
-
-  const forwarded = headerList.get("x-forwarded-for");
-  if (forwarded) {
-    const hops = forwarded
-      .split(",")
-      .map((hop) => hop.trim())
-      .filter((hop) => hop.length > 0);
-    const rightmost = hops.at(-1);
-    if (rightmost) {
-      return rightmost;
-    }
-  }
-
-  return headerList.get("x-real-ip")?.trim() ?? "unknown";
-}
 
 /**
  * Submit a question. `slug` is bound per-render (so the success revalidation
