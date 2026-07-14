@@ -121,11 +121,14 @@ Open items discovered during the pipeline. Check off when addressed.
   NESTED client island (e.g. `<QuickAddButton>` slotted into the card), NOT a
   conversion of `ProductCard` to `"use client"`. The current single-`<Link>`
   wrapper supports this without refactor. (Ref: T3 architecture review, LOW.)
-- [ ] **Split `queries.ts` before adding T5 filter logic (LOW).**
-  `src/lib/catalog/queries.ts` is ~712 lines — cohesive today, but piling T5
-  filter/sort logic in will breach the ~400-line guidance. Split into
-  `queries/products.ts` + `queries/taxonomy.ts` when T5 lands. (Ref: T3
-  architecture review, LOW.)
+- [x] **Split `queries.ts` before adding T5 filter logic (LOW).**
+  DONE 2026-07-14 (A3): internal product-page orchestration/stitching
+  (`readProductPage`, `readCategoryProductPage`, `stitchCards`, `toCard`,
+  `countProducts`, `productCardQuery`, `cacheKeyForPage`, row shapes, member cap)
+  moved verbatim to `src/lib/catalog/queries-internal.ts` (349 lines); public
+  LIST/TAXONOMY API stays in `queries.ts` (366 lines). Both ≤400. Behavior-
+  preserving; test suite unmodified (public-API only). tsc 0, eslint clean,
+  1281/1281 unit, 180/180 integration, `next build` static/ISR unchanged.
 
 ## T4 — Product detail page (routed to later tasks)
 
@@ -242,15 +245,16 @@ Open items discovered during the pipeline. Check off when addressed.
   `cacheComponents`/PPR, restore a static shell + dynamic results hole (streaming for
   JS-on, SSR-visible for JS-off) — or edge-cache the shell. Trigger: RPC p95 TTFB
   climbs past ~150–200ms in production. (Ref: T5 architecture review, Scalability.)
-- [ ] **T5-7 — `cachedRead` wrapper adopted by only 1 of 3 read modules (cleanup,
-  LOW).** `read-primitives.ts` exports `cachedRead(keyParts, tags, fn)` to single-
-  source the `unstable_cache({ tags, revalidate })` boilerplate, but only `facets.ts`
-  uses it; `queries.ts` (~8 sites) and `search.ts` (2 sites) still hand-write the
-  inline `unstable_cache` shape, so two cache idioms coexist in one module family.
-  Migrate the bounded `queries.ts`/`search.ts` cache sites to `cachedRead` (the
-  `search.ts` filter-only branch fits; its conditional-cache path can stay inline with
-  a comment). Do this when `queries.ts` is split (existing T3 LOW split item), to
-  avoid touching it twice. (Ref: T5 architecture review, Read-Layer Coherence.)
+- [x] **T5-7 — `cachedRead` wrapper adopted by only 1 of 3 read modules (cleanup,
+  LOW).** DONE 2026-07-14 (A3): migrated all 10 bounded inline `unstable_cache`
+  sites — `queries.ts`/`queries-internal.ts` (8: listProducts, listProductsByBrand,
+  listProductsByStyle, listProductsByCategory, listBrands, getBrand, listStyles,
+  getStyle, listCategories, getCategory) and `search.ts` (2: `searchProducts`
+  filter-only branch + `listPopularProducts`) to `cachedRead`. Byte-identical key
+  parts / tags / `revalidate: CATALOG_REVALIDATE_SECONDS` (git-diff verified). The
+  `search.ts` free-text conditional-cache branch STAYS inline (direct call, no
+  memoization) with a comment. `product-detail.ts` was out of A3 scope — its 2
+  `unstable_cache` sites remain inline. (Ref: T5 architecture review.)
 - [ ] **T5-8 — "malla" / mesh search-scope gap: materials unsurfaced by keyword
   search (T5 follow-up / T13, MED).** Keyword search matches name/brand/description
   only (AC-3). Chairs whose "mesh/malla" nature lives ONLY in the `material_*` columns
@@ -290,10 +294,15 @@ Actions (executing now):
   product-detail,cart,checkout,email}.ts`; `config.ts` is now a pure re-export
   barrel. All 71 exports preserved (diff-verified). tsc 0, eslint clean,
   1281/1281 tests green, `next build` OK. Behavior-preserving, no importer changed.
-- [ ] **A3 — Split `queries.ts` (710) + adopt `cachedRead` (closes T3 split item +
-  T5-7).** Extract internal stitching/orchestration per audit seams; migrate the
-  hand-written `unstable_cache` sites in queries.ts/search.ts to `cachedRead`
-  (conditional-cache branch in search.ts stays inline with a comment).
+- [x] **A3 — Split `queries.ts` (710) + adopt `cachedRead` (closes T3 split item +
+  T5-7).** DONE 2026-07-14: extracted internal stitching/orchestration verbatim to
+  `queries-internal.ts` (349); public API in `queries.ts` (366) — both ≤400.
+  Migrated all 10 bounded `unstable_cache` sites in queries/search to `cachedRead`
+  (key/tag/revalidate byte-identical, git-diff verified); search free-text branch
+  stays inline with a comment. Behavior-preserving: tsc 0, eslint clean, 1281/1281
+  unit (test file unmodified), 180/180 integration, `next build` clean (catalog
+  pages static/ISR 5m unchanged), tsconfig.json unchanged. Closes the T3 split item
+  and T5-7 (both checked off above).
 - [ ] **A4 — Extract pure form-parsing helpers from `checkout/actions.ts` (512) to
   `src/lib/checkout/form-parsing.ts`; switch both action files' local `clientIp`
   copies to the canonical `src/lib/request/client-ip.ts` (closes SEC-M-1).**

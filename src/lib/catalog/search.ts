@@ -27,14 +27,13 @@
  */
 import "server-only";
 import {
-  CATALOG_REVALIDATE_SECONDS,
   DEFAULT_SORT,
   POPULAR_PRODUCTS_MAX,
   PRICE_BUCKET_CENTS,
   PRODUCTS_PER_PAGE,
 } from "@/lib/config";
 import { createPublicClient } from "@/lib/supabase/public";
-import { fail } from "@/lib/catalog/read-primitives";
+import { cachedRead, fail } from "@/lib/catalog/read-primitives";
 import { CATALOG_CACHE_TAG } from "@/lib/catalog/queries";
 import { stockState } from "@/lib/catalog/stock";
 import {
@@ -43,7 +42,6 @@ import {
   parsePageParam,
   rangeFor,
 } from "@/lib/catalog/pagination";
-import { unstable_cache } from "next/cache";
 import type { CatalogPage, CatalogProductCard } from "@/lib/catalog/types";
 import type { CatalogFilters } from "@/lib/catalog/search.types";
 import { isCacheableFilters } from "@/lib/catalog/search-params";
@@ -254,16 +252,18 @@ export function searchProducts(
   rawPage: string | string[] | undefined,
   pageSize: number = PRODUCTS_PER_PAGE,
 ): Promise<CatalogPage<CatalogProductCard>> {
+  // CONDITIONAL CACHE (Constraint 3): the free-text (`q` present) branch must
+  // NOT be memoized — unbounded key cardinality is the cache-key DoS vector — so
+  // it stays an inline direct call and cannot use `cachedRead`. Only the bounded
+  // filter-only branch below routes through the shared `cachedRead` wrapper.
   if (!isCacheableFilters(filters)) {
-    // Free-text: never cached (Constraint 3).
     return readSearchPage(filters, rawPage, pageSize);
   }
-  const cached = unstable_cache(
-    () => readSearchPage(filters, rawPage, pageSize),
+  return cachedRead(
     filterCacheKey(filters, rawPage, pageSize),
-    { tags: [CATALOG_CACHE_TAG], revalidate: CATALOG_REVALIDATE_SECONDS },
+    [CATALOG_CACHE_TAG],
+    () => readSearchPage(filters, rawPage, pageSize),
   );
-  return cached();
 }
 
 /**
@@ -274,7 +274,9 @@ export function searchProducts(
 export function listPopularProducts(
   limit: number = POPULAR_PRODUCTS_MAX,
 ): Promise<CatalogProductCard[]> {
-  const cached = unstable_cache(
+  return cachedRead(
+    ["catalog", "popular-products", String(limit)],
+    [CATALOG_CACHE_TAG],
     async () => {
       const args = buildArgs(
         {
@@ -297,8 +299,5 @@ export function listPopularProducts(
       const covers = await coversFor(rows.map((row) => row.id));
       return rows.map((row) => toCard(row, covers.get(row.id)));
     },
-    ["catalog", "popular-products", String(limit)],
-    { tags: [CATALOG_CACHE_TAG], revalidate: CATALOG_REVALIDATE_SECONDS },
   );
-  return cached();
 }
