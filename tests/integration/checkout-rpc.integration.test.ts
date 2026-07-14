@@ -99,6 +99,7 @@ function payloadFor(variant: Variant, quantity: number, overrides: Partial<Creat
   const lineTotal = variant.unitPriceCents * quantity;
   return {
     idempotency_key: randomUUID(),
+    locale: "es-MX",
     contact_email: email,
     contact_phone: null,
     shipping_full_name: "QA Cliente",

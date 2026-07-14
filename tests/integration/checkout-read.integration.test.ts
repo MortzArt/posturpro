@@ -181,6 +181,7 @@ describe("getOrderByToken — confirmation-token boundary (AC-13, M-6 IDOR)", ()
     const line = inStock.unitPriceCents;
     const payload: CreateOrderPayload = {
       idempotency_key: randomUUID(),
+      locale: "es-MX",
       contact_email: `qa-idor-${randomUUID()}@example.com`,
       contact_phone: null,
       shipping_full_name: "QA IDOR",

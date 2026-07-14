@@ -36,6 +36,11 @@ import { mpAmountToCents } from "@/lib/payments/money-boundary";
 import { resolvePaymentMethod } from "@/lib/payments/config";
 import { AMOUNT_RECONCILIATION_TOLERANCE_CENTS } from "@/lib/payments/config";
 import { MissingEnvVarError } from "@/lib/env";
+import { sendPaymentReceived, sendVoucherInstructions } from "@/lib/email/dispatch";
+import { extractVoucher } from "@/lib/payments/order-payment-read";
+import { toVoucherData } from "@/lib/email/voucher-data";
+import type { PaymentMethodKey } from "@/lib/payments/config";
+import type { TransitionKind } from "@/lib/supabase/database.types";
 
 /**
  * The terminal outcome of processing ONE payment notification. `httpOk` tells
@@ -181,7 +186,72 @@ export async function processPaymentNotification(
 
   // Success → finalize the claim so a true replay of this (id, status) no-ops.
   await finalizePaymentEvent(mpPaymentId, mpStatus);
+
+  // T9: trigger the transactional email for this transition (AC-15/AC-16/AC-18).
+  // FULLY ISOLATED — a send failure/throw is caught here and NEVER changes the
+  // ProcessResult or the webhook's HTTP status. The route stays email-free
+  // (AC-18): the trigger lives HERE, after a successful advance + finalize, so a
+  // slow send never blocks the 200 (dispatch bounds the send with a timeout).
+  await triggerTransitionEmail({
+    orderId: order.id,
+    transitionKind: advance.result.transition_kind,
+    mpPaymentId,
+    method,
+    payment,
+  });
+
   return { kind: "processed", httpOk: true };
+}
+
+/**
+ * Dispatch the email for a successful transition, branching on the STRUCTURED
+ * `transition_kind` (never the note text, TD-2). `paid` → payment_received;
+ * `payment_pending` + an OXXO/SPEI method WITH voucher data present →
+ * voucher_instructions (else logged + skipped, no partial email, AC-16). All
+ * other kinds send no customer email (edge 5: flagged/mismatch never reach here).
+ * Fully isolated — any throw is caught and swallowed (AC-13).
+ */
+async function triggerTransitionEmail(args: {
+  orderId: string;
+  transitionKind: TransitionKind;
+  mpPaymentId: string;
+  method: PaymentMethodKey | null;
+  payment: PaymentResponse;
+}): Promise<void> {
+  try {
+    if (args.transitionKind === "paid") {
+      const cents = safeAmountCents(args.payment.transaction_amount) ?? 0;
+      await sendPaymentReceived(args.orderId, args.mpPaymentId, cents);
+      return;
+    }
+    if (args.transitionKind === "payment_pending" && isVoucherMethod(args.method)) {
+      // Voucher data comes from the SAME authoritative payment the webhook already
+      // fetched — no new voucher-persistence schema (the T8 boundary; documented
+      // gap). Reuse the T8 extractor; build the email's voucher shape from it.
+      const view = extractVoucher(args.payment);
+      const paidCents = safeAmountCents(args.payment.transaction_amount);
+      const voucher = toVoucherData(view, args.method, paidCents);
+      if (!voucher) {
+        console.warn(
+          `[email] voucher email skipped: no voucher data for order ${args.orderId} (payment ${args.mpPaymentId})`,
+        );
+        return;
+      }
+      await sendVoucherInstructions(args.orderId, args.mpPaymentId, voucher);
+    }
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : "unknown";
+    console.error(
+      `[email] transition trigger threw (ignored): order=${args.orderId} kind=${args.transitionKind} reason=${message}`,
+    );
+  }
+}
+
+/** Whether a resolved method is an OXXO/SPEI voucher rail (type guard). */
+function isVoucherMethod(
+  method: PaymentMethodKey | null,
+): method is Extract<PaymentMethodKey, "oxxo" | "spei"> {
+  return method === "oxxo" || method === "spei";
 }
 
 /** Match an order by external_reference (= confirmation_token) or preference id. */

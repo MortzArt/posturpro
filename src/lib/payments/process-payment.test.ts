@@ -19,6 +19,15 @@ vi.mock("./advance-order", () => ({
   advanceOrderStatus: (...args: unknown[]) => advanceOrderStatus(...args),
 }));
 
+// --- Mock the T9 email dispatch (the webhook triggers it after a successful
+//     advance; must never affect the ProcessResult / HTTP status, AC-13/AC-18). ---
+const sendPaymentReceived = vi.fn();
+const sendVoucherInstructions = vi.fn();
+vi.mock("@/lib/email/dispatch", () => ({
+  sendPaymentReceived: (...a: unknown[]) => sendPaymentReceived(...a),
+  sendVoucherInstructions: (...a: unknown[]) => sendVoucherInstructions(...a),
+}));
+
 // --- Mock the admin client (order match + event claim/finalize RPCs) ---
 interface OrderRow {
   id: string;
@@ -106,7 +115,12 @@ const ORDER: OrderRow = { id: "order-uuid-1", total_cents: 899990 };
 beforeEach(() => {
   paymentGet.mockReset();
   advanceOrderStatus.mockReset();
-  advanceOrderStatus.mockResolvedValue({ ok: true, result: { applied: true, reason: "advanced" } });
+  advanceOrderStatus.mockResolvedValue({
+    ok: true,
+    result: { applied: true, reason: "advanced", transition_kind: "paid" },
+  });
+  sendPaymentReceived.mockReset().mockResolvedValue({ ok: true, sent: true });
+  sendVoucherInstructions.mockReset().mockResolvedValue({ ok: true, sent: true });
   state.orderByExternalRef = ORDER;
   state.orderByToken = null;
   state.claimResult = "new";
@@ -326,5 +340,93 @@ describe("processPaymentNotification", () => {
     expect(advanceOrderStatus).toHaveBeenCalledWith(
       expect.objectContaining({ p_order_status: null, p_payment_status: "refunded" }),
     );
+  });
+});
+
+describe("T9 email trigger (AC-13/AC-15/AC-16/AC-18)", () => {
+  const approved = {
+    id: 111,
+    status: "approved",
+    external_reference: "ext-ref",
+    transaction_amount: 8999.9,
+    payment_type_id: "credit_card",
+    payment_method_id: "visa",
+  };
+
+  it("triggers payment_received on a 'paid' transition, dedupe=mp_payment_id (AC-15)", async () => {
+    paymentGet.mockResolvedValue(approved);
+    const result = await processPaymentNotification("111", null);
+    expect(result).toEqual({ kind: "processed", httpOk: true });
+    expect(sendPaymentReceived).toHaveBeenCalledWith(ORDER.id, "111", 899990);
+    expect(sendVoucherInstructions).not.toHaveBeenCalled();
+  });
+
+  it("triggers voucher_instructions on a 'payment_pending' OXXO transition (AC-16)", async () => {
+    paymentGet.mockResolvedValue({
+      id: 222,
+      status: "pending",
+      status_detail: "pending_waiting_payment",
+      external_reference: "ext-ref",
+      transaction_amount: 8999.9,
+      payment_type_id: "ticket",
+      payment_method_id: "oxxo",
+      transaction_details: { payment_method_reference_id: "9860 1111 2222 3333" },
+      date_of_expiration: "2026-07-20T23:59:00Z",
+    });
+    advanceOrderStatus.mockResolvedValue({
+      ok: true,
+      result: { applied: true, reason: "advanced", transition_kind: "payment_pending" },
+    });
+    const result = await processPaymentNotification("222", null);
+    expect(result).toEqual({ kind: "processed", httpOk: true });
+    expect(sendVoucherInstructions).toHaveBeenCalledWith(
+      ORDER.id,
+      "222",
+      expect.objectContaining({ method: "oxxo", reference: "9860 1111 2222 3333" }),
+    );
+    expect(sendPaymentReceived).not.toHaveBeenCalled();
+  });
+
+  it("skips the voucher email when no voucher reference is present (no partial email, AC-16)", async () => {
+    paymentGet.mockResolvedValue({
+      id: 333,
+      status: "pending",
+      external_reference: "ext-ref",
+      transaction_amount: 8999.9,
+      payment_type_id: "ticket",
+      payment_method_id: "oxxo",
+      // no transaction_details → no reference
+    });
+    advanceOrderStatus.mockResolvedValue({
+      ok: true,
+      result: { applied: true, reason: "advanced", transition_kind: "payment_pending" },
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const result = await processPaymentNotification("333", null);
+    expect(result).toEqual({ kind: "processed", httpOk: true });
+    expect(sendVoucherInstructions).not.toHaveBeenCalled();
+  });
+
+  it("returns 'processed' 200 even when the email dispatch THROWS (failure isolation, AC-13/AC-18)", async () => {
+    paymentGet.mockResolvedValue(approved);
+    sendPaymentReceived.mockRejectedValue(new Error("email exploded"));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const result = await processPaymentNotification("111", null);
+    // The webhook outcome is decided by payment processing ALONE (email never
+    // changes it): still processed + 200, and the claim was finalized.
+    expect(result).toEqual({ kind: "processed", httpOk: true });
+    expect(state.finalizeCalls).toEqual([{ id: "111", status: "approved" }]);
+  });
+
+  it("sends NO customer email on a refund (payment-only, edge 5)", async () => {
+    paymentGet.mockResolvedValue({ id: 111, status: "refunded", external_reference: "ext-ref", transaction_amount: 8999.9 });
+    advanceOrderStatus.mockResolvedValue({
+      ok: true,
+      result: { applied: true, reason: "payment_updated", transition_kind: "refunded" },
+    });
+    const result = await processPaymentNotification("111", null);
+    expect(result).toEqual({ kind: "processed", httpOk: true });
+    expect(sendPaymentReceived).not.toHaveBeenCalled();
+    expect(sendVoucherInstructions).not.toHaveBeenCalled();
   });
 });

@@ -34,6 +34,26 @@ export type PaymentStatus =
 export type DiscountType = "percentage" | "fixed_amount";
 
 /**
+ * Structured order-transition kind (T9 TD-2, 0010_email_transitions.sql). Derived
+ * INSIDE `advance_order_status` from (from_status, to_status, payment_status,
+ * payment-only mode) and returned in the RPC jsonb + written to every
+ * `order_status_history` row. Email triggers branch on THIS fixed set — never on
+ * the free-text `note`. `noop` = an idempotent re-notification with no material
+ * change (no email fires).
+ */
+export type TransitionKind =
+  | "paid"
+  | "payment_pending"
+  | "payment_failed"
+  | "payment_authorized"
+  | "refunded"
+  | "shipped"
+  | "cancelled"
+  | "delivered"
+  | "preparing"
+  | "noop";
+
+/**
  * One line item in the `create_order` RPC payload (T7, 0008_checkout.sql). All
  * cents are integers, assembled + validated server-side; the RPC re-validates
  * stock and re-checks the line-total identity at the DB.
@@ -74,6 +94,9 @@ export interface CreateOrderPayload {
   tax_cents: number;
   total_cents: number;
   discount_code: string | null;
+  /** Active request UI locale persisted onto the order (T9, 0010). Falls back to
+   * 'es-MX' in the RPC when absent/invalid; constrained to the shipped set. */
+  locale: string;
   items: CreateOrderItemPayload[];
 }
 
@@ -115,6 +138,22 @@ export type AdvanceOrderStatusResult = {
     | "payment_updated";
   from_status: OrderStatus | null;
   to_status: OrderStatus | null;
+  /** Structured transition kind (T9 TD-2). Email triggers branch on this. */
+  transition_kind: TransitionKind;
+};
+
+/** Args for the `claim_email_send` RPC (T9, 0010 — exactly-once send claim). */
+export type ClaimEmailSendArgs = {
+  p_order_id: string;
+  p_email_kind: string;
+  p_dedupe_key?: string;
+};
+
+/** Args for the `finalize_email_send` RPC (T9, 0010). */
+export type FinalizeEmailSendArgs = {
+  p_order_id: string;
+  p_email_kind: string;
+  p_dedupe_key?: string;
 };
 
 /** Args for the `record_payment_event` RPC (T8, 0009 — claim-then-finalize spine, M-1/M-6). */
@@ -588,6 +627,8 @@ export interface Database {
           mp_external_reference: string | null;
           idempotency_key: string | null;
           confirmation_token: string;
+          /** Persisted per-order UI locale (T9, 0010). 'es-MX' | 'en'. */
+          locale: string;
           created_at: string;
           updated_at: string;
         };
@@ -621,6 +662,7 @@ export interface Database {
           mp_external_reference?: string | null;
           idempotency_key?: string | null;
           confirmation_token?: string;
+          locale?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -654,6 +696,7 @@ export interface Database {
           mp_external_reference?: string | null;
           idempotency_key?: string | null;
           confirmation_token?: string;
+          locale?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -746,6 +789,40 @@ export interface Database {
           },
         ];
       };
+      email_sends: {
+        Row: {
+          id: string;
+          order_id: string;
+          email_kind: string;
+          dedupe_key: string;
+          sent_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          order_id: string;
+          email_kind: string;
+          dedupe_key?: string;
+          sent_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          order_id?: string;
+          email_kind?: string;
+          dedupe_key?: string;
+          sent_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "email_sends_order_id_fkey";
+            columns: ["order_id"];
+            referencedRelation: "orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       order_items: {
         Row: {
           id: string;
@@ -814,6 +891,8 @@ export interface Database {
           from_status: OrderStatus | null;
           to_status: OrderStatus;
           note: string | null;
+          /** Structured transition kind (T9 TD-2, 0010). Nullable for pre-0010 rows. */
+          transition_kind: TransitionKind | null;
           created_at: string;
         };
         Insert: {
@@ -822,6 +901,7 @@ export interface Database {
           from_status?: OrderStatus | null;
           to_status: OrderStatus;
           note?: string | null;
+          transition_kind?: TransitionKind | null;
           created_at?: string;
         };
         Update: {
@@ -830,6 +910,7 @@ export interface Database {
           from_status?: OrderStatus | null;
           to_status?: OrderStatus;
           note?: string | null;
+          transition_kind?: TransitionKind | null;
           created_at?: string;
         };
         Relationships: [
@@ -1130,6 +1211,14 @@ export interface Database {
       refunded_total: {
         Args: RefundedTotalArgs;
         Returns: number;
+      };
+      claim_email_send: {
+        Args: ClaimEmailSendArgs;
+        Returns: string;
+      };
+      finalize_email_send: {
+        Args: FinalizeEmailSendArgs;
+        Returns: undefined;
       };
     };
     Enums: {

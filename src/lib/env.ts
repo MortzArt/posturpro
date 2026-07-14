@@ -131,3 +131,50 @@ export function getMercadoPagoEnv(
     webhookSecret: requireEnv("MERCADOPAGO_WEBHOOK_SECRET", source),
   };
 }
+
+/* ========================================================================= *
+ * Transactional email (T9, AC-6, AC-7)
+ *
+ * SAFETY MODEL — same discipline as the Supabase + MP secrets above:
+ *  - EMAIL_API_KEY : server-only SECRET (the email provider API key). NEVER
+ *    prefixed `NEXT_PUBLIC_`; exposed ONLY through `getEmailEnv()`, reached
+ *    exclusively from the `server-only`-guarded provider module
+ *    (`src/lib/email/provider.ts`). A `MissingEnvVarError` here is CAUGHT by the
+ *    dispatch layer and swallowed (email is failure-isolated, AC-13) — a missing
+ *    key must NEVER throw into checkout or the webhook.
+ *  - EMAIL_FROM_ADDRESS  : the verified sender address (`from`). Not secret, but
+ *    read here so all email config is single-sourced + validated together.
+ *  - EMAIL_OWNER_ADDRESS : the store operator's inbox for owner alerts. Not
+ *    user-supplied (so `new_order_owner` can't be redirected by input).
+ * ========================================================================= */
+
+/** Server-only transactional-email config (T9 AC-7). */
+export interface EmailEnv {
+  /** Provider API key (Resend). SECRET — server-only, never `NEXT_PUBLIC_`. */
+  apiKey: string;
+  /** Verified sender address used as the `from` on every email. */
+  fromAddress: string;
+  /** Store operator's inbox for owner alerts (`new_order_owner`, contact relay). */
+  ownerAddress: string;
+}
+
+/**
+ * Server-only email environment. Reads + validates the three required email vars
+ * and throws a named {@link MissingEnvVarError} if any is absent/blank. The
+ * dispatch layer CATCHES this (AC-13) so a missing var disables email quietly
+ * rather than breaking checkout/webhook.
+ *
+ * Must only be reached from server code (the provider module enforces this with
+ * `import "server-only"`).
+ *
+ * @throws {MissingEnvVarError} if a required email var is missing/blank
+ */
+export function getEmailEnv(
+  source: Record<string, string | undefined> = process.env,
+): EmailEnv {
+  return {
+    apiKey: requireEnv("EMAIL_API_KEY", source),
+    fromAddress: requireEnv("EMAIL_FROM_ADDRESS", source),
+    ownerAddress: requireEnv("EMAIL_OWNER_ADDRESS", source),
+  };
+}

@@ -111,6 +111,102 @@ interface ItemRow {
   line_total_cents: number;
 }
 
+/**
+ * The fields the T9 emails need — a superset-sibling of {@link OrderView} that
+ * surfaces `locale`, `paymentMethod`, and `confirmationToken` (for the absolute
+ * link) WITHOUT changing the confirmation page's view model. Read by dispatch.
+ */
+export interface OrderEmailData {
+  orderId: string;
+  orderNumber: string;
+  contactEmail: string;
+  customerName: string;
+  /** Persisted per-order UI locale (T9, 0010): 'es-MX' | 'en'. */
+  locale: string;
+  paymentMethod: string | null;
+  confirmationToken: string;
+  subtotalCents: number;
+  shippingCents: number;
+  discountCents: number;
+  totalCents: number;
+  items: OrderItemView[];
+}
+
+/** DB row shape for the email read (adds locale/method/token to OrderRow). */
+interface OrderEmailRow extends OrderRow {
+  locale: string;
+  payment_method: string | null;
+  confirmation_token: string;
+}
+
+/**
+ * Read the fields the transactional emails need, by order id. Uses the admin
+ * client (RLS-denied to anon). Never throws — returns `null` on a
+ * missing/unreadable order so dispatch logs + skips that one email (AC-13).
+ */
+export async function getOrderForEmail(orderId: string): Promise<OrderEmailData | null> {
+  if (!UUID_PATTERN.test(orderId)) {
+    return null;
+  }
+  try {
+    const db = createAdminClient();
+    const { data: order, error } = await db
+      .from("orders")
+      .select(
+        "id, order_number, contact_email, contact_phone, shipping_full_name, shipping_address_line1, shipping_address_line2, shipping_city, shipping_state, shipping_postal_code, delivery_notes, subtotal_cents, shipping_cents, discount_cents, total_cents, locale, payment_method, confirmation_token",
+      )
+      .eq("id", orderId)
+      .maybeSingle();
+    if (error) {
+      console.error(`[email] order read failed for ${orderId}: ${error.message}`);
+      return null;
+    }
+    if (!order) {
+      return null;
+    }
+
+    const { data: itemRows, error: itemsError } = await db
+      .from("order_items")
+      .select("product_name, variant_label, quantity, unit_price_cents, line_total_cents")
+      .eq("order_id", order.id)
+      .order("created_at", { ascending: true });
+    if (itemsError) {
+      console.error(`[email] order items read failed for ${order.order_number}: ${itemsError.message}`);
+      return null;
+    }
+
+    return toOrderEmailData(order, itemRows ?? []);
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : "unknown";
+    console.error(`[email] order read threw for ${orderId}: ${message}`);
+    return null;
+  }
+}
+
+/** Map DB rows to the email data model. */
+function toOrderEmailData(order: OrderEmailRow, items: ItemRow[]): OrderEmailData {
+  return {
+    orderId: order.id,
+    orderNumber: order.order_number,
+    contactEmail: order.contact_email,
+    customerName: order.shipping_full_name,
+    locale: order.locale,
+    paymentMethod: order.payment_method,
+    confirmationToken: order.confirmation_token,
+    subtotalCents: order.subtotal_cents,
+    shippingCents: order.shipping_cents,
+    discountCents: order.discount_cents,
+    totalCents: order.total_cents,
+    items: items.map((item) => ({
+      productName: item.product_name,
+      variantLabel: item.variant_label,
+      quantity: item.quantity,
+      unitPriceCents: item.unit_price_cents,
+      lineTotalCents: item.line_total_cents,
+    })),
+  };
+}
+
 /** Map DB rows to the confirmation view model. */
 function toOrderView(order: OrderRow, items: ItemRow[]): OrderView {
   return {

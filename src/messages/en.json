@@ -480,5 +480,71 @@
         "copied": "Reference copied."
       }
     }
+  },
+  "email": {
+    "common": {
+      "greeting": "Hi {name},",
+      "orderNumberLabel": "Order",
+      "subtotal": "Subtotal",
+      "shipping": "Shipping",
+      "discount": "Discount",
+      "total": "Total",
+      "viewOrder": "View my order",
+      "itemsHeading": "Your order summary",
+      "footer": "Thanks for your purchase. If you have any questions, just reply to this email.",
+      "shippingToHeading": "Shipping to"
+    },
+    "orderConfirmation": {
+      "subject": "We've received your order {orderNumber}",
+      "preheader": "We received your order {orderNumber}. Here are the details.",
+      "heading": "Thanks for your order!",
+      "intro": "We've received your order {orderNumber} and we're getting it ready. We'll let you know as soon as your payment is confirmed.",
+      "nextSteps": "Complete your payment so we can start preparing your shipment."
+    },
+    "paymentReceived": {
+      "subject": "We've received your payment for order {orderNumber}",
+      "preheader": "Your payment for order {orderNumber} is confirmed.",
+      "heading": "Payment confirmed!",
+      "intro": "We've confirmed your payment of {amount} for order {orderNumber}. We're now preparing your shipment.",
+      "amountLabel": "Amount paid"
+    },
+    "voucherInstructions": {
+      "subjectOxxo": "OXXO payment instructions — order {orderNumber}",
+      "subjectSpei": "SPEI payment instructions — order {orderNumber}",
+      "preheader": "Here is your payment reference for order {orderNumber}.",
+      "headingOxxo": "Pay with cash at OXXO",
+      "headingSpei": "Pay by SPEI transfer",
+      "introOxxo": "Show this reference at any OXXO store to complete your payment for order {orderNumber}.",
+      "introSpei": "Make a SPEI transfer with these details to complete your payment for order {orderNumber}.",
+      "referenceLabel": "Reference",
+      "clabeLabel": "Interbank CLABE",
+      "amountLabel": "Amount due",
+      "expiresLabel": "Expires",
+      "viewVoucher": "View voucher",
+      "afterPayment": "Once your payment is confirmed we'll email you and prepare your shipment."
+    },
+    "shipped": {
+      "subject": "Your order {orderNumber} is on its way",
+      "preheader": "We've shipped your order {orderNumber}.",
+      "heading": "Your order is on its way!",
+      "intro": "We've shipped your order {orderNumber}. You'll have it soon.",
+      "trackingLabel": "Tracking number",
+      "carrierLabel": "Carrier",
+      "trackButton": "Track my shipment"
+    },
+    "cancelled": {
+      "subject": "Your order {orderNumber} was cancelled",
+      "preheader": "Your order {orderNumber} was cancelled.",
+      "heading": "Your order was cancelled",
+      "intro": "We've cancelled your order {orderNumber}. If this was a mistake or you have questions, just reply to this email and we'll help.",
+      "reasonLabel": "Reason"
+    },
+    "refundIssued": {
+      "subject": "We've processed your refund for order {orderNumber}",
+      "preheader": "We refunded {amount} for your order {orderNumber}.",
+      "heading": "Your refund is on its way",
+      "intro": "We've processed a refund of {amount} for your order {orderNumber}. The time to see it depends on your bank.",
+      "amountLabel": "Amount refunded"
+    }
   }
 }

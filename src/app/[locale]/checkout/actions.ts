@@ -24,7 +24,12 @@
  * All commerce writes go through the admin client (RLS denies anon, AC-12).
  */
 import { headers } from "next/headers";
+import { getLocale } from "next-intl/server";
 import { getStoreSettingsStatic } from "@/lib/store-settings";
+import {
+  sendOrderConfirmation,
+  sendNewOrderOwnerAlert,
+} from "@/lib/email/dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkCheckoutRateLimit } from "@/lib/checkout/rate-limit";
 import { computeShipping } from "@/lib/cart/shipping";
@@ -330,14 +335,49 @@ async function runCheckout(
   }));
   const totals = assembleOrder(orderLines, shipping, discountCents);
 
-  // 8. Atomic reserve-and-create (AC-9, AC-11, AC-14).
+  // 8. Atomic reserve-and-create (AC-9, AC-11, AC-14). The active request locale
+  //    (T9) is persisted onto the order so the server-to-server webhook can
+  //    localize later emails from `orders.locale` (it has no request context).
   const idempotencyKey = readIdempotencyKey(formData);
   const appliedCode = discountResult.kind === "applied" ? discountResult.code : null;
-  const confirmationToken = await createOrderViaRpc(totals, addressValues, idempotencyKey, appliedCode);
+  const locale = await getLocale();
+  const created = await createOrderViaRpc(totals, addressValues, idempotencyKey, appliedCode, locale);
 
-  // 9. Success — carry the unguessable confirmation token (the redirect target,
-  //    T7 M-6) + the discount result so the UI can reflect what applied.
-  return { status: "success", confirmationToken, discount: discountResult, submissionId };
+  // 9. Trigger transactional emails (T9 AC-14). BOTH are failure-isolated and
+  //    non-blocking: a send error is caught + logged inside dispatch and NEVER
+  //    changes this `success` return (AC-13). A fresh order (not an idempotent
+  //    reuse) triggers the sends; a reused order already sent them (the
+  //    email_sends ledger also guards, but skipping avoids the wasted work).
+  if (!created.reused) {
+    await triggerOrderEmails(created.orderId);
+  }
+
+  // Success — carry the unguessable confirmation token (the redirect target,
+  // T7 M-6) + the discount result so the UI can reflect what applied.
+  return {
+    status: "success",
+    confirmationToken: created.confirmationToken,
+    discount: discountResult,
+    submissionId,
+  };
+}
+
+/**
+ * Fire the order-confirmation (customer) + new-order (owner) emails, isolated so
+ * a send failure NEVER breaks checkout (AC-13/AC-14). Each send already catches
+ * internally; this wrapper is a final belt-and-suspenders catch so a truly
+ * unexpected throw (e.g. a rejected promise) can't bubble into the success path.
+ */
+async function triggerOrderEmails(orderId: string): Promise<void> {
+  try {
+    await Promise.allSettled([
+      sendOrderConfirmation(orderId),
+      sendNewOrderOwnerAlert(orderId),
+    ]);
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : "unknown";
+    console.error(`[checkout] order email trigger threw (ignored): ${message}`);
+  }
 }
 
 /** Resolve the discount to a UI result + clamped cents (never throws). */
@@ -370,15 +410,24 @@ function readIdempotencyKey(formData: FormData): string {
   return crypto.randomUUID();
 }
 
-/** Call the atomic RPC and return the confirmation token (throws on failure). */
+/** The subset of the create_order result the action + email triggers need. */
+interface CreatedOrder {
+  orderId: string;
+  confirmationToken: string;
+  reused: boolean;
+}
+
+/** Call the atomic RPC and return the created order (throws on failure). */
 async function createOrderViaRpc(
   totals: ReturnType<typeof assembleOrder>,
   address: ReturnType<typeof validateAddress>["values"],
   idempotencyKey: string,
   discountCode: string | null,
-): Promise<string> {
+  locale: string,
+): Promise<CreatedOrder> {
   const payload: CreateOrderPayload = {
     idempotency_key: idempotencyKey,
+    locale,
     contact_email: address.email,
     contact_phone: address.contact_phone || null,
     shipping_full_name: address.shipping_full_name,
@@ -417,7 +466,11 @@ async function createOrderViaRpc(
   if (!data) {
     throw new Error("create_order returned no data");
   }
-  return data.confirmation_token;
+  return {
+    orderId: data.order_id,
+    confirmationToken: data.confirmation_token,
+    reused: data.reused,
+  };
 }
 
 /** Map a thrown error to a friendly state (never echoes raw PG, AC-8/edge 8). */

@@ -480,5 +480,71 @@
         "copied": "Referencia copiada."
       }
     }
+  },
+  "email": {
+    "common": {
+      "greeting": "Hola {name},",
+      "orderNumberLabel": "Pedido",
+      "subtotal": "Subtotal",
+      "shipping": "Envío",
+      "discount": "Descuento",
+      "total": "Total",
+      "viewOrder": "Ver mi pedido",
+      "itemsHeading": "Resumen de tu pedido",
+      "footer": "Gracias por tu compra. Si tienes dudas, responde a este correo.",
+      "shippingToHeading": "Enviaremos a"
+    },
+    "orderConfirmation": {
+      "subject": "Confirmamos tu pedido {orderNumber}",
+      "preheader": "Recibimos tu pedido {orderNumber}. Aquí están los detalles.",
+      "heading": "¡Gracias por tu pedido!",
+      "intro": "Recibimos tu pedido {orderNumber} y lo estamos preparando. Te avisaremos en cuanto confirmemos tu pago.",
+      "nextSteps": "Completa tu pago para que podamos empezar a preparar tu envío."
+    },
+    "paymentReceived": {
+      "subject": "Recibimos tu pago del pedido {orderNumber}",
+      "preheader": "Tu pago del pedido {orderNumber} fue confirmado.",
+      "heading": "¡Pago confirmado!",
+      "intro": "Confirmamos tu pago de {amount} para el pedido {orderNumber}. Ya estamos preparando tu envío.",
+      "amountLabel": "Monto pagado"
+    },
+    "voucherInstructions": {
+      "subjectOxxo": "Instrucciones de pago OXXO — pedido {orderNumber}",
+      "subjectSpei": "Instrucciones de pago SPEI — pedido {orderNumber}",
+      "preheader": "Aquí está tu referencia de pago para el pedido {orderNumber}.",
+      "headingOxxo": "Paga en efectivo en OXXO",
+      "headingSpei": "Paga por transferencia SPEI",
+      "introOxxo": "Presenta esta referencia en cualquier tienda OXXO para completar tu pago del pedido {orderNumber}.",
+      "introSpei": "Realiza una transferencia SPEI con estos datos para completar tu pago del pedido {orderNumber}.",
+      "referenceLabel": "Referencia",
+      "clabeLabel": "CLABE interbancaria",
+      "amountLabel": "Monto a pagar",
+      "expiresLabel": "Vence",
+      "viewVoucher": "Ver comprobante",
+      "afterPayment": "Una vez confirmado tu pago te enviaremos un correo y prepararemos tu envío."
+    },
+    "shipped": {
+      "subject": "Tu pedido {orderNumber} va en camino",
+      "preheader": "Enviamos tu pedido {orderNumber}.",
+      "heading": "¡Tu pedido va en camino!",
+      "intro": "Enviamos tu pedido {orderNumber}. Pronto lo tendrás contigo.",
+      "trackingLabel": "Número de guía",
+      "carrierLabel": "Paquetería",
+      "trackButton": "Rastrear mi envío"
+    },
+    "cancelled": {
+      "subject": "Cancelamos tu pedido {orderNumber}",
+      "preheader": "Tu pedido {orderNumber} fue cancelado.",
+      "heading": "Tu pedido fue cancelado",
+      "intro": "Cancelamos tu pedido {orderNumber}. Si esto fue un error o tienes dudas, responde a este correo y te ayudamos.",
+      "reasonLabel": "Motivo"
+    },
+    "refundIssued": {
+      "subject": "Procesamos tu reembolso del pedido {orderNumber}",
+      "preheader": "Reembolsamos {amount} de tu pedido {orderNumber}.",
+      "heading": "Tu reembolso está en camino",
+      "intro": "Procesamos un reembolso de {amount} para tu pedido {orderNumber}. El tiempo de acreditación depende de tu banco.",
+      "amountLabel": "Monto reembolsado"
+    }
   }
 }
