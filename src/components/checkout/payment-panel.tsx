@@ -143,6 +143,11 @@ function handleResult(result: PayActionResult, setOverlay: (o: ClientOverlay) =>
       // authoritative state; treat as a generic error so the user can refresh.
       setOverlay("error");
       return;
+    case "rate-limited":
+      // Too many attempts from this IP (SEC-H-1). Show the retry banner; the user
+      // can try again shortly (the window is short and a real shopper never hits it).
+      setOverlay("error");
+      return;
     case "error":
       setOverlay("error");
       return;

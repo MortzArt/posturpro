@@ -605,3 +605,30 @@ export const CHECKOUT_MAX_ORDERS_PER_WINDOW = 5;
  * memory is bounded regardless of IP rotation.
  */
 export const CHECKOUT_RATE_LIMIT_MAX_KEYS = 10_000;
+
+/* -------------------------------------------------------------------------
+ * MP payment-preference rate limit (T8 Security stage, SEC-H-1)
+ *
+ * `createPaymentPreference` is an UNAUTHENTICATED `"use server"` action that, per
+ * call, does two DB reads and a LIVE MP `Preference.create` API call. Without a
+ * throttle, anyone holding one valid `confirmation_token` (e.g. their own order)
+ * can loop it unbounded — an amplification vector against a rate-quota'd, paid
+ * third-party API and the DB. Same abuse class as `placeOrder`, so it reuses the
+ * exact sliding-window limiter. A legitimate shopper clicks pay/retry a handful
+ * of times; a higher cap than order placement leaves room for genuine retries.
+ * ------------------------------------------------------------------------- */
+
+/** Sliding-window length for the preference-creation rate limiter (T8). */
+export const PREFERENCE_RATE_LIMIT_WINDOW_MS = 60_000;
+
+/**
+ * Max preference-creation ATTEMPTS per IP within
+ * {@link PREFERENCE_RATE_LIMIT_WINDOW_MS} (T8). A shopper redirects to MP once and
+ * may retry a few times; 10/min per IP absorbs genuine retries + shared NATs while
+ * cutting scripted amplification against the MP API to a trickle. Above this the
+ * pay action returns `rate-limited` BEFORE any DB read or MP call.
+ */
+export const PREFERENCE_MAX_PER_WINDOW = 10;
+
+/** Cardinality-DoS ceiling for the preference limiter map (T8), keyed by IP. */
+export const PREFERENCE_RATE_LIMIT_MAX_KEYS = 10_000;

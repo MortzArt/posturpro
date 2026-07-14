@@ -19,12 +19,15 @@ import { headers } from "next/headers";
 import { hasLocale } from "next-intl";
 import { routing } from "@/i18n/routing";
 import { createPreferenceForOrder } from "@/lib/payments/preference";
+import { checkPreferenceRateLimit } from "@/lib/payments/preference-rate-limit";
+import { clientIp } from "@/lib/request/client-ip";
 
 /** The discriminated result the <PaymentPanel> consumes. */
 export type PayActionResult =
   | { status: "redirect"; initPoint: string }
   | { status: "unavailable" } // MP env missing / MP 5xx / timeout (edge 11)
   | { status: "not-payable" } // not a payable pending order (already paid / gone)
+  | { status: "rate-limited" } // too many attempts from this IP (SEC-H-1)
   | { status: "error" }; // generic failure → retry
 
 /**
@@ -37,6 +40,16 @@ export async function createPaymentPreference(
   locale: string,
 ): Promise<PayActionResult> {
   const activeLocale = hasLocale(routing.locales, locale) ? locale : routing.defaultLocale;
+
+  // Abuse control (SEC-H-1): throttle per IP BEFORE any DB read or MP API call.
+  // This unauthenticated action makes a live, rate-quota'd MP `Preference.create`
+  // call per invocation; without this a single valid token could amplify into
+  // unbounded MP/DB load. Best-effort in-memory; runs before all side effects.
+  const ip = await clientIp();
+  if (!checkPreferenceRateLimit(ip)) {
+    return { status: "rate-limited" };
+  }
+
   const origin = await resolveOrigin();
   if (!origin) {
     console.error("[payments] pay action: could not resolve request origin");
