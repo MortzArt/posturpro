@@ -1,16 +1,18 @@
 # Pipeline State
 Task: T7 — Checkout & order creation
 Tier: full-cycle
-Stage: 1 (PlanResearch COMPLETE)
-Agent: ultradesign (Stage 3 — UI Design) next
-Complexity: high (classified this stage)
+Stage: 3 (UI Design COMPLETE)
+Agent: ultradev (Stage 4 — Dev) next
+Complexity: high (classified stage 1)
 Feature Type: full-stack
 Last Updated: 2026-07-14
 Notes:
 - Stage 1+2 (PlanResearch) done: tasks/next-ticket.md + tasks/research-report.md written.
+- Stage 3 (UI Design) done: tasks/ui-design.md written (T7 checkout — overwrote the leftover T6 spec).
 - Complexity = HIGH → full-cycle runs ALL 12 stages (do not skip hacker).
 - Feature Type = full-stack → every stage at full depth (UI Design + UX both run).
 - HUMAN-REVIEW GATE (BUILD_PLAN rule 3): checkout ALWAYS flagged for human review before merge regardless of any SHIP verdict. Verify stage must surface this and NOT auto-merge. Do NOT check [x] T7 in BUILD_PLAN until the user approves.
+- UI DESIGN KEY DECISIONS (for dev, Stage 4): single-page sectioned form (NOT wizard); one <form> + one placeOrder action (Q&A useActionState precedent). Reuse cart OrderSummary math verbatim (computeShipping/totalCents/formatMXN). Reuse existing globals.css motion classes ONLY (.enter-fade/.stagger/.price-value/.cart-press/.cart-step-press/.select-content-motion/.grid-pending) — NO new motion CSS. Fields = Q&A `fieldClasses` raw inputs bumped to min-h-11 + raw <label text-sm> (NOT shadcn Input/Label, for parity). State picker = vendored shadcn Select (h-11 w-full trigger) + hidden input for FormData. NO Textarea/Card/Alert/Skeleton ui components exist — use raw <textarea>+fieldClasses, card=rounded-lg border bg-card p-4/5, alert=<p role=alert .enter-fade text-destructive>, skeleton=inline animate-pulse. Mobile: collapsible top summary + sticky translucent bottom bar (Total+submit); in-card submit hidden lg:flex to keep one submit per form. CheckoutFormState union defined in ui-design.md (sibling checkout-form-state.ts per "use server" rule). New i18n `checkout` namespace fully drafted in ui-design.md (both es-MX.json default + en.json). Confirmation route /checkout/confirmacion/[orderNumber]; OrderConfirmation client child clears cart once on mount. Discount field states: idle/checking/applied/invalid(5 reasons)/degraded — never blocks submit (AC-7). shipping-unavailable → submit disabled, never $NaN. Flag for Security: confirmation reads order by guessable order_number (opaque-token follow-up, out of scope T7).
 
 === CRITICAL FORWARD FACTS FOR DOWNSTREAM STAGES ===
 - WRITE PATH: orders/order_items/customers/discount_codes are FULLY denied to anon in RLS (0005 lines 252-258). Checkout MUST use createAdminClient() (server-only, secret key). No app/api route handlers exist — use a "use server" action (Q&A precedent: producto/[slug]/actions.ts + qa-form-state.ts).
