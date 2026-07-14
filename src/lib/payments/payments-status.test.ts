@@ -44,8 +44,12 @@ describe("mapMpStatus", () => {
     });
   });
 
-  it("maps refunded → refunded payment", () => {
-    expect(mapMpStatus("refunded")).toMatchObject({ kind: "advance", paymentStatus: "refunded" });
+  it("maps refunded → payment-only (orderStatus null, C-2)", () => {
+    expect(mapMpStatus("refunded")).toMatchObject({
+      kind: "advance",
+      orderStatus: null,
+      paymentStatus: "refunded",
+    });
   });
 
   it("FLAGS charged_back (never auto-advances)", () => {

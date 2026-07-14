@@ -158,3 +158,97 @@ ever `NEXT_PUBLIC_`; `.env*` is gitignored; never commit real values.
   processed/gated; **bad sig → 401**; **missing sig → 401**; **non-payment → 200
   ignore**. Replay/amount-mismatch/unknown covered by unit + integration.
 - DB left pristine-seeded; no stray servers; `.env.local` gitignored; `tsconfig.json` clean.
+
+---
+
+## Fixes Applied (Stage 6 — ultrafix, 2026-07-14)
+
+### Issue Tracker
+| ID | Severity | Title | Status | File | Notes |
+|----|----------|-------|--------|------|-------|
+| C-1 | CRITICAL | Signature manifest used wrong data.id source | FIXED | `route.ts`, `webhook.ts`, `webhook.test.ts` | Verifier fed ONLY the query-string `data.id`; body id is fetch-only. Mutation test proves body-id source fails. |
+| C-2 | CRITICAL | `refunded` forced order_status=paid | FIXED | `payments-status.ts`, `0009_payments.sql`, `refund.ts` | `refunded`→`orderStatus:null`; RPC payment-only mode sets payment_status + writes history on any order state. |
+| M-1 | MAJOR | Dedupe dropped status progressions | FIXED | `0009_payments.sql`, `process-payment.ts` | Spine re-keyed `unique(mp_payment_id, mp_status)` + `record_payment_event` RPC. |
+| M-2 | MAJOR | No cumulative over-refund guard | FIXED | `0009_payments.sql`, `refund.ts` | `payment_refunds` ledger + `record_refund` race-safe SQL guard + `refunded_total` pre-check. |
+| M-3 | MAJOR | Partial refund no durable audit | FIXED | `0009_payments.sql`, `refund.ts` | Every refund writes a `payment_refunds` row keyed by MP refund id. |
+| M-4 | MAJOR | No ts replay-window check | FIXED | `webhook.ts`, `webhook.test.ts` | `WEBHOOK_REPLAY_TOLERANCE_MS`=5min; rejects stale/future/unparseable ts after HMAC. |
+| M-5 | MAJOR | Unbounded request body DoS | FIXED | `route.ts` | 64 KB cap: content-length 413 + bounded stream read. |
+| M-6 | MAJOR | Claim/advance not atomic → stuck order | FIXED | `0009_payments.sql`, `process-payment.ts` | Claim-then-finalize; `processed_at` NULL until advance succeeds; unfinalized claims retryable. |
+| M-7 | MAJOR | Callers ignored RPC result.reason | FIXED | `process-payment.ts` | `regression_blocked`/`order_not_found` → `advance-blocked` (500, unfinalized). |
+| M-8 | MAJOR | `atm`→`spei` miscategorization | FIXED | `config.ts`, `config.test.ts` | Removed `atm` mapping; method_id primary; `atm`→null unless clabe/oxxo. |
+| m-1 | MINOR | noop branch wrote no history | FIXED | `0009_payments.sql` | History row on payment-only/noop when payment_status changes. |
+| m-2 | MINOR | matchOrder misplaced comment | FIXED | `process-payment.ts` | Comment moved; logic kept explicit. |
+| m-3 | MINOR | Voucher fixture test | SKIPPED | — | BLOCKED-ON-USER (live voucher paths); defensive reads already tested. |
+| m-4 | MINOR | resolveOrigin fragile local check | FIXED | `pay-actions.ts` | `isLocalHost` covers localhost/127.*/[::1]/.local. |
+| m-5 | MINOR | auto_return inline | FIXED | `config.ts`, `preference.ts` | `MP_AUTO_RETURN` constant. |
+| m-6 | MINOR | binary_mode UX sign-off | SKIPPED | — | Intentional; no code change per reviewer; human/live sign-off. |
+| N-1 | NIT | env.ts stale docstring | FIXED | `env.ts` | — |
+| N-2 | NIT | confirmation page stale docstring | FIXED | `page.tsx` | — |
+| N-3 | NIT | descriptor placeholder | SKIPPED | — | Documented swap; launch-time config. |
+| N-4 | NIT | glib "impossible" comment | FIXED | `process-payment.ts` | — |
+| N-5 | NIT | unwritten `raw` column | FIXED | `0009_payments.sql`, `database.types.ts` | Column dropped. |
+
+### Summary
+- Critical: 2/2 fixed.
+- Major: 8/8 fixed, 0 skipped.
+- Minor: 3/5 fixed, 2 skipped (m-3, m-6 — both justified above).
+- NIT: 4/5 fixed, 1 skipped (N-3 — documented launch config).
+
+### Migration delta (0009_payments.sql — amended in place, LOCAL-only)
+- `mp_payment_events`: dropped `raw`; added `processed_at`; unique key changed from
+  `(mp_payment_id)` to `(mp_payment_id, mp_status)`; `mp_status` NOT NULL default `''`.
+  Re-key statements are idempotent (drop-old-index / add-column-if-not-exists /
+  coalesce-null-status) so a re-reset over an existing shape applies clean.
+- New table `payment_refunds` (durable refund ledger, unique on `mp_refund_id`).
+- `advance_order_status`: `p_order_status` now nullable = PAYMENT-ONLY mode
+  (writes payment fields + history, keeps order_status). noop/same-status branch
+  writes history iff payment_status changed. New `reason` values: `payment_updated`.
+- New RPCs: `record_payment_event` (claim-then-finalize), `finalize_payment_event`,
+  `record_refund` (ledger + cumulative guard), `refunded_total` (read helper).
+  All SECURITY DEFINER, empty search_path, execute → service_role only.
+
+### Reworked idempotency / transition semantics (for QA — Stage 7)
+- **Dedupe spine**: keyed per `(mp_payment_id, mp_status)`. True replay of the same
+  (id,status) that was FINALIZED → `duplicate` (no-op). A status progression →
+  distinct claim → processed. An UNFINALIZED claim (crash between claim & advance)
+  is reclaimable → reprocessed (advance is idempotent, so safe).
+- **Finalize**: only after a successful advance. Transient advance failure ⇒
+  unfinalized ⇒ 500 ⇒ MP retries ⇒ converges.
+- **Transition matrix**: approved→paid; pending/in_process→pending; authorized→
+  authorized; rejected/cancelled→failed(order stays pending_payment); **refunded→
+  payment-only (order_status untouched, payment_status=refunded, history written)**;
+  charged_back/in_mediation/unknown→flag (no advance).
+- **RPC result handling**: `advanced`/`payment_updated`/`noop_same_status`→success;
+  `regression_blocked`/`order_not_found`→`advance-blocked` (500, unfinalized).
+- **Replay window**: `WEBHOOK_REPLAY_TOLERANCE_MS` = 5 min (webhook.ts). `ts`
+  parsed seconds-or-ms; checked AFTER HMAC.
+- **Body limit**: 64 KB (`MAX_WEBHOOK_BODY_BYTES` in route.ts) → 413.
+- **Cumulative refund**: sum of `payment_refunds.amount_cents` ≤ order total,
+  enforced under an order row lock in `record_refund`; MP is the third backstop.
+
+### AC-8 / AC-18 now PASS (evidence)
+- **AC-8**: query-only signature id + timingSafeEqual + lowercase id + 401 on
+  bad/missing/stale. Evidence: `route.ts` (`signatureDataId`), `webhook.ts` replay
+  window, `webhook.test.ts` (C-1 mutation test + replay-window suite).
+- **AC-18**: OXXO/SPEI pending→approved advances to paid. Evidence:
+  `process-payment.test.ts` "processes an OXXO pending→approved PROGRESSION";
+  integration "processes a status PROGRESSION for one payment id".
+
+### Env / config docs (unchanged from Stage 4 — still BLOCKED-ON-USER)
+- Secrets: `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET` (server-only,
+  never `NEXT_PUBLIC_`). New tunables added to `config.ts`: `MP_AUTO_RETURN`.
+  New webhook constants: `MAX_WEBHOOK_BODY_BYTES` (route.ts),
+  `WEBHOOK_REPLAY_TOLERANCE_MS` (webhook.ts).
+
+### Test Results After Fixes
+- Unit: 1126 passed (baseline 1107 + 19 new: C-1 mutation, replay window, OXXO
+  progression, claim-then-finalize, M-7 branch, payment-only refunded, cumulative
+  refunds, atm categorization).
+- Integration: 151 passed (baseline 144 + 7 new: payment-only refunded on paid +
+  shipped, record_payment_event progression/duplicate/reclaim, record_refund
+  ledger/cumulative/idempotent).
+- tsc: 0 errors. eslint: clean. next build: clean (webhook route emitted).
+- Migration 0009: applies clean on `supabase db reset` (idempotent).
+- DB left pristine-seeded; tsconfig restored; no stray servers.
+- **HUMAN-REVIEW GATE remains OPEN** — payment code requires human sign-off before
+  merge regardless of this advisory PASS.

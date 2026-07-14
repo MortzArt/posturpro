@@ -71,7 +71,20 @@ async function resolveOrigin(): Promise<string | null> {
   if (!host) {
     return null;
   }
-  const proto =
-    headerList.get("x-forwarded-proto") ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
+  // Trust x-forwarded-proto when present (behind a proxy); otherwise default to
+  // https EXCEPT for local development hosts, which are plain http. `isLocalHost`
+  // covers localhost, IPv4 loopback, IPv6 loopback (`[::1]`), and `.local` mDNS.
+  const proto = headerList.get("x-forwarded-proto") ?? (isLocalHost(host) ? "http" : "https");
   return `${proto}://${host}`;
+}
+
+/** Whether a host header points at a local development machine (m-4). */
+function isLocalHost(host: string): boolean {
+  const bare = host.toLowerCase().split(":")[0].replace(/^\[|\]$/g, "");
+  return (
+    bare === "localhost" ||
+    bare === "::1" ||
+    bare.startsWith("127.") ||
+    bare.endsWith(".local")
+  );
 }

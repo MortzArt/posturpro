@@ -95,7 +95,8 @@ export interface CreateOrderResult {
  */
 export type AdvanceOrderStatusArgs = {
   p_order_id: string;
-  p_order_status: OrderStatus;
+  /** Target order status, or `null` for a payment-only change (C-2). */
+  p_order_status: OrderStatus | null;
   p_payment_status: PaymentStatus;
   p_payment_method?: string | null;
   p_mp_payment_id?: string | null;
@@ -104,12 +105,54 @@ export type AdvanceOrderStatusArgs = {
 
 /** The `advance_order_status` RPC result (T8, 0009_payments.sql). */
 export type AdvanceOrderStatusResult = {
-  /** true only when the order was transitioned + a history row written. */
+  /** true when the order was transitioned OR a payment-only change was recorded. */
   applied: boolean;
-  /** `advanced` | `noop_same_status` | `regression_blocked` | `order_not_found`. */
-  reason: "advanced" | "noop_same_status" | "regression_blocked" | "order_not_found";
+  reason:
+    | "advanced"
+    | "noop_same_status"
+    | "regression_blocked"
+    | "order_not_found"
+    | "payment_updated";
   from_status: OrderStatus | null;
-  to_status: OrderStatus;
+  to_status: OrderStatus | null;
+};
+
+/** Args for the `record_payment_event` RPC (T8, 0009 — claim-then-finalize spine, M-1/M-6). */
+export type RecordPaymentEventArgs = {
+  p_mp_payment_id: string;
+  p_mp_status: string;
+  p_order_id?: string | null;
+  p_mp_status_detail?: string | null;
+  p_action?: string | null;
+  p_amount_cents?: number | null;
+};
+
+/** Args for the `finalize_payment_event` RPC (T8, 0009 — M-6). */
+export type FinalizePaymentEventArgs = {
+  p_mp_payment_id: string;
+  p_mp_status: string;
+};
+
+/** Args for the `record_refund` RPC (T8, 0009 — durable ledger + cumulative guard, M-2/M-3). */
+export type RecordRefundArgs = {
+  p_order_id: string;
+  p_mp_payment_id: string;
+  p_mp_refund_id: string;
+  p_amount_cents: number;
+  p_is_full: boolean;
+};
+
+/** The `record_refund` RPC result (T8, 0009_payments.sql). */
+export type RecordRefundResult = {
+  ok: boolean;
+  reason: "order_not_found" | "over_refund" | "recorded" | "duplicate";
+  prior_refunded_cents: number;
+  total_refunded_cents: number;
+};
+
+/** Args for the `refunded_total` RPC (T8, 0009 — M-2). */
+export type RefundedTotalArgs = {
+  p_order_id: string;
 };
 
 export interface Database {
@@ -632,34 +675,71 @@ export interface Database {
           mp_status_detail: string | null;
           action: string | null;
           amount_cents: number | null;
-          raw: Json | null;
+          processed_at: string | null;
           created_at: string;
         };
         Insert: {
           id?: string;
           mp_payment_id: string;
           order_id?: string | null;
-          mp_status?: string | null;
+          mp_status?: string;
           mp_status_detail?: string | null;
           action?: string | null;
           amount_cents?: number | null;
-          raw?: Json | null;
+          processed_at?: string | null;
           created_at?: string;
         };
         Update: {
           id?: string;
           mp_payment_id?: string;
           order_id?: string | null;
-          mp_status?: string | null;
+          mp_status?: string;
           mp_status_detail?: string | null;
           action?: string | null;
           amount_cents?: number | null;
-          raw?: Json | null;
+          processed_at?: string | null;
           created_at?: string;
         };
         Relationships: [
           {
             foreignKeyName: "mp_payment_events_order_id_fkey";
+            columns: ["order_id"];
+            referencedRelation: "orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      payment_refunds: {
+        Row: {
+          id: string;
+          order_id: string;
+          mp_payment_id: string;
+          mp_refund_id: string;
+          amount_cents: number;
+          is_full: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          order_id: string;
+          mp_payment_id: string;
+          mp_refund_id: string;
+          amount_cents: number;
+          is_full: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          order_id?: string;
+          mp_payment_id?: string;
+          mp_refund_id?: string;
+          amount_cents?: number;
+          is_full?: boolean;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "payment_refunds_order_id_fkey";
             columns: ["order_id"];
             referencedRelation: "orders";
             referencedColumns: ["id"];
@@ -1034,6 +1114,22 @@ export interface Database {
       advance_order_status: {
         Args: AdvanceOrderStatusArgs;
         Returns: AdvanceOrderStatusResult;
+      };
+      record_payment_event: {
+        Args: RecordPaymentEventArgs;
+        Returns: string;
+      };
+      finalize_payment_event: {
+        Args: FinalizePaymentEventArgs;
+        Returns: undefined;
+      };
+      record_refund: {
+        Args: RecordRefundArgs;
+        Returns: RecordRefundResult;
+      };
+      refunded_total: {
+        Args: RefundedTotalArgs;
+        Returns: number;
       };
     };
     Enums: {

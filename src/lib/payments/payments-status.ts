@@ -13,9 +13,17 @@
  *   pending, in_process      → payment 'pending'   , order 'pending_payment' (unchanged)
  *   authorized               → payment 'authorized', order 'pending_payment' (capture is later)
  *   rejected, cancelled      → payment 'failed'    , order 'pending_payment' (allow retry, AC-16)
- *   refunded                 → payment 'refunded'  , order unchanged (refund flow decides state)
+ *   refunded                 → payment 'refunded'  , order UNCHANGED (payment-only, C-2)
  *   charged_back, in_mediation → FLAGGED, no state change (never silently marks paid)
  *   unknown                  → FLAGGED, no state change
+ *
+ * PAYMENT-ONLY (C-2): `refunded` must NOT assert an order status. MP fires it for
+ * both full and partial refunds and on orders at ANY lifecycle stage (paid,
+ * shipped, ...). Asserting `orderStatus: 'paid'` either regresses a shipped order
+ * (regression_blocked → the refund silently drops) or writes no history on a
+ * plain paid order. So `refunded` maps `orderStatus: null` — the RPC's
+ * payment-only mode sets `payment_status='refunded'` and writes a history row
+ * without touching order_status.
  */
 import type { OrderStatus, PaymentStatus } from "@/lib/supabase/database.types";
 
@@ -44,7 +52,12 @@ export type MpPaymentStatus = (typeof MP_PAYMENT_STATUSES)[number];
 export type StatusMapping =
   | {
       kind: "advance";
-      orderStatus: OrderStatus;
+      /**
+       * Target order status, or `null` for a PAYMENT-ONLY change (C-2): set the
+       * payment fields + write a history row without touching order_status. Used
+       * by `refunded`, which must not assert an order lifecycle state.
+       */
+      orderStatus: OrderStatus | null;
       paymentStatus: PaymentStatus;
       /** Human-readable note written to order_status_history. */
       note: string;
@@ -101,10 +114,11 @@ export function mapMpStatus(
     case "refunded":
       return {
         kind: "advance",
-        // Order status is decided by the refund flow (AC-19), not here. We only
-        // move payment_status; the RPC keeps order status where it is unless the
-        // refund fn explicitly transitions it.
-        orderStatus: "paid",
+        // PAYMENT-ONLY (C-2): never assert an order status. The RPC sets
+        // payment_status='refunded' and writes an audit history row while leaving
+        // order_status wherever it is (paid, shipped, ...). Order lifecycle after
+        // a refund is the refund/admin flow's concern (AC-19), not this webhook.
+        orderStatus: null,
         paymentStatus: "refunded",
         note: `MP payment refunded${detail}`,
       };

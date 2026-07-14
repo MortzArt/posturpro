@@ -1,6 +1,7 @@
 /**
  * Validated environment-variable accessor — the single source of truth for
- * Supabase credentials (AC-2).
+ * Supabase credentials (AC-2) AND the Mercado Pago server secrets (T8 AC-1;
+ * see `getMercadoPagoEnv` below).
  *
  * SAFETY MODEL
  * ------------

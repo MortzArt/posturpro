@@ -14,12 +14,29 @@
  *    which leaks timing).
  *  - `data.id` gotcha: lowercase it before building the manifest (docs). Numeric
  *    ids are unaffected; alphanumeric ids must be normalized.
- *  - `ts` is used AS-IS (raw string) — never reformatted (ms vs s ambiguity).
+ *  - `ts` is used AS-IS (raw string) in the manifest — never reformatted (ms vs s
+ *    ambiguity). AFTER the HMAC verifies, `ts` is ALSO parsed and checked for
+ *    freshness (M-4): a captured-but-stale signature is rejected so a valid
+ *    `x-signature` cannot be replayed indefinitely at the signature layer (the DB
+ *    dedupe is a second line, not the first).
  *
- * A missing / malformed / mismatched signature returns `{ ok: false }` and the
- * route responds 401 with NO DB read and NO state change.
+ * A missing / malformed / mismatched / STALE signature returns `{ ok: false }`
+ * and the route responds 401 with NO DB read and NO state change.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+
+/**
+ * How far `ts` may deviate from now before a signature is rejected as a replay
+ * (M-4). MP delivers within seconds; a 5-minute window absorbs clock skew and
+ * legitimate retry latency while closing the indefinite-replay window. Documented
+ * constant so the intent is explicit and tunable.
+ */
+export const WEBHOOK_REPLAY_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Milliseconds per second — for the ts (seconds vs ms) normalization. */
+const MS_PER_SECOND = 1000;
+/** A ts in SECONDS is < this; a ts in MILLISECONDS is >= this (~ year 2001+). */
+const MS_EPOCH_THRESHOLD = 1e12;
 
 /** The inputs the pure verifier needs, extracted from the request by the route. */
 export interface WebhookSignatureInput {
@@ -27,10 +44,20 @@ export interface WebhookSignatureInput {
   signatureHeader: string | null;
   /** Raw `x-request-id` header value. */
   requestId: string | null;
-  /** The `data.id` from the notification (query `data.id` or body `data.id`). */
+  /**
+   * The `data.id` MP signed the manifest with — the QUERY-STRING `data.id` ONLY,
+   * never the body id (C-1). Null when the query param is absent.
+   */
   dataId: string | null;
   /** The HMAC key (`MERCADOPAGO_WEBHOOK_SECRET`). */
   secret: string;
+  /**
+   * Wall-clock "now" in ms, for the replay-window check (M-4). Injectable so the
+   * verifier stays pure and deterministically testable. Defaults to `Date.now()`.
+   */
+  now?: number;
+  /** Replay tolerance override (ms) for tests; defaults to {@link WEBHOOK_REPLAY_TOLERANCE_MS}. */
+  toleranceMs?: number;
 }
 
 /** The parsed `ts`/`v1` parts of an `x-signature` header. */
@@ -121,7 +148,34 @@ export function verifyWebhookSignature(
   if (!timingSafeHexEqual(expectedHex, parsed.v1)) {
     return { ok: false, reason: "signature_mismatch" };
   }
+
+  // Replay window (M-4): the HMAC is authentic, but a captured-valid signature
+  // must not verify forever. Reject a `ts` that is too far from now. This runs
+  // AFTER the HMAC check so an attacker can't probe the window with unsigned ts.
+  const now = input.now ?? Date.now();
+  const toleranceMs = input.toleranceMs ?? WEBHOOK_REPLAY_TOLERANCE_MS;
+  const tsMs = parseTsMs(parsed.ts);
+  if (tsMs === null) {
+    return { ok: false, reason: "unparseable_ts" };
+  }
+  if (Math.abs(now - tsMs) > toleranceMs) {
+    return { ok: false, reason: "stale_timestamp" };
+  }
   return { ok: true };
+}
+
+/**
+ * Parse MP's `ts` into epoch milliseconds, resolving the seconds-vs-milliseconds
+ * ambiguity (MP has historically sent both). A value below {@link MS_EPOCH_THRESHOLD}
+ * is treated as SECONDS and scaled to ms; at/above it is already ms. Returns null
+ * for a non-numeric / non-finite / non-positive ts.
+ */
+export function parseTsMs(ts: string): number | null {
+  const raw = Number(ts);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return null;
+  }
+  return raw < MS_EPOCH_THRESHOLD ? raw * MS_PER_SECOND : raw;
 }
 
 /**

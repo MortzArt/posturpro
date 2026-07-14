@@ -22,7 +22,19 @@ interface OrderRow {
   payment_status: string;
   mp_payment_id: string | null;
 }
-const state: { order: OrderRow | null } = { order: null };
+const state: {
+  order: OrderRow | null;
+  priorRefunded: number;
+  recordRefundResult: { ok: boolean; reason: string } | null;
+  recordRefundError: { message: string } | null;
+  recordRefundCalls: Array<Record<string, unknown>>;
+} = {
+  order: null,
+  priorRefunded: 0,
+  recordRefundResult: null,
+  recordRefundError: null,
+  recordRefundCalls: [],
+};
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
@@ -40,6 +52,22 @@ vi.mock("@/lib/supabase/admin", () => ({
       };
       return chain;
     },
+    async rpc(fn: string, args: Record<string, unknown>) {
+      if (fn === "refunded_total") {
+        return { data: state.priorRefunded, error: null };
+      }
+      if (fn === "record_refund") {
+        state.recordRefundCalls.push(args);
+        if (state.recordRefundError) {
+          return { data: null, error: state.recordRefundError };
+        }
+        return {
+          data: state.recordRefundResult ?? { ok: true, reason: "recorded" },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    },
   }),
 }));
 
@@ -56,8 +84,12 @@ beforeEach(() => {
   refundCreate.mockReset();
   refundCreate.mockResolvedValue({ id: 1, status: "approved" });
   advanceOrderStatus.mockReset();
-  advanceOrderStatus.mockResolvedValue({ ok: true, result: { applied: true, reason: "advanced" } });
+  advanceOrderStatus.mockResolvedValue({ ok: true, result: { applied: true, reason: "payment_updated" } });
   state.order = { ...PAID_ORDER };
+  state.priorRefunded = 0;
+  state.recordRefundResult = null;
+  state.recordRefundError = null;
+  state.recordRefundCalls = [];
 });
 
 describe("refundOrderPayment", () => {
@@ -68,8 +100,11 @@ describe("refundOrderPayment", () => {
       expect.objectContaining({ payment_id: "MP-999", body: undefined }),
     );
     expect(advanceOrderStatus).toHaveBeenCalledWith(
-      expect.objectContaining({ p_payment_status: "refunded" }),
+      expect.objectContaining({ p_order_status: null, p_payment_status: "refunded" }),
     );
+    // Recorded durably in the ledger (M-3).
+    expect(state.recordRefundCalls).toHaveLength(1);
+    expect(state.recordRefundCalls[0]).toMatchObject({ p_is_full: true, p_mp_refund_id: "1" });
   });
 
   it("full refund when amount equals total → refunded/full", async () => {
@@ -85,6 +120,46 @@ describe("refundOrderPayment", () => {
     );
     // Partial does NOT advance payment_status to refunded (documented rule).
     expect(advanceOrderStatus).not.toHaveBeenCalled();
+    // But it IS recorded durably in the ledger (M-3).
+    expect(state.recordRefundCalls).toHaveLength(1);
+    expect(state.recordRefundCalls[0]).toMatchObject({ p_amount_cents: 100000, p_is_full: false });
+  });
+
+  it("refuses a second partial that would exceed the REMAINING balance (edge 9, M-2)", async () => {
+    // 600000¢ already refunded; a further 400000¢ would exceed the 899990¢ total.
+    state.priorRefunded = 600000;
+    const result = await refundOrderPayment(PAID_ORDER.id, 400000);
+    expect(result).toEqual({ status: "not-refundable", reason: "over-refund" });
+    expect(refundCreate).not.toHaveBeenCalled(); // early pre-check, before MP
+  });
+
+  it("allows a second partial within the remaining balance (M-2)", async () => {
+    state.priorRefunded = 600000; // remaining 299990¢
+    const result = await refundOrderPayment(PAID_ORDER.id, 200000);
+    expect(result).toEqual({ status: "refunded", kind: "partial" });
+    expect(refundCreate).toHaveBeenCalledOnce();
+  });
+
+  it("refuses any refund once the order is fully refunded (M-2)", async () => {
+    state.priorRefunded = 899990; // remaining 0
+    const result = await refundOrderPayment(PAID_ORDER.id, null);
+    expect(result).toEqual({ status: "not-refundable", reason: "over-refund" });
+    expect(refundCreate).not.toHaveBeenCalled();
+  });
+
+  it("treats a full refund (null) as the REMAINING balance after prior partials (M-2)", async () => {
+    state.priorRefunded = 300000; // remaining 599990¢
+    const result = await refundOrderPayment(PAID_ORDER.id, null);
+    expect(result).toEqual({ status: "refunded", kind: "full" });
+    expect(state.recordRefundCalls[0]).toMatchObject({ p_amount_cents: 599990, p_is_full: true });
+  });
+
+  it("returns error (reconcile-by-hand) if MP succeeds but the SQL guard rejects (race, M-2)", async () => {
+    // The pre-check passes but a concurrent refund raced past it → SQL guard rejects.
+    state.recordRefundResult = { ok: false, reason: "over_refund" };
+    const result = await refundOrderPayment(PAID_ORDER.id, 100000);
+    expect(result).toEqual({ status: "error" });
+    expect(refundCreate).toHaveBeenCalledOnce(); // money DID move at MP
   });
 
   it("sends a per-request idempotency key (AC-19)", async () => {

@@ -27,6 +27,7 @@ import { preferenceClient } from "@/lib/payments/mp-client";
 import { centsToMpAmount } from "@/lib/payments/money-boundary";
 import { buildBackUrls, webhookUrl } from "@/lib/payments/urls";
 import {
+  MP_AUTO_RETURN,
   MP_BINARY_MODE,
   MP_CURRENCY_ID,
   MP_STATEMENT_DESCRIPTOR,
@@ -171,7 +172,7 @@ function buildPreferenceBody(
     external_reference: order.confirmationToken,
     notification_url: webhookUrl(origin),
     back_urls: buildBackUrls(origin, locale, order.confirmationToken),
-    auto_return: "approved",
+    auto_return: MP_AUTO_RETURN,
     binary_mode: MP_BINARY_MODE,
     statement_descriptor: MP_STATEMENT_DESCRIPTOR,
     date_of_expiration: expiration,

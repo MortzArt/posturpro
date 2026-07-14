@@ -28,6 +28,14 @@ import { processPaymentNotification } from "@/lib/payments/process-payment";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Maximum accepted request body size (bytes). MP notifications are tiny (a few
+ * hundred bytes of JSON). This caps the ONLY public unauthenticated write endpoint
+ * against a memory-exhaustion DoS (M-5) — a body over this limit is rejected 413
+ * BEFORE it is read into memory. Generous headroom over real MP payloads.
+ */
+const MAX_WEBHOOK_BODY_BYTES = 64 * 1024; // 64 KB
+
 /** MP notification body shape (only the fields we consume). */
 interface MpNotificationBody {
   type?: string;
@@ -36,20 +44,41 @@ interface MpNotificationBody {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  // 1. Read the raw body ONCE (we need it for both id extraction and to avoid a
-  //    double-consume). A body that isn't valid JSON is handled below (edge 12).
-  const rawBody = await request.text();
+  // 0. Bound the body BEFORE reading it (M-5). Reject an oversized declared
+  //    Content-Length with 413; also enforce the cap on the actual bytes read (a
+  //    missing/lying Content-Length can't smuggle an unbounded body past us).
+  const declaredLength = Number(request.headers.get("content-length") ?? "");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_WEBHOOK_BODY_BYTES) {
+    console.warn(`[payments] webhook: body too large (content-length=${declaredLength})`);
+    return json({ error: "payload-too-large" }, 413);
+  }
 
-  // 2. Extract data.id — MP puts it in the query string AND/OR the JSON body.
-  //    The query value is authoritative for the signature manifest per MP docs;
-  //    fall back to the body. (edge 12: tolerate a non-JSON body.)
+  // 1. Read the raw body ONCE, enforcing the byte cap on the actual read.
+  let rawBody: string;
+  try {
+    rawBody = await readBoundedBody(request, MAX_WEBHOOK_BODY_BYTES);
+  } catch (caught) {
+    if (caught instanceof BodyTooLargeError) {
+      console.warn("[payments] webhook: body exceeded cap while reading");
+      return json({ error: "payload-too-large" }, 413);
+    }
+    throw caught;
+  }
+
+  // 2. Extract data.id. CRITICAL (C-1): MP builds the signed manifest from the
+  //    QUERY-STRING `data.id` ONLY — never the body. `signatureDataId` (query,
+  //    or null) is the SOLE input to the verifier; the body id is used ONLY as a
+  //    fallback source for the authoritative Payment.get fetch, never for the
+  //    manifest. Mixing the two produces false 401s (C-1). (edge 12: tolerate a
+  //    non-JSON body.)
   const url = new URL(request.url);
-  const queryDataId = url.searchParams.get("data.id") ?? url.searchParams.get("id");
+  const signatureDataId = url.searchParams.get("data.id") ?? url.searchParams.get("id");
   const body = parseBody(rawBody);
-  const dataId = queryDataId ?? normalizeId(body?.data?.id);
+  // Fetch id: prefer the query id (what was signed), fall back to the body id.
+  const fetchDataId = signatureDataId ?? normalizeId(body?.data?.id);
 
   // 3. Verify the signature BEFORE any side effect (AC-8). Fail closed on any
-  //    missing/blank secret, malformed header, or mismatch → 401.
+  //    missing/blank secret, malformed header, mismatch, or STALE ts → 401.
   const secret = readWebhookSecret();
   if (secret === null) {
     // Misconfiguration: no secret. Cannot verify → reject (never process blind).
@@ -59,7 +88,7 @@ export async function POST(request: Request): Promise<Response> {
   const verification = verifyWebhookSignature({
     signatureHeader: request.headers.get("x-signature"),
     requestId: request.headers.get("x-request-id"),
-    dataId,
+    dataId: signatureDataId, // C-1: query id ONLY — the exact source MP signs.
     secret,
   });
   if (!verification.ok) {
@@ -73,7 +102,7 @@ export async function POST(request: Request): Promise<Response> {
   if (type !== "payment") {
     return json({ received: true, ignored: type || "unknown-type" }, 200);
   }
-  if (!dataId) {
+  if (!fetchDataId) {
     // A payment notification with no id is malformed but signed — ack + ignore.
     console.warn("[payments] webhook: payment notification without data.id");
     return json({ received: true, ignored: "no-data-id" }, 200);
@@ -81,7 +110,7 @@ export async function POST(request: Request): Promise<Response> {
 
   // 5. Process the payment (fetch → dedupe → reconcile → advance).
   try {
-    const result = await processPaymentNotification(dataId, body?.action ?? null);
+    const result = await processPaymentNotification(fetchDataId, body?.action ?? null);
     if (result.httpOk) {
       return json({ received: true, result: result.kind }, 200);
     }
@@ -91,6 +120,49 @@ export async function POST(request: Request): Promise<Response> {
     console.error(`[payments] webhook: unhandled processing error: ${message}`);
     return json({ error: "internal" }, 500);
   }
+}
+
+/** Thrown by {@link readBoundedBody} when the request body exceeds the cap (M-5). */
+class BodyTooLargeError extends Error {
+  constructor() {
+    super("request body exceeded the maximum allowed size");
+    this.name = "BodyTooLargeError";
+  }
+}
+
+/**
+ * Read a request body as text, aborting if it exceeds `maxBytes` (M-5). Streams
+ * the body and accumulates bytes, throwing {@link BodyTooLargeError} the moment
+ * the running total crosses the cap — so a lying/absent Content-Length cannot
+ * smuggle an unbounded body into memory. Falls back to `request.text()` when the
+ * body isn't a readable stream (still bounded by the earlier Content-Length gate).
+ */
+async function readBoundedBody(request: Request, maxBytes: number): Promise<string> {
+  const stream = request.body;
+  if (!stream) {
+    return request.text();
+  }
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (value) {
+        total += value.byteLength;
+        if (total > maxBytes) {
+          throw new BodyTooLargeError();
+        }
+        chunks.push(value);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 /** Read the webhook secret, returning null if unconfigured (fail closed). */

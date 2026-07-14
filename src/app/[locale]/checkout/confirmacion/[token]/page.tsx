@@ -20,10 +20,11 @@ import { CATALOG_PATH } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
 /**
- * /checkout/confirmacion/[token] — post-order confirmation (T7 AC-13, M-6).
+ * /checkout/confirmacion/[token] — post-order confirmation (T7 AC-13; T8 AC-5).
  * Server component: reads the order by its UNGUESSABLE `confirmation_token` via
  * the admin client (RLS-denied to anon), renders order number + summary +
- * shipping + the "no payment yet" note; the `OrderConfirmation` client child
+ * shipping + the `<PaymentPanel>` (pay-now / pending-voucher / paid states,
+ * driven by the LIVE DB payment state, T8); the `OrderConfirmation` client child
  * clears the cart on mount. An unknown/malformed token → `notFound()` (no data
  * leak, and the enumerable order number is never an entry point).
  */

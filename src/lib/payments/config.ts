@@ -96,6 +96,14 @@ export const MP_WEBHOOK_PATH = "/api/webhooks/mercadopago" as const;
  */
 export const MP_RETURN_STATUS_PARAM = "mp_status" as const;
 
+/**
+ * `auto_return` on the preference (AC-3). `"approved"` makes MP auto-redirect the
+ * buyer back to our `back_url` as soon as the payment is approved (no manual
+ * "return to site" click). Centralized here so all preference tunables live in one
+ * place. Change only if you want to disable auto-return.
+ */
+export const MP_AUTO_RETURN = "approved" as const;
+
 /** The compact payment-method labels we persist on `orders.payment_method`. */
 export const PAYMENT_METHOD_KEYS = ["card", "oxxo", "spei", "wallet"] as const;
 
@@ -113,13 +121,19 @@ export type PaymentMethodKey = (typeof PAYMENT_METHOD_KEYS)[number];
  *  - 'ticket'                                       → oxxo (cash voucher)
  *  - 'bank_transfer'                               → spei
  *  - 'account_money' / 'digital_wallet'            → wallet (MP balance)
+ *
+ * NOTE (M-8): MP's `atm` payment_type_id is NOT SPEI — it is a distinct rail we do
+ * not surface, so it is intentionally UNMAPPED here (→ null). The primary signal
+ * for OXXO/SPEI is `payment_method_id` (`oxxo`, `clabe`), consulted first in
+ * {@link resolvePaymentMethod}; the type map is only a coarse fallback. The whole
+ * map remains a heuristic over ambiguous MP fields — verify against a live sandbox
+ * (BLOCKED-ON-USER).
  */
 const PAYMENT_TYPE_TO_METHOD: Readonly<Record<string, PaymentMethodKey>> = {
   credit_card: "card",
   debit_card: "card",
   prepaid_card: "card",
   ticket: "oxxo",
-  atm: "spei",
   bank_transfer: "spei",
   account_money: "wallet",
   digital_wallet: "wallet",
@@ -127,9 +141,10 @@ const PAYMENT_TYPE_TO_METHOD: Readonly<Record<string, PaymentMethodKey>> = {
 
 /**
  * Resolve MP's `payment_type_id` to our compact label, or `null` when unknown.
- * `paymentMethodId` (e.g. `oxxo`, `spei`) is consulted as a secondary signal
- * because MP has historically labeled both OXXO and SPEI under `ticket`/
- * `bank_transfer` inconsistently — the explicit method id disambiguates.
+ * `paymentMethodId` (e.g. `oxxo`, `clabe`) is the PRIMARY signal — MP has
+ * historically labeled OXXO/SPEI under `ticket`/`bank_transfer` inconsistently,
+ * so the explicit method id disambiguates. The `payment_type_id` map is the
+ * fallback. An unrecognized rail (e.g. `atm`) → null (we store no guess).
  */
 export function resolvePaymentMethod(
   paymentTypeId: string | null | undefined,

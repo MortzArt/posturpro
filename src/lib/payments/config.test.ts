@@ -28,6 +28,14 @@ describe("resolvePaymentMethod", () => {
 
   it("maps spei / bank_transfer → spei", () => {
     expect(resolvePaymentMethod("bank_transfer", "spei")).toBe("spei");
+    expect(resolvePaymentMethod("bank_transfer", "clabe")).toBe("spei");
+  });
+
+  it("M-8: 'atm' payment_type is NOT spei (unmapped → null unless method id disambiguates)", () => {
+    // Bare atm type with no OXXO/SPEI method id → null (no wrong guess).
+    expect(resolvePaymentMethod("atm", null)).toBeNull();
+    expect(resolvePaymentMethod("atm", "unknown")).toBeNull();
+    // A clabe method id still correctly wins (method id is the primary signal).
     expect(resolvePaymentMethod("atm", "clabe")).toBe("spei");
   });
 

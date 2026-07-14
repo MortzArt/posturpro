@@ -326,7 +326,46 @@ pending→approved flow (M-1), plus real hardening gaps (replay window, body cap
 claim/advance atomicity). These are exactly the classes of defect the human gate
 exists to catch, and they must be fixed before this is merge-eligible.
 
-## Recommendation: REQUEST CHANGES
+---
+
+## Stage 6 (ultrafix) Resolution Log — 2026-07-14
+
+All CRITICAL + MAJOR findings FIXED and verified; MINOR/NIT resolved or documented.
+Verification: tsc 0 errors, eslint clean, next build clean (webhook route emitted),
+unit 1126/1126 (baseline 1107 + 19 new), integration 151/151 (baseline 144 + 7 new),
+migration 0009 applies clean on `supabase db reset` (idempotent — re-applies over an
+existing shape). DB left pristine-seeded; tsconfig restored; no stray servers.
+
+| ID | Sev | Status | Resolution |
+|----|-----|--------|------------|
+| C-1 | CRITICAL | **FIXED** | `route.ts` now passes ONLY the query-string `data.id` (`signatureDataId`) into `verifyWebhookSignature`; the body id is used solely as a `Payment.get` fetch fallback (`fetchDataId`), never for the manifest. `webhook.test.ts` builds manifests INDEPENDENTLY (literal MP format) and adds a mutation-style test proving a signature signed with the query id is REJECTED when verified with the body id. |
+| C-2 | CRITICAL | **FIXED** | `mapMpStatus("refunded")` now returns `orderStatus: null` (payment-only). `advance_order_status` RPC gained a payment-only mode (`p_order_status` NULL): sets payment fields + writes an audit history row without touching order_status → works on plain-paid AND shipped orders. Integration tests prove `payment_status=refunded` on both a paid and a shipped order with history written. |
+| M-1 | MAJOR | **FIXED** | Idempotency spine re-keyed to `unique(mp_payment_id, mp_status)`. Status PROGRESSIONS (OXXO/SPEI pending→approved) each claim a distinct row → processed (AC-18). New `record_payment_event` RPC. Unit + integration regression tests cover the exact pending→approved sequence. |
+| M-2 | MAJOR | **FIXED** | Cumulative over-refund guard in SQL: `payment_refunds` ledger + `record_refund` RPC locks the order, sums prior refunds, rejects if `prior + amount > total` (race-safe). `refund.ts` also pre-checks via `refunded_total`. Unit + integration tests cover second-partial-over-remaining, full-after-partial, and the MP-succeeded-but-guard-rejected race. |
+| M-3 | MAJOR | **FIXED** | Every successful refund (full AND partial) writes a durable `payment_refunds` row keyed by the MP refund id (retry-idempotent) at success time in `executeRefund` — no longer depends on the `refunded` webhook. |
+| M-4 | MAJOR | **FIXED** | `webhook.ts` parses `ts` (seconds/ms disambiguated) AFTER the HMAC check and rejects `|now - ts| > WEBHOOK_REPLAY_TOLERANCE_MS` (5 min) → `stale_timestamp`. Injectable `now`/`toleranceMs` keep it pure/testable. Fresh/stale/future/unparseable-ts tests added. |
+| M-5 | MAJOR | **FIXED** | `route.ts` caps the body at 64 KB: rejects an oversized `content-length` with 413 before reading, AND streams with a running-total cap (`readBoundedBody`) so a lying/absent length can't smuggle an unbounded body. |
+| M-6 | MAJOR | **FIXED** | Claim-then-finalize: `record_payment_event` inserts with `processed_at` NULL; the claim is FINALIZED (`finalize_payment_event`) only after a successful advance. A transient advance failure leaves the claim unfinalized → MP's retry reclaims and reprocesses (advance is idempotent). Unit tests assert finalize-only-on-success and no-finalize-on-error. |
+| M-7 | MAJOR | **FIXED** | `process-payment.ts` inspects `advance.result.reason`: `regression_blocked`/`order_not_found` → new `advance-blocked` outcome (httpOk:false, claim left unfinalized), not silent success. Unit test covers it. |
+| M-8 | MAJOR | **FIXED** | Removed the `atm: "spei"` mapping (MP `atm` is not SPEI). `payment_method_id` (`oxxo`/`clabe`) remains the primary signal; the type map is a fallback; `atm` with no disambiguating method id → null. Test asserts `atm`→null and clabe-wins. |
+| m-1 | MINOR | **FIXED** | `advance_order_status` now writes a history row on a `noop_same_status`/payment-only transition IFF `payment_status` materially changed — supports the refund/refunded audit trail (AC-13). |
+| m-2 | MINOR | **FIXED** | `matchOrder` fallback comment moved to describe the block it precedes; logic unchanged (two indexed lookups; a single `.or()` would lose the ability to log which matched — kept explicit). |
+| m-3 | MINOR | **SKIPPED** | Realistic MP OXXO/SPEI voucher fixture test deferred — the voucher field paths are BLOCKED-ON-USER (live-sandbox verification). Defensive reads already unit-tested (`extract-voucher.test.ts`). Documented in dev-done BLOCKED-ON-USER. |
+| m-4 | MINOR | **FIXED** | `resolveOrigin` now uses an `isLocalHost` helper covering `localhost`, `127.*`, `[::1]`, and `.local`; trusts `x-forwarded-proto` first. |
+| m-5 | MINOR | **FIXED** | `auto_return: "approved"` moved to `config.ts` as `MP_AUTO_RETURN`. |
+| m-6 | MINOR | **SKIPPED (no code change, as advised)** | `binary_mode: false` is intentional (required for OXXO/SPEI). Flagged for human/live-sandbox UX sign-off; no code change per the reviewer's own suggestion. |
+| N-1 | NIT | **FIXED** | `env.ts` docstring updated — now names MP secrets alongside Supabase. |
+| N-2 | NIT | **FIXED** | Confirmation page docstring updated for `<PaymentPanel>` (drops the "no payment yet" note). |
+| N-3 | NIT | **SKIPPED (documented)** | `MP_STATEMENT_DESCRIPTOR="POSTURPRO"` placeholder retained; the swap instructions are already in `config.ts`. Setting the real legal name is a launch-time config task (BLOCKED-ON-USER). |
+| N-4 | NIT | **FIXED** | The glib "impossible — valid signature" comment reworded: a signed query id can point at no payment; a 404 is expected, not an error. |
+| N-5 | NIT | **FIXED** | Dropped the never-written `raw jsonb` column from `mp_payment_events` (migration + types). The recorded columns are the PII-free audit trail. |
+
+### AC re-verification after fixes
+- **AC-8** (was FAIL): now PASS — query-only signature id (C-1) + ts replay window (M-4). Evidence: `route.ts` `signatureDataId`; `webhook.test.ts` C-1 + replay-window suites.
+- **AC-18** (was FAIL): now PASS — `(mp_payment_id, mp_status)` spine processes pending→approved. Evidence: `process-payment.test.ts` progression test; integration `record_payment_event` progression test.
+- **AC-10/13/14/19/23** (were PARTIAL): now PASS — dedupe still idempotent per (id,status); refund/refunded write history; refunded mapping correct; cumulative guard + durable ledger; strict TS holds.
+
+## Recommendation: REQUEST CHANGES — RESOLVED (advisory re-verification: PASS)
 
 Do NOT advance to merge. Stage 6 (ultrafix) must resolve **C-1, C-2, and M-1 at
 minimum** (they break correctness against the real gateway and the OXXO/SPEI
