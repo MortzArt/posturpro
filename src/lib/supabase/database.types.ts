@@ -33,6 +33,58 @@ export type PaymentStatus =
   | "refunded";
 export type DiscountType = "percentage" | "fixed_amount";
 
+/**
+ * One line item in the `create_order` RPC payload (T7, 0008_checkout.sql). All
+ * cents are integers, assembled + validated server-side; the RPC re-validates
+ * stock and re-checks the line-total identity at the DB.
+ */
+export interface CreateOrderItemPayload {
+  product_id: string;
+  variant_id: string | null;
+  product_name: string;
+  product_sku: string;
+  variant_label: string | null;
+  unit_price_cents: number;
+  quantity: number;
+  line_total_cents: number;
+}
+
+/**
+ * The full `create_order` RPC payload (T7, 0008_checkout.sql). Passed as a single
+ * `jsonb` argument. The `idempotency_key` makes a double-submit return the same
+ * order (AC-14); `discount_code` (normalized) is the code whose `times_redeemed`
+ * the RPC increments with a bound check.
+ */
+export interface CreateOrderPayload {
+  idempotency_key: string;
+  contact_email: string;
+  contact_phone: string | null;
+  shipping_full_name: string;
+  shipping_address_line1: string;
+  shipping_address_line2: string | null;
+  shipping_city: string;
+  shipping_state: string;
+  shipping_postal_code: string;
+  delivery_notes: string | null;
+  rfc: string | null;
+  subtotal_cents: number;
+  shipping_cents: number;
+  discount_cents: number;
+  tax_base_cents: number;
+  tax_cents: number;
+  total_cents: number;
+  discount_code: string | null;
+  items: CreateOrderItemPayload[];
+}
+
+/** The `create_order` RPC result (T7, 0008_checkout.sql). */
+export interface CreateOrderResult {
+  order_number: string;
+  order_id: string;
+  /** true when an existing order was returned via the idempotency key. */
+  reused: boolean;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -464,6 +516,7 @@ export interface Database {
           mp_preference_id: string | null;
           mp_payment_id: string | null;
           mp_external_reference: string | null;
+          idempotency_key: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -495,6 +548,7 @@ export interface Database {
           mp_preference_id?: string | null;
           mp_payment_id?: string | null;
           mp_external_reference?: string | null;
+          idempotency_key?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -526,6 +580,7 @@ export interface Database {
           mp_preference_id?: string | null;
           mp_payment_id?: string | null;
           mp_external_reference?: string | null;
+          idempotency_key?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -898,6 +953,10 @@ export interface Database {
           distinct_color_count: number;
           total_count: number;
         }[];
+      };
+      create_order: {
+        Args: { payload: CreateOrderPayload };
+        Returns: CreateOrderResult;
       };
     };
     Enums: {

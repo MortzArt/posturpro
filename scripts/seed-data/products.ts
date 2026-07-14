@@ -75,6 +75,15 @@ const COLORS = {
 
 type ColorKey = keyof typeof COLORS;
 
+/**
+ * T7 checkout coverage: the product+color that gets a deliberately zero-stock
+ * variant appended (see `buildProduct`), so the overselling / out-of-stock path
+ * can be exercised against real seeded data (edge 2, AC-9). Kept as a named
+ * constant so tests/e2e can target it without guessing.
+ */
+export const ZERO_STOCK_PRODUCT_SLUG = "silla-ergonomica-kids-junior";
+const ZERO_STOCK_VARIANT_COLOR: ColorKey = "blanco";
+
 function variant(
   skuSuffix: string,
   color: ColorKey,
@@ -163,6 +172,16 @@ function buildProduct(bp: ProductBlueprint, index: number): ProductSeed {
       colorIndex === 1 && bp.colors.length > 1 ? bp.priceCents + 30_000 : null;
     return variant(`${index + 1}-${colorIndex + 1}`, color, override, 8 + colorIndex * 3);
   });
+
+  // T7: one designated product carries a deliberately ZERO-STOCK variant so the
+  // checkout overselling / out-of-stock path has real live data to hit (edge 2,
+  // AC-9 e2e coverage). Appended as an extra color so existing variants are
+  // unchanged (stock stays authoritative per-variant).
+  if (bp.slug === ZERO_STOCK_PRODUCT_SLUG) {
+    variants.push(
+      variant(`${index + 1}-${bp.colors.length + 1}`, ZERO_STOCK_VARIANT_COLOR, null, 0),
+    );
+  }
 
   const totalStock = variants.reduce((sum, variant_) => sum + variant_.stock, 0);
 

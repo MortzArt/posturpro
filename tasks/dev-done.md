@@ -1,145 +1,115 @@
-# Dev Summary: T6 — Cart
+# Dev Summary: T7 — Checkout & Order Creation
 
-Stage 3 (Dev) of the standard pipeline. Full-feature implementation of a
-persistent guest cart: localStorage lib + pure line/shipping math, a React
-context provider, header badge, PDP add-to-cart island, and the `/carrito` page
-with line rows, quantity steppers, free-shipping progress, order summary, and
-empty state. Zero TODOs, zero placeholders. No new dependencies.
+Full-stack implementation of the revenue write path: a single-page sectioned
+checkout form, server-side re-validation of price + stock, an atomic Postgres
+reserve-and-create RPC, discount validation, guest order creation, and an order
+confirmation page. Zero TODOs. `tsc` clean, `eslint` clean, `next build` clean
+(both locales), migration applied to local Docker Supabase, seed re-run, and the
+RPC + routes smoke-tested end to end.
 
 ## Files Changed
 
 | Path | Change | Summary |
 |------|--------|---------|
-| `src/lib/config.ts` | modified | Added `CART_STORAGE_KEY="posturpro:cart:v1"`, `MAX_CART_ITEM_QUANTITY=99`, `CART_PATH="/carrito"`, `CHECKOUT_PATH="/checkout"`, `ADD_TO_CART_CONFIRM_MS=1500` — each documented (Rule 4). |
-| `src/lib/cart/cart-line.ts` | created | `CartLine`/`CartLineInput` types + pure helpers: `cartLineKey`, `lineKey`, `sanitizeQuantity`, `isDroppableQuantity`, `lineTotalCents`, `subtotalCents`, `totalItemCount`, `addLine` (dedupe+increment+clamp), `setLineQuantity`, `removeLine`. Integer cents only; never formats. |
-| `src/lib/cart/cart-storage.ts` | created | Guarded localStorage `readCart`/`writeCart` mirroring `recently-viewed.ts`: `hasStorage` SSR guard, `isCartLine` shape guard (rejects non-integer/`NaN` `unitPriceCents`), quantity drop/clamp on read, `warnOnce` per session, full try/catch (never throws). |
-| `src/lib/cart/shipping.ts` | created | Pure `computeShipping`, `totalCents`, `freeShippingProgress`. `>=` threshold (edge 7); returns `unavailable`/`null` when settings null (edge 6); never `$NaN`. |
-| `src/components/cart/cart-provider.tsx` | created | `"use client"` context + `useReducer` (functional actions coalesce rapid clicks, edge 9). Hydrates empty→storage on mount (no SSR mismatch), persists after hydration (no `[]` clobber), `storage` listener for cross-tab sync (edge 5). Exposes `useCart()`. |
-| `src/components/cart/cart-count-badge.tsx` | created | Header island: 44×44 icon box, count as an **absolutely-positioned overlay pill** (no layout shift), scale-in motion, `99+` cap, ICU-plural `aria-label` via `t()`. Null count pre-hydration. |
-| `src/components/cart/add-to-cart-button.tsx` | created | PDP island: fixed `h-11 w-full`, blur-masked interruptible label crossfade to "Agregado ✓", disabled when out-of-stock or pre-hydration, functional add. Labels via props (panel keeps no-client-i18n). SR-only `aria-live` add announcement. |
-| `src/components/cart/quantity-stepper.tsx` | created | 44px +/- buttons + readOnly `tabular-nums` field. `−` disables at min, `+` at cap (AC-13). Icon-only buttons carry `aria-label`. Press-only motion. |
-| `src/components/cart/cart-line-row.tsx` | created | `<li>` with thumb, PDP-linked name, variant label, unit price, stepper, ghost remove, `.price-value` line total. `StockBadge state="out"` + dimmed image when out-of-stock. `.stagger` entrance. |
-| `src/components/cart/free-shipping-progress.tsx` | created | `transform: scaleX(pct)` fill (never width) via `.cart-progress-fill`, `role="progressbar"`, achieved tint + 🎉. Returns `null` when progress null (AC-9). |
-| `src/components/cart/order-summary.tsx` | created | Subtotal/shipping/total via `formatMXN`; `free`/`flat`/`unavailable` shipping states (edge 6). Checkout CTA is a plain 44px `Link` to `CHECKOUT_PATH` (no form). |
-| `src/components/cart/cart-empty-state.tsx` | created | Centered message + `Ver sillas` CTA to `/sillas`. `.enter-fade`. Rendered only after hydration confirms empty (AC-10). |
-| `src/components/cart/cart-page-client.tsx` | created | `"use client"` body: `useTranslations("cart")`, derives totals from pure helpers, skeleton→(empty\|populated) crossfade, single page-level `aria-live` region, two-column `[2fr_1fr]` at `lg` with sticky summary. |
-| `src/app/[locale]/carrito/page.tsx` | created | Server route: reads `getStoreSettingsStatic()` → flat/threshold cents (or null), i18n metadata, renders `CartPageClient`. SSG for both locales. |
-| `src/app/[locale]/layout.tsx` | modified | Wrapped shell in `<CartProvider>` inside `NextIntlClientProvider`. |
-| `src/components/layout/site-header.tsx` | modified | Mounted `<CartCountBadge />` in the right cluster before the language toggles. |
-| `src/components/layout/mobile-nav.tsx` | modified | Added `MobileCartLink` (icon + "Carrito (3)") to the drawer nav list. |
-| `src/components/product/product-purchase-panel.tsx` | modified | Renders `AddToCartButton` as the last info-column child; threads `productId`/`slug`/`basePriceCents`/`coverImageUrl` + `addToCartLabels`; snapshot uses `effectivePriceCents(selectedVariant, base)` + current stock state. |
-| `src/app/[locale]/producto/[slug]/page.tsx` | modified | Threads product id/slug/price/cover + resolved `cart` labels into the panel. |
-| `src/messages/es-MX.json`, `src/messages/en.json` | modified | New `cart` namespace (both locales, one edit). ICU plural on `badgeLabel`; `{count}`/`{amount}` templates for interpolation. |
-| `src/messages/keys-used.test.ts` | modified | Added 31 consumed `cart.*` keys to the parity coverage list. |
-| `src/app/globals.css` | modified | Added a T6 cart-motion block: `.cart-badge-pill` (scale-in), `.cart-add-label` (blur-mask crossfade), `.cart-press`/`.cart-step-press` (press feedback), `.cart-progress-fill` (scaleX). All transform/opacity, reduced-motion gated. |
+| `supabase/migrations/0008_checkout.sql` | created | `order_number_seq`; `orders.idempotency_key` col + partial-unique index; `create_order(jsonb)` SECURITY DEFINER RPC — guarded per-line stock decrement, customer/order/order_items/status_history inserts, sales_count bump, discount redemption bound-check, idempotency short-circuit, all in one transaction. Granted to `service_role` only. |
+| `src/lib/config.ts` | modified | Added `MEXICAN_STATES` (32) + `isMexicanState`, `MEXICAN_CP_PATTERN`, `EMAIL_PATTERN`, `DELIVERY_NOTES_MAX`, `RFC_MAX`, `CONTACT_PHONE_MAX`, `ADDRESS_FIELD_MAX`, `ORDER_NUMBER_PREFIX`, `TAX_RATE=0`, `CHECKOUT_CONFIRMATION_SEGMENT`, `confirmationPath()`. Documented "HOW TO SWAP" block (rule 4). |
+| `src/lib/checkout/address.ts` (+ `.test.ts`) | created | Pure Mexican address + contact validation on trimmed values; typed `{ ok, values, fieldErrors }`. |
+| `src/lib/checkout/discount.ts` (+ `.test.ts`) | created | Pure discount eligibility + application (percentage/fixed), clamp ≤ subtotal, window/min/redemption checks; `normalizeDiscountCode`. |
+| `src/lib/checkout/order.ts` (+ `.test.ts`) | created | Pure order-total assembly satisfying every DB identity CHECK; `formatOrderNumber`. |
+| `src/lib/checkout/checkout-read.ts` | created | Server live re-read by id (batched `in(...)`) → per-line price/stock re-validation; `fetchDiscountCode` (case-insensitive, degrades on error). Admin client; `server-only`. |
+| `src/lib/checkout/order-read.ts` | created | Server read of an order + items by number for the confirmation page (admin client; never throws → `null`). |
+| `src/app/[locale]/checkout/actions.ts` | created | `"use server" placeOrder` — parse → validate → revalidate → shipping → discount → assemble → atomic RPC → friendly status union. Never echoes raw PG. |
+| `src/app/[locale]/checkout/checkout-form-state.ts` | created | Serializable `CheckoutFormState` union + `initialCheckoutFormState` (sibling to the action, per the `"use server"` rule). |
+| `src/app/[locale]/checkout/page.tsx` | created | Server page: `setRequestLocale`, `getStoreSettingsStatic()`, metadata, renders the client flow. |
+| `src/app/[locale]/checkout/confirmacion/[orderNumber]/page.tsx` | created | Confirmation server page: reads order by number, renders summary + shipping + "no payment yet" note; `notFound()` on unknown. |
+| `src/components/checkout/checkout-flow-client.tsx` | created | `"use client"` flow: `useCart()` + `useActionState(placeOrder)`, skeleton/empty/body, all states, banner, live region, sticky bar, redirect on success. |
+| `src/components/checkout/checkout-fields.tsx` | created | Contact/Shipping/Notes sections; state `Select` + hidden input for FormData. |
+| `src/components/checkout/checkout-field.tsx` | created | Shared `fieldClasses`, `TextField`, `FieldError`, `CheckoutCard` primitives. |
+| `src/components/checkout/checkout-summary.tsx` (+ `.test.tsx`) | created | Itemized summary, three-state shipping, discount row, per-line issue rings, in-card submit. |
+| `src/components/checkout/discount-code-field.tsx` | created | Controlled code input + applied/invalid/degraded display; never blocks submit. |
+| `src/components/checkout/checkout-skeleton.tsx` | created | Pre-hydration skeleton sized to the real 2-col layout (opacity crossfade, no reflow). |
+| `src/components/checkout/checkout-empty-state.tsx` | created | Empty-cart state + catalog CTA (mirrors `CartEmptyState`). |
+| `src/components/checkout/sticky-checkout-bar.tsx` | created | Mobile/tablet canonical submit + total (translucent, safe-area). |
+| `src/components/checkout/use-checkout-labels.tsx` | created | Resolves the whole `checkout` i18n namespace into typed label bundles. |
+| `src/components/checkout/checkout-helpers.ts` | created | Pure cart→summary/payload/snapshot-price transforms. |
+| `src/components/checkout/order-confirmation.tsx` | created | Tiny client child that clears the cart once on confirmation mount. |
+| `src/lib/supabase/database.types.ts` | modified | Added `orders.idempotency_key`; `create_order` `Functions` entry; `CreateOrderPayload`/`CreateOrderItemPayload`/`CreateOrderResult` types. |
+| `src/messages/es-MX.json` + `en.json` | modified | New `checkout` namespace (labels, validation, discount, summary, banners, confirmation, live region). |
+| `scripts/seed-data/products.ts` | modified | Zero-stock variant appended to `silla-ergonomica-kids-junior` (exported `ZERO_STOCK_PRODUCT_SLUG`). |
+| `scripts/seed-data/discounts.ts` | created | 5 discount codes: active pct (`AHORRA10`), active fixed (`MENOS200`), expired (`EXPIRADO`), below-min (`MINIMO5000`), exhausted (`AGOTADO`). |
+| `scripts/seed.ts` | modified | Wires `seedDiscountCodes` + summary line. |
 
 ## Data-Testids Added
-- `cart-count-badge`, `cart-count-pill` — header badge (`cart-count-badge.tsx`)
-- `mobile-nav-cart` — drawer cart link (`mobile-nav.tsx`)
-- `add-to-cart-button`, `add-to-cart-live` — PDP button (`add-to-cart-button.tsx`)
-- `quantity-stepper`, `quantity-decrease`, `quantity-increase`, `quantity-value` — stepper
-- `cart-line-row`, `cart-line-name`, `cart-line-variant`, `cart-line-total`, `cart-line-remove`, `cart-line-image-link`, `cart-line-list` — line row + list
-- `free-shipping-progress` — progress bar (with `data-achieved`)
-- `order-summary`, `summary-subtotal`, `summary-shipping`, `summary-total`, `checkout-cta` — summary
-- `cart-empty-state`, `cart-empty-cta` — empty state
-- `cart-heading`, `cart-skeleton`, `cart-live-region` — page body
+`checkout-skeleton`, `checkout-empty-state`, `checkout-empty-cta`, `checkout-back-link`, `checkout-heading`, `checkout-live-region`, `checkout-form`, `checkout-email-input`, `checkout-phone-input`, `checkout-fullname-input`, `checkout-address1-input`, `checkout-address2-input`, `checkout-city-input`, `checkout-cp-input`, `checkout-state`, `checkout-notes-input`, `checkout-rfc-input`, `checkout-discount-field`, `checkout-discount-input`, `checkout-discount-note`, `checkout-discount-applied`, `checkout-discount-remove`, `checkout-summary`, `checkout-summary-lines`, `checkout-summary-line`, `checkout-subtotal`, `checkout-discount`, `checkout-shipping`, `checkout-total`, `checkout-submit`, `checkout-submit-sticky`, `checkout-sticky-bar`, `checkout-banner`, `confirmation-heading`, `confirmation-order-number`, `confirmation-summary`, `confirmation-total`, `confirmation-shipping`, `confirmation-keep-shopping`.
 
 ## Key Decisions
-- **State: React context + `useReducer`** over a new lib — one cart, three consumers, matches the "built-ins first" grain. Functional reducer actions coalesce rapid clicks.
-- **Null-until-hydrated via reducer-driven `hydrated` + a persist-gate ref** — the ref prevents the `lines` effect from writing `[]` over stored data before the mount read runs (would otherwise wipe the cart on every load).
-- **ICU plurals resolve via `t()`, never `interpolate`** — `interpolate` only handles simple `{token}`. `badgeLabel` (plural) uses `t("badgeLabel", { count })` in client components; simple `{count}`/`{amount}` templates use `interpolate`.
-- **PDP add announcement is count-free** (`announce.added` = "Se agregó al carrito") — the panel/button must not call `useTranslations`, so the label is pre-resolved server-side as a prop; a count-bearing plural would need client i18n. The header badge/aria-label carries the running count.
-- **`sku` snapshot is `null`** — `ProductVariantView` carries no SKU; the field is nullable and T7 re-validates against the live DB, so a null snapshot is correct.
-- **Line identity `productId::variantId`** (sentinel `productId` alone when no variant) so a no-variant product and a specific variant never collide (AC-2).
+- **Idempotency (AC-14):** a client-generated UUID per submission attempt threaded to the RPC + a partial-unique index on `orders.idempotency_key`. A repeat call with the same key returns the ORIGINAL order (`reused:true`) — no second order, no double decrement. A corrected resubmit mints a fresh key (new `submissionId`). Verified by DB smoke test.
+- **Discount UX = validate-on-submit (design option B):** the code is a controlled field carried into the single `placeOrder`; the applied/invalid/degraded result is rendered from `CheckoutFormState.discount`, never claimed by the client. Keeps to "one form, one action" (Q&A precedent) and avoids a second server action. A bad code never blocks submit (AC-7).
+- **Reserve at ORDER CREATION (default):** stock decremented in the RPC now; T12 handles restore-on-cancel. Matches the T6 forward note.
+- **Admin client for the whole trust boundary:** live re-read AND write both go through `createAdminClient()` in server-only modules, so the entire boundary lives server-side (AC-12).
+- **Order number = DB sequence** (`order_number_seq`), formatted `PP-000123`. Uniqueness is DB-guaranteed; `formatOrderNumber` is the TS display twin (prefix duplicated in the RPC by design — documented).
+- **`sales_count` bumped at creation (AC-10)** inside the same transaction.
 
 ## AC-by-AC Status
-- **AC-1** PASS — `AddToCartButton` on the PDP panel adds the selected variant (or product) at qty 1.
-- **AC-2** PASS — `addLine` dedupes/increments by `cartLineKey(productId, variantId)`; two variants are two lines.
-- **AC-3** PASS — `readCart`/`writeCart` persist across refresh and sessions (localStorage); build confirms `/carrito` renders.
-- **AC-4** PASS — `CartCountBadge` reads `itemCount` from shared context; updates on every mutation, every page.
-- **AC-5** PASS — `/carrito` (SSG, `/carrito` + `/en/carrito`) lists image, name, variant label, unit price, stepper, remove, line total.
-- **AC-6** PASS — stepper drives `setQuantity`; line total, subtotal, badge, progress all recompute off one context change.
-- **AC-7** PASS — `−` disabled at 1; dedicated ghost `Eliminar` removes the line.
-- **AC-8** PASS — `OrderSummary` shows subtotal/shipping/total from `computeShipping` reading store-settings cents (props from server; never hardcoded).
-- **AC-9** PASS — `FreeShippingProgress` shows remaining/achieved + `scaleX` bar; returns `null` (hidden) when settings null; never `$NaN`.
-- **AC-10** PASS — `CartEmptyState` (message + `/sillas` CTA) with no summary/progress/checkout when hydrated & empty.
-- **AC-11** PASS — `cart` namespace in both `es-MX.json` + `en.json`; `messages.test.ts` + `keys-used.test.ts` pass (634 unit tests green).
-- **AC-12** PASS — all display via `formatMXN`; all math integer cents; `isCartLine` blocks non-integer prices.
-- **AC-13** PASS — `sanitizeQuantity` clamps `[1, 99]` on read/edit; stepper `+` disables at cap.
-- **AC-14** PASS — corrupt/absent/foreign payload → empty cart + one `warnOnce`; no throw.
-- **AC-15** PASS — checkout CTA (non-empty only) is a `Link` to `CHECKOUT_PATH`; no checkout logic in T6.
-- **AC-16** PASS — keyboard-operable stepper/remove; single page-level `aria-live` for qty/remove; PDP add owns its own SR region; badge `aria-label` carries the count.
-- **AC-17** PASS — cart state lives only in localStorage + context; no query-param coupling (no `useSearchParams` in any cart file).
-- **AC-18** PASS — `AddToCartButton` disabled + "Agotado" when `display.stockState === "out"`; click is a guarded no-op.
+- **AC-1** Non-empty `/checkout` (+ `/en`) renders contact/shipping/notes/discount/summary via `computeShipping`/`totalCents` — DONE.
+- **AC-2** Empty cart → empty-state + `CATALOG_PATH` CTA; zero-line submit blocked (client empty-state + server empty guard) — DONE.
+- **AC-3** `getStoreSettingsStatic()` server-side, cents prop-drilled, three-state shipping identical to cart — DONE.
+- **AC-4** CP `/^\d{5}$/` + 32-state closed list, field-scoped localized errors, re-run on server — DONE.
+- **AC-5** Email + required fields validated on trimmed values (pure, unit-tested); optionals bounded — DONE.
+- **AC-6** Server discount validation (exists/active/window/min/redemptions) + percentage/fixed application clamped ≤ subtotal — DONE.
+- **AC-7** Any bad code → friendly note, order proceeds at full price, never blocks — DONE.
+- **AC-8** Server re-reads live product/variant by id; active + live price + live stock ≥ qty; mismatch aborts per-line — DONE.
+- **AC-9** Single-transaction guarded decrement + inserts; last-unit race → one wins, loser rolls back; stock never negative — DONE (DB smoke verified).
+- **AC-10** `sales_count += qty` in the same transaction (increment at creation) — DONE.
+- **AC-11** customers + orders (`pending_payment`/`pending`, unique number, full snapshot, tax=0) + order_items + initial status_history — DONE.
+- **AC-12** All commerce writes via `createAdminClient` (server-only) — DONE.
+- **AC-13** Confirmation page: number + summary + shipping + "no payment yet"; cart cleared on mount — DONE.
+- **AC-14** Idempotency key + unique index → single order on double-submit; button disabled while pending — DONE (DB smoke verified).
+- **AC-15** Every tunable a named, documented `config.ts` constant; tax=0 written for CFDI-readiness — DONE.
+- **AC-16** All copy in the new `checkout` namespace (both locales); money via `formatMXN`; integer cents — DONE.
 
 ## Deviations from Ticket
-- **No per-row remove collapse animation.** The design's remove-row height/opacity collapse was deferred to the opacity-only fallback the spec explicitly allows (watch-out #10): React unmounts the row on optimistic remove and totals recompute; animating unmount height reliably without a motion library would add complexity for a rare one-off exit. Enter stagger + `.price-value`/`.cart-progress-fill` motion are all present. Flagged for UX (Stage 8) if a collapse is wanted.
-- **`announce.added` dropped its plural count** (see Key Decisions) — deliberate, to preserve the panel's no-client-i18n invariant.
+- **Discount async pre-check (design option A) not implemented** — chose the simpler, lower-risk validate-on-submit (option B), which the design explicitly allowed. Same states are rendered; feedback arrives with the submit result rather than before it.
+- **`checkout-read.ts` returns `coverImageUrl: null`** — the order snapshot stores no image; the summary uses the client snapshot's image for display, so the write path avoids an extra image join. Documented in the module.
+- **Discount management UI, payment capture, confirmation email, CFDI** — all explicitly out of scope (T8/T9/Phase 2/3).
 
 ## Edge Cases Handled
-1. **Corrupt/foreign localStorage** → `readCart` returns `[]` + one `warnOnce`; page renders empty state (`cart-storage.ts`, AC-14).
-2. **Disabled/quota storage** → `writeCart` swallows with one warn; in-memory context still updates (`cart-provider.tsx` persist effect + `cart-storage.ts`).
-3. **Tampered quantity (0/neg/NaN/>cap)** → `isDroppableQuantity` drops junk lines, `sanitizeQuantity` clamps the rest; missing/`NaN` `unitPriceCents` fails `isCartLine` and drops the line (no `$NaN`).
-4. **Stale snapshot** → cart renders from the client snapshot; documented as a T7 re-validation concern (`cart-line.ts` docstring).
-5. **Two tabs** → `storage` listener re-reads into state, last-write-wins (`cart-provider.tsx`).
-6. **`store_settings` null** → `computeShipping` → `unavailable` (neutral label), `freeShippingProgress` → `null` (bar hidden), total = subtotal (`shipping.ts`, `order-summary.tsx`).
-7. **Subtotal == threshold** → `>=` → free + achieved + 100% bar (`shipping.ts`).
-8. **SSR/pre-hydration** → provider/badge/button render empty/inert until `hydrated`; no `window` at module top or during render.
-9. **Rapid + / add clicks** → functional reducer updates + `sanitizeQuantity` cap.
-10. **Removing last item** → transitions to empty state; badge → 0; summary/progress/checkout unmount.
+1. **Price drift** — `detectPriceDrift` compares live price to the submitted snapshot map → `status:"price-changed"` + per-line amber note; no order written (`actions.ts`).
+2. **Last-unit race / oversell** — guarded `UPDATE ... WHERE stock >= qty` in `create_order`; zero rows → `raise OUT_OF_STOCK` → full rollback. Verified against the zero-stock seed variant (0 orders written).
+3. **Cart emptied in another tab** — `parseSubmittedLines` empty → `status:"error"`; the client shows the empty state (hydrated + no lines). Zero-line order never created.
+4. **Tampered snapshot** — server ignores snapshot price (recomputes from live DB), clamps qty (`sanitizeQuantity`), validates every id as UUID, and checks the variant belongs to the product; a bad id → line "unavailable" → abort.
+5. **`store_settings` unavailable** — `computeShipping` → `unavailable` → `status:"shipping-unavailable"`, submit disabled, never writes `shipping=0`, never `$NaN`.
+6. **Discount > subtotal** — `applyDiscount` + `assembleOrder` both clamp to subtotal; total ≥ 0.
+7. **Double-submit / retry** — button `disabled` while `pending` (client) + idempotency key (server backstop). Verified.
+8. **DB CHECK rejection** — `assembleOrder` is unit-tested to the identity math; any residual violation surfaces as generic `status:"error"` (raw PG logged, never echoed).
 
 ## How to Test
-1. `npm run dev`, open a PDP (`/producto/silla-ejecutiva-milano`), click "Agregar al carrito" → button confirms "Agregado ✓", header badge shows `1`.
-2. Refresh → cart persists; open a second tab and add → first tab's badge updates.
-3. Go to `/carrito` → adjust quantity (+/−), watch line total, subtotal, total, progress bar, and badge recompute; `−` disables at 1, `+` disables at 99.
-4. Remove the last line → empty state with "Ver sillas".
-5. Add ~MX$10,000 of chairs → free shipping unlocks (achieved state + "Gratis").
-6. Toggle EN → all copy switches (`/en/carrito`). Select an out-of-stock variant on a PDP → button disabled "Agotado".
-7. `localStorage.setItem("posturpro:cart:v1","{bad")` → reload `/carrito` → empty state, one console warn.
+1. `npm run db:seed` (adds the zero-stock variant + discount codes).
+2. Add items to the cart, go to `/checkout` (and `/en/checkout`).
+3. Submit empty → field errors; fix → place order → confirmation at `/checkout/confirmacion/PP-XXXXXX`; header cart badge → 0.
+4. Apply `AHORRA10` (10% off) / `MENOS200` (MX$200 off) — discount row appears; `EXPIRADO` / `MINIMO5000` (small cart) / `AGOTADO` / a random code → inline note, order still submittable at full price.
+5. Add the zero-stock `silla-ergonomica-kids-junior` "Blanco" variant to the cart via tampering → submit → out-of-stock banner, no order.
 
-## Known Limitations
-- Out-of-stock flag on a cart line is a best-effort snapshot (not re-checked live) — T7 checkout owns authoritative stock/price re-validation (by design).
-- No remove-collapse animation (see Deviations).
+## Verification Evidence
+- `npx tsc --noEmit`: clean.
+- `npm run lint`: clean.
+- `npm run build`: clean; `/checkout` prerenders static (ES + EN); confirmation route dynamic.
+- `npm test`: **811 passed** (764 existing + 47 new checkout: address 40, discount 17, order 14, summary 12 — approximate per file).
+- Migration `0008` applied to local Docker Supabase (`supabase_db_posturpro`): sequence, column, index, function, grant all created.
+- Seed re-ran: variants 69→70, discount_codes 5.
+- RPC smoke tests (via psql in the DB container): happy path (`PP-000001`, stock 8→7, `from_status null → pending_payment`, 1 item), idempotent re-call (`reused:true`, no double decrement), out-of-stock raise + full rollback (0 orders), discount-exhausted raise. All DB smoke data cleaned up afterward.
+- Dev-server smoke: `/checkout` 200 (ES+EN), unknown confirmation → 404, real confirmation page renders order number + item + buyer.
+
+## Placeholder / Config Documentation (BUILD_PLAN rule 4)
+- `TAX_RATE = 0` — Phase 1; written to `tax_cents`/`tax_base_cents` as 0 so CFDI (Phase 3) needs no schema rework.
+- `MEXICAN_CP_PATTERN` = `/^\d{5}$/` — 5-digit CP only; **no CP↔state cross-validation** in Phase 1 (SEPOMEX authority table is a carrier/Phase-3 upgrade — known follow-up).
+- `ORDER_NUMBER_PREFIX = "PP"` — duplicated in the RPC by design (the RPC reads no TS constant); change both together.
+- RFC captured/stored optional, upper-cased, shape unchecked (CFDI Phase 3).
+
+## Known Limitations / Follow-ups
+- **Confirmation reads by guessable `order_number`** (no accounts in Phase 1) — anyone with the URL sees the confirmation. Flagged for the Security stage; an opaque-token id is a known follow-up (out of scope T7).
+- **No rate limit on `placeOrder`** — could reuse the Q&A `clientIp()` + limiter as best-effort order-spam mitigation (deferred; the atomic RPC + stock floor bound real damage).
+- **Discount async pre-check** (option A) is a possible UX upgrade.
 
 ## Dependencies Added
-- **None.** React context, localStorage, existing shadcn `Button`/`Input`, `@hugeicons`, `next-intl`, `formatMXN`/`interpolate`.
-
-## Verification Results
-- `npm run lint` — clean (0 warnings/errors).
-- `npx tsc --noEmit` — clean (strict, no `any`/`!`).
-- `npm run build` — green against seeded local Supabase. `/carrito` builds **SSG** (both locales); index pages **SSG**, PDP **SSG**, `/sillas` **Dynamic** — T3/T4/T5 rendering modes unchanged.
-- `npx vitest run` — 634/634 unit tests pass (parity + keys-used include the new `cart` keys).
-- `npm run test:integration` — 110/110 pass.
-- No new tests written (QA/Stage 7 owns that); existing suites unbroken.
-
-## What ReviewFix should scrutinize
-- **`CartProvider` hydration/persist ordering** — the ref-gated persist effect vs. the reducer-driven `hydrated`. Confirm the `lines` effect can never write `[]` before the mount read (the ref guards this) and that the `storage` re-read cannot loop.
-- **ICU plural vs. `interpolate` boundary** — verify no `t.raw(pluralKey)` is fed to `interpolate` anywhere (badge/mobile link now use `t()`).
-- **No-layout-shift contract** on `CartCountBadge` (overlay pill) and the skeleton→content crossfade (identical box sizes).
-- **`formatMXN` never reaches a non-integer** — `isCartLine` enforces integer `unitPriceCents`; `lineTotalCents`/`subtotalCents`/`totalCents` stay integer.
-- **44px targets** on stepper buttons, remove, add-to-cart, checkout CTA, header badge, empty CTA.
-- **Reduced-motion coverage** of the new `globals.css` cart-motion classes.
-
-## Review + Fix Pass (ReviewFix Stage 4)
-
-### Issues Found & Fixed
-
-| ID  | Severity | Title                                        | Status  | File | Fix Applied |
-| --- | -------- | -------------------------------------------- | ------- | ---- | ----------- |
-| C-1 | CRITICAL | Cross-tab `storage` sync infinite write loop | FIXED   | `cart-provider.tsx:81-136` | Added `lastPersistedRef`; persist effect bails on content-identical payload; storage listener records incoming payload before dispatch → no cross-tab echo. Last-write-wins preserved. |
-| M-1 | MAJOR    | Tampered `unitPriceCents` had no upper bound | FIXED   | `cart-storage.ts:32-48` | `isCartLine` now rejects `unitPriceCents > PRICE_BOUND_MAX_CENTS` (reuses catalog's sane cents ceiling); prevents overflow to nonsense totals. |
-| m-1 | MINOR    | Subtotal math duplicated (DRY)               | FIXED   | `cart-page-client.tsx:128` | Use pure `subtotalCents(lines)` instead of inline reduce. |
-| m-2 | MINOR    | `handleQuantityChange` inline clamp          | SKIPPED | —    | Value is already a bounded finite integer; inline min/max reads clearly for a display-only announcement. |
-| m-3 | MINOR    | Stepper sends absolute value from stale prop | SKIPPED | —    | Safe (no lost/over-applied/cap-breach); design treats stepper as non-coalescing. Delta-based rewrite not worth the churn. |
-
-### Summary
-
-- Critical: 1/1 fixed
-- Major: 1/1 fixed
-- Minor: 1/3 fixed, 2 skipped (justified)
-
-### Verification (post-fix)
-- `npm run lint` — clean. `npx tsc --noEmit` — clean.
-- `npx vitest run` — 634/634 unit pass. `npm run test:integration` — 110/110 pass.
-- All 18 ACs re-verified against actual code; all 10 edge cases handled.
-- **Recommendation: APPROVE** — ready for QA (Stage 5).
+- **None.** Hand-rolled pure validation (Q&A precedent); Mexican states/CP are local constants; existing `money.ts`/`shipping.ts`/`Select` reused.

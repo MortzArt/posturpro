@@ -296,5 +296,122 @@
       "quantity": "Quantity updated: {count}",
       "removed": "Item removed from cart"
     }
+  },
+  "checkout": {
+    "metadata": {
+      "title": "Checkout"
+    },
+    "title": "Checkout",
+    "backToCart": "Back to cart",
+    "empty": {
+      "title": "Your cart is empty",
+      "subtitle": "Add items before checking out.",
+      "cta": "Browse chairs"
+    },
+    "contact": {
+      "heading": "Contact",
+      "email": "Email",
+      "emailPlaceholder": "you@example.com",
+      "phone": "Phone (optional)",
+      "phonePlaceholder": "55 1234 5678"
+    },
+    "shipping": {
+      "heading": "Shipping",
+      "fullName": "Full name",
+      "addressLine1": "Street and number",
+      "addressLine2": "Unit / Reference (optional)",
+      "city": "Neighborhood / City",
+      "postalCode": "Postal code",
+      "postalCodePlaceholder": "00000",
+      "state": "State",
+      "statePlaceholder": "Select a state"
+    },
+    "notes": {
+      "heading": "Delivery notes (optional)",
+      "placeholder": "Delivery instructions…",
+      "rfc": "RFC (optional, for invoice)",
+      "rfcHint": "Only if you need an invoice (Phase 3)."
+    },
+    "discount": {
+      "label": "Discount code",
+      "placeholder": "Discount code",
+      "apply": "Apply",
+      "checking": "Checking…",
+      "remove": "Remove code",
+      "appliedLabel": "Code {code} applied",
+      "savings": "You save {amount}",
+      "invalid": {
+        "unknown": "Invalid code.",
+        "expired": "This code has expired.",
+        "inactive": "This code is not available.",
+        "below-min": "You haven't reached the minimum purchase for this code.",
+        "exhausted": "This code is no longer available."
+      },
+      "degraded": "We couldn't verify the code right now — you can continue without it."
+    },
+    "summary": {
+      "heading": "Order summary",
+      "subtotal": "Subtotal",
+      "discount": "Discount",
+      "shipping": "Shipping",
+      "shippingFree": "Free",
+      "shippingUnavailable": "Calculated at payment",
+      "total": "Total",
+      "itemQuantity": "×{count}",
+      "itemsCount": "{count, plural, one {# item} other {# items}}",
+      "noPaymentYet": "No payment yet. Payment is the next step.",
+      "lineOutOfStock": "Out of stock",
+      "lineUnavailable": "Unavailable",
+      "linePriceChanged": "Price updated: {amount}",
+      "imagePlaceholder": "Image unavailable"
+    },
+    "submit": "Place order",
+    "submitting": "Processing…",
+    "validation": {
+      "emailRequired": "Enter your email.",
+      "emailInvalid": "Enter a valid email.",
+      "fullNameRequired": "Enter your full name.",
+      "fullNameTooLong": "The name is too long.",
+      "addressRequired": "Enter your street and number.",
+      "addressTooLong": "The address is too long.",
+      "cityRequired": "Enter your neighborhood or city.",
+      "cityTooLong": "The name is too long.",
+      "postalCodeRequired": "Enter your postal code.",
+      "postalCodeInvalid": "The postal code must be 5 digits.",
+      "stateRequired": "Select a state.",
+      "phoneTooLong": "The phone number is too long.",
+      "addressLine2TooLong": "The reference is too long.",
+      "deliveryNotesTooLong": "The notes are too long.",
+      "rfcTooLong": "The RFC is too long."
+    },
+    "banner": {
+      "priceChanged": "An item's price changed. Review your order and try again.",
+      "outOfStock": "An item sold out. Review your order and try again.",
+      "shippingUnavailable": "We can't calculate shipping right now. Please try again.",
+      "error": "We couldn't place your order. Please try again.",
+      "dismiss": "Dismiss",
+      "retry": "Retry"
+    },
+    "processing": "Processing order…",
+    "confirmation": {
+      "metadata": {
+        "title": "Order confirmed"
+      },
+      "title": "Thank you! We received your order",
+      "orderNumberLabel": "Order",
+      "noPaymentTitle": "No payment yet",
+      "noPaymentYet": "We haven't processed any payment yet. Payment is the next step and we'll contact you to complete it.",
+      "summaryHeading": "Summary",
+      "shippingHeading": "Shipping",
+      "keepShopping": "Keep shopping",
+      "notesLabel": "Notes",
+      "phoneLabel": "Phone"
+    },
+    "liveRegion": {
+      "discountApplied": "Code applied. You save {amount}.",
+      "discountInvalid": "The code is not valid.",
+      "processing": "Processing order.",
+      "orderReceived": "Order received, redirecting."
+    }
   }
 }

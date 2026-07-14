@@ -1,14 +1,16 @@
 # Pipeline State
 Task: T7 — Checkout & order creation
 Tier: full-cycle
-Stage: 3 (UI Design COMPLETE)
-Agent: ultradev (Stage 4 — Dev) next
+Stage: 4 (Dev COMPLETE)
+Agent: ultrareview (Stage 5 — Review) next
 Complexity: high (classified stage 1)
 Feature Type: full-stack
 Last Updated: 2026-07-14
 Notes:
 - Stage 1+2 (PlanResearch) done: tasks/next-ticket.md + tasks/research-report.md written.
 - Stage 3 (UI Design) done: tasks/ui-design.md written (T7 checkout — overwrote the leftover T6 spec).
+- Stage 4 (Dev) done: tasks/dev-done.md written. All 16 ACs implemented, 8 edge cases handled. 27 files created/modified. Migration 0008_checkout.sql (atomic create_order RPC) applied to LOCAL Docker Supabase + seed re-run (zero-stock variant + 5 discount codes). VERIFIED: tsc clean, eslint clean, next build clean (both locales), npm test 811 passed (764 existing + 47 new). RPC smoke-tested in DB container (happy path PP-000001, idempotency reused:true no double-decrement, OUT_OF_STOCK full rollback, DISCOUNT_EXHAUSTED). Dev-server smoke: /checkout 200 ES+EN, unknown confirmation 404, real confirmation renders. Smoke data cleaned up.
+- FOR REVIEW (Stage 5): discount = validate-on-submit (option B, allowed by design); idempotency = client UUID + partial-unique index on orders.idempotency_key; ORDER_NUMBER_PREFIX "PP" duplicated in RPC by design; confirmation reads by guessable order_number (flag for Security, opaque-token follow-up); no placeOrder rate limit (deferred, best-effort follow-up).
 - Complexity = HIGH → full-cycle runs ALL 12 stages (do not skip hacker).
 - Feature Type = full-stack → every stage at full depth (UI Design + UX both run).
 - HUMAN-REVIEW GATE (BUILD_PLAN rule 3): checkout ALWAYS flagged for human review before merge regardless of any SHIP verdict. Verify stage must surface this and NOT auto-merge. Do NOT check [x] T7 in BUILD_PLAN until the user approves.

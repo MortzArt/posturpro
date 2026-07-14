@@ -402,3 +402,157 @@ export function truncateForMeta(text: string): string {
   const head = lastSpace > 0 ? slice.slice(0, lastSpace) : slice;
   return `${head.trimEnd()}…`;
 }
+
+/* ========================================================================= *
+ * CHECKOUT (T7) — non-secret tunables, single-sourced here (BUILD_PLAN rule 4).
+ *
+ * HOW TO SWAP REAL VALUES
+ * -----------------------
+ * - MEXICAN_STATES / MEXICAN_CP_PATTERN: Phase-1 address validation. The CP is
+ *   validated only as "5 digits"; a full authoritative CP↔state cross-check
+ *   (SEPOMEX) is carrier/Phase-3 work — see dev-done.md follow-up. To localize
+ *   to another market, replace the state list and CP pattern together and update
+ *   the `shipping_country` default in checkout (currently 'MX' from the DB).
+ * - ORDER_NUMBER_PREFIX / formatOrderNumber: display/format only. The actual
+ *   uniqueness guarantee lives in the DB (a sequence-backed number produced by
+ *   the `create_order` RPC in 0008_checkout.sql). Changing the prefix here also
+ *   changes what the RPC-generated number must be prefixed with — keep both in
+ *   sync (the RPC reads no TS constant, so the prefix string is duplicated there
+ *   intentionally; if you change it, update the migration too).
+ * - TAX_RATE: 0 in Phase 1 (no IVA line). Written to `tax_cents`/`tax_base_cents`
+ *   as 0 so CFDI (Phase 3) needs no schema change. Raising it requires real tax
+ *   logic (base computation, rounding rules, per-line vs. per-order) — treat as a
+ *   project change, not a config swap.
+ * - CHECKOUT_CONFIRMATION_SEGMENT / confirmationPath: the locale-agnostic
+ *   confirmation route. The locale-aware `Link`/`redirect` add the `/en` prefix.
+ * ========================================================================= */
+
+/**
+ * The 32 federal entities of Mexico (31 states + Ciudad de México), the closed
+ * list a checkout `state` is validated against (T7 AC-4). SINGLE SOURCE for both
+ * the `<Select>` options and the server-side re-validation. These are proper
+ * nouns — identical in every UI locale — so they are config, not i18n keys
+ * (only the field label/placeholder are translated). Order: alphabetical (the
+ * order they render in the Select).
+ */
+export const MEXICAN_STATES = [
+  "Aguascalientes",
+  "Baja California",
+  "Baja California Sur",
+  "Campeche",
+  "Chiapas",
+  "Chihuahua",
+  "Ciudad de México",
+  "Coahuila",
+  "Colima",
+  "Durango",
+  "Estado de México",
+  "Guanajuato",
+  "Guerrero",
+  "Hidalgo",
+  "Jalisco",
+  "Michoacán",
+  "Morelos",
+  "Nayarit",
+  "Nuevo León",
+  "Oaxaca",
+  "Puebla",
+  "Querétaro",
+  "Quintana Roo",
+  "San Luis Potosí",
+  "Sinaloa",
+  "Sonora",
+  "Tabasco",
+  "Tamaulipas",
+  "Tlaxcala",
+  "Veracruz",
+  "Yucatán",
+  "Zacatecas",
+] as const;
+
+/** A single Mexican state name (union of {@link MEXICAN_STATES}). */
+export type MexicanState = (typeof MEXICAN_STATES)[number];
+
+/** Fast membership set for server-side state validation (built once). */
+const MEXICAN_STATES_SET: ReadonlySet<string> = new Set(MEXICAN_STATES);
+
+/** Whether a value is one of the 32 valid Mexican states (T7 AC-4). */
+export function isMexicanState(value: string): value is MexicanState {
+  return MEXICAN_STATES_SET.has(value);
+}
+
+/**
+ * Mexican postal code shape (T7 AC-4): EXACTLY 5 digits. Anchored + fixed-length
+ * (no ReDoS). This is the ONLY structural check on a CP in Phase 1 — there is no
+ * CP↔state authority table (SEPOMEX is a Phase-3/carrier upgrade, documented as
+ * a known follow-up in dev-done.md).
+ */
+export const MEXICAN_CP_PATTERN = /^\d{5}$/;
+
+/**
+ * Max length of the optional free-text delivery notes (T7). Bounds the stored
+ * value and the textarea `maxLength`. Not a DB CHECK (the column is unbounded
+ * `text`) — this is an app-level sanity cap mirroring the Q&A `QUESTION_MAX`
+ * discipline so a hostile payload can't bloat the order row.
+ */
+export const DELIVERY_NOTES_MAX = 1_000;
+
+/**
+ * Max length of the optional RFC field (T7). Mexican RFC is 12–13 chars; we cap
+ * generously at 20 and do NOT validate its SHAPE in Phase 1 (CFDI invoicing is
+ * Phase 3 — the value is captured and stored only). Trimmed + upper-cased on the
+ * server before storage.
+ */
+export const RFC_MAX = 20;
+
+/** Max length of the contact phone (T7). Bounded sanity cap; not shape-checked. */
+export const CONTACT_PHONE_MAX = 30;
+
+/**
+ * Max length of a single free-text address/name/city field (T7). Mirrors the
+ * `customers_full_name_nonblank` discipline: trim → non-blank → bounded. The DB
+ * columns are unbounded `text`; this app cap keeps a hostile payload sane.
+ */
+export const ADDRESS_FIELD_MAX = 200;
+
+/**
+ * Basic email shape for contact validation (T7 AC-5). Deliberately permissive —
+ * "one or more non-space/@ chars, an @, one or more non-space/@ chars, a dot, a
+ * TLD" — a full RFC 5322 validator is overkill and rejects valid addresses. The
+ * real proof an email works is delivery (the confirmation email is T9). Anchored,
+ * no backtracking blowup.
+ */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Discount-code display prefix for the confirmation/order number. Combined with
+ * a zero-padded DB sequence by {@link formatOrderNumber}. Human-legible, short,
+ * unambiguous. The RPC in 0008_checkout.sql generates the canonical unique
+ * number using this SAME prefix — if you change it here, change it there too.
+ */
+export const ORDER_NUMBER_PREFIX = "PP" as const;
+
+/**
+ * Effective tax rate in Phase 1: ZERO. No IVA line is computed or displayed.
+ * Written to `orders.tax_cents` / `orders.tax_base_cents` as 0 so the immutable
+ * financial snapshot already has the columns CFDI (Phase 3) needs — no schema
+ * rework later. This is a documented placeholder; see the CHECKOUT header block.
+ */
+export const TAX_RATE = 0;
+
+/**
+ * Confirmation route segment appended under {@link CHECKOUT_PATH} (T7 AC-13).
+ * Locale-agnostic Spanish path; the locale-aware `Link`/`redirect` add `/en`.
+ * The order number is the final dynamic segment.
+ */
+export const CHECKOUT_CONFIRMATION_SEGMENT = "confirmacion" as const;
+
+/**
+ * Build the locale-agnostic confirmation path for an order number (T7 AC-13).
+ * e.g. `PP-000123` → `/checkout/confirmacion/PP-000123`. The order number is
+ * URL-encoded defensively (it is DB-generated and safe, but the boundary stays
+ * honest). The locale-aware `redirect`/`Link` prefixes `/en` when needed.
+ */
+export function confirmationPath(orderNumber: string): string {
+  return `${CHECKOUT_PATH}/${CHECKOUT_CONFIRMATION_SEGMENT}/${encodeURIComponent(orderNumber)}`;
+}

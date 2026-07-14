@@ -36,6 +36,7 @@ import type {
 import { BRANDS, CATEGORIES, STYLES, TAGS } from "./seed-data/taxonomy";
 import { PRODUCTS, seedImageUrl } from "./seed-data/products";
 import { STATIC_PAGES } from "./seed-data/content";
+import { DISCOUNT_CODES } from "./seed-data/discounts";
 
 type Db = SupabaseClient<Database>;
 
@@ -273,6 +274,12 @@ async function seedStoreSettings(db: Db): Promise<void> {
   );
 }
 
+/** Seed the discount codes (T7 AC-6/AC-7). Idempotent upsert on `code`. */
+async function seedDiscountCodes(db: Db): Promise<number> {
+  await upsert(db, "discount_codes", DISCOUNT_CODES, "code");
+  return DISCOUNT_CODES.length;
+}
+
 async function main(): Promise<void> {
   const db = buildAdminClient();
   console.log("Seeding PosturPro database...");
@@ -281,6 +288,7 @@ async function main(): Promise<void> {
   const { products, variants, images } = await seedProducts(db);
   await seedContent(db);
   await seedStoreSettings(db);
+  const discountCodes = await seedDiscountCodes(db);
 
   console.log("\nSeed summary:");
   console.log(`  brands:         ${BRANDS.length}`);
@@ -292,6 +300,7 @@ async function main(): Promise<void> {
   console.log(`  product_images: ${images}`);
   console.log(`  static_pages:   ${STATIC_PAGES.length}`);
   console.log(`  store_settings: 1`);
+  console.log(`  discount_codes: ${discountCodes}`);
   console.log("\n✓ Seed complete (idempotent — safe to re-run).");
 }
 

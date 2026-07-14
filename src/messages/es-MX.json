@@ -296,5 +296,122 @@
       "quantity": "Cantidad actualizada: {count}",
       "removed": "Producto eliminado del carrito"
     }
+  },
+  "checkout": {
+    "metadata": {
+      "title": "Finalizar compra"
+    },
+    "title": "Finalizar compra",
+    "backToCart": "Volver al carrito",
+    "empty": {
+      "title": "Tu carrito está vacío",
+      "subtitle": "Agrega artículos antes de finalizar la compra.",
+      "cta": "Ver sillas"
+    },
+    "contact": {
+      "heading": "Contacto",
+      "email": "Correo electrónico",
+      "emailPlaceholder": "tucorreo@ejemplo.com",
+      "phone": "Teléfono (opcional)",
+      "phonePlaceholder": "55 1234 5678"
+    },
+    "shipping": {
+      "heading": "Envío",
+      "fullName": "Nombre completo",
+      "addressLine1": "Calle y número",
+      "addressLine2": "Interior / Referencia (opcional)",
+      "city": "Colonia / Ciudad",
+      "postalCode": "Código postal",
+      "postalCodePlaceholder": "00000",
+      "state": "Estado",
+      "statePlaceholder": "Selecciona un estado"
+    },
+    "notes": {
+      "heading": "Notas de entrega (opcional)",
+      "placeholder": "Instrucciones para la entrega…",
+      "rfc": "RFC (opcional, para factura)",
+      "rfcHint": "Solo si necesitas factura (Fase 3)."
+    },
+    "discount": {
+      "label": "Código de descuento",
+      "placeholder": "Código de descuento",
+      "apply": "Aplicar",
+      "checking": "Verificando…",
+      "remove": "Quitar código",
+      "appliedLabel": "Código {code} aplicado",
+      "savings": "Ahorras {amount}",
+      "invalid": {
+        "unknown": "Código no válido.",
+        "expired": "Este código ya expiró.",
+        "inactive": "Este código no está disponible.",
+        "below-min": "No alcanzas la compra mínima para este código.",
+        "exhausted": "Este código ya no está disponible."
+      },
+      "degraded": "No pudimos verificar el código ahora — puedes continuar sin él."
+    },
+    "summary": {
+      "heading": "Resumen del pedido",
+      "subtotal": "Subtotal",
+      "discount": "Descuento",
+      "shipping": "Envío",
+      "shippingFree": "Gratis",
+      "shippingUnavailable": "Se calcula al pagar",
+      "total": "Total",
+      "itemQuantity": "×{count}",
+      "itemsCount": "{count, plural, one {# artículo} other {# artículos}}",
+      "noPaymentYet": "Sin pago todavía. El pago es el siguiente paso.",
+      "lineOutOfStock": "Agotado",
+      "lineUnavailable": "No disponible",
+      "linePriceChanged": "Precio actualizado: {amount}",
+      "imagePlaceholder": "Imagen no disponible"
+    },
+    "submit": "Realizar pedido",
+    "submitting": "Procesando…",
+    "validation": {
+      "emailRequired": "Ingresa tu correo electrónico.",
+      "emailInvalid": "Ingresa un correo válido.",
+      "fullNameRequired": "Ingresa tu nombre completo.",
+      "fullNameTooLong": "El nombre es demasiado largo.",
+      "addressRequired": "Ingresa tu calle y número.",
+      "addressTooLong": "La dirección es demasiado larga.",
+      "cityRequired": "Ingresa tu colonia o ciudad.",
+      "cityTooLong": "El nombre es demasiado largo.",
+      "postalCodeRequired": "Ingresa tu código postal.",
+      "postalCodeInvalid": "El código postal debe tener 5 dígitos.",
+      "stateRequired": "Selecciona un estado.",
+      "phoneTooLong": "El teléfono es demasiado largo.",
+      "addressLine2TooLong": "La referencia es demasiado larga.",
+      "deliveryNotesTooLong": "Las notas son demasiado largas.",
+      "rfcTooLong": "El RFC es demasiado largo."
+    },
+    "banner": {
+      "priceChanged": "El precio de un artículo cambió. Revisa tu pedido e inténtalo de nuevo.",
+      "outOfStock": "Un artículo se agotó. Revisa tu pedido e inténtalo de nuevo.",
+      "shippingUnavailable": "No podemos calcular el envío ahora. Inténtalo de nuevo.",
+      "error": "No pudimos realizar tu pedido. Inténtalo de nuevo.",
+      "dismiss": "Cerrar",
+      "retry": "Reintentar"
+    },
+    "processing": "Procesando pedido…",
+    "confirmation": {
+      "metadata": {
+        "title": "Pedido confirmado"
+      },
+      "title": "¡Gracias! Recibimos tu pedido",
+      "orderNumberLabel": "Pedido",
+      "noPaymentTitle": "Sin pago todavía",
+      "noPaymentYet": "Aún no procesamos ningún pago. El pago es el siguiente paso y te contactaremos para completarlo.",
+      "summaryHeading": "Resumen",
+      "shippingHeading": "Envío",
+      "keepShopping": "Seguir comprando",
+      "notesLabel": "Notas",
+      "phoneLabel": "Tel"
+    },
+    "liveRegion": {
+      "discountApplied": "Código aplicado. Ahorras {amount}.",
+      "discountInvalid": "El código no es válido.",
+      "processing": "Procesando pedido.",
+      "orderReceived": "Pedido recibido, redirigiendo."
+    }
   }
 }
