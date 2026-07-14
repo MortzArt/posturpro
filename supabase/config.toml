@@ -33,3 +33,16 @@ enabled = false
 # API stack come up reliably.
 [analytics]
 enabled = false
+
+# Storage is unused (product images are external placeholder URLs; no buckets,
+# no uploads anywhere in the app). Its container runs ~30s of vector_store
+# migrations before binding port 5000, which under Docker load exceeds the
+# CLI's health-check window and aborts the whole `supabase start`/`db reset`
+# (observed 2026-07-14). Re-enable only when a feature actually needs buckets.
+[storage]
+enabled = false
+
+# No edge functions exist (no supabase/functions/). The runtime container had
+# been dead for a day with every suite green before this was turned off.
+[edge_runtime]
+enabled = false
