@@ -1,406 +1,250 @@
-# Research Report: T8 — Mercado Pago integration (sandbox)
+# Research Report: T9 — Transactional emails
 
-One-pass scan. Codebase claims are verified against local files (file:line). MP
-claims are from the official Mercado Pago developer docs — cited inline, with
-every unverified item explicitly flagged (never guessed). This report feeds the
-`ultradev`/`ultrareview`/`ultrasecurity`/`ultraarch` stages; the ticket
-(`tasks/next-ticket.md`) is the source of acceptance criteria.
-
-> ⚠️ **Payment code — human-review gate is mandatory** (BUILD_PLAN rule 3).
-> ⚠️ **Live MP sandbox is BLOCKED-ON-USER**; all tests mock the MP API.
+One-pass codebase scan. All file references verified against local files. Where something could not
+be found, it is stated explicitly rather than assumed.
 
 ## Codebase Analysis
 
 ### Existing Patterns
 
-- **Atomic write via SECURITY DEFINER RPC** — `create_order` in
-  `supabase/migrations/0008_checkout.sql:96-282`. `language plpgsql`,
-  `security definer`, `set search_path = ''`, `revoke all … from public` +
-  `grant execute … to service_role`. Idempotency short-circuit at the top
-  (lines 121-139). **T8's `advance_order_status` RPC (Arch R-1) copies this
-  posture exactly**, and writes `order_status_history` in the same transaction
-  (the `create_order` initial-history insert is the model, lines 264-266).
-- **Admin (service-role) client** — `src/lib/supabase/admin.ts:15-24`.
-  `import "server-only"` guard (line 10), built from `getServerEnv()`, no
-  session persistence. **All T8 privileged writes (webhook, refund) use this.**
-  RPC call shape: `const { data, error } = await db.rpc("create_order", { payload })`
-  (`actions.ts:412`). Reuse for `db.rpc("advance_order_status", { … })`.
-- **Typed env accessor** — `src/lib/env.ts`: `requireEnv(name, source)` throws a
-  named `MissingEnvVarError` on missing/blank; `getServerEnv()` composes public +
-  secret. **T8 adds `getMercadoPagoEnv()` in the same file, same shape.** The
-  test `src/lib/env.test.ts` is the pattern for testing the new accessor.
-- **Centralized non-secret config** — `src/lib/config.ts` holds every placeholder/
-  tunable with a "HOW TO SWAP REAL VALUES" header (lines 1-35) and per-const doc
-  comments. Money constants end in `_CENTS`; `UUID_PATTERN` (line 378-379);
-  `confirmationPath()` (lines 560-562); `ORDER_NUMBER_PREFIX` (line 536, mirrored
-  in the RPC). **T8's MP tunables live here (BUILD_PLAN rule 4).**
-- **Server action → typed state machine** — `placeOrder` in
-  `checkout/actions.ts:216-241` returns a discriminated `CheckoutFormState`;
-  raw PG/errors are mapped to friendly enums, never echoed (`mapThrownError`
-  lines 423-447), logged with `[checkout]` context. **T8's `createPaymentPreference`
-  action and the refund fn follow this "typed result, never echo raw" discipline.**
-- **Best-effort in-memory rate limiter** — `src/lib/checkout/rate-limit.ts` + the
-  `CHECKOUT_RATE_LIMIT_DISABLED=1` server-only bypass wired into
-  `playwright.config.ts`. The webhook is server-to-server (MP-signed) so it does
-  not need the same limiter, but the pattern (best-effort, per-instance, bounded
-  keys) is available if abuse control is wanted on the pay-now action.
-- **Token-addressed PII page** — `confirmacion/[token]/page.tsx` +
-  `order-read.ts:48-86`: reads by unguessable `confirmation_token`, `notFound()`
-  on miss, admin client, `UUID_PATTERN` pre-check before any DB hit. **T8's
-  payment view reads by the same token; the MP `external_reference` = this token.**
+- **Typed env accessor with named error** — `src/lib/env.ts`. `requireEnv(name, source)` throws
+  `MissingEnvVarError`; secrets are exposed only through server-only accessors (`getServerEnv`,
+  `getMercadoPagoEnv`) and NEVER prefixed `NEXT_PUBLIC_`. Reuse: add `getEmailEnv()` here in the
+  same shape (`EMAIL_API_KEY`, `EMAIL_FROM_ADDRESS`, `EMAIL_OWNER_ADDRESS`).
+- **Single-instantiation provider boundary** — `src/lib/payments/mp-client.ts` is the ONLY place
+  the MP SDK is constructed; everything else imports typed getters. Reuse: `src/lib/email/provider.ts`
+  is the ONLY place the email SDK is constructed; mockable in tests by mocking that module.
+- **`server-only` guard on secret-touching modules** — `import "server-only"` at the top of
+  `admin.ts`, `advance-order.ts`, `process-payment.ts`, `order-read.ts`. Apply to `provider.ts` and
+  `dispatch.ts`.
+- **Discriminated-union return types, never throw to caller** — `ProcessResult`, `AdvanceOutcome`
+  (`advance-order.ts:15`), `StatusMapping` (`payments-status.ts:52`). Reuse: `sendEmail` and each
+  `send*` returns a typed `{ ok: true } | { ok: false; reason }`; dispatch never throws.
+- **Idempotency via insert-on-conflict claim RPC** — `record_payment_event` in `0009_payments.sql:338`
+  (`on conflict … do nothing`, `if found` → `'new'`, else `'duplicate'`). Reuse VERBATIM as the
+  shape for `claim_email_send(order_id, email_kind, dedupe_key)`.
+- **RLS-deny + explicit service_role grant for later-created tables** — `0009` re-grants because the
+  0005 blanket grant is point-in-time (`0009_payments.sql:95-99`). Apply the same for `email_sends`.
+- **RPC returns a self-describing jsonb result** — `advance_order_status` already returns
+  `{ applied, reason, from_status, to_status }` (`0009_payments.sql:311-316`). Add `transition_kind`
+  to this object; the typed wrapper `advance-order.ts` passes `data` through untouched (no signature
+  change needed there).
+- **i18n via next-intl RSC translator** — `src/i18n/request.ts` loads `src/messages/<locale>.json`;
+  server code uses `getTranslations` (seen in `page.tsx`, `layout.tsx`). Interpolation is
+  SINGLE-BRACE `{var}` (verified: `es-MX.json` uses `{code}`, `{amount}`, `{count}`, `{brand}`).
+  A `keys-used.test.ts` invariant enforces symmetric keys across locales — new `email` keys must be
+  added to BOTH dictionaries.
+- **Money is integer cents, formatted once** — `src/lib/money.ts` + `CURRENCY_LOCALE='es-MX'`
+  (`config.ts:41`). Email templates format via this path, never re-implement.
+- **Config centralization with "how to swap" header** — `config.ts` holds every non-secret tunable;
+  `SEED_STORE_CONTACT_EMAIL='hola@posturpro.mx'` (`config.ts:107`), `confirmationPath(token)`
+  (`config.ts:554`). Add email non-secret constants here.
 
 ### Relevant Files
 
 | File | Purpose | Relevance | Action |
-| --- | --- | --- | --- |
-| `supabase/migrations/0001_extensions_and_enums.sql:20-46` | `order_status` + `payment_status` enums | Both enums already cover T8; no new values | Reference |
-| `supabase/migrations/0003_commerce.sql:25-77` | `orders` table — `mp_preference_id`/`mp_payment_id`/`mp_external_reference`/`payment_method`/`payment_status` columns (62-64, 58-59) already exist, nullable | T8 populates these | Reference |
-| `supabase/migrations/0003_commerce.sql:112-121` | `order_status_history` shape (`from_status`/`to_status`/`note`) | `advance_order_status` writes here | Reference |
-| `supabase/migrations/0006_data_integrity_hardening.sql:170-203` | Immutability trigger — freezes financial/contact snapshot, **leaves status/payment_status/payment_method/mp_\* MUTABLE** | Confirms T8 can update payment fields; trigger BLOCKS overwriting `total_cents` (amount-reconciliation backstop) | Reference |
-| `supabase/migrations/0008_checkout.sql:96-282` | `create_order` RPC — the SECURITY DEFINER pattern | Template for `advance_order_status` | Reference |
-| `src/lib/supabase/admin.ts` | Service-role client, server-only | Webhook + refund + RPC calls | Reference |
-| `src/lib/env.ts` | `requireEnv` / `getServerEnv` | Add `getMercadoPagoEnv()` | **Modify** |
-| `src/lib/config.ts` | Centralized non-secret config | Add MP tunables block | **Modify** |
-| `src/lib/supabase/database.types.ts:58-88, 925-965` | `CreateOrderPayload`/`Result` + `Functions` typing | Add `advance_order_status` + `mp_payment_events` types | **Modify** |
-| `src/app/[locale]/checkout/confirmacion/[token]/page.tsx:67-70` | "Sin pago todavía" placeholder block | Replace with `<PaymentPanel>` | **Modify** |
-| `src/lib/checkout/order-read.ts` | `getOrderByToken` view model | Extend / sibling for payment view (payment_status, mp fields, voucher) | Reference / Modify |
-| `src/components/checkout/checkout-flow-client.tsx:126-130, 299-347` | Success redirect to `confirmationPath`; `GlobalBanner` pattern | Reuse banner for decline/error; redirect stays | Reference |
-| `src/messages/es-MX.json:300-415` + `en.json` | `checkout` i18n namespace | Add `checkout.payment.*`; update `confirmation.noPayment*` | **Modify** |
-| `.env.local` | Has PLACEHOLDER `MERCADOPAGO_*` vars | Keep placeholders; document in dev-done | Reference |
-| `scripts/run-integration.sh`, `vitest.integration.config.ts` | Live-DB integration runner (`tests/integration/**/*.integration.test.ts`, node env, sequential) | New `payments.integration.test.ts` | Reference |
-| `playwright.config.ts` | e2e (chromium + mobile), dev-server, `CHECKOUT_RATE_LIMIT_DISABLED=1` | New `e2e/payment.spec.ts` (MP mocked) | Reference |
+| ---- | ------- | --------- | ------ |
+| `src/lib/env.ts` | Typed env accessors | Add `getEmailEnv()` | Modify |
+| `src/lib/payments/mp-client.ts` | MP SDK single boundary | Template for `email/provider.ts` | Reference |
+| `src/lib/payments/process-payment.ts` | Webhook processing core | Trigger `payment_received`/`voucher` after advance | Modify |
+| `src/lib/payments/payments-status.ts` | MP-status → transition mapping | `note` text is set here; `transition_kind` derives from the same mapping | Reference |
+| `src/lib/payments/advance-order.ts` | Typed RPC wrapper | Passes through the new `transition_kind` field | Reference (types via database.types) |
+| `supabase/migrations/0009_payments.sql` | `advance_order_status`, `record_payment_event` | RPC to extend (transition_kind); pattern for `claim_email_send` | Reference/extend via 0010 |
+| `supabase/migrations/0003_commerce.sql` | orders + order_status_history + immutability trigger | Add `locale` (orders), `transition_kind` (history); trigger must not freeze/allow locale mutation | Reference (extend via 0010) |
+| `supabase/migrations/0008_checkout.sql` | `create_order` RPC | Persist `locale` onto the order | Extend via 0010 |
+| `src/app/[locale]/checkout/actions.ts` | Checkout server action | Trigger confirmation + owner alert; pass locale into payload | Modify |
+| `src/lib/checkout/order-read.ts` | Order read by confirmation token | Source of email content; extend for locale/method/items | Modify (or sibling reader) |
+| `src/lib/store-settings.ts` | Store name/contact email | Email chrome (store name, from/reply) | Reference |
+| `src/lib/money.ts` + `config.ts` | Money format, constants, `confirmationPath` | Amount formatting + confirmation link | Reference |
+| `src/messages/es-MX.json` + `en.json` | i18n dictionaries | New `email` block (symmetric) | Modify |
+| `src/app/api/webhooks/mercadopago/route.ts` | Webhook HTTP handler | Must stay email-free (AC-18) | Reference (do NOT add email here) |
+| `scripts/run-integration.sh` | Integration harness | Mock provider; reset+seed local DB | Reference |
 
 ### Data Flow
 
-**Pay-now (Checkout Pro redirect):**
-1. Shopper lands on `confirmacion/[token]` (order in `pending_payment`).
-2. `<PaymentPanel>` "Pay now" → server action `createPaymentPreference(token)`.
-3. Action: admin-reads order by token → builds Preference (items, `unit_price`
-   from cents, `external_reference=confirmation_token`, `notification_url`,
-   locale `back_urls`, `date_of_expiration`) → `Preference.create` (MP SDK) →
-   persist `mp_preference_id` via `advance_order_status` (or a scoped update RPC) →
-   returns `{ init_point }`.
-4. Client redirects browser to `init_point` (MP hosted checkout).
-5. Shopper pays (card / OXXO voucher / SPEI CLABE / wallet).
-6. MP redirects back to the `back_url` (display hint only) AND POSTs a webhook.
+**Order confirmation + owner alert (live in T9):**
+`shopper submits checkout form → placeOrder (actions.ts) → runCheckout step 8 create_order RPC (now
+persists locale) → returns confirmation_token → step 9: read order fields → dispatch.sendOrderConfirmation
+(order.locale) + dispatch.sendNewOrderOwnerAlert (es-MX) → each: claim_email_send → render template →
+provider.sendEmail → catch+log on failure → return success to shopper regardless.`
 
-**Webhook (authoritative state):**
-1. MP → `POST /api/webhooks/mercadopago` with `{ type, action, data:{ id } }` +
-   `x-signature`, `x-request-id`.
-2. Route: verify signature (HMAC-SHA256 of the manifest) — fail → 401, stop.
-3. `type=payment` → `Payment.get({ id })` (MP SDK) for the authoritative status.
-4. Match order via `external_reference`(=token) / `mp_preference_id` (admin read).
-5. Reconcile: MP amount == order `total_cents`? mismatch → log, do NOT mark paid.
-6. Map MP status → `{orderStatus, paymentStatus}`; apply status precedence.
-7. `advance_order_status` RPC (updates mutable cols + writes history, in-txn) —
-   guarded by `mp_payment_events` unique(`mp_payment_id`) for idempotency.
-8. Return 200 (even for unknown/duplicate/ignored) so MP stops retrying.
+**Payment received / voucher (live in T9, webhook-driven):**
+`MP posts webhook → route.ts verifies signature → processPaymentNotification → Payment.get
+(authoritative) → matchOrder → claimPaymentEvent (dedupe) → mapMpStatus → advanceOrderStatus RPC
+(returns transition_kind) → on success finalizePaymentEvent → NEW: branch on transition_kind: 'paid'
+→ dispatch.sendPaymentReceived; 'payment_pending' + OXXO/SPEI method → dispatch.sendVoucherInstructions
+→ each claim_email_send(order_id, kind, mp_payment_id) → render (order.locale) → provider.sendEmail →
+catch+log. The route's 200/500 is decided by ProcessResult ONLY, never by email outcome.`
 
-**Refund (T12 calls it):**
-1. T12 admin action → `refundOrderPayment(orderId, amountCents|null)`.
-2. Read order → guard `payment_status ∈ {paid}` else `not-refundable`.
-3. `PaymentRefund.create({ payment_id: mp_payment_id, body: amount? })` with
-   per-request `X-Idempotency-Key`.
-4. Success → `advance_order_status`→`refunded` (full rule) + history; typed result.
+**Locale sourcing (the crux):** locale is a REQUEST concept at checkout (`/es-MX/…` vs `/en/…`) but
+the webhook has NONE (server-to-server). So locale is PERSISTED on the order at creation and READ by
+the webhook path. This is why `orders.locale` is a required part of the migration, not optional.
 
 ### Similar Features (Reference Implementations)
 
-- **`create_order` RPC + `placeOrder` action** (`0008_checkout.sql`,
-  `checkout/actions.ts`) — the closest analog: an atomic DB mutation behind a
-  SECURITY DEFINER RPC, invoked from a server boundary that maps raw errors to a
-  typed friendly state. T8's webhook→`advance_order_status` mirrors this. Key
-  patterns to follow: idempotency short-circuit inside the RPC; `[context]`-prefixed
-  logging; never echo raw errors; service_role-only execute grant.
-- **`getOrderByToken`** (`order-read.ts`) — token-addressed admin read with a
-  `UUID_PATTERN` pre-check and `null`-on-miss. T8's payment view is a sibling.
-- **`GlobalBanner` + `resolveBanner`** (`checkout-flow-client.tsx:299-376`) — the
-  destructive-alert + recovery-action UI for the decline/error states (AC-16).
-- **Q&A action** (`producto/[slug]/actions.ts`) — the client-IP + best-effort
-  limiter precedent, if the pay-now action wants abuse control.
+- **`record_payment_event` (idempotency claim)** — `0009_payments.sql:338-386`. Structurally
+  identical to the needed `claim_email_send`: unique key, `on conflict do nothing`, `if found` →
+  `'new'` else inspect existing → `'duplicate'`. Follow this exactly (simpler — no finalize needed
+  unless we adopt claim-then-finalize for email retries, edge 2).
+- **`getMercadoPagoEnv` + `mp-client.ts`** — env-secret → single client boundary → mockable. The
+  email provider mirrors this 1:1.
+- **`payments-status.ts` mapMpStatus** — the pure decision function that ALSO produces the `note`.
+  The RPC's new `transition_kind` should mirror the same taxonomy so the app-side and DB-side agree
+  (`approved`→`paid`, `refunded`→`refunded`, etc.).
+- **Confirmation page read `order-read.ts`** — the exact shape of "read an order for presentation";
+  the email content reader is a near-sibling (add locale + payment_method + items already present).
 
 ## Dependency Analysis
 
 ### Existing Dependencies to Leverage
 
-- **`@supabase/supabase-js` ^2.110.2** — RPC + admin reads (webhook, refund).
-- **Node built-in `crypto`** — `createHmac('sha256', secret)` + `timingSafeEqual`
-  for webhook verification. No new package needed for HMAC.
-- **`next-intl` ^4.13.2** — `getTranslations({ locale, namespace: "checkout" })`
-  in server components (confirmation page pattern, `page.tsx:33,46`);
-  `useTranslations("checkout")` in client components.
-- **`@hugeicons/react` + core-free-icons** — icons (never mix sets). Use existing
-  `CheckmarkCircle02Icon`, `Alert02Icon`, `Refresh01Icon`.
+- `next-intl` (already a dep) — localization + `getTranslations` server-side; no new i18n dep.
+- `src/lib/money.ts` — MXN formatting; no new formatting dep.
+- `@supabase/supabase-js` via `createAdminClient()` — the `email_sends` ledger + `claim_email_send`
+  RPC calls; same client the payment spine uses.
+- `server-only` — guard the provider + dispatch modules.
 
 ### New Dependencies Needed
 
-- **`mercadopago` ^3.2.0** — official Node SDK. v3.x is the current major (v3.0.0
-  released 2026-05-21; latest 3.2.0 verified via npm registry + GitHub releases).
-  Ships bundled TypeScript types (`"types": "dist/index.d.ts"`) — no `@types/`
-  package. **Gotcha: most tutorials online show v2**; use v3 shapes:
-  `new MercadoPagoConfig({ accessToken })`, `new Payment(client)`,
-  `new Preference(client)`, `new PaymentRefund(client)`. Idempotency per request:
-  `requestOptions: { idempotencyKey }`. Alternative considered: raw `fetch` against
-  the REST API — rejected for money code (reimplements SDK request/retry/idempotency).
+- **`resend`** — recommended (rationale below). Version: latest 4.x, pin at install.
+  - Alternatives considered: `postmark` (excellent deliverability + a sandbox "test" API token;
+    heavier SDK, transactional-first — a strong second choice), `@aws-sdk/client-ses` (cheapest at
+    scale but the most config/verification overhead: IAM, domain + DKIM, sandbox-mode sending limits
+    — overkill for a Phase-1 single-tenant store), `nodemailer` + SMTP (most generic/provider-agnostic
+    but you still need an SMTP provider, and it has no first-class typed API or dev-preview mode).
 
 ### Internal Dependencies
 
-- `advance_order_status` RPC (new) is depended on by: the webhook route, the
-  refund fn, and **T12's admin status updates** (build it as a reusable, general
-  transition RPC, not webhook-specific).
-- `mp_payment_events` (new) depends on `orders` (FK) and is the idempotency spine
-  for the webhook — SEPARATE from `orders.idempotency_key` (T7 Arch R-3).
-- `getMercadoPagoEnv()` → `mp-client.ts` → preference/refund/webhook libs. The
-  `server-only` guard on `mp-client.ts` keeps the access token out of any bundle.
+- `email/dispatch.ts` depends on `email/provider.ts`, `email/templates/*`, `email/render.ts`, the
+  order reader, and `claim_email_send`. Implication: dispatch is the ONLY module that does I/O +
+  orchestration; templates/render stay pure (SRP; unit-testable without a DB or network).
+- `process-payment.ts` and `actions.ts` depend on `dispatch.ts`. Implication: the two most sensitive
+  write paths gain a dependency on email — so dispatch MUST be failure-isolated (catch everything;
+  never rethrow) or an email bug becomes a checkout/webhook bug.
+- `advance_order_status` return shape is consumed by `advance-order.ts` → `process-payment.ts`.
+  Implication: adding `transition_kind` to the jsonb is backward-safe (additive) and needs a
+  `database.types.ts` update so the branch is typed (no `any`).
 
 ## External Research
 
-### Mercado Pago — Integration Surface (Checkout Pro vs Checkout API/Bricks)
+### Email-Provider Research (provider choice)
 
-| Product | Card | OXXO | SPEI | Wallet | Model | PCI |
-| --- | --- | --- | --- | --- | --- | --- |
-| **Checkout Pro** | ✅ | ✅ | ✅ ("SPEI Transfer") | ✅ | Redirect (hosted) | **SAQ-A** |
-| Checkout API (raw) | ✅ | ✅ | ✅ (`clabe`, `bank_transfer`) | — | On-site (you build all) | not classified in doc |
-| Payment Brick | ✅ | ✅ (`oxxo`) | ⚠️ **UNCONFIRMED** | ✅ | On-site component | not classified in doc |
+**Recommendation: Resend.** Rationale specific to this codebase and the ticket constraints:
 
-- Checkout Pro overview lists all four Mexico rails: https://www.mercadopago.com.mx/developers/en/docs/checkout-pro/overview
-- PCI scope table (Checkout Pro = SAQ-A): https://www.mercadopago.com.mx/developers/en/docs/security/pci
-- Bricks non-card methods list only ticket-type (oxxo/paycash/bancomer/banamex),
-  never SPEI: https://www.mercadopago.com.mx/developers/en/docs/checkout-bricks/payment-brick/payment-submission/other-payment-methods
-- **RECOMMENDATION: Checkout Pro (Preference + redirect).** Only product confirmed
-  to cover all four rails in Mexico, lowest PCI burden, least effort, composes with
-  our token-addressed confirmation page. Bricks' unconfirmed SPEI support is a real
-  risk; OXXO/SPEI hand off out-of-band anyway (voucher/CLABE), weakening on-site.
-- SPEI MXN note: uses CLABE; MP recommends ~3-day `date_of_expiration` (crediting
-  can take up to ~2 business hours). https://www.mercadopago.com.mx/developers/en/docs/checkout-api/payment-integration/spei-transfers
-- Enablement: no OXXO/SPEI-specific activation documented (only seller onboarding).
-  ⚠️ docs are silent — silence ≠ confirmed "none required".
+1. **Mockability (AC-9, hard requirement).** Resend's SDK is a thin class (`new Resend(apiKey)`
+   → `resend.emails.send({...})`). Instantiated in one module, it is trivially mocked with vitest
+   (`vi.mock('@/lib/email/provider')`), exactly like `mp-client.ts` is mocked in the payment tests.
+2. **Dev/preview mode (AC-8, hard requirement).** Resend supports a test/dev flow, and — more
+   importantly — our own `provider.ts` short-circuit (`EMAIL_DEV_PREVIEW=1` → log + no network) gives
+   a provider-agnostic preview without any account. Resend also offers per-request idempotency keys
+   if we later want provider-side dedupe (we don't need it — `email_sends` is our dedupe authority).
+3. **TypeScript-first, Next.js-native.** First-class typed SDK; runs from the Node server runtime
+   (our webhook already forces `runtime="nodejs"`; the checkout action is server-side). No edge
+   constraints.
+4. **Single secret via env.** One `EMAIL_API_KEY` (server-only). Fits the `getEmailEnv()` shape with
+   no OAuth/IAM dance (unlike SES).
+5. **Neutral-branding fit.** HTML is authored by us (table-based, inline styles), not the provider,
+   so swapping to branded templates later touches only `email/brand.ts` + templates — provider-agnostic.
 
-### MP — Node SDK (`mercadopago` v3)
+**Gotchas to bake into the ticket/implementation:**
+- Verified sender domain required for LIVE send (`EMAIL_FROM_ADDRESS` must be on a verified domain).
+  This is part of the BLOCKED-ON-USER setup — document it; dev-preview needs no verification.
+- Rate limits exist on the free tier — irrelevant at Phase-1 volume and behind our per-order dedupe.
+- No HTML `<style>`/CSS support guarantees across inboxes — this is an EMAIL constraint, not a Resend
+  one: inline all styles, table layout (already a ticket requirement).
 
-```ts
-import { MercadoPagoConfig, Payment, Preference, PaymentRefund } from 'mercadopago';
-const client = new MercadoPagoConfig({ accessToken, options: { timeout: 5000 } });
-await new Preference(client).create({ body: { items, external_reference, notification_url, back_urls } });
-await new Payment(client).get({ id: paymentId });                       // webhook status fetch
-await new PaymentRefund(client).create({ payment_id, body: { amount } }); // omit body = full refund
-```
-Access token on the config constructor; per-request idempotency via
-`requestOptions.idempotencyKey`. README: https://github.com/mercadopago/sdk-nodejs
+### Library / API notes
 
-### MP — Webhook `x-signature` Verification (the critical trust boundary)
-
-Doc: https://www.mercadopago.com.mx/developers/en/docs/your-integrations/notifications/webhooks
-
-- Header: `x-signature: ts=<ts>,v1=<hex-hmac>` (comma-separated).
-- **Manifest template (exact):** `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`
-  — order id → request-id → ts, each segment ends with `;`.
-- **Secret:** dashboard → your app → Webhooks → Configure notifications.
-- **Algorithm:** HMAC-SHA256, hex digest, compare to `v1` with `timingSafeEqual`.
-- **`data.id` gotcha (verbatim from docs):** if `data.id` has uppercase chars,
-  **lowercase it** before building the manifest. Numeric payment ids unaffected.
-- ⚠️ `ts` appears as ms in newer examples, seconds in older — **use the raw string
-  as-is, never reformat**. Absent segments are omitted (medium-high confidence).
-
-```ts
-const manifest = `id:${dataId.toLowerCase()};request-id:${xRequestId};ts:${ts};`;
-const digest = crypto.createHmac('sha256', WEBHOOK_SECRET).update(manifest).digest('hex');
-// timingSafeEqual(Buffer.from(digest), Buffer.from(v1))
-```
-
-### MP — Sandbox / Test Credentials Model
-
-- **No separate sandbox URL** — test credentials + test users hit production
-  endpoints. Test accounts: dashboard → Your integrations → app → Test accounts →
-  create (choose **Mexico**, max 15, non-deletable). https://www.mercadopago.com.ar/developers/en/docs/your-integrations/test/accounts
-- Credentials: app → Testing → **Test credentials** (Access Token + Public Key);
-  production requires business info. https://www.mercadopago.com.mx/developers/en/docs/your-integrations/credentials
-  ⚠️ test tokens can ALSO carry the `APP_USR-` prefix — prefix alone ≠ test vs prod.
-- Webhook secret: separate, under Webhooks → Configure notifications.
-  ⚠️ **UNVERIFIED** whether test-mode and prod-mode use different secrets — check
-  the dashboard.
-- Mexico test cards (⚠️ values rotate — reconfirm before hardcoding):
-  Mastercard `5474 9254 3267 0366`, Visa `4075 5957 1648 3764`, Amex
-  `3711 803032 57522` (CVV 1234); CVV `123` (Amex 1234); any future expiry.
-  https://www.mercadopago.com.mx/developers/en/docs/checkout-pro/integration-test/test-purchases
-- **Force result via cardholder name:** APRO (approved), OTHE (error), CONT
-  (pending), CALL, FUND (insufficient), SECU (bad CVV), EXPI, FORM. ⚠️ exact MX
-  identity-document value to pair is not documented (`12345678909` is Brazil CPF).
-- ⚠️ **CRITICAL verified negative — OXXO/SPEI CANNOT be force-approved in test.**
-  Docs: offline-method testing "only allows verification of correct payment flow
-  creation, but not obtaining a final status". Test buyer email must be
-  `@testuser.com`. **To exercise pending→approved for OXXO/SPEI, post a signed
-  synthetic webhook to our own endpoint** (or use a card with `APRO`). Dashboard
-  has a Webhooks Notifications Simulator.
-  https://www.mercadopago.com.mx/developers/es/docs/checkout-api-v2/integration-test/spei-transfers
-- Env var naming: MP prescribes none (docs call them `access_token`, `public_key`).
-  This project uses the PRODUCT_SPEC names already stubbed in `.env.local`:
-  `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_PUBLIC_KEY`, `MERCADOPAGO_WEBHOOK_SECRET`.
-
-### MP — Payment Lifecycle / Status Mapping
-
-⚠️ Two API generations exist — classic `/v1/payments` (what the SDK `Payment`
-resource + Checkout Pro webhooks use, mapped below) vs the newer Orders API. Use
-the classic Payments statuses.
-
-- **`status`:** `pending`, `approved`, `authorized`, `in_process`, `in_mediation`,
-  `rejected`, `cancelled` (double-L; incl. expiry), `refunded`, `charged_back`.
-  https://www.mercadopago.com.ar/developers/en/docs/checkout-api-payments/response-handling/query-results
-- **`status_detail` examples:** `accredited`, `pending_waiting_payment` (OXXO),
-  `pending_waiting_transfer` (SPEI), `expired`, `cc_rejected_*`. Rejection reasons:
-  https://www.mercadopago.com.mx/developers/en/docs/checkout-pro/how-tos/improve-payment-approval/reasons-for-rejection
-- **Proposed mapping (implement + unit-test, AC-14):**
-  | MP status | our `payment_status` | our `order_status` |
-  | --- | --- | --- |
-  | `approved` | `paid` | `paid` |
-  | `pending`, `in_process` | `pending` | `pending_payment` (unchanged) |
-  | `authorized` | `authorized` | `pending_payment` (unchanged; capture is a later event) |
-  | `rejected`, `cancelled` | `failed` | `pending_payment` (allow retry) |
-  | `refunded` | `refunded` | (refund flow decides; not auto-`cancelled`) |
-  | `charged_back`, `in_mediation` | (unchanged / flag) | (unchanged) — log, never mark paid |
-  | unknown | (unchanged) | (unchanged) — log |
-- **OXXO/SPEI voucher fields — IMPORTANT correction to a common assumption:**
-  current docs put the voucher under **`transaction_details`**, NOT
-  `point_of_interaction`:
-  `transaction_details.external_resource_url` (voucher/instructions URL),
-  `transaction_details.payment_method_reference_id` (reference/barcode),
-  `transaction_details.verification_code`; expiry via top-level
-  `date_of_expiration`.
-  https://www.mercadopago.com.mx/developers/en/docs/checkout-api-payments/integration-configuration/other-payment-methods
-  ⚠️ `point_of_interaction.transaction_data.ticket_url/.barcode` could NOT be
-  confirmed for OXXO/SPEI (that structure is PIX/Brazil). **Read defensively:
-  prefer `transaction_details.*`, treat `point_of_interaction` as fallback, and
-  inspect a real sandbox response before finalizing field paths** (blocked-on-user).
-- **Webhooks carry only `data.id`** (no status) — MUST
-  `GET https://api.mercadopago.com/v1/payments/{id}` (Bearer access token) to
-  resolve status. Notifications fire on creation and every status change — that is
-  how OXXO/SPEI pending→approved reaches us. https://www.mercadopago.com.ar/developers/en/reference/payments/_payments_id/get
-
-### MP — Refund API
-
-- **Endpoint:** `POST https://api.mercadopago.com/v1/payments/{id}/refunds`.
-  https://www.mercadopago.com.mx/developers/en/reference/chargebacks/_payments_id_refunds/post
-- **Full refund:** empty body. **Partial:** `{ "amount": <number> }`; multiple
-  partials allowed up to the original total.
-- **Idempotency:** `X-Idempotency-Key` header listed REQUIRED — always send it.
-- **Refund status:** `approved`, `in_process` documented. ⚠️ `rejected`/`cancelled`
-  as refund statuses NOT confirmed — don't build enum exhaustiveness on them.
-- **Constraints:** only **approved** payments can be refunded (pending/in_process
-  are *cancelled* instead via `PUT /v1/payments/{id}` status=cancelled). **Refund
-  window: 180 days from approval** (verbatim). Requires sufficient MP balance or
-  the refund fails. List/get: `GET /v1/payments/{id}/refunds[/{refund_id}]`.
-  https://www.mercadopago.com.mx/developers/en/docs/sales-processing/cancellations-and-refunds
+- **next-intl outside a request (webhook path).** `getTranslations({ locale })` can be called with
+  an explicit locale (not just the ambient request locale). The webhook reads `orders.locale` and
+  passes it explicitly — this is the supported server API and avoids needing a request context.
+- **Confirmation link.** `confirmationPath(token)` (`config.ts:554`) yields a locale-agnostic path;
+  the email must prepend the site origin (an env-configured base URL) and the `/en` prefix when
+  `locale === 'en'`, to produce an ABSOLUTE URL (relative links don't work in email).
 
 ## Risk Assessment
 
 ### Technical Risks
 
 | Risk | Likelihood | Impact | Mitigation |
-| --- | --- | --- | --- |
-| Webhook signature bypass (attacker forges a "paid" webhook → free order) | Med | **Critical** | Verify HMAC-SHA256 before ANY side-effect; `timingSafeEqual`; reject on any parse/mismatch; NEVER trust webhook body for state — always `Payment.get`. Human-review this file. |
-| Amount tampering (preference/webhook amount ≠ order total) | Med | **Critical** | Amount reconciliation vs immutable `total_cents` (AC-12, tolerance 0); DB trigger already blocks overwriting `total_cents`. |
-| Duplicate / out-of-order webhooks double-advance or regress state | High | High | `mp_payment_events` unique(`mp_payment_id`) spine (R-3) + status-precedence guard + idempotent `advance_order_status` (AC-10/AC-15). |
-| Float drift converting cents ↔ MP decimal `unit_price`/`amount` | Med | High | Exact integer-cents → decimal conversion helper, unit-tested with edge amounts; never `Number` arithmetic that rounds. |
-| Wrong OXXO/SPEI voucher field path (docs ambiguous) | High | Med | Read `transaction_details.*` first, `point_of_interaction` fallback; verify against a live sandbox response (blocked-on-user); render defensively (hide the card if fields absent). |
-| Bricks-vs-Checkout-Pro / SPEI-in-Bricks confusion | Low (mitigated by choosing Checkout Pro) | High | Ticket mandates Checkout Pro; Bricks explicitly out of scope. |
-| MP SDK v2 vs v3 API drift (tutorials show v2) | Med | Med | Pin `^3.2.0`; use v3 shapes; TS types catch misuse. |
-| Live sandbox blocked → integration gaps ship unverified | High | High | ALL tests mock MP; the human-review gate + a documented "run this against real sandbox before launch" checklist in dev-done are the backstop. Flag loudly. |
-| Webhook returns 500 on unknown/dup → MP retries forever | Med | Med | Return 200 for unknown/duplicate/ignored; 401 only for bad signature (AC-11). |
-| Refund on non-approved / over-refund | Med | Med | Guard `payment_status` before the MP call; bound partials ≤ total; typed `not-refundable`/`mp-error` results (AC-19/AC-20). |
+| ---- | ---------- | ------ | ---------- |
+| An email failure/throw breaks checkout or the webhook (couples email to revenue) | Med | High | Dispatch catches ALL errors, never rethrows; process-payment/actions ignore the send outcome; AC-13 + a test asserting missing-key does not throw |
+| Duplicate webhook double-sends "payment received" | Med | Med | `email_sends` unique `(order_id, kind, dedupe_key=mp_payment_id)` + `claim_email_send`; edge 1 test |
+| Wrong-language email (webhook has no request locale) | High if not handled | Med | Persist `orders.locale` at creation; webhook reads it; `getTranslations({locale})`; edge 3 test |
+| T9 emails string-match free-text notes (fragile, TD-2) | High if not fixed | Med | Add structured `transition_kind` to the RPC result + history; branch on it, never on `note`; AC-2/AC-3 |
+| Amend-in-place migration on a non-resettable env (TD-5) | Low now | Med later | New numbered `0010`; LOCAL-only; standing note honored |
+| Voucher email sent with missing/partial reference data | Med | Med | Send only when voucher data present; else log + skip (AC-16, edge — no broken email) |
+| Email HTML renders broken in Outlook/Gmail | Med | Low | Table layout, inline styles, 600px, plain-text part (S3 dev requirements) |
+| Leaking PII into logs (address/email in error logs) | Low | Med | Log order id + email kind + reason only — never the address body (mirror payment-log discipline) |
 
 ### Performance Considerations
 
-- Webhook handler must be FAST and return 200 quickly (MP retries on slow/failed
-  deliveries). The `Payment.get` round-trip + one RPC is fine; avoid heavy work
-  inline. No new indexes on the hot path beyond R-4 (`mp_payment_id`,
-  `mp_external_reference`) which the webhook filters by.
-- Preference creation is user-blocking (behind the pay-now spinner) — set an SDK
-  `timeout` and surface a friendly "try again" on timeout.
+- **Send latency on the shopper's critical path.** The confirmation trigger runs inside `runCheckout`
+  before returning `success`. Recommendation: fire-and-forget or bounded (`EMAIL_SEND_TIMEOUT_MS`)
+  so a slow provider never delays the shopper's success screen. The success return must not block on
+  network I/O; if awaited, wrap in a timeout + isolation.
+- **Webhook 200 latency.** Same concern, sharper: a slow send inside the webhook delays the 200 and
+  can trigger MP retries. Trigger AFTER `finalizePaymentEvent`, bounded/isolated, never blocking the
+  ProcessResult → HTTP mapping (AC-18).
+- **Extra DB round-trips** (order read + claim_email_send per email) — negligible at Phase-1 volume;
+  the reads are indexed by order id / confirmation token.
 
 ### Security Considerations
 
-- **Secrets:** `MERCADOPAGO_ACCESS_TOKEN` + `MERCADOPAGO_WEBHOOK_SECRET` are
-  server-only; NEVER `NEXT_PUBLIC_`. `mp-client.ts` gets `import "server-only"`.
-  Only `MERCADOPAGO_PUBLIC_KEY` may be exposed, and only if a client SDK/Wallet
-  Brick is used (redirect baseline needs none). Never log the secret or full token.
-- **Unauthenticated public endpoint:** the webhook is the store's first public
-  `route.ts`. The signature IS the authentication. Verify before reading the DB.
-- **IDOR:** the pay-now action and payment view are addressed by
-  `confirmation_token` only (never `order_number`) — inherits the T7 IDOR fix.
-- **No raw MP/PG errors to the UI** — map to typed friendly states (T7 discipline).
-- **Immutability:** the DB trigger prevents even the service-role client from
-  overwriting the financial snapshot — a defense-in-depth backstop behind AC-12.
+- **Secrets.** `EMAIL_API_KEY` is server-only, never `NEXT_PUBLIC_`, read only via `getEmailEnv()`
+  from server-only modules — identical posture to `MERCADOPAGO_ACCESS_TOKEN`.
+- **PII in email + logs.** Emails carry PII (name, address) by necessity; that is fine (they go to
+  the customer/owner). LOGS must not — log ids + kinds + reasons only.
+- **No new attack surface.** T9 adds no HTTP route; the webhook trust boundary is unchanged. Owner
+  address is env-configured (`EMAIL_OWNER_ADDRESS`), not user-supplied, so `new_order_owner` cannot
+  be redirected by input.
+- **Email-injection.** Recipient/subject are derived from stored order fields (validated at
+  checkout) and constants — not from raw untrusted headers. `contact_relay` (T13, not wired now)
+  will quote a user message into the BODY only, never into headers.
+- **RLS.** `email_sends` is RLS-deny + service_role grant; anon/authenticated have zero access.
 
 ## Implementation Recommendations
 
 ### Suggested Order of Implementation
 
-1. **Migration `0009_payments.sql`** (`mp_payment_events` + `advance_order_status`
-   RPC + R-4 indexes) — everything else depends on the RPC and the idempotency
-   spine. Add DB types alongside. Write the integration test first (RPC advance +
-   history + idempotency).
-2. **`getMercadoPagoEnv()` + config MP constants** — the wiring seam; unit-test the
-   env accessor (missing/blank → named error) and the constant builders.
-3. **`mp-client.ts` + `webhook.ts` (pure signature + `payments-status.ts` mapping)**
-   — the pure, heavily-unit-tested core (valid/invalid/replay/out-of-order/unknown/
-   amount-mismatch, status mapping, cents↔decimal). No HTTP, no DB.
-4. **Webhook route** (`route.ts`) — compose the pure pieces: verify → fetch →
-   reconcile → RPC → record event → 200. Integration-test with a mocked `Payment.get`.
-5. **`preference.ts` + pay-actions + `<PaymentPanel>`/instructions UI + confirmation
-   page wiring + i18n** — the shopper-facing flow (pay-now, pending, decline retry),
-   both locales. e2e with MP mocked at the boundary.
-6. **`refund.ts`** — the T12-facing execution API (full/partial/not-refundable/
-   mp-error), unit-tested. No admin UI (that is T12).
-7. **Docs:** `dev-done.md` with the exact env vars, where to get sandbox creds,
-   the "run against real sandbox before launch" checklist, the field-path caveat,
-   and a PROMINENT human-review flag.
+1. **Migration `0010` first** — `transition_kind` (RPC + history column), `orders.locale`,
+   `create_order` persists locale, `email_sends` + `claim_email_send`. Everything downstream types
+   off this. Regenerate/patch `database.types.ts`. Verify `supabase db reset` clean.
+2. **`env.getEmailEnv()` + `email/provider.ts`** — the mockable boundary with dev-preview
+   short-circuit. Unit-test the preview + missing-key paths BEFORE any template exists.
+3. **`email/brand.ts` + `layout.ts` + `render.ts`** — pure chrome + helpers; unit-test rendering.
+4. **i18n `email` block** in both dictionaries (keep `keys-used.test.ts` green).
+5. **8 templates** — pure render functions; unit-test both locales for the 6 customer templates.
+6. **`email/dispatch.ts`** — claim → render → send → isolate; unit + integration test (mocked
+   provider, live local DB, assert `email_sends` rows + dedupe).
+7. **Wire triggers** — checkout action (confirmation + owner alert; persist locale) and
+   process-payment (payment_received / voucher on transition_kind). Add T12/T13 seam comments.
+8. **Integration/e2e** — assert checkout success + webhook 200 are UNAFFECTED when the provider is
+   forced to fail; assert exactly-once across a duplicate webhook.
 
 ### Key Decisions
 
-- **Checkout Pro (redirect), not Bricks/Checkout API** — only confirmed all-four-
-  rails Mexico surface, lowest PCI, least effort, composes with the token page.
-- **`advance_order_status` as a general reusable RPC** (not webhook-specific) so
-  T12 reuses it for manual status changes — satisfies Arch R-1 once for both tasks.
-- **Idempotency spine = `mp_payment_events` unique(`mp_payment_id`)**, separate
-  from `orders.idempotency_key` (Arch R-3) — the two dedupe different things
-  (order creation vs payment events).
-- **Never trust `back_url` params for state** — the webhook + `Payment.get` are the
-  single source of truth; the page reads live DB state on load.
-- **Amount tolerance = 0** — MXN is integer-cents; any mismatch is a discrepancy.
-- **Refund `payment_status='refunded'` only for a full refund** — partial refunds
-  keep `paid` and are recorded in history (documented rule for AC-19).
+- **Provider: Resend** — mockable, dev-preview-friendly, TS-first, single-secret. (Postmark is the
+  fallback if the user prefers it; the `provider.ts` boundary makes the swap a one-file change.)
+- **Dedupe authority: our `email_sends` ledger**, not provider idempotency — keyed
+  `(order_id, email_kind, dedupe_key)` where dedupe_key = mp_payment_id for payment-linked emails,
+  `''` for one-per-order emails. Mirrors the payment spine's proven pattern.
+- **Locale: persist on the order** (`orders.locale`, default `es-MX`, constrained to shipped set).
+  Owner/relay emails: SINGLE-LOCALE es-MX (owner is the Mexican operator).
+- **TD-2: `transition_kind` derived IN the RPC** and returned + written to history — never inferred
+  from `note`. Payment-only refund (`from==to`) becomes `transition_kind='refunded'`, unambiguous.
+- **Dispatch trigger site: `process-payment.ts`, not `route.ts`** — keeps the HTTP handler email-free
+  and the 200/500 decoupled from send outcome.
 
 ### Anti-Patterns to Avoid
 
-- Don't mark an order `paid` from the webhook BODY — it carries no status; always
-  `Payment.get`. Don't trust `back_url` query params either.
-- Don't `.update({ status })` an order directly — go through `advance_order_status`
-  (Arch R-1); ad-hoc updates skip the history row and the immutability contract.
-- Don't 500 on unknown/duplicate webhooks — return 200 or MP retries forever.
-- Don't do money math in floats — integer cents in, exact decimal conversion out.
-- Don't compare signatures with `===` — use `timingSafeEqual` (timing attack).
-- Don't `NEXT_PUBLIC_` the access token or webhook secret; don't log them.
-- Don't hardcode voucher field paths blind — docs are ambiguous; read defensively
-  and verify against a real sandbox response (blocked-on-user).
-- Don't build ahead into T9 (emails) or T12 (admin UI, cancel-with-stock-restore) —
-  only the refund EXECUTION API and the reusable RPC belong to T8.
-- Don't assume OXXO/SPEI can be force-approved in test — they can't; use signed
-  synthetic webhooks to exercise the pending→approved branch.
-
-## "Could Not Verify" — Open Items (do not paper over)
-
-1. **Payment Brick SPEI support in Mexico** — undocumented (moot: we chose
-   Checkout Pro; SPEI is confirmed for Checkout Pro).
-2. **Exact SAQ tier for Checkout API / Bricks** — PCI table only classifies
-   Checkout Pro (SAQ-A). Moot for our choice.
-3. **`point_of_interaction.transaction_data.*` for OXXO/SPEI** — use
-   `transaction_details.*`; verify against a live sandbox response.
-4. **`date_of_expiration` presence in the OXXO response body** — high confidence,
-   not quote-confirmed.
-5. **Whether the webhook secret differs between test and prod modes** — check dashboard.
-6. **MX identity-document value for test cards; card numbers rotate.**
-7. **Refund statuses beyond `approved`/`in_process`.**
-8. **OXXO/SPEI method-specific enablement** — docs silent (implies none beyond onboarding).
-
-All of the above are gated behind the blocked-on-user live-sandbox verification;
-the human reviewer must confirm the field paths and credential model against a
-real MP sandbox before launch.
+- **Don't** string-match `order_status_history.note` to decide the email — use `transition_kind`
+  (the entire point of TD-2).
+- **Don't** let a send throw into checkout/webhook — catch everything in dispatch; the email outcome
+  never changes a `ProcessResult` or a `CheckoutFormState`.
+- **Don't** put email code in `route.ts` — trigger from the transition outcome in `process-payment.ts`.
+- **Don't** re-implement money formatting or an ad-hoc locale — reuse `money.ts` and `orders.locale`.
+- **Don't** add `NEXT_PUBLIC_` for any email secret; don't hardcode the API key or from/owner address.
+- **Don't** amend `0009` in place — write a new `0010`; LOCAL-only, never `db push`.
+- **Don't** touch `tasks/hacker-report.md` (stale T7 artifact) or check off T7/T8 in `BUILD_PLAN.md`.
+- **Don't** send a voucher email with missing reference data — skip + log instead of a broken email.
