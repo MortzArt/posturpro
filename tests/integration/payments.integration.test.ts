@@ -175,6 +175,80 @@ describe("advance_order_status RPC (live local DB)", () => {
   });
 });
 
+describe("advance_order_status transition matrix (legal + illegal, live local DB)", () => {
+  it("advances the full LEGAL forward chain pending→paid→preparing→shipped→delivered", async () => {
+    const orderId = await makePendingOrder();
+    const chain = ["paid", "preparing", "shipped", "delivered"] as const;
+    for (const to of chain) {
+      const { data } = await db.rpc("advance_order_status", {
+        p_order_id: orderId,
+        p_order_status: to,
+        p_payment_status: "paid",
+        p_note: `→ ${to}`,
+      });
+      expect(data).toMatchObject({ applied: true, reason: "advanced", to_status: to });
+    }
+    const { data: order } = await db
+      .from("orders")
+      .select("status")
+      .eq("id", orderId)
+      .single();
+    expect(order).toMatchObject({ status: "delivered" });
+
+    // Every forward step wrote one history row (5 statuses → 4 transitions).
+    const { data: history } = await db
+      .from("order_status_history")
+      .select("id")
+      .eq("order_id", orderId);
+    expect(history).toHaveLength(chain.length);
+  });
+
+  it("blocks every ILLEGAL backward transition from a shipped order (edge 2)", async () => {
+    const orderId = await makePendingOrder();
+    for (const s of ["paid", "preparing", "shipped"] as const) {
+      await db.rpc("advance_order_status", {
+        p_order_id: orderId,
+        p_order_status: s,
+        p_payment_status: "paid",
+        p_note: `to ${s}`,
+      });
+    }
+    // Any target that PRECEDES 'shipped' in rank is regression_blocked.
+    for (const back of ["pending_payment", "paid", "preparing"] as const) {
+      const { data } = await db.rpc("advance_order_status", {
+        p_order_id: orderId,
+        p_order_status: back,
+        p_payment_status: "paid",
+        p_note: `illegal regress to ${back}`,
+      });
+      expect(data).toMatchObject({ applied: false, reason: "regression_blocked" });
+    }
+    const { data: order } = await db
+      .from("orders")
+      .select("status")
+      .eq("id", orderId)
+      .single();
+    expect(order).toMatchObject({ status: "shipped" }); // never regressed
+  });
+
+  it("allows the legal forward jump paid→shipped (skipping preparing)", async () => {
+    const orderId = await makePendingOrder();
+    await db.rpc("advance_order_status", {
+      p_order_id: orderId,
+      p_order_status: "paid",
+      p_payment_status: "paid",
+      p_note: "paid",
+    });
+    const { data } = await db.rpc("advance_order_status", {
+      p_order_id: orderId,
+      p_order_status: "shipped",
+      p_payment_status: "paid",
+      p_note: "skip to shipped",
+    });
+    expect(data).toMatchObject({ applied: true, reason: "advanced", to_status: "shipped" });
+  });
+});
+
 describe("payment-only advance (refunded, C-2, live local DB)", () => {
   it("marks payment_status=refunded on a PAID order without regressing + writes history", async () => {
     const orderId = await makePendingOrder();

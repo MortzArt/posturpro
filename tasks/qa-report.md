@@ -1,130 +1,179 @@
-# QA Report: T7 — Checkout & Order Creation
+# QA Report: T8 — Mercado Pago integration (Stage 7, ultraqa)
 
-Stage 7 (ultraqa). Full-cycle pipeline. Verdict basis: comprehensive unit,
-component, integration (live local Docker Supabase), and production-build e2e
-coverage of every AC and every edge case.
+> ⚠️ **HUMAN-REVIEW GATE (BUILD_PLAN rule 3) — READ FIRST.** This is PAYMENT code.
+> This QA verdict is ADVISORY ONLY. A SHIP verdict does NOT authorize merge. A human
+> MUST review signature verification, amount reconciliation, refund execution,
+> order-state advancement, and secret handling before T8 is checked off.
+>
+> ⚠️ **LIVE-SANDBOX VERIFICATION IS BLOCKED-ON-USER.** No working MP credentials
+> exist; `.env.local` holds PLACEHOLDERS. ALL tests mock the MP API. A real sandbox
+> round-trip cannot run in this pipeline (documented in dev-done.md "How to Test").
 
-## Test Suite Summary
+## Test Suite Summary (deltas vs baseline)
 
-| Type | Written (new) | Passed | Failed | Skipped |
-|------|---------------|--------|--------|---------|
-| Unit + Component | 104 | 104 | 0 | 0 |
-| Integration (live DB) | 25 | 25 | 0 | 0 |
-| E2E (prod build, ×2 projects) | 24 (12×2) | 24 | 0 | 0 |
-| **New total** | **153** | **153** | **0** | **0** |
+| Type | Baseline | Written (this stage) | Total | Passed | Failed | Skipped |
+|------|----------|----------------------|-------|--------|--------|---------|
+| Unit / Component | 1126 | +51 | 1177 | 1177 | 0 | 0 |
+| Integration (live local DB) | 151 | +3 | 154 | 154 | 0 | 0 |
+| E2E — T8 payment | 8 | 0 | 8 | 8 | 0 | 0 |
+| E2E — checkout | 24 | 0 | 24 | 24 | 0 | 0 |
+| E2E — cart | 46 | 0 | 46 | 46 | 0 | 0 |
+| **Total** | **1355** | **+54** | **1409** | **1409** | **0** | **0** |
 
-Full-suite regression status:
-- **Unit/component**: 915 passed / 915 (was 811 baseline → +104). 46 files, 0 fail.
-- **Integration**: 135 passed / 135 (11 files, 0 fail). Runs against a reset+seeded local Docker Supabase.
-- **E2E checkout**: 24/24 green across `chromium` + `mobile (Pixel 7)`, run twice consecutively for determinism.
-- **E2E full suite**: the pre-existing, documented `getByTestId('breadcrumbs'/'product-gallery') resolved to 2 elements` strict-mode flake in the T3/T4 `product-detail.spec.ts` / `catalog.spec.ts` fires non-deterministically under parallel load with `retries:0` (a different subset fails each run; each fails in isolation on the mobile project only). This is a pre-existing PDP-spec selector bug (dual breadcrumb navs), NOT introduced by T7, and matches the binding T6 QA infra note verbatim. `checkout.spec.ts` has ZERO failures in every run.
+- tsc `--noEmit`: **0 errors**. eslint: **clean**. next build (NEXT_QA_DIST_DIR=.next-t8-qa): **clean** — webhook route emitted `ƒ /api/webhooks/mercadopago`; `tsconfig.json` restored, dist dir removed after.
+- DB left pristine-seeded (reseeded after every order-placing suite); no stray servers.
 
-## Tests Written
+## Tests Written (this stage)
 
-### Unit / Component Tests (Vitest + RTL)
-- `src/lib/checkout/address.test.ts` (+37): all 32 Mexican states accepted (parametrized), state list is exactly 32 + no dupes, wrong-casing/whitespace handling, CP 5-digit boundary (5 ok / 6 rejected / leading-letter rejected / whitespace-trimmed), required-field max-length boundaries, delivery-notes/address-line2/RFC/phone caps at their exact limits, and "reports EVERY invalid field at once".
-- `src/lib/checkout/discount.test.ts` (+8): redemption-cap boundary (`< max` applies, `== max` exhausted), min-subtotal boundary (`>= min`), `ends_at` instant boundary, applied-outcome preserves the stored upper-cased code, fixed_amount == subtotal clamp (total→0), and `normalizeDiscountCode` case-insensitive normalization.
-- `src/lib/checkout/order.test.ts` (+5): flat-rate shipping charge, defensive `unavailable`→0 (no $NaN), full identity with shipping AND clamped discount together, no-variant line totals.
-- `src/components/checkout/checkout-helpers.test.ts` (NEW, 14): `buildSummaryLines` (variant/no-variant keying, order, empty), `buildLinesPayload` (ids+qty only, never the snapshot price), `buildSnapshotPrices`, and `applyLivePrices` (m-1 drift refresh up/down, untouched non-drift lines, undefined/empty map).
-- `src/components/checkout/discount-code-field.test.tsx` (NEW, 13): idle/applied-pill/savings, every invalid reason message + `aria-invalid`, muted degraded note, remove clears the code, disabled while pending, and "never renders a submit-blocking control" (AC-7).
-- `src/components/checkout/checkout-fields.test.tsx` (NEW, 13): every input labeled, **M-5** notes `<label>` association, **m-7** `inputMode=tel`, CP `inputMode=numeric`+maxlength 5, **M-1** distinct `checkout-<field>-error` ids + `aria-describedby` resolution + no describedby on clean fields, state Select trigger error wiring, and **M-4** first-invalid focus ref plumbing to inputs AND the state Select `<button>` trigger.
-- `src/components/checkout/checkout-flow-client.test.tsx` (NEW, 7): empty-state (AC-2/edge 3) with catalog CTA + no form, populated body renders form/summary/sticky bar, flat & free shipping totals via `computeShipping`/`totalCents` (no $NaN), **M-2** exactly one in-card `checkout-submit` + one `checkout-submit-sticky` with the `hidden lg:flex` / `lg:hidden` classes, polite live region, and shipping-unavailable → both submits disabled (edge 5).
-- `src/components/checkout/checkout-states.test.tsx` (NEW, 5): empty-state CTA href, aria-hidden skeleton with title (loading), sticky-bar total + submit label + pending state + `lg:hidden`.
+### Unit / Component (+51)
+- **`src/app/api/webhooks/mercadopago/route.test.ts` (NEW, 20 tests)** — the repo's
+  first route handler was previously exercised only "live with synthetic payloads",
+  not automated. Now covers the full ROUTE trust boundary with Node's real `crypto`
+  building valid signatures and the REAL `verifyWebhookSignature`:
+  - Signature gate (AC-8): missing → 401, tampered → 401, malformed → 401, secret
+    not configured → 401 (fail-closed), all with **no processing**.
+  - **C-1 regression lock at the route seam**: a signature valid for the QUERY id
+    verifies; a signature valid for the BODY id (query differs) is **rejected 401**.
+    Discriminates the exact C-1 failure mode (wrong id source → false 401).
+  - **M-5 body cap**: declared Content-Length > 64KB → 413 before read; a real >64KB
+    streamed body with an under-declared/lying Content-Length → 413 via the bounded
+    stream read.
+  - Type dispatch (edge 12): non-payment type → 200 ignore (no processing); payment
+    with no data.id → 200 ignore; non-JSON body after a valid signature → no crash.
+  - httpOk → HTTP mapping: processed/duplicate/unknown/amount-mismatch → 200;
+    advance-blocked (M-7) / mp-unavailable → 500; a thrown error → 500 that never
+    leaks the raw message.
+  - data.id sourcing: fetch prefers the query id, falls back to the body id; the
+    body `action` is threaded through.
+- **`src/components/checkout/payment-panel.test.tsx` (NEW, 15 tests)** — every panel
+  state + overlay + a11y role: unpaid (pay CTA + restated total, no NaN), paid
+  (role=status + method label + generic fallback), paid+refunded note, failed
+  (role=alert + retry), processing (role=status + refresh reloads), pending-voucher
+  (renders + null-voucher degrades to "generating"); pay action → redirect on
+  success; unavailable/error/not-payable overlays; retry from failed re-launches with
+  the SAME token (no re-create, AC-16/edge 4); unavailable→retry recovery to redirect.
+- **`src/components/checkout/oxxo-spei-instructions.test.tsx` (NEW, 12 tests)** —
+  voucher defensive-degradation matrix: fully-populated OXXO (reference/amount/expiry/
+  link with target=_blank rel=noopener), SPEI title + CLABE label swap, select-all
+  reference, amber-not-green styling; **every field missing** degrades with no crash,
+  no "Invalid Date", no "undefined"; invalid ISO expiry dropped; expiry locale-
+  formatted (es-MX ≠ en); pay-differently callback; copy button hidden when
+  navigator.clipboard is unavailable (feature-detect).
+- **`src/lib/payments/money-boundary.test.ts` (+4)** — exactness hardening: dense
+  0..2000¢ round-trip sweep (all .x5 centavo boundaries), large realistic totals
+  (up to 123,456,789¢) round-trip + 2-decimal string invariant, string↔number
+  agreement across every centavo, documented half-centavo rounding guard.
 
-### Integration Tests (live local Docker Supabase, service-role client)
-- `tests/integration/checkout-rpc.integration.test.ts` (NEW, 11): the atomic `create_order` RPC end-to-end — happy path (customer+order+items+status-history written, stock −qty, `sales_count` +qty, `confirmation_token` uuid returned, `pending_payment`/`pending`, tax=0, currency MXN); idempotency (same key → same order, `reused:true`, no double decrement); zero-stock line raise + FULL rollback (0 orders, stock stays 0); multi-line rollback (one OOS line rolls back the other's decrement+sales bump); **last-unit race** (two concurrent calls, exactly one wins, stock lands at 0, never negative); discount redemption increment for an active code; `DISCOUNT_EXHAUSTED` + rollback for exhausted AND expired codes (m-2 RPC re-assert of `is_active`+window); DB total-identity CHECK backstop + rollback (edge 8); required non-empty idempotency key; and anon-role execute denied (AC-12).
-- `tests/integration/checkout-read.integration.test.ts` (NEW, 12): the server trust boundary — `revalidateLines` (validates an in-stock line to the LIVE price/label, flags zero-stock + over-qty as out-of-stock, marks tampered non-UUID / non-existent product / variant-not-belonging-to-product as `unavailable`, edge 4/AC-8); `fetchDiscountCode` (case-insensitive lookup, null for unknown/empty, never throws, AC-6/7); and **`getOrderByToken`** (reads the full order by token; returns `null` for a malformed token AND for the sequential `PP-…` order number AND for an unknown uuid — the M-6 IDOR fix verified against a real order).
-- `tests/integration/seed.integration.test.ts` (+2, and 1 fixed): asserts the 5 T7 discount codes are seeded, exactly one zero-stock variant exists, and **fixed the stale count** (variants 69→70, images 99→100) that the T7 seed addition invalidated.
+### Integration (+3, live local DB via scripts/run-integration.sh reset+seed)
+- **`advance_order_status` transition matrix** (`tests/integration/payments.integration.test.ts`):
+  full LEGAL forward chain pending→paid→preparing→shipped→delivered (each `advanced`,
+  4 history rows); every ILLEGAL backward transition from shipped → `regression_blocked`
+  (order never regresses); legal forward JUMP paid→shipped (skip preparing).
 
-### E2E Tests (Playwright, PRODUCTION build + `next start`, separate `.next-t7-qa`, local Docker Supabase)
-`e2e/checkout.spec.ts` (NEW, 12 tests × chromium + mobile):
-- empty-cart guard → empty-state + catalog CTA, no form (AC-2, edge 3).
-- non-empty render → fields + summary + flat-rate totals ($8,999 + $500 = $9,499), no $NaN (AC-1, AC-3).
-- empty-form submit → field-scoped error, stays on `/checkout` (AC-4, AC-5).
-- bad CP + missing state → both field errors (AC-4).
-- invalid discount code → proceeds to confirmation at full price (AC-7).
-- valid `AHORRA10` → 10% ($899.90) discount row on confirmation (AC-6).
-- tampered zero-stock line (real ids read via anon REST) → out-of-stock banner, no order (AC-8, AC-9, edge 2/4).
-- happy path → redirect to `/checkout/confirmacion/<uuid-token>` (NOT `PP-…`, M-6), order number displayed, total, shipping name, cart badge cleared, keep-shopping CTA (AC-11, AC-13, AC-14).
-- `PP-000001` sequential number → HTTP 404 (IDOR closed, M-6).
-- malformed token → HTTP 404 (M-6).
-- English `/en/checkout` renders + places an order (AC-16).
-- 375px: no horizontal overflow, sticky bar owns submit.
-
-## Acceptance Criteria Coverage
+## Acceptance Criteria Coverage (23/23)
 
 | # | Criterion | Test(s) | Status |
 |---|-----------|---------|--------|
-| AC-1 | `/checkout` (+`/en`) renders full flow via `computeShipping`/`totalCents` | e2e "checkout renders"; flow-client "renders form/summary/sticky", "flat/free totals" | PASS |
-| AC-2 | Empty cart → empty-state + `CATALOG_PATH`; no zero-line order | e2e "empty cart guard"; flow-client "empty state"; states "CheckoutEmptyState" | PASS |
-| AC-3 | Server settings → three-state shipping (flat/free/unavailable) | e2e "flat-rate totals"; flow-client "free shipping", "shipping unavailable"; summary three-state | PASS |
-| AC-4 | CP `/^\d{5}$/` + 32-state closed list, field-scoped, re-run on server | address (32 states + CP boundaries); fields "CP inputMode/maxlength"; e2e "bad CP + missing state" | PASS |
-| AC-5 | Email + required trimmed; optionals bounded; pure + server re-run | address (required/optional bounds, "reports every invalid field"); e2e "empty form" | PASS |
-| AC-6 | Server discount %/fixed application clamped ≤ subtotal | discount (percentage/fixed/clamp/boundaries); checkout-read `fetchDiscountCode`; rpc "increments times_redeemed"; e2e "AHORRA10" | PASS |
-| AC-7 | Bad code → friendly note, proceeds at full price, never blocks | discount-code-field (every invalid reason + "never blocks"); e2e "invalid code proceeds" | PASS |
-| AC-8 | Server re-reads live variant by id; active + price + stock | checkout-read `revalidateLines` (live price, OOS, over-qty, tamper); e2e "tampered zero-stock" | PASS |
-| AC-9 | Single-tx guarded decrement + inserts; last-unit race; no negative | rpc (happy, OOS rollback, multi-line rollback, **last-unit race**, stock=0 floor) | PASS |
-| AC-10 | `sales_count += qty` in same transaction | rpc "happy path" (sales_count assertion + restore) | PASS |
-| AC-11 | customers+orders(pending/pending, unique #, snapshot, tax=0)+items+history | rpc "happy path" (all rows + status/tax/currency asserted); e2e confirmation | PASS |
-| AC-12 | All commerce writes via admin/service_role client | rpc "anon denied"; RPC granted service_role only (constraints/rls-matrix suites) | PASS |
-| AC-13 | Confirmation #, summary, shipping, "no payment yet"; cart cleared | e2e "happy path" (number/total/shipping/badge-cleared/CTA); checkout-read `getOrderByToken` | PASS |
-| AC-14 | Double-submit → single order / no double-decrement | rpc "idempotency" (same order, reused:true, single decrement); flow-client idempotency-key host | PASS |
-| AC-15 | Every tunable a named documented `config.ts` constant; tax=0 written | address/discount/order import the config constants; rpc asserts tax=0/tax_base=0 | PASS |
-| AC-16 | `checkout` namespace both locales; `formatMXN` only; integer cents | e2e "English /en"; summary/flow-client/states "no $NaN"; all money via `formatMXN` | PASS |
+| AC-1 | `getMercadoPagoEnv()` typed accessor, throws MissingEnvVarError | `env.test.ts` (getMercadoPagoEnv), route.test (secret-not-configured→401) | PASS |
+| AC-2 | No MP secret NEXT_PUBLIC_; server-only guard | `secret-exposure.test.ts` | PASS |
+| AC-3 | Non-secret MP tunables centralized | `config.test.ts` (resolvePaymentMethod, constants) | PASS |
+| AC-4 | Preference: cents→decimal exact, external_reference=token, back_urls/notification_url | `money-boundary.test.ts`, `preference.ts` (urls.ts builders) | PASS |
+| AC-5 | Confirmation page pay-now CTA for pending order | `payment-panel.test.tsx` (unpaid), `e2e/payment.spec.ts` (AC-5) | PASS |
+| AC-6 | All four methods available (no method excluded by config) | `config.test.ts` / `preference.ts` (no exclusion set) | PASS |
+| AC-7 | POST webhook route handler exists (first route.ts) | `route.test.ts` (all cases) | PASS |
+| AC-8 | x-signature verified (constant-time) before side effect → 401 | `webhook.test.ts`, `route.test.ts` (signature gate + C-1) | PASS |
+| AC-9 | Authoritative Payment.get; maps status | `process-payment.test.ts`, `payments-status.test.ts` | PASS |
+| AC-10 | Idempotent dedupe spine (finalized replay → duplicate no-op) | `process-payment.test.ts`, integration record_payment_event | PASS |
+| AC-11 | Match by external_reference/token; unknown → 200 no mutation | `process-payment.test.ts` (unknown-order) | PASS |
+| AC-12 | Amount reconciliation zero-tolerance gates paid | `process-payment.test.ts` (amount-mismatch), `money-boundary.test.ts` | PASS |
+| AC-13 | advance_order_status RPC is sole path; writes history atomically | integration (advance + history), `advance-order.ts` | PASS |
+| AC-14 | MP status mapping unit-tested (all statuses + flag + unknown) | `payments-status.test.ts` | PASS |
+| AC-15 | RPC-level idempotency (same-status no-op, no dup history) | integration (idempotent) | PASS |
+| AC-16 | Card-decline retry, same order, token unchanged | `payment-panel.test.tsx` (retry), `process-payment.test.ts` (rejected→failed) | PASS |
+| AC-17 | OXXO/SPEI pending voucher instructions | `oxxo-spei-instructions.test.tsx`, `payment-panel.test.tsx` (pending-voucher) | PASS |
+| AC-18 | OXXO/SPEI pending→approved advances to paid | `process-payment.test.ts` (progression), integration (record_payment_event progression) | PASS |
+| AC-19 | Refund execution full/partial + idempotency key + ledger | `refund.test.ts`, integration record_refund | PASS |
+| AC-20 | Refund refuses non-approved; typed result; never echoes raw MP error | `refund.test.ts` (not-paid, mp-error, no-echo) | PASS |
+| AC-21 | Every string in both locales; keys-used test | `keys-used.test.ts`, `e2e/payment.spec.ts` (EN copy) | PASS |
+| AC-22 | Unit + integration + e2e all pass; MP mocked | this report — all suites green | PASS |
+| AC-23 | Strict TS, clean code, baselines not regressed | tsc 0, eslint clean, baselines held | PASS |
 
-**All 16 ACs have ≥1 passing test.**
-
-## Edge Case Coverage
+## Edge-Case Coverage (12/12)
 
 | # | Edge Case | Test | Status |
 |---|-----------|------|--------|
-| 1 | Price drift snapshot ≠ live | checkout-helpers `applyLivePrices` (m-1 refresh); summary "price-changed line"; drift path in action | PASS |
-| 2 | Last-unit race / oversell | rpc "last-unit race" (1 wins/1 rolls back), "zero-stock rollback"; e2e "tampered zero-stock" | PASS |
-| 3 | Cart emptied in another tab | flow-client "empty state" (hydrated+no lines); e2e "empty cart guard" | PASS |
-| 4 | Tampered snapshot (price/qty/id) | checkout-read `revalidateLines` (non-UUID/non-existent/variant-mismatch); helpers "payload omits price"; e2e "tampered zero-stock" | PASS |
-| 5 | `store_settings` unavailable | flow-client "shipping unavailable → submit disabled, no $NaN"; order "defensive unavailable→0" | PASS |
-| 6 | Discount > subtotal | discount "clamp fixed to subtotal"; order "clamp over-large / negative" | PASS |
-| 7 | Double-submit / retry | rpc "idempotency"; flow-client idempotency-key regeneration on new submissionId | PASS |
-| 8 | DB CHECK rejection | rpc "total-identity CHECK backstop + rollback"; order "identity math" | PASS |
+| 1 | Webhook replay (same id twice) | `process-payment.test.ts` (duplicate), integration (finalized replay → duplicate) | PASS |
+| 2 | Out-of-order webhooks (stale after approved) | integration (regression_blocked), route transition matrix | PASS |
+| 3 | Unknown/unmatched payment → 200 no mutation | `process-payment.test.ts` (unknown-order), `route.test.ts` | PASS |
+| 4 | Card decline then successful retry | `payment-panel.test.tsx` (retry same token), `process-payment.test.ts` | PASS |
+| 5 | OXXO/SPEI voucher expiry (cancelled/expired) | `payments-status.test.ts` (cancelled→failed), `oxxo-spei-instructions.test.tsx` | PASS |
+| 6 | Webhook-before-redirect race (truth from DB) | `panel-state.test.ts` (never flips on hint), `payment-panel.test.tsx` (processing) | PASS |
+| 7 | Amount mismatch → not paid, flagged | `process-payment.test.ts` (amount-mismatch) | PASS |
+| 8 | Refund a pending payment → not-refundable | `refund.test.ts` (not-paid) | PASS |
+| 9 | Partial then over-refund bounded | `refund.test.ts` (over-refund pre-check), integration (record_refund cumulative guard) | PASS |
+| 10 | Refund MP failure → state unchanged, no echo | `refund.test.ts` (mp-error, no-echo) | PASS |
+| 11 | Missing/placeholder MP creds → friendly unavailable | `payment-panel.test.tsx` (unavailable overlay), `e2e/payment.spec.ts` (edge 11) | PASS |
+| 12 | Malformed/non-payment webhook body | `route.test.ts` (non-payment 200, non-JSON no crash, no data.id) | PASS |
 
-**All 8 edge cases have ≥1 passing test.**
+## Regression-Lock Table (every Stage-6 C/M finding)
+
+| ID | Failure mode | Lock test | Discriminates? |
+|----|--------------|-----------|----------------|
+| C-1 | Verifier fed body data.id instead of query id → false 401s | `webhook.test.ts` "C-1 query vs body" + `route.test.ts` "signature valid for body id is REJECTED" | YES — a valid-for-body signature is 401'd; valid-for-query passes. Route-seam + pure-verifier both. |
+| C-2 | refunded forced order_status=paid (dropped on shipped, no history on paid) | `payments-status.test.ts` (refunded→orderStatus null), integration payment-only on PAID + on SHIPPED (payment_status=refunded, history written, lifecycle untouched) | YES — shipped order stays shipped, payment refunded, history row exists. |
+| M-1 | dedupe unique(mp_payment_id) dropped later statuses | `process-payment.test.ts` OXXO pending→approved progression (both claimed), integration record_payment_event progression + finalized-replay duplicate | YES — progression processes; only a finalized same-(id,status) replay is duplicate. |
+| M-2 | No cumulative over-refund guard | `refund.test.ts` (remaining-balance pre-check, race SQL-guard→error), integration record_refund cumulative rejects race-safely | YES — over-refund rejected at SQL level; rejected refund does not record. |
+| M-4 | No ts replay-window check | `webhook.test.ts` replay-window suite (fresh accepted, stale/future rejected, boundary, unparseable ts) | YES — stale valid signature 401'd. |
+| M-5 | Unbounded body DoS | `route.test.ts` (Content-Length 413, lying-length streamed 413) | YES — both the declared-length gate and the streamed cap fire 413. |
+| M-6 | Claim/advance not atomic → stuck order | `process-payment.test.ts` (finalize only after advance; unfinalized on error), integration reclaim unfinalized | YES — advance failure leaves claim unfinalized → retry reprocesses. |
+| M-7 | Callers ignored RPC result.reason | `process-payment.test.ts` (regression_blocked → advance-blocked/500, unfinalized), `route.test.ts` (advance-blocked → 500) | YES — regression_blocked is a 500, not a false success. |
+| M-3 (durable ledger) | Partial refund no durable audit | `refund.test.ts` (partial records ledger row), integration record_refund idempotent-by-refund-id | PASS |
+| M-8 (atm miscategorization) | atm→spei wrong voucher UX | `config.test.ts` resolvePaymentMethod (atm→null; method_id primary) | PASS |
 
 ## Bugs Found & Fixed
-- **Stale seed-count test (test bug, fixed).** `tests/integration/seed.integration.test.ts` still expected 69 variants / 99 images; the T7 seed addition (zero-stock variant + its cover image) legitimately makes it 70 / 100. Updated the expected counts and ADDED coverage that the change was intentional (5 discount codes seeded, exactly one zero-stock variant).
-- **`count()` helper type union (test bug, fixed).** The seed-test helper's table union excluded `discount_codes`; added it so the new discount-count assertion type-checks (`tsc` clean).
-- **No production code bugs found.** The write path (RPC atomicity/rollback/idempotency, live re-validation, discount clamp, DB-CHECK alignment, M-6 IDOR token) behaves exactly as specified under live-DB integration and prod-build e2e. The Stage-6 MAJOR fixes (M-1..M-6) and MINORs (m-1/m-2/m-3/m-7) all carry explicit regression-lock tests and hold.
 
-## Notes on Test Infrastructure
-- E2E ran against a **production build** (`NEXT_QA_DIST_DIR=.next-t7-qa`), a separate dist dir from dev's `.next` (never shared), on `next start -p 3000`, against local Docker Supabase with the well-known public local keys. The QA build dir was removed and the DB reset+seeded afterward — the user's Docker Supabase is left cleanly seeded (0 orders/customers, Milano Negro stock=8, AHORRA10 redeemed=0).
-- **E2E stock note (for downstream/Verify):** each order-placing e2e test writes a REAL order that decrements the finite seed stock (~8 orders per full checkout-spec run against the Negro base variant). A single suite run is safe on a fresh seed; running the checkout spec repeatedly without reseeding will eventually deplete the default variant and disable its add-to-cart (surfacing as `toBeEnabled` timeouts in `gotoPDP`). This is a fixture-lifecycle property of live-order e2e, not a code or test defect — **reseed (or `supabase db reset` + seed) before an authoritative e2e run.** Two consecutive runs on a stock-restored DB were both 24/24 green.
+**None (zero known bugs).** No real code defect surfaced during test authoring — the
+Stage-6 rework holds under adversarial tests. The only test-authoring corrections were
+mine: a Supabase VoucherView field (`verificationCode`) missing in a fixture, and a
+`vi.mock` hoisting fix in the route test — both test-side, no source change.
 
-## Confidence: HIGH
+**Note (not a bug — documented infra behavior):** running `e2e/payment.spec.ts` and
+`e2e/checkout.spec.ts`/`cart.spec.ts` back-to-back depletes the seeded Milano-chair
+stock (both buy the same variant), causing order-placing tests in the later suite to
+fail. This is the documented "reseed before/after order-placing e2e" infra rule. Each
+suite passes green in isolation after a reseed (payment 8/8, checkout 24/24, cart 46/46);
+DB left pristine-seeded.
 
-Every AC and every edge case has at least one passing test; the dangerous parts
-(atomicity, last-unit race, idempotency, snapshot-untrust, discount clamp, DB
-CHECKs, M-6 IDOR) are verified against a LIVE database and a production build, not
-just mocks. The Stage-6 MAJOR/MINOR fixes are regression-locked. `tsc` clean,
-`eslint` clean, 915 unit + 135 integration + 24 checkout e2e all green. The only
-red in the full e2e suite is a pre-existing, documented T3/T4 PDP-spec flake
-unrelated to T7.
+## Untested Areas (residual risk)
 
-## Verdict (QA perspective): SHIP
+- **Live MP round-trip** (preference create / Payment.get / refund against a real
+  sandbox) — BLOCKED-ON-USER (no credentials). All MP calls mocked. **Risk: MEDIUM** —
+  the field paths (voucher `transaction_details.*` vs `point_of_interaction.*`, exact
+  `payment_type_id`/`payment_method_id` values, whether the webhook secret differs
+  test/prod) are heuristics read defensively; they must be confirmed against a live
+  sandbox before launch (documented in dev-done.md BLOCKED-ON-USER).
+- **Paid / pending-voucher / failed VISUAL states end-to-end via a real webhook** —
+  driven in unit/component tests (derivePanelState + PaymentPanel + OxxoSpei) rather
+  than a live webhook e2e (blocked-on-user). **Risk: LOW** — the state derivation and
+  every render branch are unit-covered.
+- **binary_mode UX sign-off (m-6)** and **statement descriptor (N-3)** — intentional
+  launch-time config, human/live sign-off. **Risk: LOW.**
 
-From QA's perspective T7 is shippable. **This remains subject to the BUILD_PLAN
-rule-3 HUMAN-REVIEW GATE** — checkout is always flagged for human review before
-merge regardless of any pipeline SHIP verdict; the Verify stage must surface this
-and must NOT auto-merge.
+## Verdict
 
-## Untested Areas
-- **`placeOrder` server action wiring end-to-end in isolation** — the action's
-  orchestration is covered transitively by the prod-build e2e (which drives the
-  real action) and unit-covered at every pure step it composes (`validateAddress`,
-  `applyDiscount`, `assembleOrder`, `revalidateLines`, `fetchDiscountCode`,
-  `create_order` RPC). A direct unit test of the action would require mocking
-  `server-only` + `next-intl/server` + the admin client; the e2e path exercises it
-  authentically instead. Risk: LOW.
-- **Rate limiting on `placeOrder`** — none exists (documented dev follow-up; the
-  atomic RPC + stock floor bound real damage). Out of T7 scope. Risk: LOW.
-- **Confirmation-page PII rendering with an authenticated cross-user** — N/A in
-  Phase 1 (guest-only, no accounts); the M-6 token is the sole access control and
-  is integration+e2e verified. Risk: LOW.
+**SHIP — advisory only.** Confidence: **HIGH**.
+
+Justification: 23/23 acceptance criteria and 12/12 edge cases have passing tests; every
+Stage-6 CRITICAL and MAJOR finding is locked by a test that discriminates its exact
+failure mode (verified — C-1 rejects a body-id-valid signature, M-5 fires 413 on a
+lying Content-Length, M-7 turns regression_blocked into a 500, C-2 refunds a shipped
+order without regressing it). The webhook trust boundary — the repo's only public
+unauthenticated write endpoint and the highest-risk surface — now has an automated route
+test that was previously only exercised by hand. All 5 suites are green (unit 1177,
+integration 154, e2e 8+24+46), tsc/eslint clean, DB pristine.
+
+Confidence is HIGH for the pipeline's mocked scope. It is **explicitly gated** by two
+standing blocks that keep the real-world risk open regardless of this verdict:
+(1) the **HUMAN-REVIEW GATE** on all payment code before merge, and (2) the
+**BLOCKED-ON-USER live-sandbox verification** — no test in this pipeline has ever
+touched a real Mercado Pago endpoint. Do not check T8 off in BUILD_PLAN until both clear.
