@@ -180,3 +180,157 @@ trust boundary that passes every gate under the documented execution discipline;
 only anomalies encountered were test-harness isolation/caching artifacts (proven, not
 product defects) and pre-accepted residuals correctly deferred to Phase 2 / T12.
 **SHIP.**
+
+---
+---
+
+# Ship Decision: T11 — Admin Product Management
+
+## Verdict: SHIP
+
+## Confidence: HIGH
+
+## Quality Score: 9/10
+
+Full-cycle, HIGH complexity — all 12 stages ran (incl. Stage 11 Hacker). Every
+verification below was re-run independently at this gate against the live local
+Supabase and fresh builds/servers; I trusted no report's numbers.
+
+---
+
+## Test Results (independently re-run this stage)
+
+| Suite | Total | Passed | Failed | Skipped |
+|-------|-------|--------|--------|---------|
+| Unit (Vitest) | 1469 | 1469 | 0 | 0 |
+| Integration (`scripts/run-integration.sh`, live DB) | 219 | 219 | 0 | 0 |
+| E2E storefront chromium regression — prod build (payment 8 + checkout 12 + cart 19) | 39 | 39 | 0 | 0 |
+| E2E admin unauth-guard / login-session — prod build (chromium + mobile) | 20 | 20 | 0 | 0 |
+| E2E admin-products — dev serial (chromium + mobile) | 46 | 46 | 0 | 0 |
+| E2E admin-products-chaos — dev serial (chromium + mobile) | 4 | 4 | 0 | 0 |
+| E2E admin core (T10 regression) — dev serial (chromium + mobile) | 30 | 30 | 0 | 0 |
+| **Total** | **427** | **427** | **0** | **0** |
+
+Static gates: **tsc --noEmit = 0**, **eslint . = clean (exit 0, incl. `max-lines`)**,
+**`next build` = exit 0** (all admin routes present: `/admin/products`,
+`/admin/products/[id]/edit`, `/admin/products/new`, `/admin/products/export`,
+`/admin/qa`, `/admin/taxonomy`). tsconfig restored after the `NEXT_QA_DIST_DIR` build.
+
+## Verification Matrix (with evidence)
+
+| # | Check | Evidence | Result |
+|---|-------|----------|--------|
+| 1 | Unit 1469/1469 | `npx vitest run` → 87 files, 1469 passed | ✅ |
+| 2 | Integration 219/219 | `bash scripts/run-integration.sh` → 19 files, reset+seed+run | ✅ |
+| 3 | Migrations 0001..0011 apply clean | `supabase db reset` applied 0011 with only idempotent-guard NOTICEs | ✅ |
+| 4 | AC-2: storage survives `stop && start && db reset` | full cycle run live; `STORAGE_S3_URL` issued on start; after reset `product-images` bucket `public=t` present | ✅ |
+| 5 | AC-1: ledger + RPC exist post-reset | `inventory_adjustments` table present (RLS on, 0 policies); `record_inventory_adjustment` `prosecdef=t`, `proconfig={search_path=""}`, EXECUTE granted only to postgres+service_role | ✅ |
+| 6 | Storefront chromium regression (prod) | 39/39 — proves `next.config.ts` image-protocol change did not regress storefront | ✅ |
+| 7 | Admin unauth-guard + login-session (prod) | 20/20 both projects | ✅ |
+| 8 | Authed admin-products e2e (dev, fresh seed+server, serial) | 46/46 — full T11 surface live | ✅ |
+| 9 | Chaos e2e (dev serial) | 4/4 — int4-overflow → friendly field error, no 500, no raw "out of range", no write | ✅ |
+| 10 | T10 admin core intact after AdminShell widening | admin.spec 30/30 (settings validation + save round-trip + storefront reflect + login/logout + locale routing); nav-flip test asserts Products LIVE, Orders disabled | ✅ |
+| 11 | AC-34: client bundle secret scan on **prod build** | grep of `.next-verify-t11/static` → 0 hits for SUPABASE_SECRET_KEY, service_role, ADMIN_SESSION_SECRET, ADMIN_PASSWORD_HASH, createAdminClient, record_inventory_adjustment, scryptSync, timingSafeEqual, verifyCredentials, createSessionCookieValue, NEXT_PUBLIC_ADMIN | ✅ |
+| 12 | AC-34: export route unauth | live `GET /admin/products/export` (no session) → 307 → `/admin/login`; body has 0 SKU/slug/cost leaks; handler also self-guards 401 | ✅ |
+| 13 | AC-33: file-size cap | no src file > 1000 (hard cap); largest T11 file `fields.tsx`=466 (under cap, eslint green); no `: any` / `as any` in admin lib/app | ✅ |
+| 14 | Cache discipline | `updateTag`/`revalidateTag` single-sourced in `cache-tags.ts` — 0 other callers in `src/lib/admin`+`src/app/admin` | ✅ |
+| 15 | T12 API gate respected | no `/api/admin/*` handler exists (only `/api/webhooks/mercadopago`, signature-auth) | ✅ |
+| 16 | `.env.local` untracked | `git check-ignore .env.local` matches; git history clean | ✅ |
+
+## Acceptance Criteria Final Check (35/35 + 10 edges)
+
+| # | Criterion | Code | Evidence | Verdict |
+|---|-----------|------|----------|---------|
+| AC-1 | Migration 0011 idempotent; ledger+RPC+indexes; types | `0011_admin_inventory_and_storage.sql`; `types/tables-content.ts`, `types/rpc.ts` | reset applied clean; ledger/RPC present in DB; integration RPC atomicity/negative tests; tsc 0 | ✅ |
+| AC-2 | config.toml storage re-enable; healthy; public bucket | `supabase/config.toml` `[storage] enabled=true` | full stop/start/reset cycle live → bucket `public=t` survives | ✅ |
+| AC-3 | Nav products→live; guard inherited | `src/lib/admin/constants.ts` | admin.spec:150 nav test (Products LIVE, Orders disabled) | ✅ |
+| AC-4 | Admin list: any status, admin client, BASE table, paginated, uncached | `products/list-query.ts` | admin-products list/draft-filter/pagination e2e | ✅ |
+| AC-5 | Table cols cover/name/brand/SKU/price/stock/status/updated | `product-table.tsx` | admin-products:96 | ✅ |
+| AC-6 | Search + brand/category/status/stock filters, URL-synced, AND | `list-filters.ts` | admin-products search/brand-filter e2e | ✅ |
+| AC-7 | Pagination clamp + empty state | `pagination.ts`, `product-empty-state.tsx` | admin-products:132/143 clamp + empty | ✅ |
+| AC-8 | Row→edit + "Nuevo" CTA | products routes | admin-products list e2e | ✅ |
+| AC-9 | Full product model | `product-input.ts` | create/edit e2e persists model | ✅ |
+| AC-10 | Peso-string money; strict cm/kg parsers | `units.ts`, `settings-input.ts` | dup/validation e2e; CSV thousand-sep unit+e2e; int4 chaos e2e | ✅ |
+| AC-11 | Create/edit write+bust; session first | `product-write.ts` | create→storefront + edit-price→PDP e2e; M-1/M-2 integration; export-guard | ✅ |
+| AC-12 | Dup slug/SKU → field error, no 500 | `product-write.ts` (23505 map) | admin-products:221 dup-SKU field error | ✅ |
+| AC-13 | Inline errors, form filled, focus-first-invalid; generic banner | `product-form.tsx` | validation e2e; UX audit live (focus-first + 4 aria-invalid) | ✅ |
+| AC-14 | Upload jpeg/png/webp ≤5MB; server re-validates (magic bytes) | `image-write.ts` | image upload e2e; bad-type reject e2e; magic-byte integration | ✅ |
+| AC-15 | Drag + kbd reorder; single cover | `usePointerReorder`, `image-manager.tsx` | ↑/↓ reorder + cover e2e; setCover never-zero integration | ✅ |
+| AC-16 | Delete row+object; failed object-delete keeps row; promote cover | `image-write.ts` | delete e2e (M-7 lock); promote-next integration | ✅ |
+| AC-17 | Storefront reflects image; next/image renders | `cache-tags.ts`, `next.config.ts` | upload e2e; create→storefront cache-bust proof | ✅ |
+| AC-18 | Variant CRUD hex/SKU/stock/override/sort | `variant-input.ts` | variant editor e2e | ✅ |
+| AC-19 | Variant-image assoc; remove handles images + warn | `variant-write.ts`, `image-write.ts` | duplicate copies variants (integration); editor warn | ✅ |
+| AC-20 | Variant writes strict; dup SKU field error | `variant-input.ts` (M-6 stable key) | admin-products:386 in-form dup-SKU | ✅ |
+| AC-21 | Brand/style/tag CRUD; slug uniqueness | `taxonomy-write.ts` | taxonomy create e2e; 23505→slug-dup integration | ✅ |
+| AC-22 | Category nesting; cycle client+server | `category-tree.tsx`, 0002 trigger | admin-products:435 nesting; cycle trigger integration | ✅ |
+| AC-23 | Delete restrict/set-null/detach | `taxonomy-write.ts` | admin-products:462 delete-restrict; 23503 integration | ✅ |
+| AC-24 | is_active hide facet after bust | `cache-tags.ts` | status flip→storefront-removed e2e; M-2 old+new bust integration | ✅ |
+| AC-25 | Manual adjustment delta/absolute + reason; atomic | `inventory-write.ts` + RPC | admin-products:486 (stock updates + ledger row); RPC integration | ✅ |
+| AC-26 | Negative rejected (CHECK + friendly) | RPC + `inventory-input.ts` | negative-block e2e; RPC negative integration | ✅ |
+| AC-27 | Duplicate deep copy, unique slug/SKU, draft | `product-duplicate.ts` | admin-products:287 draft/-copia; deep-copy contents integration | ✅ |
+| AC-28 | Q&A unanswered-first; one-write answer; unpublish; delete; bust | `qa-write.ts` | admin-products:541 ask→answer→storefront; qa integration | ✅ |
+| AC-29 | Export all, columns, RFC-4180, headers | `csv-generate.ts` | export e2e (header + line count); formula-escape integration | ✅ |
+| AC-30 | Import dry-run preview, ZERO writes | `csv-product-map.ts` | admin-products:617 (Crear/errores, 0 writes) | ✅ |
+| AC-31 | Confirm by slug; resilient; counts; bust once | `csv-import-write.ts` | CSV confirm e2e (good row only); M-3 within-row atomicity integration | ✅ |
+| AC-32 | Malformed CSV rejected, zero writes | `csv-parse.ts` | bad-money/unknown-brand reported-not-written e2e; parser unit | ✅ |
+| AC-33 | tsc/eslint/build; no >400 (cap 1000); no any/! | — | tsc 0, eslint clean, build exit 0 (this stage); largest 466; no any/! in admin | ✅ |
+| AC-34 | Secret not in client; no route bypasses requireSession | `server-only` guards, `export/route.ts` | prod-build bundle scan 0 hits; export 307→login live; no `/api/admin/*` | ✅ |
+| AC-35 | Storefront regression green; admin e2e serial | — | storefront chromium 39/39 + guard 20/20 prod; admin 30/30 + admin-products 46/46 + chaos 4/4 dev serial | ✅ |
+
+**Edge cases (10/10):** dup slug/SKU race (AC-12 e2e + 23505 integration), category cycle
+(trigger integration + client-hide), delete-restrict/set-null/detach (admin-products:462 +
+23503), image failures (bad-type e2e + reconciliation integration), CSV chaos (parser unit +
+thousand-sep/unknown-slug e2e + **int4 overflow chaos e2e**), concurrent inventory (RPC
+row-lock integration), variant-vs-product stock (explicit dialog target), session expiry
+(export 307→login live; every action `requireSession()` first — verified in security audit),
+unpublish cached question (qa bust integration + e2e), storage re-enable boot (full
+stop/start/reset cycle run live this stage). All evidenced.
+
+## Report Summary
+
+| Report | Score | Key Finding |
+|--------|-------|-------------|
+| Code Review | 8/10 → all fixed | APPROVE-WITH-FIXES; 0 critical, 9 major + 9 minor all FIXED (S6); trust boundary sound |
+| QA | PASS / HIGH | 35/35 AC + 10 edges evidenced; mobile storefront flake proven pre-existing (T11-untouched) |
+| UX | 9/10 | Critical fix: full ARIA-APG keyboard tree; mobile save bar; focus rings/targets; scroll-spy deferred (justified) |
+| Security | SECURE | 0 crit/high; upload magic-byte sniff, CSV bounds+re-parse+formula-escape, RPC hygiene, prod-bundle scan 0 hits |
+| Architecture | 9/10 | APPROVE; T10 list/API recs all landed; compensation-vs-RPC is deliberate Phase-2 debt (not T12) |
+| Hacker | 2/10 chaos (target ≤3) | 3 real bugs found+fixed: int4 overflow (CRITICAL-class), variant double-submit, CSV blank-row drop |
+
+## Remaining Concerns (all documented non-blockers — verified, not re-blocked)
+
+- **SEC-T11-M-1** (MEDIUM): client entity ids not uniformly UUID-validated. Not a hole —
+  ids flow into parameterized `.eq()` (malformed → 22P02 caught → generic banner), single-owner
+  so no IDOR. Recommendation: extend M-4 guard uniformly. → clean-code backlog.
+- **SEC-T11-M-2** (MEDIUM): stateless session (no server-side revocation) now covers catalog
+  writes. In-spec Phase 1; **the T12 gate** — land session-version/shorter max-age before
+  refund-capable T12. Payload `v` field reserved and untouched. → T12.
+- **T10 residuals** SEC-M-1/2/3, SEC-L-1/2/3 (SEC-L-2 now closed for T11 via prod-bundle scan).
+- **Mobile gotoPDP harness flaw** (storefront `getByTestId("product-gallery")` strict-mode 2
+  elements): pre-existing, T11 made zero logic changes to checkout/cart/PDP; chromium (the
+  oracle) fully green. → clean-code backlog, not a T11 gate.
+- **Arch nits:** compensation-vs-RPC for product/CSV writes (Phase-2 multi-admin trigger, not
+  T12); `taxonomy-write.ts:bustEntity` dead `map`/`void map` (XS Boy-Scout); type-only lib→app
+  contract import. None blocking.
+- **postcss ×2 moderate** transitive via `next` (build-time, pre-existing). → ops backlog.
+- Payment-panel unit flake: passed here in the full isolated run (1469/1469). Admin
+  stale-cache first-run flake did NOT recur — fresh server + fresh seed gave a clean 30/30.
+
+## What Was Built
+
+Full admin product-management surface behind the existing HMAC session auth: a paginated,
+filterable product list over the base table; a full-model add/edit form; multi-image upload
+with drag/keyboard reorder + cover; color-variant CRUD; brand/category(nested)/style/tag
+taxonomy management; atomic inventory adjustments with an audit ledger (migration 0011 +
+`record_inventory_adjustment` RPC); product duplication; a Q&A answering inbox; and a
+zero-dependency RFC-4180 CSV import (mandatory dry-run) / export. Supabase Storage was
+re-enabled locally with a public `product-images` bucket. Zero new runtime dependencies.
+
+## Summary
+
+T11 is a large, disciplined, well-tested extension of the admin subsystem that passes every
+gate under the documented execution discipline. All 427 tests I re-ran pass with zero
+failures, all 35 acceptance criteria and 10 edge cases carry concrete evidence, the migration
+and storage boot cycle verify live, the prod client bundle is secret-free, and T10 remains
+intact. The only open items are pre-accepted, documented residuals correctly scoped to Phase
+2 / the T12 gate. **SHIP.**

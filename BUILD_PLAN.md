@@ -36,7 +36,7 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 - [x] **T10 — Admin foundation** (tier: standard; ran as full-cycle medium — SHIP 9/10, 2026-07-15)
   Admin authentication fully separate from shopper sessions, single Owner account, admin layout/navigation, Store Settings screen (store name, contact email, shipping flat rate, free-shipping threshold — editable). `blocked by: T1`
 
-- [ ] **T11 — Admin: product management** (tier: full-cycle)
+- [x] **T11 — Admin: product management** (tier: full-cycle; ran high — all 12 stages, SHIP 9/10, 2026-07-15)
   Product list with search/filter (brand, category, status, stock); add/edit form for the full product model; multi-image upload with drag ordering + cover image; variant management; category/brand/style/tag management (categories nestable); manual inventory adjustment with reason; CSV import + export; duplicate product; Q&A answering. `blocked by: T10`
 
 - [ ] **T12 — Admin: order management** (tier: full-cycle)
