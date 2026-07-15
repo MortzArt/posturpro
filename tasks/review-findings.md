@@ -1,160 +1,221 @@
-# Code Review: T10 — Admin foundation
+# Code Review: T11 — Admin Product Management (commit 5a2b60b)
 
 ## Summary
-A genuinely strong, security-literate implementation of the app's top trust boundary. The HMAC session scheme, scrypt login with dummy-hash timing parity, defense-in-depth guard (Edge → Node → per-action re-verify), strict money parser, and cookie flags are all correct and match the ticket. No CRITICAL security holes found. The gaps are in *test coverage of the invariants* (not the code itself), a real Node/Edge behavioral asymmetry that is unpinned, and a handful of MINOR/NIT robustness and DRY items. Verdict: APPROVE-WITH-FIXES.
 
----
+A large, disciplined, well-architected feature (99 files, +10,572). The trust boundary is solid: **every** server action and the export route re-verify the session at entry before any DB touch; the admin secret key stays `server-only`; migration 0011's RPC has correct atomicity, row-locking, negative-block, `SECURITY DEFINER + search_path='' + service_role-only grant`. The catalog cache is busted through one shared helper. The paired pure-parser / write-layer pattern is clean and heavily tested. However, there are **real data-integrity gaps on partial-failure paths** (product update + CSV upsert are best-effort sequential, not transactional, and can leave a half-mutated product), a **stale cache tag on brand/style/category reassignment**, a couple of **client-side correctness bugs** (index-keyed row errors, last-page range math), and some **defense-in-depth hardening** (variant-id PostgREST interpolation, image magic-byte sniffing). None are launch-blocking for a single-Owner Phase-1 surface, but the two partial-failure MAJORs should be fixed before this is trusted with the real catalog.
 
 ## Critical Issues (MUST FIX)
-None. The auth core is sound: forged/tampered/expired/truncated cookies are rejected by both verifiers; a missing/blank secret never authenticates; a missing/unparseable password hash never authenticates; no admin secret is `NEXT_PUBLIC_` or passed to a client component; every mutation re-verifies server-side.
 
----
+None. No auth bypass, no secret exposure, no SQL/PostgREST injection reachable by an unauthenticated party, no stored-XSS vector that executes, no data loss on delete (order history is snapshot-preserved).
 
 ## Major Issues (SHOULD FIX)
 
-### M-1: Node vs Edge session-verifier equivalence is never tested (parser-differential risk, R1)
+### M-1: `updateProduct` leaves a half-mutated product on link-sync failure
 - **ID**: M-1
 - **Severity**: MAJOR
-- **File**: `src/lib/admin/session-edge.test.ts` (whole suite; titled "parity" at ~:25) vs `src/lib/admin/session.test.ts`
-- **Problem**: The two verifiers (`isSessionValid` / `node:crypto`, `isSessionValidEdge` / `crypto.subtle`) share the payload codec but NOTHING asserts they return the SAME verdict on the SAME cookie. Each suite builds its own copy-pasted `validCookie` helper (`session.test.ts:32`, `session-edge.test.ts:19`). A future divergence in payload framing, hex casing, or expiry handling would pass both suites while opening a differential (a cookie the fast Edge gate accepts but Node rejects, or vice-versa).
-- **Impact**: R1's core risk — a parser/verifier differential between the two runtimes — is unguarded. Manual inspection confirms they are equivalent *today* (both decode hex→bytes, both call the shared `decodePayload`/`isWithinMaxAge`), but there is no regression fence.
-- **Suggested Fix**: Add one cross-check test: mint a cookie with the Node signer, assert `isSessionValid(c) === true` AND `await isSessionValidEdge(c) === true`; tamper one byte and assert BOTH false; expire it and assert BOTH false. Feed both verifiers from a single shared fixture, not two local helpers.
-- **Status**: FIXED — Added `session-parity.test.ts` (8 cases) feeding BOTH verifiers from ONE shared fixture and asserting `node === edge === expected` on valid / one-byte-tampered / forged-sig / wrong-secret / expired / future-dated / malformed / boundary cases. Extracted the shared signer into `session-test-fixture.ts` (`signCookie`, `signPayloadPart`) and removed the copy-pasted per-suite helpers in `session-edge.test.ts` and `session.test.ts`.
+- **File**: `src/lib/admin/products/product-write.ts:71-90` (`updateProduct` + `syncCategories` at :150-165)
+- **Problem**: `updateProduct` updates the base `products` row, THEN calls `syncLinks`, which does delete-then-insert of category/tag rows. Unlike `createProduct` (which rolls back the inserted row on link failure), the update path has **no rollback**. If the category insert fails after the delete succeeds, the product keeps its new column values but is left with **zero categories**. The action returns a generic "write-failed" banner while the DB is silently corrupted.
+- **Impact**: A transient error mid-save wipes a product's category associations without telling the operator; the product may drop off category facet pages. Not recoverable without re-editing.
+- **Suggested Fix**: Wrap the update + M2M sync in a single transactional RPC (mirrors the T7/T8 RPC pattern), OR snapshot the prior category/tag rows and restore them on `syncLinks` failure.
+- **Status**: OPEN
 
-### M-2: Node `isSessionValid` THROWS on missing secret (Edge returns false) — asymmetry is unpinned by tests
+### M-2: `updateProduct` cache bust ignores the OLD brand/style/category slugs
 - **ID**: M-2
 - **Severity**: MAJOR
-- **File**: `src/lib/admin/session.ts:79` vs `src/lib/admin/session-edge.ts:88-91`; test gap in `src/lib/admin/session.test.ts`
-- **Problem**: With a blank/absent `ADMIN_SESSION_SECRET`, the Edge verifier returns `false` (fail-closed, tested at `session-edge.test.ts:53`), but the Node verifier `getAdminEnv()`-throws `MissingEnvVarError`. That throw is caught by every caller (`session-guard.ts:24`, `actions.ts:151`) and mapped to "not authenticated" — so runtime behavior is safe — but no test pins that contract on `isSessionValid` itself. A refactor that swallowed the throw and returned a verdict against an empty-string HMAC key would go uncaught.
-- **Impact**: The fail-closed contract for the authoritative verifier rests on caller discipline with no test fence. High blast radius if it regresses (empty-key HMAC is forgeable).
-- **Suggested Fix**: Add a `session.test.ts` case: with `ADMIN_SESSION_SECRET` unset, assert `() => isSessionValid(anyCookie)` throws `MissingEnvVarError`; plus a guard/action-level test asserting the catch maps to unauthenticated. Document the intentional asymmetry inline in `session.ts`.
-- **Status**: FIXED — `session.test.ts` now pins `isSessionValid` THROWS `MissingEnvVarError` on both an unset and a whitespace-only secret (verdicting an empty key would be forgeable). New `session-guard.test.ts` pins the caller-level mapping: `hasValidAdminSession` returns `false` (never throws, never honors a valid cookie) when the secret is unset. The intentional Node-throws vs Edge-returns-false asymmetry is now documented inline in `session.ts`.
+- **File**: `src/lib/admin/products/product-write.ts:87-88` → `bustForProduct` at :191-210
+- **Problem**: On update, `bustForProduct` resolves slugs only from the **new** `values.brand_id` / `values.style_id` / `categoryIds`. If the operator moves a product from brand A to brand B (or removes a category), only the new facets are busted; `brand:A` (and any removed category facet) keeps serving the stale listing that still includes the product.
+- **Impact**: A re-branded/re-categorized product lingers on its old facet page until the broad `catalog` tag otherwise expires. AC-11/AC-24 "bust touched taxonomy tags" is only half-met for reassignment.
+- **Suggested Fix**: Before the update, read the product's current brand/style/categories; union OLD and NEW taxonomy slugs and pass both to `bustCatalogTags` (as already done for the product slug).
+- **Status**: OPEN
 
-### M-3: auth test does not assert scrypt actually runs on email mismatch (R3 anti-enumeration invariant unfenced)
+### M-3: CSV `applyImport` reports success/failure incorrectly and leaves partial M2M state
 - **ID**: M-3
 - **Severity**: MAJOR
-- **File**: `src/lib/admin/auth.test.ts:72` (labelled "still runs scrypt for timing parity"); code at `src/lib/admin/auth.ts:116-128`
-- **Problem**: The test asserts only the boolean `false` on a wrong email. It never verifies the scrypt derivation ran on the mismatch path. A refactor adding `if (!emailMatches) return false;` before the scrypt work (reintroducing the exact user-enumeration/timing leak this module exists to prevent) would keep every test green.
-- **Impact**: The single most important defensive property of `verifyCredentials` (R3, AC-3) is not actually pinned — only implied by a label.
-- **Suggested Fix**: Spy on `scryptSync` (or the `verifyAgainst` helper) and assert it is invoked once on BOTH the unknown-email and wrong-password paths; alternatively assert the two paths' timings are within tolerance. Do not rely on the boolean alone.
-- **Status**: FIXED (timing approach). Mocking `node:crypto`'s `scryptSync` did NOT intercept `auth.ts`'s binding (Vite externalizes the node builtin for the SUT's module graph, so the spy recorded 0 calls even though the direct-call probe worked) — so the review's sanctioned alternative was used: `auth.test.ts` now asserts a hard per-path wall-time FLOOR that only a real scrypt (N=16384) can clear on the unknown-email, wrong-password, AND happy paths, plus timing PARITY across all three (median of 5 samples, wide 5x tolerance). A re-added `if (!emailMatches) return false;` short-circuit returns in microseconds and blows the floor. Verified stable across 3 back-to-back runs.
+- **File**: `src/lib/admin/csv/csv-import-write.ts:38-59` (`applyImport`) + `upsertProduct` :62-107, `syncCategories` :110-122
+- **Problem**: `upsertProduct` commits the product row FIRST, then calls `syncCategories`/`syncTags` (delete-then-insert). If a link sync throws, the whole row is pushed to `result.failed` — but the product row was already created/updated with its links partially replaced. The summary tells the operator the row **failed** when the product actually persisted with broken links. Per-row isolation (AC-31) holds; within-row atomicity does not.
+- **Impact**: A CSV import that hits a link error produces a misleading count and silently corrupts those products' taxonomy; on re-run the operator can't tell which rows landed.
+- **Suggested Fix**: Do each row's product upsert + link sync in one transaction/RPC (all-or-nothing) before counting it created/updated/failed.
+- **Status**: OPEN
 
-### M-4: Rate-limit cardinality cap and window-expiry are not tested at the admin layer (AC-15)
+### M-4: Variant delete interpolates un-validated ids into a PostgREST filter string
 - **ID**: M-4
-- **Severity**: MAJOR
-- **File**: `src/lib/admin/login-rate-limit.test.ts` (`:48` only asserts count == 2)
-- **Problem**: (a) The `ADMIN_LOGIN_RATE_LIMIT_MAX_KEYS` (10,000) ceiling / `evictToCeiling` memory bound (`sliding-window.ts:54-67`) is never driven past the cap here — the cardinality-DoS defense is unverified for the admin limiter. (b) No test advances `now` past `ADMIN_LOGIN_RATE_LIMIT_WINDOW_MS` to prove attempts age out and access is restored — a limiter that never released would pass every case. (c) The escape-hatch test checks only `="1"`; it never confirms a non-`"1"` value (e.g. `"true"`, `"0"`) STILL enforces (source is strict `=== "1"`, security-relevant).
-- **Impact**: AC-15's memory-bound and sliding-release behavior — both load-bearing for a production auth surface — are unfenced.
-- **Suggested Fix**: Add: (1) push `maxKeys + 100` distinct IPs, assert `loginRateLimitKeyCount() <= ADMIN_LOGIN_RATE_LIMIT_MAX_KEYS`; (2) trip the limit, advance `now` by the window, assert it returns true again; (3) set the flag to `"true"` and assert it still enforces.
-- **Status**: FIXED — `login-rate-limit.test.ts` adds: (a) cardinality cap (`maxKeys + 200` distinct IPs → `keyCount() <= ADMIN_LOGIN_RATE_LIMIT_MAX_KEYS`); (b) sliding release (trip the limit, advance `now` past the window → allowed again) plus a just-before-window case proving attempts still count while in-window; (c) escape-hatch strictness — the flag set to `"true"`, `"0"`, `"yes"`, `"on"`, `" 1 "`, `""` STILL enforces; only the exact string `"1"` bypasses.
+- **Severity**: MAJOR (defense-in-depth; admin-scoped)
+- **File**: `src/lib/admin/products/variant-write.ts:50-56` (`deleteRemovedVariants` — `not("id","in", \`(${keepIds.join(",")})\`)`); ids come from `variant-input.ts:parseVariant` which accepts `raw.id.trim()` with **no UUID validation**.
+- **Problem**: The client-controlled variant `id` is string-interpolated into a raw PostgREST `in (...)` list. A crafted id containing `)`, a comma, or a nested filter fragment can alter the delete predicate. It is behind admin auth (attacker = trusted Owner), but it is the one place raw request data is concatenated into a filter expression.
+- **Impact**: A malformed/hostile id could broaden the delete predicate (delete other products' variants) or error out. Low likelihood, high blast radius.
+- **Suggested Fix**: Validate each variant `id` against a UUID regex in `parseVariant`; prefer a typed `.in()` array over manual string interpolation.
+- **Status**: OPEN
 
----
+### M-5: `product-table.tsx` "Mostrando X–Y de Z" range is wrong on the last page
+- **ID**: M-5
+- **Severity**: MAJOR (visible correctness bug)
+- **File**: `src/components/admin/products/product-table.tsx:30,39`
+- **Problem**: `rangeStart = (page - 1) * rows.length + 1` uses the current page's row count as the page size. On the final page `rows.length < ADMIN_PRODUCTS_PER_PAGE`, so the starting index is wrong (e.g. page 2 with 3 rows shows "Mostrando 4–6" instead of "26–28").
+- **Impact**: Incorrect result-count copy on every non-full page.
+- **Suggested Fix**: `rangeStart = (page - 1) * ADMIN_PRODUCTS_PER_PAGE + 1`.
+- **Status**: OPEN
+
+### M-6: `variant-editor.tsx` attaches row errors by array index, not stable key
+- **ID**: M-6
+- **Severity**: MAJOR
+- **File**: `src/components/admin/products/variant-editor.tsx:57,89,105-113,176-181`
+- **Problem**: Rows render with a stable `row.key`, but `rowErrors` is keyed by positional `index`. After a delete/reorder between submit and error render, the server's per-index errors attach to the wrong row.
+- **Impact**: "SKU duplicado" shown on the wrong variant; operator fixes the wrong field.
+- **Suggested Fix**: Key `rowErrors` by `row.key`/server id; have `saveVariantsAction` map the offending SKU to the stable key, not the index.
+- **Status**: OPEN
+
+### M-7: Image-manager delete relies on state surviving the dialog close (stale-closure race)
+- **ID**: M-7
+- **Severity**: MAJOR
+- **File**: `src/components/admin/products/image-manager.tsx:59,128-137`
+- **Problem**: `confirmDelete` reads `pendingDelete` then nulls it, while `AlertDialog onOpenChange` also nulls it on close. Depending on Radix event ordering, `pendingDelete` can already be null at confirm → `if (!image) return` silently no-ops the delete.
+- **Impact**: Intermittent "delete did nothing" — operator thinks the image is gone but it persists.
+- **Suggested Fix**: Capture the target image in a ref (or pass its id into the confirm handler) instead of relying on state living across the close.
+- **Status**: OPEN
+
+### M-8: `product-filters.tsx` debounce timer not cleared on unmount
+- **ID**: M-8
+- **Severity**: MAJOR (React correctness)
+- **File**: `src/components/admin/products/product-filters.tsx:47,71-74`
+- **Problem**: The search debounce `setTimeout` is stored in a ref but never cleared; navigating away mid-debounce fires `router.replace` after unmount.
+- **Impact**: Unmounted-update warnings + a spurious URL replace after leaving the list.
+- **Suggested Fix**: `useEffect(() => () => clearTimeout(debounceRef.current), [])`.
+- **Status**: OPEN
+
+### M-9: `taxonomy-manager.tsx` uses non-null `!` on `.find()` results (AC-33 violation)
+- **ID**: M-9
+- **Severity**: MAJOR
+- **File**: `src/components/admin/taxonomy/taxonomy-manager.tsx:82,101,112`
+- **Problem**: `props.brands.find(...)!` (styles/tags too) assert non-null. A stale click after the row list changed throws a runtime TypeError, and it directly violates CLAUDE.md + AC-33 ("no non-null `!` to silence the compiler").
+- **Impact**: AC-33 non-compliance + a crash path on a benign race.
+- **Suggested Fix**: Guard the `find` result (`if (!row) return;`) and drop the `!`.
+- **Status**: OPEN
 
 ## Minor Issues (NICE TO FIX)
 
-### m-1: `secret-exposure` client-import check only matches `@/lib/` alias paths
-- **File**: `src/lib/admin/secret-exposure.test.ts:~60`
-- **Suggestion**: The "no `"use client"` file imports a server-only admin module" check uses a substring on `@/lib/${mod}`. A relative-path import (`../admin/auth`) or barrel re-export slips past while genuinely exposing the module. It is a static-source (not built-bundle) test — same limitation as the MP reference, so consistent, but the docstring over-claims. Match both alias and relative forms (regex on `admin/(auth|session|session-guard)`), or grep the built client chunks.
-- **Status**: FIXED — `secret-exposure.test.ts` now scans every string literal in each `"use client"` file, normalizes the `@/lib/` alias, and flags any specifier whose path ENDS in `admin/(auth|session|session-guard)` (optional `.ts(x)`), catching both alias and relative (`../admin/auth`) spellings.
+### m-1: Image MIME validation trusts client-declared `file.type` (no magic-byte sniff)
+- **File**: `src/lib/admin/products/image-write.ts:34-41,62-65`
+- **Problem**: The public `product-images` bucket accepts anything labeled `image/jpeg|png|webp`; bytes are never sniffed. SVG (the real stored-XSS vector) is correctly excluded, and Supabase serves with `X-Content-Type-Options: nosniff` at the declared image type, so a polyglot won't execute — risk is low, but a script payload can be stored on a public origin.
+- **Suggested Fix**: Sniff leading magic bytes (JPEG `FF D8 FF`, PNG `89 50 4E 47`, WEBP `RIFF..WEBP`); derive `contentType` from the sniffed type, not `file.type`.
 
-### m-2: `decodePayload` `Number.isFinite(iat)` branch never exercised
-- **File**: `src/lib/admin/session-payload.test.ts`; code `session-payload.ts:86`
-- **Suggestion**: No test feeds `iat: Infinity`/`NaN`. Deleting the `!Number.isFinite` guard would leave every test green, yet an `Infinity` iat would then pass `isWithinMaxAge`. Add a decode case with a hand-built base64url JSON literal `{"v":1,"iat":Infinity-as-1e400}` asserting `null`.
-- **Status**: FIXED — `session-payload.test.ts` adds a case decoding hand-built literals `{"v":1,"iat":1e400}` (→ Infinity) and `{"v":1,"iat":-1e400}` (→ -Infinity), both asserting `null`; deleting the `!Number.isFinite(iat)` guard now fails this test.
+### m-2: CSV export formula-escape omits leading TAB/CR
+- **File**: `src/lib/admin/csv/csv-parse.ts:105` (`escapeCsvCell` — `/^[=+\-@]/`)
+- **Problem**: OWASP's lead-char set also includes TAB (0x09) and CR (0x0D).
+- **Suggested Fix**: `/^[=+\-@\t\r]/`.
 
-### m-3: `ADMIN_SESSION_MAX_AGE_SECONDS` override may not be readable in the Edge runtime
-- **File**: `src/lib/admin/constants.ts:50-62` read from `src/lib/admin/session-edge.ts:115`
-- **Suggestion**: A non-`NEXT_PUBLIC_` override read via `process.env` in Edge middleware is not guaranteed available on every platform. If set-but-unreadable in Edge, the fast gate uses the 8h default while Node uses the override → an inconsistency window. Node is authoritative so it is UX-only, not a hole. Document that the override binds authoritatively at the Node layer (or env-allow-list it for middleware). Low priority.
-- **Status**: SKIPPED — UX-only, platform-dependent, and Node is authoritative (an Edge gate using the default while Node honors the override only ever redirects a still-valid-per-Node session to re-login, never grants access). Deferred to deploy-time env config rather than a code change; not worth production churn for a low-priority non-hole. Noted here for the ops runbook.
+### m-3: Admin list search strips `% , ( ) *` but not `.` / `:` / `\`
+- **File**: `src/lib/admin/products/list-query.ts:60-64`
+- **Problem**: The `or()` breakout is closed (commas/parens stripped), but PostgREST treats `.` as an operator separator; leaving it is harmless for `ilike` values but a gap if the filter shape changes.
+- **Suggested Fix**: Also strip `.` `:` `\`, or use per-column `.ilike()` instead of the hand-built `or()` string.
 
-### m-4: Email compare uses `===` (not constant-time)
-- **File**: `src/lib/admin/auth.ts:118-119`
-- **Suggestion**: Email is the username (not secret) and enumeration is defended by always running scrypt, so this is acceptable and matches the ticket. Micro length-timing signal reveals nothing exploitable. Leave as-is; optionally note the rationale inline.
-- **Status**: FIXED (doc-only) — behavior left as-is (correct); added an inline comment in `auth.ts` at the email compare recording the rationale (username, not a secret; enumeration defended by the always-run scrypt).
+### m-4: `setCoverImage` is not atomic (clear-all then set-one)
+- **File**: `src/lib/admin/products/image-write.ts:138-160`
+- **Problem**: Clears every `is_primary`, then sets one; if the second update fails the product has NO cover.
+- **Suggested Fix**: Single statement `update ... set is_primary = (id = $target)` (or RPC).
 
-### m-5: `updateStoreSettings` read-then-write is non-atomic on the missing-row edge
-- **File**: `src/lib/store-settings.ts:167-199`
-- **Suggestion**: Concurrent first-time saves both read null → both INSERT → the second violates the singleton index → generic "No se pudo guardar." Existing-row path is correct last-write-wins. Edge 8 allows "or a recoverable error," so within spec; an `upsert` on the singleton conflict target would make it seamless.
-- **Status**: SKIPPED — within spec (edge 8 explicitly allows a recoverable error), single-owner surface makes concurrent first-time INSERTs practically impossible, and the second write already fails safely with a friendly message. An `upsert` on the singleton conflict target is a nice-to-have; deferred to avoid changing the write path's error contract without a covering test in this fix pass.
+### m-5: CSV dry-run detects in-file duplicate SKUs but not duplicate SLUGS
+- **File**: `src/lib/admin/csv/csv-product-map.ts:158-181` (no `seenSlugs`)
+- **Problem**: Two rows with distinct SKUs but the same resolved slug both preview as "create"; the second only fails at confirm (23505) — resilient but the dry-run under-reports errors (AC-30).
+- **Suggested Fix**: Track `seenSlugs` in `buildImportDiff` and flag the second as a preview error.
 
-### m-6: `parseStoreSettingsInput` uses `as` casts to narrow the success branch
-- **File**: `src/lib/admin/settings-input.ts:158-163`
-- **Suggestion**: Four `(name as { ok: true; ... }).value` casts re-assert a fact already established. Safe but leans on `as` where carrying the parsed values in guard-narrowed locals would avoid the cast and better fit the "minimize casts" clean-code spirit.
-- **Status**: FIXED — `parseStoreSettingsInput` now re-checks each result (`if (!name.ok || !email.ok || !flat.ok || !threshold.ok) return …`) so TypeScript narrows every local to its `ok: true` shape; the success branch reads `name.value` / `flat.cents` directly with ZERO `as` casts. tsc clean.
+### m-6: CSV export is unbounded (full table into memory)
+- **File**: `src/lib/admin/csv/csv-generate.ts:92-101`
+- **Problem**: Import has row/byte caps; export reads all products + images/categories/tags with no limit. Fine at 30, a risk as the catalog grows.
+- **Suggested Fix**: Stream the CSV or cap/paginate the export read.
 
-### m-7: settings parser boundary/format cases untested
-- **File**: `src/lib/admin/settings-input.test.ts`
-- **Suggestion**: `.5` (leading-dot, rejected), `$ 500` (space after `$` — passes: one `$` stripped then trim), `$$500` (rejected), and `store_name` at EXACTLY `STORE_NAME_MAX_LENGTH` (only +1 tested) are uncovered. Add these four to pin the regex/length branches.
-- **Status**: FIXED — `settings-input.test.ts` adds all four: `.5`/`$.5` → `money-invalid`; `$ 500` → `{ ok: true, cents: 50000 }` (documents the one-`$`-strip-then-trim tolerance); `$$500` → `money-invalid`; and a name at EXACTLY `STORE_NAME_MAX_LENGTH` → `ok: true`.
+### m-7: Inventory negative-result error not wired to the field's `aria-describedby`
+- **File**: `src/components/admin/products/inventory-adjust-dialog.tsx:191-197`
+- **Problem**: The negative `FieldError` uses a detached hardcoded id the amount input never references; SR users aren't told why submit is disabled.
+- **Suggested Fix**: Surface the negative case as the amount `TextField`'s `error` prop.
 
----
+### m-8: Uncontrolled dialog/form fields don't reset per entity/submission
+- **File**: `src/components/admin/taxonomy/taxonomy-entity-dialog.tsx:69-71,117-128`; `src/components/admin/products/product-form.tsx:187-208,234-269`
+- **Problem**: The dialog stays mounted while `draft` is swapped; `defaultValue`/`useState`-seeded fields don't reset for a different entity. Product form: uncontrolled inputs don't re-sync to `state.values` on an `invalid` response.
+- **Suggested Fix**: `key={draft?.id ?? "new"}` on the dialog; `key={state.submissionId}` on the form's uncontrolled fieldset (or make them controlled).
 
-## NIT
-- **N-1** `settings-input.ts:121-125` — the "Guarantees `CENTS_PER_PESO` is not a dead reference…" comment is awkward; the constant is legitimately used in `MAX_SAFE_PESOS` (`:169`). Simplify.
-  - **Status**: FIXED — the awkward sentence was removed as part of the m-6 rewrite; the docstring now describes the guard-narrowed no-cast success branch and no longer references the constant defensively.
-- **N-2** `store-settings-form.tsx:325` `Banner` `icon` typed `typeof Alert02Icon` — `IconSvgElement` (already used in constants) is the precise type.
-  - **Status**: FIXED — imported `type IconSvgElement` from `@hugeicons/react` and typed `BannerProps.icon` as `IconSvgElement`. tsc + eslint clean.
-- **N-3** `auth.ts:38,132` — `DUMMY_HASH` runs a real scrypt (cost 16384) at module load for any module that transitively imports `auth.ts`. Acceptable (one-time, server-only); worth a comment noting the ~tens-of-ms cold-start cost.
-  - **Status**: FIXED (doc-only) — added a comment on `DUMMY_HASH` noting the one-time ~tens-of-ms server-only cold-start cost at module load, never on the request path.
-- **N-4** `actions.ts:55,71` — two `console.warn` lines embed `new Date().toISOString()`; keeps IP context and logs no credentials (verified good) — minor timestamp duplication if the logger already timestamps.
-  - **Status**: SKIPPED — the explicit ISO timestamp is intentional and portable: Node's bare `console.warn` does NOT prepend a timestamp, so removing it would lose the time context in plain stdout/stderr deploys. No credentials logged (verified). Left as-is deliberately.
+### m-9: `qa-inbox` double-renders / mis-routes validation vs action errors
+- **File**: `src/components/admin/qa/qa-inbox.tsx:135-167`
+- **Problem**: `TextareaField error={error}` plus a separate `FieldError` gated on `error && !answer` renders content errors twice, and shows field errors for non-content write failures.
+- **Suggested Fix**: Content errors → the field; transient action failures → a Banner; drop the duplicate `FieldError`.
 
----
+## NITs
+- `fields.tsx` 466 lines (over ~400 soft target, under 1000 hard cap; ESLint green) — cohesive primitive family; a `text/numeric/banner` split would keep it under target. (Dev deviation #5 — acknowledged.)
+- `fields.tsx:106,178,241,309` — `aria-describedby={cn(...)}` reuses the className joiner to build an id list; works but reads oddly.
+- `product-form.tsx:56-60 & 312-325` — `FIELD_ORDER` + `fieldKeyToTestid` duplicate field→testid knowledge also in JSX (two sources of truth).
+- `admin-pagination.tsx:37` — ellipsis key uses array index (harmless: stable, non-interactive).
+- `product-filters.tsx:120` — `"  ".repeat(depth)` in a native `<option>` collapses in most browsers; use a glyph prefix like the dialog's `"— ".repeat(depth)`.
+- `csv-import-dialog.tsx:92` — `setTimeout(reset, 200)` magic number, no cleanup; name it `_MS`, clear on reopen.
+- `dialog.tsx:79` + a few sr-only "Close" strings untranslated in an es-MX-only admin UI.
+
+## Animation review (`.dialog-content-motion`, `.reorder-item`, globals.css)
+PASS against review-animations STANDARDS. Enter uses `--ease-out` (never ease-in); exit shorter (140ms) than enter (180ms); only `transform`/`opacity` animated (compositor-friendly, no layout properties); `@starting-style` for the enter; `prefers-reduced-motion` fully guarded (opacity-only for dialog, snap for reorder). `.reorder-item` 200ms transform-only. All motion earns its place (modal presence + reorder continuity). No findings.
+
+## The 5 Dev Deviations — adjudication
+1. **next.config protocol derived from SUPABASE_URL** — JUSTIFIED (local http host must be allow-listed for next/image; still https in prod). Satisfies AC-16/17.
+2. **AdminShell max-w-2xl→max-w-5xl + AdminPage actions slot** — JUSTIFIED for the table; settings self-constrains so T10 unchanged. Confirm at QA (AC-35).
+3. **Q&A as /admin/qa nav destination** — JUSTIFIED (S3 decision; AC-28 says "a Q&A view").
+4. **Scroll-spy rail deferred to UX** — ACCEPTABLE (sticky bar + anchors deliver coherence; AC-unaffected).
+5. **fields.tsx 466 lines** — ACCEPTABLE (under hard cap, ESLint green).
+- Un-flagged: **AC-1 "`db:types` regenerates database.types.ts"** NOT met literally — types HAND-authored into `types/tables-content.ts`+`rpc.ts`, per the documented repo convention (commits 177cba7/b021caa). New table/RPC types match migration 0011 and tsc passes, so the AC INTENT is met. Verification note, not a defect.
 
 ## Acceptance Criteria Verification
 | # | Criterion | Status | Evidence |
 |---|-----------|--------|----------|
-| AC-1 | Unauth `/admin/*` (except login) → redirect, no markup | PASS | `middleware.ts:69-71`; `(app)/layout.tsx:22-24` authoritative redirect before any child renders |
-| AC-2 | Correct creds → HttpOnly/Lax/Secure-prod/Path=/admin cookie → /admin; case-insensitive email; constant-time pw | PASS | `actions.ts:80-89` flags; `auth.ts:118-119` case-insensitive; `auth.ts:102` `timingSafeEqual` |
-| AC-3 | Wrong email OR pw → single generic error, no enumeration, timing parity | PASS (test gap M-3) | `actions.ts:70-73`; `auth.ts:122-128` dummy-hash equal-cost; `login-form.tsx:136` one message |
-| AC-4 | Tamper-evident HMAC-SHA256; forged/truncated fails timingSafeEqual | PASS | `session.ts:39-48,80-83`; `session-edge.ts:66-74,108`; `splitCookie` |
-| AC-5 | Bounded lifetime 8h; expired rejected server-side even if signed | PASS | `session-payload.ts:119-126`; both verifiers call `isWithinMaxAge`; `constants.ts:47-62` |
-| AC-6 | Logout clears cookie (maxAge=0) → login | PASS | `actions.ts:96-105`; `logout-button.tsx` real form POST |
-| AC-7 | Authed visiting /admin/login → /admin | PASS | `middleware.ts:61-64` AND `login/page.tsx:18-19` |
-| AC-8 | Settings renders 4 fields prefilled, money in pesos | PASS | `settings/page.tsx:24-41` `pesoString`/`.toFixed(2)` |
-| AC-9 | Save → admin-client write → cache bust → success; storefront reflects | PASS | `store-settings.ts:167-198` (`updateTag`); `actions.ts:127-136` |
-| AC-10 | Reject blank/long name, bad email, negative/non-numeric/>2dp/overflow; field errors; form stays filled | PASS | `settings-input.ts:66-166`; `store-settings-form.tsx` inline errors + preserved `values` |
-| AC-11 | Nav shell: store name, live Settings, Products/Orders "próximamente", logout, active marking | PASS | `admin-shell.tsx`, `admin-nav.tsx` (`aria-current`, `SoonRow`), `constants.ts:97-119` |
-| AC-12 | Secrets only via env.ts, server-only, never NEXT_PUBLIC_, not in client bundle | PASS (test m-1 weak) | `env.ts:224-232`; `.env.local` no `NEXT_PUBLIC_ADMIN`; `secret-exposure.test.ts` (source-level) |
-| AC-13 | Distinct cookie name, Path=/admin, storefront unchanged | PASS | `constants.ts:24-27`; `middleware.ts:45-47` admin branch returns before next-intl |
-| AC-14 | Migration only if needed — expectation none | PASS | `dev-done.md:94`; writes are pure UPDATE/INSERT; migrations 0001..0010 untouched in diff |
-| AC-15 | Login rate-limited per IP; generic "demasiados"; env escape hatch | PASS (test gap M-4) | `login-rate-limit.ts`; `actions.ts:53-57`; `login-form.tsx:138` |
-| AC-16 | tsc strict, max-lines, no any/`!`, auth fns ≤30 lines | PASS | all files <400 lines; `verifyCredentials`/`isSessionValid` ≤~18 lines; dev-done reports tsc/eslint clean |
+| AC-1 | Migration 0011 applies/idempotent; ledger+RPC+indexes; types | PASS (note) | `0011_*.sql` idempotent; types hand-authored & correct; tsc green |
+| AC-2 | config.toml re-enables storage; healthy; public bucket | PASS | `[storage] enabled=true` (analytics/edge off); guarded bucket insert; stop/start/reset ×2 + smoke |
+| AC-3 | Nav flips products→live, guard inherited | PASS | `constants.ts` flip + Catálogo group |
+| AC-4 | Admin list: any status, admin client, BASE table, paginated, uncached | PASS | `list-query.ts` admin client + base table + no `unstable_cache` + `pagination.ts` |
+| AC-5 | Table shows cover/name/brand/SKU/price/stock/status/updated | PASS | `AdminProductRow` (range-copy bug M-5 aside) |
+| AC-6 | Search + brand/category/status/stock filters, URL-synced, AND | PASS | `list-filters.ts` + `applyFilters` |
+| AC-7 | Pagination + clamp + empty state | PASS | `parsePageParam`/`rangeFor` + `ProductEmptyState` |
+| AC-8 | Row→edit link + "Nuevo" CTA | PASS | routes present |
+| AC-9 | Full product model incl. cost price/dims/materials/M2M | PASS | `product-input.ts` |
+| AC-10 | Peso-string money; strict cm/kg parsers | PASS | reuses `parseMoneyToCents`/`parseCmToMm`/`parseKgToG` |
+| AC-11 | Create/edit write + bust; session first | PARTIAL | session PASS; M-1 (update partial-fail) + M-2 (old-taxonomy bust) |
+| AC-12 | Dup slug/SKU → field error, no 500 | PASS | `23505`→field |
+| AC-13 | Inline errors, form filled, focus-first-invalid; generic banner | PASS (see m-8) | collect-all; no raw PG echoed |
+| AC-14 | Upload jpeg/png/webp ≤5MB; server re-validates | PASS (see m-1) | `validateFile`; magic-byte sniff absent |
+| AC-15 | Drag + kbd reorder; single cover enforced | PASS (see m-4) | `usePointerReorder`+buttons; at-most-one cover (not atomic) |
+| AC-16 | Delete row+object; failed object-delete keeps row; promote cover | PASS | `deleteImage`+`removeStorageObject`+`promoteNextCover` |
+| AC-17 | Storefront reflects image change; next/image renders | PASS | busts catalog+product; host allow-listed |
+| AC-18 | Variant CRUD hex/SKU/stock/override/sort | PASS | `variant-input.ts` |
+| AC-19 | Variant-image assoc; remove variant handles images + warn | PASS | `setImageVariant`; cascade; editor warns |
+| AC-20 | Variant writes strict; dup SKU field error | PASS | `mapVariantError` |
+| AC-21 | Brand/style/tag CRUD; slug uniqueness friendly | PASS | `23505`→slug-duplicate |
+| AC-22 | Category nesting; cycle client+server | PASS | client hides self + `categories_no_cycle` (0002) + mapError |
+| AC-23 | Delete restrict/set-null/detach | PASS | `23503`→restrict; set null |
+| AC-24 | is_active hide facet after bust | PARTIAL | entity toggle busts; but M-2 reassignment leaves stale old-facet |
+| AC-25 | Manual adjustment delta/absolute + reason; atomic | PASS | `record_inventory_adjustment` RPC |
+| AC-26 | Negative rejected (CHECK + friendly) | PASS | RPC pre-check + CHECK; `parseAdjustment` |
+| AC-27 | Duplicate deep copy, unique slug/SKU, forced draft | PASS | `product-duplicate.ts` (rollback on child failure) |
+| AC-28 | Q&A unanswered-first; one-write answer; unpublish; delete; bust | PASS | `qa-write.ts` + `qa-read` |
+| AC-29 | Export all, columns, RFC-4180, headers | PASS | `csv-generate.ts` + escape (TAB/CR gap m-2) |
+| AC-30 | Import dry-run preview, ZERO writes | PASS | `dryRunImportAction` (slug-dup gap m-5) |
+| AC-31 | Confirm by slug; resilient; counts; bust once | PARTIAL | between-row resilient + single bust PASS; within-row atomicity M-3 |
+| AC-32 | Malformed CSV rejected, zero writes | PASS | UTF-8 fatal decode + caps + header validate |
+| AC-33 | tsc/eslint/build; no >400 (cap 1000); no any/! | PARTIAL | green per dev-done; M-9 `!` violation; fields.tsx 466>400 soft |
+| AC-34 | Secret not in client; no route bypasses requireSession | PASS | `admin.ts` server-only; every action guards first; export self-guards + middleware |
+| AC-35 | Storefront regression green; admin e2e serial | DEFERRED to QA | not runnable in review |
 
 ## Edge Case Verification
 | # | Edge Case | Status | Evidence |
 |---|-----------|--------|----------|
-| 1 | Forged/tampered cookie | HANDLED | `splitCookie`/`timingSafeHexEqual` → false; `session.test.ts:53,60` |
-| 2 | Expired-but-signed | HANDLED | `isWithinMaxAge` age>maxAge; `session-payload.test.ts:88` |
-| 3 | Secret rotation invalidates all | HANDLED | different-secret mismatch; `session.test.ts:77` |
-| 4 | Missing admin env → generic, never "any password works" | HANDLED | `actions.ts:62-66`; `auth.ts:125` dummy fallback; guard/require map throw→unauth |
-| 5 | Concurrent save last-write-wins | HANDLED (m-5 caveat) | existing-row UPDATE by id; missing-row double-INSERT → recoverable error |
-| 6 | Money 0 / 0.00 valid | HANDLED | `parseMoneyToCents`; `settings-input.test.ts:22` |
-| 7 | Locale-formatted money rejected, never coerced | HANDLED | strict ASCII `\d` regex rejects `1,000.00`/`1.000,00`/thousand-space; `:40-42`; unicode-digit reject verified |
-| 8 | Missing store_settings row | HANDLED | `settings/page.tsx:30` rowMissing + SEED defaults; `insertSingletonRow` on save |
-| 9 | Direct POST to saveStoreSettings without session | HANDLED | `actions.ts:119` `requireSession()` node:crypto re-verify → redirect, DB untouched |
-| 10 | `/admin/`, `/Admin`, slash variants vs locale matcher | HANDLED | `isAdminPath` matches `/admin` + `/admin/`; dev-verified 307/308; `/Admin` (capital) NOT matched → falls to next-intl as non-locale → 404 (acceptable; case-sensitivity documented `middleware.ts:29`) |
+| 1 | Duplicate slug/SKU | HANDLED | `23505`→field; create rolls back M2M; **update does NOT (M-1)** |
+| 2 | Category cycle | HANDLED | client + `categories_no_cycle` trigger (0002) + mapError |
+| 3 | Delete category-w/children / brand-in-use | HANDLED | `23503`→restrict; brand/style set-null |
+| 4 | Image failures | HANDLED | client+server MIME/size; DB-fail removes object; storage-fail keeps row+logs |
+| 5 | CSV chaos | HANDLED | RFC-4180 (BOM/CRLF/`""`); per-row errors; caps; non-UTF8 reject |
+| 6 | Concurrent inventory | HANDLED | RPC `for update` row-lock; never negative |
+| 7 | Variant-vs-product stock | HANDLED | list note + explicit dialog target |
+| 8 | Session expiry | HANDLED | `requireSession()` before any DB touch, every action + export |
+| 9 | Unpublish cached question | HANDLED | busts `product:<slug>` |
+| 10 | Storage re-enable regression | HANDLED | analytics/edge off; reset ×2; fallback documented |
+| — | Variant/product delete vs order history | HANDLED (verified) | `order_items` snapshots (name/sku/variant_label); FK set-null (0003) — no history loss |
 
-## Test Quality Assessment
-Above the bar for a Phase-1 auth surface: `session-payload`, `session` (Node), `auth`, and `settings-input` re-derive signatures/values independently of the code under test, so they genuinely catch broken logic. Concrete gaps are M-1..M-4 and m-1/m-2/m-7 — all are *missing fences around already-correct behavior*, not broken code. QA (Stage 7) should close M-1, M-3, M-4 at minimum.
+## Quality Score: 8/10
 
-## Motion / Animation Review (review-animations STANDARDS)
-PASS. `.enter-fade` and `.drawer-panel`/`.drawer-scrim` are REUSED classes (dev claim verified against `globals.css`). Enters use `var(--ease-out)`; only `transform`/`opacity` animate; durations 150–300ms; `prefers-reduced-motion` drops translate to opacity-only (`globals.css:219-233,337-338`). Drawer is interruptible (`admin-shell.tsx:99-111` timer cleanup). Nav/logout use color/opacity only — matches ui-design frequency-of-use guidance. No new motion invented.
-
-## Clean-Code Review
-PASS with m-6 (avoidable `as` casts) and N-1/N-3. All files <400 lines; no `any`; no non-null `!`; magic values named; no empty catches (every catch logs with context or re-throws — `session-guard.ts:24-30`, `actions.ts:62-68,151-156`, `store-settings.ts:176-190`); SRP respected (pure codec/parser vs Next integration).
-
-## Quality Score: 8.5/10
-Correct, well-factored, security-literate implementation of the trust boundary with no shipping-blocking defect. Docked for four MAJOR test-coverage gaps around the very invariants that make the auth safe, plus minor robustness/DRY items.
+Strong architecture, exemplary auth discipline, correct migration/RPC, well-tested pure layers. Docked for three partial-failure data-integrity gaps (M-1/M-3 non-atomic product+link writes, M-2 stale reassignment cache), the un-validated variant-id interpolation (M-4), and a cluster of client correctness bugs (M-5 range, M-6 index-keyed errors, M-7 delete race, M-8 timer leak, M-9 `!` AC-33 violation).
 
 ## Recommendation: APPROVE-WITH-FIXES
-No CRITICAL issues; safe to proceed to QA/Security. Before SHIP, close M-1, M-2, M-3, M-4 (test fences for the auth invariants) — the difference between "correct today" and "stays correct." M-1 and M-3 guard the two properties (runtime parity, anti-enumeration) whose regression would be silent and high-impact. MINOR/NIT items are optional polish.
 
----
-
-## Stage 6 (Fix) resolution — 2026-07-15
-- **MAJOR**: 4/4 FIXED (M-1 parity fence + shared fixture; M-2 fail-closed throw + guard mapping test + inline doc; M-3 timing-floor/parity proof of scrypt on the mismatch paths; M-4 cardinality cap + sliding release + strict escape-hatch).
-- **MINOR**: 6/7 FIXED (m-1, m-2, m-4, m-6, m-7 + the m-3 doc note), 1 SKIPPED (m-3 platform-dependent Edge env override — UX-only, non-hole; m-5 SKIPPED — within spec, single-owner). Corrected tally: **m-1, m-2, m-4, m-6, m-7 FIXED; m-3, m-5 SKIPPED (justified)**.
-- **NIT**: 3/4 FIXED (N-1, N-2, N-3), 1 SKIPPED (N-4 — intentional portable timestamp).
-- **Production code touched** (behavior-preserving except where noted): `settings-input.ts` (m-6/N-1 no-cast narrowing — behavior identical), `session.ts` (M-2 doc comment), `auth.ts` (m-4/N-3 doc comments), `store-settings-form.tsx` (N-2 type precision). All other changes are test-only.
-- **Verification**: `npx tsc --noEmit` 0 source errors; eslint clean on all touched files; full unit suite **1366/1366 across 77 files** (baseline 1342/75 + 24 net new tests, 2 new test files: `session-parity.test.ts`, `session-guard.test.ts`); payment-panel flake did not recur (17/17 in isolation).
+Fix the MAJORs before this is trusted with the real catalog. Priority: M-1/M-2/M-3 (partial-failure integrity + stale cache) and M-9 (AC-33 `!` violation); then M-4 (id validation) and M-5/M-6/M-7/M-8 (client correctness). MINORs (magic-byte sniff, TAB/CR escape, export bound, a11y wiring, uncontrolled-field reset) are good hygiene for the Fix stage but not launch-blocking for a single-Owner Phase-1 surface. No CRITICAL/security-blocking issues; the trust boundary is sound.
