@@ -1,147 +1,140 @@
-# Code Review + Fix: T9 — Transactional emails (commit bdd37bc)
+# Code Review: T10 — Admin foundation
 
 ## Summary
+A genuinely strong, security-literate implementation of the app's top trust boundary. The HMAC session scheme, scrypt login with dummy-hash timing parity, defense-in-depth guard (Edge → Node → per-action re-verify), strict money parser, and cookie flags are all correct and match the ticket. No CRITICAL security holes found. The gaps are in *test coverage of the invariants* (not the code itself), a real Node/Edge behavioral asymmetry that is unpinned, and a handful of MINOR/NIT robustness and DRY items. Verdict: APPROVE-WITH-FIXES.
 
-T9 is a high-quality implementation. The money-adjacent write paths (checkout action,
-process-payment) keep email dispatch airtight-isolated; migration 0010 preserves every T8
-`advance_order_status` behavior and only adds `transition_kind`; the `email_sends` ledger is
-race-safe; user input is HTML-escaped in templates. One MAJOR defense-in-depth gap was found
-(unescaped `href` in the email button) and FIXED inline with a regression test. Everything else
-is minor/nit. All acceptance criteria met.
+---
 
-## Issues Found & Resolved
+## Critical Issues (MUST FIX)
+None. The auth core is sound: forged/tampered/expired/truncated cookies are rejected by both verifiers; a missing/blank secret never authenticates; a missing/unparseable password hash never authenticates; no admin secret is `NEXT_PUBLIC_` or passed to a client component; every mutation re-verifies server-side.
 
-### Critical Issues
+---
 
-None.
+## Major Issues (SHOULD FIX)
 
-### Major Issues
-
-#### M-1: `renderButton` injected `href` unescaped into the anchor attribute
-
+### M-1: Node vs Edge session-verifier equivalence is never tested (parser-differential risk, R1)
+- **ID**: M-1
 - **Severity**: MAJOR
-- **File**: src/lib/email/layout.ts:132 (was `<a href="${href}" ...>`)
-- **Problem**: `renderButton(href, label)` interpolated `href` into `<a href="${href}">`
-  WITHOUT escaping. Two callers pass PROVIDER-sourced URLs, not app-built ones:
-  `voucher-instructions.ts:98` passes `voucher.voucherUrl` (from the Mercado Pago payment
-  response) and `shipped.ts:36` passes `input.trackingUrl` (carrier URL, T12). A URL containing
-  a double-quote would close the `href` attribute and inject arbitrary markup into the email body
-  (attribute-breakout → stored HTML injection in the recipient's inbox). The label was already
-  escaped; the href was the gap.
-- **Impact**: A malformed/hostile provider URL (or a future admin-supplied tracking URL) could
-  break out of the attribute and inject markup into a customer email. Email clients don't execute
-  `javascript:`, but markup injection (a fake link/image) is still a phishing/defacement vector.
-- **Fix Applied**: Wrapped the href in `escapeHtml(href)` so `"` becomes `&quot;`, closing the
-  attribute-breakout. `escapeHtml` is a no-op for well-formed URLs (verified: existing template
-  tests using `https://mp.test/v.pdf` and `https://track.test/TRK-1` still pass). Added
-  `src/lib/email/layout.test.ts` (3 tests) including an explicit breakout payload
-  (`https://x/"><img src=y onerror=alert(1)>`) asserting the raw `"><img` sequence never appears.
-- **Status**: FIXED
+- **File**: `src/lib/admin/session-edge.test.ts` (whole suite; titled "parity" at ~:25) vs `src/lib/admin/session.test.ts`
+- **Problem**: The two verifiers (`isSessionValid` / `node:crypto`, `isSessionValidEdge` / `crypto.subtle`) share the payload codec but NOTHING asserts they return the SAME verdict on the SAME cookie. Each suite builds its own copy-pasted `validCookie` helper (`session.test.ts:32`, `session-edge.test.ts:19`). A future divergence in payload framing, hex casing, or expiry handling would pass both suites while opening a differential (a cookie the fast Edge gate accepts but Node rejects, or vice-versa).
+- **Impact**: R1's core risk — a parser/verifier differential between the two runtimes — is unguarded. Manual inspection confirms they are equivalent *today* (both decode hex→bytes, both call the shared `decodePayload`/`isWithinMaxAge`), but there is no regression fence.
+- **Suggested Fix**: Add one cross-check test: mint a cookie with the Node signer, assert `isSessionValid(c) === true` AND `await isSessionValidEdge(c) === true`; tamper one byte and assert BOTH false; expire it and assert BOTH false. Feed both verifiers from a single shared fixture, not two local helpers.
+- **Status**: OPEN
 
-### Minor Issues
+### M-2: Node `isSessionValid` THROWS on missing secret (Edge returns false) — asymmetry is unpinned by tests
+- **ID**: M-2
+- **Severity**: MAJOR
+- **File**: `src/lib/admin/session.ts:79` vs `src/lib/admin/session-edge.ts:88-91`; test gap in `src/lib/admin/session.test.ts`
+- **Problem**: With a blank/absent `ADMIN_SESSION_SECRET`, the Edge verifier returns `false` (fail-closed, tested at `session-edge.test.ts:53`), but the Node verifier `getAdminEnv()`-throws `MissingEnvVarError`. That throw is caught by every caller (`session-guard.ts:24`, `actions.ts:151`) and mapped to "not authenticated" — so runtime behavior is safe — but no test pins that contract on `isSessionValid` itself. A refactor that swallowed the throw and returned a verdict against an empty-string HMAC key would go uncaught.
+- **Impact**: The fail-closed contract for the authoritative verifier rests on caller discipline with no test fence. High blast radius if it regresses (empty-key HMAC is forgeable).
+- **Suggested Fix**: Add a `session.test.ts` case: with `ADMIN_SESSION_SECRET` unset, assert `() => isSessionValid(anyCookie)` throws `MissingEnvVarError`; plus a guard/action-level test asserting the catch maps to unauthenticated. Document the intentional asymmetry inline in `session.ts`.
+- **Status**: OPEN
 
-#### m-1: `config.ts` comment names `SITE_ORIGIN`, code reads `NEXT_PUBLIC_SITE_ORIGIN`
+### M-3: auth test does not assert scrypt actually runs on email mismatch (R3 anti-enumeration invariant unfenced)
+- **ID**: M-3
+- **Severity**: MAJOR
+- **File**: `src/lib/admin/auth.test.ts:72` (labelled "still runs scrypt for timing parity"); code at `src/lib/admin/auth.ts:116-128`
+- **Problem**: The test asserts only the boolean `false` on a wrong email. It never verifies the scrypt derivation ran on the mismatch path. A refactor adding `if (!emailMatches) return false;` before the scrypt work (reintroducing the exact user-enumeration/timing leak this module exists to prevent) would keep every test green.
+- **Impact**: The single most important defensive property of `verifyCredentials` (R3, AC-3) is not actually pinned — only implied by a label.
+- **Suggested Fix**: Spy on `scryptSync` (or the `verifyAgainst` helper) and assert it is invoked once on BOTH the unknown-email and wrong-password paths; alternatively assert the two paths' timings are within tolerance. Do not rely on the boolean alone.
+- **Status**: OPEN
 
-- **File**: src/lib/config.ts (email config block, "HOW TO SWAP REAL VALUES")
-- **Suggestion**: The prose comment says links are built from `SITE_ORIGIN`; `siteOrigin()` reads
-  `NEXT_PUBLIC_SITE_ORIGIN`. Cosmetic only — code is correct and consistent with dev-done/env docs.
-- **Status**: SKIPPED — comment cosmetics, zero behavior/security impact.
+### M-4: Rate-limit cardinality cap and window-expiry are not tested at the admin layer (AC-15)
+- **ID**: M-4
+- **Severity**: MAJOR
+- **File**: `src/lib/admin/login-rate-limit.test.ts` (`:48` only asserts count == 2)
+- **Problem**: (a) The `ADMIN_LOGIN_RATE_LIMIT_MAX_KEYS` (10,000) ceiling / `evictToCeiling` memory bound (`sliding-window.ts:54-67`) is never driven past the cap here — the cardinality-DoS defense is unverified for the admin limiter. (b) No test advances `now` past `ADMIN_LOGIN_RATE_LIMIT_WINDOW_MS` to prove attempts age out and access is restored — a limiter that never released would pass every case. (c) The escape-hatch test checks only `="1"`; it never confirms a non-`"1"` value (e.g. `"true"`, `"0"`) STILL enforces (source is strict `=== "1"`, security-relevant).
+- **Impact**: AC-15's memory-bound and sliding-release behavior — both load-bearing for a production auth surface — are unfenced.
+- **Suggested Fix**: Add: (1) push `maxKeys + 100` distinct IPs, assert `loginRateLimitKeyCount() <= ADMIN_LOGIN_RATE_LIMIT_MAX_KEYS`; (2) trip the limit, advance `now` by the window, assert it returns true again; (3) set the flag to `"true"` and assert it still enforces.
+- **Status**: OPEN
 
-#### m-2: `renderParagraph(text, escape=false)` escape-bypass has no live caller
+---
 
-- **File**: src/lib/email/layout.ts:146 (`renderParagraph(text, escape = true)`)
-- **Suggestion**: The `escape=false` branch exists but no caller uses it (verified by grep). Latent
-  foot-gun; left as-is because it's currently unreachable with unsafe input and the default is safe.
-- **Status**: SKIPPED — no live unsafe caller; default path is safe.
+## Minor Issues (NICE TO FIX)
 
-### Nits
+### m-1: `secret-exposure` client-import check only matches `@/lib/` alias paths
+- **File**: `src/lib/admin/secret-exposure.test.ts:~60`
+- **Suggestion**: The "no `"use client"` file imports a server-only admin module" check uses a substring on `@/lib/${mod}`. A relative-path import (`../admin/auth`) or barrel re-export slips past while genuinely exposing the module. It is a static-source (not built-bundle) test — same limitation as the MP reference, so consistent, but the docstring over-claims. Match both alias and relative forms (regex on `admin/(auth|session|session-guard)`), or grep the built client chunks.
 
-#### n-1: `scripts/run-integration.sh` header says "applies 0001..0005" (stale)
+### m-2: `decodePayload` `Number.isFinite(iat)` branch never exercised
+- **File**: `src/lib/admin/session-payload.test.ts`; code `session-payload.ts:86`
+- **Suggestion**: No test feeds `iat: Infinity`/`NaN`. Deleting the `!Number.isFinite` guard would leave every test green, yet an `Infinity` iat would then pass `isWithinMaxAge`. Add a decode case with a hand-built base64url JSON literal `{"v":1,"iat":Infinity-as-1e400}` asserting `null`.
 
-- **File**: scripts/run-integration.sh (header)
-- **Note**: `supabase db reset` applies ALL migrations regardless; behavior correct. Not a T9 file.
-- **Status**: SKIPPED — out-of-scope, comment-only.
+### m-3: `ADMIN_SESSION_MAX_AGE_SECONDS` override may not be readable in the Edge runtime
+- **File**: `src/lib/admin/constants.ts:50-62` read from `src/lib/admin/session-edge.ts:115`
+- **Suggestion**: A non-`NEXT_PUBLIC_` override read via `process.env` in Edge middleware is not guaranteed available on every platform. If set-but-unreadable in Edge, the fast gate uses the 8h default while Node uses the override → an inconsistency window. Node is authoritative so it is UX-only, not a hole. Document that the override binds authoritatively at the Node layer (or env-allow-list it for middleware). Low priority.
 
-## Crash-Between-Claim-and-Send Verdict
+### m-4: Email compare uses `===` (not constant-time)
+- **File**: `src/lib/admin/auth.ts:118-119`
+- **Suggestion**: Email is the username (not secret) and enumeration is defended by always running scrypt, so this is acceptable and matches the ticket. Micro length-timing signal reveals nothing exploitable. Leave as-is; optionally note the rationale inline.
 
-**Deliberate at-most-once — documented and justified. ACCEPTED (not a bug).**
+### m-5: `updateStoreSettings` read-then-write is non-atomic on the missing-row edge
+- **File**: `src/lib/store-settings.ts:167-199`
+- **Suggestion**: Concurrent first-time saves both read null → both INSERT → the second violates the singleton index → generic "No se pudo guardar." Existing-row path is correct last-write-wins. Edge 8 allows "or a recoverable error," so within spec; an `upsert` on the singleton conflict target would make it seamless.
 
-`claim_email_send` does `insert … on conflict do nothing` and returns `'new'` only when a row was
-actually inserted (PL/pgSQL `FOUND` after `INSERT … ON CONFLICT DO NOTHING` is true only on a real
-insert — race-safe: concurrent duplicate webhooks → exactly one `'new'`). The claimed row lands
-`sent_at = NULL`; `finalize_email_send` stamps it only after the provider accepts.
+### m-6: `parseStoreSettingsInput` uses `as` casts to narrow the success branch
+- **File**: `src/lib/admin/settings-input.ts:158-163`
+- **Suggestion**: Four `(name as { ok: true; ... }).value` casts re-assert a fact already established. Safe but leans on `as` where carrying the parsed values in guard-narrowed locals would avoid the cast and better fit the "minimize casts" clean-code spirit.
 
-If the process crashes AFTER claim but BEFORE send/finalize, the row persists with `sent_at = NULL`,
-and a later redelivery's `claim_email_send` hits the unique conflict → `'duplicate'` → the email is
-permanently suppressed. This is **at-most-once**, and DIFFERS from the T8 payment spine (which
-reclaims unfinalized claims for at-least-once payment processing). The divergence is intentional and
-documented in three places: migration 0010 comments (316–320), dev-done.md "Key decisions", and
-ticket edge 2 (which asked the dev to confirm the choice). Rationale is sound: an email is not
-money; a lost email is far less harmful than a lost/duplicate payment, and the un-finalized ledger
-row is the substrate for a FUTURE manual/queue retry without double-sending. No fix required.
+### m-7: settings parser boundary/format cases untested
+- **File**: `src/lib/admin/settings-input.test.ts`
+- **Suggestion**: `.5` (leading-dot, rejected), `$ 500` (space after `$` — passes: one `$` stripped then trim), `$$500` (rejected), and `store_name` at EXACTLY `STORE_NAME_MAX_LENGTH` (only +1 tested) are uncovered. Add these four to pin the regex/length branches.
 
-Timeout-leak check: `sendWithTimeout` uses `Promise.race([sendEmail, timeout])` and clears the timer
-in `finally`. The race loser is not cancelled, but `Promise.race` attaches internal handlers to BOTH
-promises, so a late `sendEmail` rejection is NOT an unhandled rejection. No leak.
+---
+
+## NIT
+- **N-1** `settings-input.ts:121-125` — the "Guarantees `CENTS_PER_PESO` is not a dead reference…" comment is awkward; the constant is legitimately used in `MAX_SAFE_PESOS` (`:169`). Simplify.
+- **N-2** `store-settings-form.tsx:325` `Banner` `icon` typed `typeof Alert02Icon` — `IconSvgElement` (already used in constants) is the precise type.
+- **N-3** `auth.ts:38,132` — `DUMMY_HASH` runs a real scrypt (cost 16384) at module load for any module that transitively imports `auth.ts`. Acceptable (one-time, server-only); worth a comment noting the ~tens-of-ms cold-start cost.
+- **N-4** `actions.ts:55,71` — two `console.warn` lines embed `new Date().toISOString()`; keeps IP context and logs no credentials (verified good) — minor timestamp duplication if the logger already timestamps.
+
+---
 
 ## Acceptance Criteria Verification
-
-| #     | Criterion | Status | Evidence |
-| ----- | --------- | ------ | -------- |
-| AC-1  | 0010 idempotent, applies on `db reset`, local-only | PASS | reset applied 0001..0010 clean; `if not exists` / `create or replace` throughout |
-| AC-2  | `advance_order_status` returns `transition_kind` from fixed set, derived in-RPC | PASS | 0010:82-126 helper; returned in all 5 jsonb paths; types updated |
-| AC-3  | history `transition_kind` written on every insert | PASS | all `insert into order_status_history` include it (189,228,255,529) |
-| AC-4  | `orders.locale` NOT NULL default es-MX + CHECK; create_order + payload persist | PASS | 0010:45-52; clamp 405-409; `CreateOrderPayload.locale` required; actions.ts `getLocale()` |
-| AC-5  | `email_sends` unique+RLS+grant+claim RPC | PASS | 0010:287-346 |
-| AC-6  | provider one module, `sendEmail`, env key, server-only | PASS | provider.ts single `deliver()`, `getEmailEnv()`, `import "server-only"` |
-| AC-7  | `getEmailEnv()` validates 3 vars, throws | PASS | env.ts:172-180 |
-| AC-8  | dev-preview no network, returns success | PASS | provider.ts `isPreviewMode` → `logPreview` → `{ok,preview}` |
-| AC-9  | provider mocked; missing key swallowed | PASS | provider.test + process-payment isolation test |
-| AC-10 | 8 templates `{subject,html,text}` typed | PASS | all 8 present |
-| AC-11 | 6 customer templates both locales; MXN; single-brace | PASS | keys symmetric 50/50; money.ts; no `{{` |
-| AC-12 | owner+relay single-locale es-MX | PASS | inline es-MX copy; OWNER_EMAIL_LOCALE |
-| AC-13 | dispatch failure-isolated + non-blocking | PASS | dispatch/trigger/checkout catches; isolation test proves 200 when send throws |
-| AC-14 | checkout → confirmation + owner, non-blocking | PASS | actions.ts:351-353 (only `!reused`) |
-| AC-15 | paid → payment_received once | PASS | process-payment `'paid'` branch; dedupe=mpPaymentId |
-| AC-16 | pending voucher once; skip if no data | PASS | `toVoucherData` null → logged skip |
-| AC-17 | shipped/cancelled/refund/contact seams built+tested, not wired | PASS | `// T12/T13 wiring seam` comments |
-| AC-18 | webhook route email-free; trigger post-advance | PASS | grep: no email import in route.ts |
-| AC-19 | hacker-report.md untouched | PASS | not modified |
-| AC-20 | T7/T8 unchecked | PASS | BUILD_PLAN not modified |
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| AC-1 | Unauth `/admin/*` (except login) → redirect, no markup | PASS | `middleware.ts:69-71`; `(app)/layout.tsx:22-24` authoritative redirect before any child renders |
+| AC-2 | Correct creds → HttpOnly/Lax/Secure-prod/Path=/admin cookie → /admin; case-insensitive email; constant-time pw | PASS | `actions.ts:80-89` flags; `auth.ts:118-119` case-insensitive; `auth.ts:102` `timingSafeEqual` |
+| AC-3 | Wrong email OR pw → single generic error, no enumeration, timing parity | PASS (test gap M-3) | `actions.ts:70-73`; `auth.ts:122-128` dummy-hash equal-cost; `login-form.tsx:136` one message |
+| AC-4 | Tamper-evident HMAC-SHA256; forged/truncated fails timingSafeEqual | PASS | `session.ts:39-48,80-83`; `session-edge.ts:66-74,108`; `splitCookie` |
+| AC-5 | Bounded lifetime 8h; expired rejected server-side even if signed | PASS | `session-payload.ts:119-126`; both verifiers call `isWithinMaxAge`; `constants.ts:47-62` |
+| AC-6 | Logout clears cookie (maxAge=0) → login | PASS | `actions.ts:96-105`; `logout-button.tsx` real form POST |
+| AC-7 | Authed visiting /admin/login → /admin | PASS | `middleware.ts:61-64` AND `login/page.tsx:18-19` |
+| AC-8 | Settings renders 4 fields prefilled, money in pesos | PASS | `settings/page.tsx:24-41` `pesoString`/`.toFixed(2)` |
+| AC-9 | Save → admin-client write → cache bust → success; storefront reflects | PASS | `store-settings.ts:167-198` (`updateTag`); `actions.ts:127-136` |
+| AC-10 | Reject blank/long name, bad email, negative/non-numeric/>2dp/overflow; field errors; form stays filled | PASS | `settings-input.ts:66-166`; `store-settings-form.tsx` inline errors + preserved `values` |
+| AC-11 | Nav shell: store name, live Settings, Products/Orders "próximamente", logout, active marking | PASS | `admin-shell.tsx`, `admin-nav.tsx` (`aria-current`, `SoonRow`), `constants.ts:97-119` |
+| AC-12 | Secrets only via env.ts, server-only, never NEXT_PUBLIC_, not in client bundle | PASS (test m-1 weak) | `env.ts:224-232`; `.env.local` no `NEXT_PUBLIC_ADMIN`; `secret-exposure.test.ts` (source-level) |
+| AC-13 | Distinct cookie name, Path=/admin, storefront unchanged | PASS | `constants.ts:24-27`; `middleware.ts:45-47` admin branch returns before next-intl |
+| AC-14 | Migration only if needed — expectation none | PASS | `dev-done.md:94`; writes are pure UPDATE/INSERT; migrations 0001..0010 untouched in diff |
+| AC-15 | Login rate-limited per IP; generic "demasiados"; env escape hatch | PASS (test gap M-4) | `login-rate-limit.ts`; `actions.ts:53-57`; `login-form.tsx:138` |
+| AC-16 | tsc strict, max-lines, no any/`!`, auth fns ≤30 lines | PASS | all files <400 lines; `verifyCredentials`/`isSessionValid` ≤~18 lines; dev-done reports tsc/eslint clean |
 
 ## Edge Case Verification
-
 | # | Edge Case | Status | Evidence |
-| - | --------- | ------ | -------- |
-| 1 | Duplicate webhook → one email | HANDLED | unique conflict → 'duplicate' short-circuits |
-| 2 | Provider down/timeout → 200, un-finalized | HANDLED | bounded timeout; isolation test; at-most-once documented |
-| 3 | /en/ → en emails | HANDLED | `orders.locale`; `getTranslations({locale})`; owner es-MX |
-| 4 | OXXO paid later → both once | HANDLED | distinct email_kind → distinct ledger rows |
-| 5 | charged_back/mismatch → no email | HANDLED | returns before advance; kind ≠ 'paid'; refund test |
-| 6 | Undeliverable valid email | HANDLED | bounce logged+swallowed; no address in logs |
-| 7 | Locale mutation attempt | HANDLED | locale not in advance UPDATE set |
+|---|-----------|--------|----------|
+| 1 | Forged/tampered cookie | HANDLED | `splitCookie`/`timingSafeHexEqual` → false; `session.test.ts:53,60` |
+| 2 | Expired-but-signed | HANDLED | `isWithinMaxAge` age>maxAge; `session-payload.test.ts:88` |
+| 3 | Secret rotation invalidates all | HANDLED | different-secret mismatch; `session.test.ts:77` |
+| 4 | Missing admin env → generic, never "any password works" | HANDLED | `actions.ts:62-66`; `auth.ts:125` dummy fallback; guard/require map throw→unauth |
+| 5 | Concurrent save last-write-wins | HANDLED (m-5 caveat) | existing-row UPDATE by id; missing-row double-INSERT → recoverable error |
+| 6 | Money 0 / 0.00 valid | HANDLED | `parseMoneyToCents`; `settings-input.test.ts:22` |
+| 7 | Locale-formatted money rejected, never coerced | HANDLED | strict ASCII `\d` regex rejects `1,000.00`/`1.000,00`/thousand-space; `:40-42`; unicode-digit reject verified |
+| 8 | Missing store_settings row | HANDLED | `settings/page.tsx:30` rowMissing + SEED defaults; `insertSingletonRow` on save |
+| 9 | Direct POST to saveStoreSettings without session | HANDLED | `actions.ts:119` `requireSession()` node:crypto re-verify → redirect, DB untouched |
+| 10 | `/admin/`, `/Admin`, slash variants vs locale matcher | HANDLED | `isAdminPath` matches `/admin` + `/admin/`; dev-verified 307/308; `/Admin` (capital) NOT matched → falls to next-intl as non-locale → 404 (acceptable; case-sensitivity documented `middleware.ts:29`) |
 
-## Fix Summary
+## Test Quality Assessment
+Above the bar for a Phase-1 auth surface: `session-payload`, `session` (Node), `auth`, and `settings-input` re-derive signatures/values independently of the code under test, so they genuinely catch broken logic. Concrete gaps are M-1..M-4 and m-1/m-2/m-7 — all are *missing fences around already-correct behavior*, not broken code. QA (Stage 7) should close M-1, M-3, M-4 at minimum.
 
-- Critical: 0/0
-- Major: 1/1 fixed (M-1 href escaping)
-- Minor: 0/2 fixed, 2 skipped (m-1 comment cosmetics, m-2 unreachable escape-bypass) — justified
-- Nit: 0/1 fixed, 1 skipped (out-of-scope script comment)
+## Motion / Animation Review (review-animations STANDARDS)
+PASS. `.enter-fade` and `.drawer-panel`/`.drawer-scrim` are REUSED classes (dev claim verified against `globals.css`). Enters use `var(--ease-out)`; only `transform`/`opacity` animate; durations 150–300ms; `prefers-reduced-motion` drops translate to opacity-only (`globals.css:219-233,337-338`). Drawer is interruptible (`admin-shell.tsx:99-111` timer cleanup). Nav/logout use color/opacity only — matches ui-design frequency-of-use guidance. No new motion invented.
 
-## Verification (post-fix)
+## Clean-Code Review
+PASS with m-6 (avoidable `as` casts) and N-1/N-3. All files <400 lines; no `any`; no non-null `!`; magic values named; no empty catches (every catch logs with context or re-throws — `session-guard.ts:24-30`, `actions.ts:62-68,151-156`, `store-settings.ts:176-190`); SRP respected (pure codec/parser vs Next integration).
 
-- `tsc --noEmit`: 0 errors
-- `eslint .`: clean
-- Unit: **1271 passed** (68 files) — 1268 baseline + 3 new `layout.test.ts` regression tests
-- Integration: **168 passed** (13 files) via `scripts/run-integration.sh` (fresh reset+seed, exit 0)
-- `supabase db reset`: 0001..0010 apply clean (idempotent)
-- DB left pristine-seeded (0 orders, 0 email_sends); tsconfig.json unchanged; no stray servers
+## Quality Score: 8.5/10
+Correct, well-factored, security-literate implementation of the trust boundary with no shipping-blocking defect. Docked for four MAJOR test-coverage gaps around the very invariants that make the auth safe, plus minor robustness/DRY items.
 
-## Quality Score: 9/10
-
-## Recommendation: APPROVE
-
-The one MAJOR finding (unescaped email button `href`) is FIXED inline with a dedicated regression
-test. Failure isolation on both money paths is airtight, the migration is behavior-preserving over
-T8, the ledger is race-safe, and the at-most-once email choice is deliberate and documented. Ready
-to proceed to QA (S5).
+## Recommendation: APPROVE-WITH-FIXES
+No CRITICAL issues; safe to proceed to QA/Security. Before SHIP, close M-1, M-2, M-3, M-4 (test fences for the auth invariants) — the difference between "correct today" and "stays correct." M-1 and M-3 guard the two properties (runtime parity, anti-enumeration) whose regression would be silent and high-impact. MINOR/NIT items are optional polish.
