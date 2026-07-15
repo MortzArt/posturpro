@@ -10,10 +10,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { parseVariantSet, type VariantRawInput, type VariantRowErrors } from "@/lib/admin/products/variant-input";
 import { saveVariants } from "@/lib/admin/products/variant-write";
 
-/** Serializable outcome of a variant save. */
+/** Serializable outcome of a variant save. Row errors are keyed by the editor's
+ * STABLE row key (M-6), never the array index. */
 export type SaveVariantsResult =
   | { ok: true }
-  | { ok: false; rowErrors: Record<number, VariantRowErrors> }
+  | { ok: false; rowErrors: Record<string, VariantRowErrors> }
   | { ok: false; writeError: true };
 
 /** Save a product's variants. `rows` is the full desired set from the editor. */
@@ -35,10 +36,10 @@ export async function saveVariantsAction(
   const result = await saveVariants(productId, slug, parsed.values);
   if (result.ok) return { ok: true };
   if (result.reason === "duplicate-sku") {
-    // Map the offending SKU back to its row index for an inline error.
-    const index = rows.findIndex((row) => row.sku.trim().toLowerCase() === result.sku.toLowerCase());
-    const rowErrors: Record<number, VariantRowErrors> = {};
-    if (index !== -1) rowErrors[index] = { sku: "sku-duplicate" };
+    // Map the offending SKU back to its STABLE row key (M-6) for an inline error.
+    const match = rows.find((row) => row.sku.trim().toLowerCase() === result.sku.toLowerCase());
+    const rowErrors: Record<string, VariantRowErrors> = {};
+    if (match) rowErrors[match.key] = { sku: "sku-duplicate" };
     return { ok: false, rowErrors };
   }
   return { ok: false, writeError: true };

@@ -55,8 +55,9 @@ function applyFilters<T extends FilterableQuery>(query: T, filters: ProductListF
   let next: FilterableQuery = query;
   if (filters.search) {
     // Case-insensitive substring on name OR sku. Strip PostgREST filter meta-
-    // chars from the term so it cannot alter the `or` expression structure.
-    const term = filters.search.replace(/[%,()*]/g, " ");
+    // chars from the term so it cannot alter the `or` expression structure —
+    // includes `. : \` (operator separators) as defense-in-depth (m-3).
+    const term = filters.search.replace(/[%,()*.:\\]/g, " ");
     next = next.or(`name.ilike.%${term}%,sku.ilike.%${term}%`);
   }
   if (filters.brandId) next = next.eq("brand_id", filters.brandId);

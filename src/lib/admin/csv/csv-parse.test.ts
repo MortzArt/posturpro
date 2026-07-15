@@ -40,6 +40,11 @@ describe("generateCsv / escapeCsvCell", () => {
     expect(escapeCsvCell("+cmd")).toBe("'+cmd");
     expect(escapeCsvCell("@x")).toBe("'@x");
   });
+  it("prefix-escapes a leading TAB or CR too (m-2, OWASP full set)", () => {
+    expect(escapeCsvCell("\t=cmd")).toBe("'\t=cmd");
+    // A leading CR also triggers RFC-4180 quoting → escaped '-prefix, quoted.
+    expect(escapeCsvCell("\rx")).toBe('"\'\rx"');
+  });
   it("round-trips through parseCsv", () => {
     const rows = [["name", "note"], ["Silla, Pro", 'quote "x"'], ["plain", "ok"]];
     const parsed = parseCsv(generateCsv(rows));

@@ -3,6 +3,7 @@ import { MAX_PAGE } from "@/lib/config";
 import {
   PAGINATION_ELLIPSIS,
   canonicalPageKey,
+  displayRangeFor,
   lastPageFor,
   paginationWindow,
   parsePageParam,
@@ -128,6 +129,26 @@ describe("rangeFor", () => {
     expect(rangeFor(1, 12)).toEqual({ from: 0, to: 11 });
     expect(rangeFor(2, 12)).toEqual({ from: 12, to: 23 });
     expect(rangeFor(3, 12)).toEqual({ from: 24, to: 35 });
+  });
+});
+
+describe("displayRangeFor (M-5 — 'Mostrando X–Y de Z')", () => {
+  it("computes the range from page SIZE, not the current row count", () => {
+    // 28 total, page size 25 → page 1 = 1–25, page 2 = 26–28 (NOT 4–6).
+    expect(displayRangeFor(1, 25, 28)).toEqual({ start: 1, end: 25 });
+    expect(displayRangeFor(2, 25, 28)).toEqual({ start: 26, end: 28 });
+  });
+  it("clamps the end to the total on the last page", () => {
+    expect(displayRangeFor(3, 12, 30)).toEqual({ start: 25, end: 30 });
+  });
+  it("returns a full page range when the total is an exact multiple", () => {
+    expect(displayRangeFor(2, 25, 50)).toEqual({ start: 26, end: 50 });
+  });
+  it("returns {0,0} for an empty result set", () => {
+    expect(displayRangeFor(1, 25, 0)).toEqual({ start: 0, end: 0 });
+  });
+  it("is resilient to a junk page size", () => {
+    expect(displayRangeFor(1, 0, 5)).toEqual({ start: 1, end: 1 });
   });
 });
 

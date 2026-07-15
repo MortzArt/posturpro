@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Search01Icon } from "@hugeicons/core-free-icons";
@@ -45,6 +45,15 @@ export function ProductFilters({ filters, brands, categories }: ProductFiltersPr
   const [searchDraft, setSearchDraft] = useState(filters.search);
   const [lastUrlSearch, setLastUrlSearch] = useState(filters.search);
   const debounceRef = useRef<number | null>(null);
+
+  // Clear a pending search debounce on unmount so navigating away mid-debounce
+  // can't fire router.replace after the component is gone (M-8).
+  useEffect(
+    () => () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    },
+    [],
+  );
 
   // Sync the draft with the URL when it changes externally (back button /
   // "Limpiar") — the React "adjust state during render" pattern (no effect,
@@ -117,7 +126,9 @@ export function ProductFilters({ filters, brands, categories }: ProductFiltersPr
           { value: "all", label: "Todas las categorías" },
           ...categories.map((category) => ({
             value: category.value,
-            label: `${"  ".repeat(category.depth)}${category.label}`,
+            // Convey nesting depth with a visible glyph prefix, matching the dialog
+            // and avoiding reliance on non-breaking-space rendering (nit-5).
+            label: `${"— ".repeat(category.depth)}${category.label}`,
           })),
         ]}
       />

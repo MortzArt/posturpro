@@ -25,13 +25,61 @@ export type ImageUploadResult =
   | { ok: true; id: string; url: string; sortOrder: number; isPrimary: boolean }
   | { ok: false; reason: "bad-type" | "too-large" | "upload-failed" | "db-failed" };
 
-/** Server-side validation of an uploaded file (never trust the client). */
-function validateFile(file: File): "bad-type" | "too-large" | null {
-  if (!PRODUCT_IMAGE_MIME_TYPES.includes(file.type as (typeof PRODUCT_IMAGE_MIME_TYPES)[number])) {
-    return "bad-type";
+/** The image types the sniffer maps to a canonical MIME (SVG deliberately absent). */
+type SniffedImageType = "image/jpeg" | "image/png" | "image/webp";
+
+/**
+ * Sniff an image's leading magic bytes so we never trust the client-declared
+ * `file.type` (m-1). JPEG = `FF D8 FF`; PNG = `89 50 4E 47`; WEBP = `RIFF....WEBP`.
+ * Returns the canonical MIME derived from the actual bytes, or null if the
+ * header matches none (a mislabeled / polyglot / script payload is rejected).
+ */
+function sniffImageType(header: Uint8Array): SniffedImageType | null {
+  if (header.length >= 3 && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) {
+    return "image/jpeg";
   }
-  if (file.size <= 0 || file.size > IMAGE_MAX_BYTES) return "too-large";
+  if (
+    header.length >= 4 &&
+    header[0] === 0x89 &&
+    header[1] === 0x50 &&
+    header[2] === 0x4e &&
+    header[3] === 0x47
+  ) {
+    return "image/png";
+  }
+  if (
+    header.length >= 12 &&
+    header[0] === 0x52 && // R
+    header[1] === 0x49 && // I
+    header[2] === 0x46 && // F
+    header[3] === 0x46 && // F
+    header[8] === 0x57 && // W
+    header[9] === 0x45 && // E
+    header[10] === 0x42 && // B
+    header[11] === 0x50 // P
+  ) {
+    return "image/webp";
+  }
   return null;
+}
+
+/**
+ * Server-side validation of an uploaded file (never trust the client). Checks
+ * the declared MIME + size cheaply, then SNIFFS the leading magic bytes and
+ * returns the sniffed canonical type — the caller stores objects under THAT,
+ * not `file.type` (m-1). A file whose bytes match no allowed image is rejected.
+ */
+async function validateFile(
+  file: File,
+): Promise<{ ok: true; contentType: SniffedImageType } | { ok: false; reason: "bad-type" | "too-large" }> {
+  if (!PRODUCT_IMAGE_MIME_TYPES.includes(file.type as (typeof PRODUCT_IMAGE_MIME_TYPES)[number])) {
+    return { ok: false, reason: "bad-type" };
+  }
+  if (file.size <= 0 || file.size > IMAGE_MAX_BYTES) return { ok: false, reason: "too-large" };
+  const header = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  const sniffed = sniffImageType(header);
+  if (!sniffed) return { ok: false, reason: "bad-type" };
+  return { ok: true, contentType: sniffed };
 }
 
 /**
@@ -45,16 +93,19 @@ export async function uploadProductImage(
   productSlug: string,
   file: File,
 ): Promise<ImageUploadResult> {
-  const invalid = validateFile(file);
-  if (invalid) return { ok: false, reason: invalid };
+  const validation = await validateFile(file);
+  if (!validation.ok) return { ok: false, reason: validation.reason };
+  // Derive the extension + stored content-type from the SNIFFED bytes, never the
+  // client-declared file.type (m-1) — a mislabeled payload can't set the type.
+  const contentType = validation.contentType;
 
   const db = createAdminClient();
-  const extension = PRODUCT_IMAGE_EXTENSIONS[file.type] ?? "bin";
+  const extension = PRODUCT_IMAGE_EXTENSIONS[contentType] ?? "bin";
   const path = `${productId}/${randomUUID()}.${extension}`;
 
   const { error: uploadError } = await db.storage
     .from(PRODUCT_IMAGES_BUCKET)
-    .upload(path, file, { contentType: file.type, upsert: false });
+    .upload(path, file, { contentType, upsert: false });
   if (uploadError) {
     console.error(`[image-write] upload failed: ${uploadError.message}`);
     return { ok: false, reason: "upload-failed" };
@@ -119,28 +170,36 @@ export async function reorderImages(
   return { ok: true };
 }
 
-/** Set a single image as the cover (clears the previous one — at most one). */
+/**
+ * Set a single image as the cover (at most one cover). Sets the NEW cover FIRST,
+ * then clears every OTHER image's flag. Ordering it this way means a mid-write
+ * failure leaves the product with TWO covers (the storefront still picks one),
+ * never ZERO covers as the clear-all-then-set order could (m-4). PostgREST has
+ * no single-statement conditional update; an RPC is disproportionate for this
+ * single-Owner path, so this ordering is the pragmatic no-cover-gap guarantee.
+ */
 export async function setCoverImage(
   productId: string,
   productSlug: string,
   imageId: string,
 ): Promise<{ ok: boolean }> {
   const db = createAdminClient();
-  const clear = await db
-    .from("product_images")
-    .update({ is_primary: false })
-    .eq("product_id", productId);
-  if (clear.error) {
-    console.error(`[image-write] clear cover failed: ${clear.error.message}`);
-    return { ok: false };
-  }
-  const { error } = await db
+  const set = await db
     .from("product_images")
     .update({ is_primary: true })
     .eq("id", imageId)
     .eq("product_id", productId);
+  if (set.error) {
+    console.error(`[image-write] set cover failed: ${set.error.message}`);
+    return { ok: false };
+  }
+  const { error } = await db
+    .from("product_images")
+    .update({ is_primary: false })
+    .eq("product_id", productId)
+    .neq("id", imageId);
   if (error) {
-    console.error(`[image-write] set cover failed: ${error.message}`);
+    console.error(`[image-write] clear other covers failed: ${error.message}`);
     return { ok: false };
   }
   bustCatalogTags({ productSlugs: [productSlug] });

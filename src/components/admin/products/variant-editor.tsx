@@ -36,11 +36,11 @@ const VARIANT_ERROR_COPY: Record<string, string> = {
   "sku-duplicate": "Ya existe una variante/producto con ese SKU.",
   "price-invalid": "Precio inválido.",
   "stock-invalid": "Stock inválido.",
+  "id-invalid": "Identificador de variante inválido. Recarga e intenta de nuevo.",
 };
 
-interface DraftVariant extends VariantRawInput {
-  key: string;
-}
+/** DraftVariant IS a VariantRawInput (which now carries the stable `key`). */
+type DraftVariant = VariantRawInput;
 
 export function VariantEditor({
   productId,
@@ -54,7 +54,7 @@ export function VariantEditor({
   const [rows, setRows] = useState<DraftVariant[]>(
     initialVariants.map((variant, index) => toDraft(variant, index)),
   );
-  const [errors, setErrors] = useState<Record<number, VariantRowErrors>>({});
+  const [errors, setErrors] = useState<Record<string, VariantRowErrors>>({});
   const [writeError, setWriteError] = useState(false);
   const [saved, setSaved] = useState(false);
   const [pendingDeleteKey, setPendingDeleteKey] = useState<string | null>(null);
@@ -102,12 +102,12 @@ export function VariantEditor({
         <p className="text-sm text-muted-foreground">Sin variantes; se usa el stock y precio del producto.</p>
       ) : (
         <ul className="flex flex-col gap-2" data-testid="admin-variant-rows">
-          {rows.map((row, index) => (
+          {rows.map((row) => (
             <VariantRow
               key={row.key}
               row={row}
               basePrice={basePrice}
-              errors={errors[index]}
+              errors={errors[row.key]}
               onChange={(field, value) => update(row.key, field, value)}
               onDelete={() => setPendingDeleteKey(row.key)}
             />
@@ -205,6 +205,7 @@ function toDraft(variant: EditVariant, index: number): DraftVariant {
 
 function toRaw(draft: DraftVariant): VariantRawInput {
   return {
+    key: draft.key,
     id: draft.id,
     colorName: draft.colorName,
     colorHex: draft.colorHex,

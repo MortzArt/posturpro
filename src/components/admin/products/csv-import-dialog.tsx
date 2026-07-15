@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -36,6 +36,9 @@ const STEP_LABELS: Record<Step, string> = {
 };
 const STEP_ORDER: Step[] = ["select", "preview", "confirm", "result"];
 
+/** Delay before wiping dialog state on close so the exit animation can finish. */
+const RESET_AFTER_CLOSE_MS = 200;
+
 export function CsvImportDialog({
   open,
   onOpenChange,
@@ -51,6 +54,16 @@ export function CsvImportDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const resetTimerRef = useRef<number | null>(null);
+
+  // Clear a pending reset timer on unmount so it can't fire after the dialog
+  // is gone (nit-6).
+  useEffect(
+    () => () => {
+      if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+    },
+    [],
+  );
 
   const reset = (): void => {
     setStep("select");
@@ -89,7 +102,8 @@ export function CsvImportDialog({
   const close = (): void => {
     onOpenChange(false);
     router.refresh();
-    setTimeout(reset, 200);
+    if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = window.setTimeout(reset, RESET_AFTER_CLOSE_MS);
   };
 
   return (

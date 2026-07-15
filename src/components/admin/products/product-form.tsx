@@ -156,6 +156,12 @@ export function ProductForm(props: ProductFormProps) {
         />
       ) : null}
 
+      {/* Remount the uncontrolled fields on each submission so their
+          defaultValue re-seeds from the server-echoed state.values on an invalid
+          response instead of retaining stale DOM values (m-8). Controlled
+          name/slug read from surviving useState, so a remount is a no-op for
+          them. `contents` keeps the form's flex gap intact. */}
+      <div key={state.submissionId} className="contents">
       <Section title="General" id="general">
         <TextField
           name="name"
@@ -273,6 +279,7 @@ export function ProductForm(props: ProductFormProps) {
           <SwitchField name="is_best_seller" label="Más vendido" defaultChecked={values.is_best_seller} disabled={pending} testid="admin-product-best-seller" />
         </div>
       </Section>
+      </div>
 
       {state.status === "error" ? (
         <Banner role="alert" tone="error" icon={Alert02Icon} message="No se pudo guardar. Intenta de nuevo." testid="admin-product-write-error" />

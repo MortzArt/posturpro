@@ -17,7 +17,7 @@ None. No auth bypass, no secret exposure, no SQL/PostgREST injection reachable b
 - **Problem**: `updateProduct` updates the base `products` row, THEN calls `syncLinks`, which does delete-then-insert of category/tag rows. Unlike `createProduct` (which rolls back the inserted row on link failure), the update path has **no rollback**. If the category insert fails after the delete succeeds, the product keeps its new column values but is left with **zero categories**. The action returns a generic "write-failed" banner while the DB is silently corrupted.
 - **Impact**: A transient error mid-save wipes a product's category associations without telling the operator; the product may drop off category facet pages. Not recoverable without re-editing.
 - **Suggested Fix**: Wrap the update + M2M sync in a single transactional RPC (mirrors the T7/T8 RPC pattern), OR snapshot the prior category/tag rows and restore them on `syncLinks` failure.
-- **Status**: OPEN
+- **Status**: FIXED
 
 ### M-2: `updateProduct` cache bust ignores the OLD brand/style/category slugs
 - **ID**: M-2
@@ -26,7 +26,7 @@ None. No auth bypass, no secret exposure, no SQL/PostgREST injection reachable b
 - **Problem**: On update, `bustForProduct` resolves slugs only from the **new** `values.brand_id` / `values.style_id` / `categoryIds`. If the operator moves a product from brand A to brand B (or removes a category), only the new facets are busted; `brand:A` (and any removed category facet) keeps serving the stale listing that still includes the product.
 - **Impact**: A re-branded/re-categorized product lingers on its old facet page until the broad `catalog` tag otherwise expires. AC-11/AC-24 "bust touched taxonomy tags" is only half-met for reassignment.
 - **Suggested Fix**: Before the update, read the product's current brand/style/categories; union OLD and NEW taxonomy slugs and pass both to `bustCatalogTags` (as already done for the product slug).
-- **Status**: OPEN
+- **Status**: FIXED
 
 ### M-3: CSV `applyImport` reports success/failure incorrectly and leaves partial M2M state
 - **ID**: M-3
@@ -35,7 +35,7 @@ None. No auth bypass, no secret exposure, no SQL/PostgREST injection reachable b
 - **Problem**: `upsertProduct` commits the product row FIRST, then calls `syncCategories`/`syncTags` (delete-then-insert). If a link sync throws, the whole row is pushed to `result.failed` — but the product row was already created/updated with its links partially replaced. The summary tells the operator the row **failed** when the product actually persisted with broken links. Per-row isolation (AC-31) holds; within-row atomicity does not.
 - **Impact**: A CSV import that hits a link error produces a misleading count and silently corrupts those products' taxonomy; on re-run the operator can't tell which rows landed.
 - **Suggested Fix**: Do each row's product upsert + link sync in one transaction/RPC (all-or-nothing) before counting it created/updated/failed.
-- **Status**: OPEN
+- **Status**: FIXED
 
 ### M-4: Variant delete interpolates un-validated ids into a PostgREST filter string
 - **ID**: M-4
@@ -44,7 +44,7 @@ None. No auth bypass, no secret exposure, no SQL/PostgREST injection reachable b
 - **Problem**: The client-controlled variant `id` is string-interpolated into a raw PostgREST `in (...)` list. A crafted id containing `)`, a comma, or a nested filter fragment can alter the delete predicate. It is behind admin auth (attacker = trusted Owner), but it is the one place raw request data is concatenated into a filter expression.
 - **Impact**: A malformed/hostile id could broaden the delete predicate (delete other products' variants) or error out. Low likelihood, high blast radius.
 - **Suggested Fix**: Validate each variant `id` against a UUID regex in `parseVariant`; prefer a typed `.in()` array over manual string interpolation.
-- **Status**: OPEN
+- **Status**: FIXED
 
 ### M-5: `product-table.tsx` "Mostrando X–Y de Z" range is wrong on the last page
 - **ID**: M-5
@@ -53,7 +53,7 @@ None. No auth bypass, no secret exposure, no SQL/PostgREST injection reachable b
 - **Problem**: `rangeStart = (page - 1) * rows.length + 1` uses the current page's row count as the page size. On the final page `rows.length < ADMIN_PRODUCTS_PER_PAGE`, so the starting index is wrong (e.g. page 2 with 3 rows shows "Mostrando 4–6" instead of "26–28").
 - **Impact**: Incorrect result-count copy on every non-full page.
 - **Suggested Fix**: `rangeStart = (page - 1) * ADMIN_PRODUCTS_PER_PAGE + 1`.
-- **Status**: OPEN
+- **Status**: FIXED
 
 ### M-6: `variant-editor.tsx` attaches row errors by array index, not stable key
 - **ID**: M-6
@@ -62,7 +62,7 @@ None. No auth bypass, no secret exposure, no SQL/PostgREST injection reachable b
 - **Problem**: Rows render with a stable `row.key`, but `rowErrors` is keyed by positional `index`. After a delete/reorder between submit and error render, the server's per-index errors attach to the wrong row.
 - **Impact**: "SKU duplicado" shown on the wrong variant; operator fixes the wrong field.
 - **Suggested Fix**: Key `rowErrors` by `row.key`/server id; have `saveVariantsAction` map the offending SKU to the stable key, not the index.
-- **Status**: OPEN
+- **Status**: FIXED
 
 ### M-7: Image-manager delete relies on state surviving the dialog close (stale-closure race)
 - **ID**: M-7
@@ -71,7 +71,7 @@ None. No auth bypass, no secret exposure, no SQL/PostgREST injection reachable b
 - **Problem**: `confirmDelete` reads `pendingDelete` then nulls it, while `AlertDialog onOpenChange` also nulls it on close. Depending on Radix event ordering, `pendingDelete` can already be null at confirm → `if (!image) return` silently no-ops the delete.
 - **Impact**: Intermittent "delete did nothing" — operator thinks the image is gone but it persists.
 - **Suggested Fix**: Capture the target image in a ref (or pass its id into the confirm handler) instead of relying on state living across the close.
-- **Status**: OPEN
+- **Status**: FIXED
 
 ### M-8: `product-filters.tsx` debounce timer not cleared on unmount
 - **ID**: M-8
@@ -80,7 +80,7 @@ None. No auth bypass, no secret exposure, no SQL/PostgREST injection reachable b
 - **Problem**: The search debounce `setTimeout` is stored in a ref but never cleared; navigating away mid-debounce fires `router.replace` after unmount.
 - **Impact**: Unmounted-update warnings + a spurious URL replace after leaving the list.
 - **Suggested Fix**: `useEffect(() => () => clearTimeout(debounceRef.current), [])`.
-- **Status**: OPEN
+- **Status**: FIXED
 
 ### M-9: `taxonomy-manager.tsx` uses non-null `!` on `.find()` results (AC-33 violation)
 - **ID**: M-9
@@ -89,7 +89,7 @@ None. No auth bypass, no secret exposure, no SQL/PostgREST injection reachable b
 - **Problem**: `props.brands.find(...)!` (styles/tags too) assert non-null. A stale click after the row list changed throws a runtime TypeError, and it directly violates CLAUDE.md + AC-33 ("no non-null `!` to silence the compiler").
 - **Impact**: AC-33 non-compliance + a crash path on a benign race.
 - **Suggested Fix**: Guard the `find` result (`if (!row) return;`) and drop the `!`.
-- **Status**: OPEN
+- **Status**: FIXED
 
 ## Minor Issues (NICE TO FIX)
 
@@ -219,3 +219,45 @@ Strong architecture, exemplary auth discipline, correct migration/RPC, well-test
 ## Recommendation: APPROVE-WITH-FIXES
 
 Fix the MAJORs before this is trusted with the real catalog. Priority: M-1/M-2/M-3 (partial-failure integrity + stale cache) and M-9 (AC-33 `!` violation); then M-4 (id validation) and M-5/M-6/M-7/M-8 (client correctness). MINORs (magic-byte sniff, TAB/CR escape, export bound, a11y wiring, uncontrolled-field reset) are good hygiene for the Fix stage but not launch-blocking for a single-Owner Phase-1 surface. No CRITICAL/security-blocking issues; the trust boundary is sound.
+
+---
+
+## STAGE 6 (ultrafix) RESOLUTION — every finding FIXED or SKIPPED
+
+### Majors (9/9 FIXED)
+- **M-1** FIXED — `product-write.ts` `updateProduct` now snapshots prior category/tag links before the update and restores them on link-sync failure (mirrors `createProduct`). Regression-locked: `admin-catalog-write-atomicity.integration.test.ts` (original categories survive a forced FK failure).
+- **M-2** FIXED — `bustForUpdate` unions OLD (snapshot) + NEW brand/style/category ids and busts both facet sets. Regression-locked: integration test asserts both `category:A` and `category:B` busted on a move.
+- **M-3** FIXED — `csv-import-write.ts` `upsertProduct` wraps the link-sync in try/catch: a new row is deleted on failure, an updated row's prior links are restored, before the row is counted. Regression-locked: integration create+update cases with a poisoned taxonomy map (`upsertProduct` exported for the test).
+- **M-4** FIXED — `parseVariant` validates a non-empty `id` against `UUID_PATTERN` (`id-invalid`) before it reaches the raw PostgREST `not(id.in.(...))` filter. Unit tests cover break-out payloads.
+- **M-5** FIXED — new pure `displayRangeFor(page,pageSize,total)` in `pagination.ts`; `product-table.tsx` uses page SIZE + total, not `rows.length`. 5 unit tests incl. the last-page case.
+- **M-6** FIXED — `VariantRawInput` carries a stable `key`; `parseVariantSet` + `saveVariantsAction` + `variant-editor.tsx` key row errors by it, never the array index. Unit test asserts key-based attribution.
+- **M-7** FIXED — `image-manager.tsx` captures the delete target in a ref (`pendingDeleteRef`); `confirmDelete` reads the ref, immune to the Radix onOpenChange-null race. (Only e2e can fully exercise the timing; logic is now race-free.)
+- **M-8** FIXED — `product-filters.tsx` clears the debounce timer on unmount via `useEffect` cleanup.
+- **M-9** FIXED — the 3 non-null `!` in `taxonomy-manager.tsx` replaced with `if (!row) return;` guards (AC-33 compliant).
+
+### Minors
+- **m-1** FIXED — `image-write.ts` sniffs JPEG/PNG/WEBP magic bytes; stored `contentType`/extension derive from the sniffed type, not `file.type`. (Covered by the storage upload path; sniff logic internal to the server-only module — e2e/manual verifies the reject.)
+- **m-2** FIXED — `escapeCsvCell` lead-char set now `/^[=+\-@\t\r]/` (adds TAB/CR). Unit test added.
+- **m-3** FIXED — admin list search strips `. : \` in addition to `% , ( ) *`.
+- **m-4** FIXED (pragmatic) — `setCoverImage` reordered to set the new cover FIRST then clear others, so a mid-write failure leaves TWO covers (storefront picks one), never ZERO. A single-statement/RPC form is disproportionate for this single-Owner path (noted inline).
+- **m-5** FIXED — `buildImportDiff` tracks `seenSlugs`; a second row resolving to the same slug is flagged in the dry-run. Unit test added.
+- **m-6** FIXED — CSV export read bounded by `CSV_EXPORT_MAX_ROWS` (10,000). Streaming/pagination remains the follow-up as the catalog grows (noted inline).
+- **m-7** FIXED — inventory dialog surfaces the negative-result message via the amount `TextField`'s `error` prop (wired to `aria-describedby`); the detached `FieldError` removed.
+- **m-8** FIXED — `taxonomy-entity-dialog` remounts per entity (`key={draft?.id||"new"}`); `product-form` uncontrolled fieldset remounts per submission (`key={state.submissionId}`) so `defaultValue`s re-seed from `state.values`.
+- **m-9** FIXED — `qa-inbox` splits `contentError` (field) from `actionError` (Banner); the duplicate `FieldError` removed.
+
+### Nits
+- **nit-1** SKIPPED — `fields.tsx` 466 lines is under the 1000 hard cap, ESLint green; splitting is churn with no correctness benefit (adjudicated ACCEPTABLE in review).
+- **nit-2** SKIPPED — `aria-describedby={cn(...)}` works correctly; renaming the joiner is cosmetic and touches every field primitive (regression risk > benefit).
+- **nit-3** SKIPPED — `FIELD_ORDER`/`fieldKeyToTestid` de-duplication is a refactor with test-surface risk; the two sources are currently consistent and covered by e2e focus tests.
+- **nit-4** SKIPPED — pagination ellipsis index key is harmless (stable, non-interactive), noted so in the review itself.
+- **nit-5** FIXED — category-filter `<option>` indent now uses a visible `"— "` glyph prefix (matches the dialog) instead of relying on NBSP rendering.
+- **nit-6** FIXED — `csv-import-dialog` reset delay named `RESET_AFTER_CLOSE_MS`; the timer is tracked in a ref and cleared on unmount + reopen.
+- **nit-7** FIXED — `ui/dialog.tsx` sr-only/footer "Close" → "Cerrar" (admin is es-MX only; no other consumer).
+
+### Verification (independent, this stage)
+- `tsc --noEmit`: 0 errors. `eslint .`: clean. `tsconfig.json`: unchanged.
+- Unit: 1462/1462 (87 files) — baseline 1451 + 11 new (M-4 ×4, M-5 ×5, m-2 ×1, m-5 ×1; 1 existing test re-keyed for M-6).
+- Integration: 202/202 (18 files) via `scripts/run-integration.sh` — baseline 197 + 5 new (M-1, M-2, M-3-create, M-3-update, + seed) in 1 new file.
+- DB left pristine-seeded (30 products, 0 stray rows); port 3000 clear; no stray servers.
+- No git commit (orchestrator commits).

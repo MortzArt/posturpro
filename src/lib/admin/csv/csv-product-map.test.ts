@@ -68,6 +68,20 @@ describe("buildImportDiff", () => {
     if (second.action === "error") expect(second.message).toContain("repetido");
   });
 
+  it("detects an in-file duplicate SLUG (distinct SKUs, same slug) — m-5", () => {
+    const diff = diffFor(
+      "dupslug,SKU-X,Row X,,,,,,10.00,,,1,active,,,,,,,,\n" +
+      "dupslug,SKU-Y,Row Y,,,,,,10.00,,,1,active,,,,,,,,",
+    );
+    if ("error" in diff) throw new Error(diff.error);
+    // First row plans as create; the second is flagged in the dry-run (not left
+    // to die at confirm with a 23505).
+    expect(diff.errorCount).toBe(1);
+    const second = diff.rows[1];
+    expect(second.action).toBe("error");
+    if (second.action === "error") expect(second.message).toContain("Slug repetido");
+  });
+
   it("rejects a missing required header", () => {
     const diff = buildImportDiff(parseCsv("name,price\nSilla,10.00"), context);
     expect("error" in diff).toBe(true);

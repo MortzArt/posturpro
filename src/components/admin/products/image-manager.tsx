@@ -57,9 +57,22 @@ export function ImageManager({
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<EditImage | null>(null);
+  // Mirror the delete target in a ref so `confirmDelete` reads it directly
+  // instead of relying on the `pendingDelete` state surviving the dialog's
+  // onOpenChange-null race (Radix event ordering can null it first) — M-7.
+  const pendingDeleteRef = useRef<EditImage | null>(null);
   const [, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const liveRef = useRef<HTMLParagraphElement>(null);
+
+  const requestDelete = (image: EditImage): void => {
+    pendingDeleteRef.current = image;
+    setPendingDelete(image);
+  };
+  const clearPendingDelete = (): void => {
+    pendingDeleteRef.current = null;
+    setPendingDelete(null);
+  };
 
   const persistOrder = (orderedIds: string[]): void => {
     setImages((prev) => orderedIds.map((id) => prev.find((img) => img.id === id)).filter(isImage));
@@ -126,9 +139,9 @@ export function ImageManager({
   };
 
   const confirmDelete = (): void => {
-    const image = pendingDelete;
+    const image = pendingDeleteRef.current;
     if (!image) return;
-    setPendingDelete(null);
+    clearPendingDelete();
     setImages((prev) => reconcileCoverAfterDelete(prev.filter((img) => img.id !== image.id), image));
     startTransition(async () => {
       const result = await deleteImageAction(productId, image.id);
@@ -182,7 +195,7 @@ export function ImageManager({
               onMoveUp={() => move(index, -1)}
               onMoveDown={() => move(index, 1)}
               onChooseCover={() => chooseCover(image.id)}
-              onDelete={() => setPendingDelete(image)}
+              onDelete={() => requestDelete(image)}
             />
           ))}
         </div>
@@ -196,7 +209,7 @@ export function ImageManager({
       <p className="text-xs text-muted-foreground">Una sola portada. Se muestra primero en la tienda.</p>
       <p ref={liveRef} aria-live="polite" className="sr-only" />
 
-      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
+      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && clearPendingDelete()}>
         <AlertDialogContent className="dialog-content-motion" data-testid="admin-image-delete-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar imagen?</AlertDialogTitle>

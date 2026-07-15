@@ -61,7 +61,22 @@ export async function createProduct(
   return { ok: true, id: productId, slug: data.slug };
 }
 
-/** Update a product in place + re-sync M2M links; bust tags (old + new slug). */
+/** A product's M2M link state + taxonomy ids, snapshotted before an update. */
+interface ProductLinkSnapshot {
+  brandId: string | null;
+  styleId: string | null;
+  categoryIds: string[];
+  tagIds: string[];
+}
+
+/**
+ * Update a product in place + re-sync M2M links; bust tags for BOTH the old and
+ * new taxonomy (M-2). If the link re-sync fails after the base row updated, the
+ * prior category/tag links are restored so the product is never left with zero
+ * categories (M-1 — mirrors createProduct's compensation; the update path had
+ * none). Restore-then-report keeps the DB whole even though this is not a single
+ * transaction.
+ */
 export async function updateProduct(
   productId: string,
   previousSlug: string,
@@ -70,18 +85,62 @@ export async function updateProduct(
   tagNames: string[],
 ): Promise<ProductWriteResult> {
   const db = createAdminClient();
+
+  // Snapshot the prior taxonomy BEFORE mutating anything — needed for both the
+  // old-slug cache bust (M-2) and the link-sync rollback (M-1).
+  const before = await snapshotProductLinks(db, productId);
+
   const { error } = await db.from("products").update(values).eq("id", productId);
   if (error) return mapWriteError(error, "update");
 
   const linkError = await syncLinks(db, productId, categoryIds, tagNames);
   if (linkError) {
-    console.error(`[product-write] link sync failed on update: ${linkError}`);
+    await restoreProductLinks(db, productId, before);
+    console.error(`[product-write] link sync failed on update, restored prior links: ${linkError}`);
     return { ok: false, reason: "write-failed" };
   }
 
   const slugs = previousSlug === values.slug ? [values.slug] : [previousSlug, values.slug];
-  await bustForProduct(db, slugs, values, categoryIds);
+  await bustForUpdate(db, slugs, before, values, categoryIds);
   return { ok: true, id: productId, slug: values.slug };
+}
+
+/** Read a product's current brand/style + category/tag link ids. */
+async function snapshotProductLinks(
+  db: AdminClient,
+  productId: string,
+): Promise<ProductLinkSnapshot> {
+  const [product, categories, tags] = await Promise.all([
+    db.from("products").select("brand_id, style_id").eq("id", productId).maybeSingle(),
+    db.from("product_categories").select("category_id").eq("product_id", productId),
+    db.from("product_tags").select("tag_id").eq("product_id", productId),
+  ]);
+  return {
+    brandId: product.data?.brand_id ?? null,
+    styleId: product.data?.style_id ?? null,
+    categoryIds: (categories.data ?? []).map((row) => row.category_id),
+    tagIds: (tags.data ?? []).map((row) => row.tag_id),
+  };
+}
+
+/** Restore a product's category/tag links to a prior snapshot (M-1 rollback). */
+async function restoreProductLinks(
+  db: AdminClient,
+  productId: string,
+  snapshot: ProductLinkSnapshot,
+): Promise<void> {
+  await db.from("product_categories").delete().eq("product_id", productId);
+  if (snapshot.categoryIds.length > 0) {
+    const rows = snapshot.categoryIds.map((categoryId) => ({ product_id: productId, category_id: categoryId }));
+    const { error } = await db.from("product_categories").insert(rows);
+    if (error) console.error(`[product-write] category link restore failed: ${error.message}`);
+  }
+  await db.from("product_tags").delete().eq("product_id", productId);
+  if (snapshot.tagIds.length > 0) {
+    const rows = snapshot.tagIds.map((tagId) => ({ product_id: productId, tag_id: tagId }));
+    const { error } = await db.from("product_tags").insert(rows);
+    if (error) console.error(`[product-write] tag link restore failed: ${error.message}`);
+  }
 }
 
 /** Set a product's status (archive/restore) and bust tags. */
@@ -212,6 +271,35 @@ async function bustForProduct(
     styleSlugs,
     categorySlugs,
   });
+}
+
+/**
+ * Bust catalog + the touched product slug(s) AND the UNION of the OLD and NEW
+ * brand/style/category slugs (M-2). A reassigned-away brand/removed category
+ * must be busted too, else its facet page keeps serving the stale listing.
+ */
+async function bustForUpdate(
+  db: AdminClient,
+  productSlugs: string[],
+  before: ProductLinkSnapshot,
+  values: ProductParsed,
+  newCategoryIds: string[],
+): Promise<void> {
+  const brandIds = unionIds(before.brandId, values.brand_id);
+  const styleIds = unionIds(before.styleId, values.style_id);
+  const categoryIds = [...new Set([...before.categoryIds, ...newCategoryIds])];
+
+  const [brandSlugs, styleSlugs, categorySlugs] = await Promise.all([
+    slugsFor(db, "brands", brandIds),
+    slugsFor(db, "styles", styleIds),
+    slugsFor(db, "categories", categoryIds),
+  ]);
+  bustCatalogTags({ productSlugs, brandSlugs, styleSlugs, categorySlugs });
+}
+
+/** Distinct, non-null id set from an old + new value pair. */
+function unionIds(oldId: string | null, newId: string | null): string[] {
+  return [...new Set([oldId, newId].filter((id): id is string => id !== null))];
 }
 
 /** Read the slugs for a set of ids from a taxonomy table (for tag busting). */

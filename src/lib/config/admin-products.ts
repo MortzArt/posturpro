@@ -53,6 +53,14 @@ export const CSV_MAX_ROWS = 5_000;
 export const CSV_MAX_BYTES = 5 * 1024 * 1024;
 
 /**
+ * Max products a single CSV EXPORT reads into memory (m-6). Bounds the unbounded
+ * full-table read; well above the Phase-1 catalog. Beyond this the export is
+ * truncated (documented) rather than exhausting memory — pagination/streaming is
+ * the follow-up when the catalog approaches this.
+ */
+export const CSV_EXPORT_MAX_ROWS = 10_000;
+
+/**
  * Adjustment-reason length bound (AC-25). Matches the DB CHECK
  * `char_length(btrim(reason)) between 1 and 500` in migration 0011.
  */

@@ -135,6 +135,7 @@ function planRow(
   line: number,
   context: ImportContext,
   seenSkus: Set<string>,
+  seenSlugs: Set<string>,
 ): ImportRowPlan {
   const sku = cell(row, index, "sku");
   const name = cell(row, index, "name");
@@ -145,6 +146,12 @@ function planRow(
     seenSkus.add(sku.toLowerCase());
 
     const values = buildValues(row, index, sku, name, context);
+    // Two rows resolving to the same slug both preview as "create" then the
+    // second dies at confirm with a 23505 — surface it in the dry-run (m-5).
+    const slugKey = values.slug.toLowerCase();
+    if (seenSlugs.has(slugKey)) throw `Slug repetido en el archivo: ${values.slug}.`;
+    seenSlugs.add(slugKey);
+
     const action = context.existingSkus.has(sku) ? "update" : "create";
     return { line, action, sku, name, values };
   } catch (reason) {
@@ -230,9 +237,10 @@ export function buildImportDiff(rows: string[][], context: ImportContext): Impor
   if (!header.ok) return { error: header.message };
 
   const seenSkus = new Set<string>();
+  const seenSlugs = new Set<string>();
   const plans: ImportRowPlan[] = [];
   for (let i = 1; i < rows.length; i += 1) {
-    plans.push(planRow(rows[i], header.index, i + 1, context, seenSkus));
+    plans.push(planRow(rows[i], header.index, i + 1, context, seenSkus, seenSlugs));
   }
 
   return {

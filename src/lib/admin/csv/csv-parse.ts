@@ -98,11 +98,12 @@ function needsQuoting(value: string): boolean {
 
 /**
  * Escape a single cell for output: prefix-escape a formula-injection leading
- * char (`= + - @`) with a `'`, then RFC-4180-quote (doubling `"`) when needed.
+ * char with a `'`, then RFC-4180-quote (doubling `"`) when needed. The lead-char
+ * set is OWASP's full set: `= + - @` plus TAB (0x09) and CR (0x0D) (m-2).
  */
 export function escapeCsvCell(value: string): string {
   let cell = value;
-  if (/^[=+\-@]/.test(cell)) cell = `'${cell}`;
+  if (/^[=+\-@\t\r]/.test(cell)) cell = `'${cell}`;
   if (needsQuoting(cell)) {
     return `"${cell.replace(/"/g, '""')}"`;
   }

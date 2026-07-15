@@ -4,6 +4,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Image01Icon } from "@hugeicons/core-free-icons";
 import { formatMXN } from "@/lib/money";
 import { formatRelativeDate } from "@/lib/admin/format";
+import { displayRangeFor } from "@/lib/catalog/pagination";
+import { ADMIN_PRODUCTS_PER_PAGE } from "@/lib/config";
 import { ADMIN_PRODUCTS_PATH } from "@/lib/admin/constants";
 import { ProductStatusBadge } from "@/components/admin/products/status-badge";
 import { ProductRowActions } from "@/components/admin/products/product-row-actions";
@@ -27,16 +29,16 @@ interface ProductTableProps {
 }
 
 export function ProductTable({ rows, totalCount, page, lastPage, filters }: ProductTableProps) {
-  const rangeStart = totalCount === 0 ? 0 : (page - 1) * rows.length + 1;
+  // Range is derived from the page SIZE + total, never rows.length (which is
+  // smaller on the last page and would corrupt the start index) — M-5.
+  const { start, end } = displayRangeFor(page, ADMIN_PRODUCTS_PER_PAGE, totalCount);
   return (
     <div className="flex flex-col gap-4" data-testid="admin-products-table">
       <DesktopTable rows={rows} />
       <MobileCards rows={rows} />
       <div className="flex flex-col items-center justify-between gap-3 text-xs text-muted-foreground sm:flex-row">
         <p className="tabular-nums" data-testid="admin-products-count">
-          {totalCount === 0
-            ? "Sin resultados"
-            : `Mostrando ${rangeStart}–${rangeStart + rows.length - 1} de ${totalCount}`}
+          {totalCount === 0 ? "Sin resultados" : `Mostrando ${start}–${end} de ${totalCount}`}
         </p>
         <AdminPagination page={page} lastPage={lastPage} filters={filters} />
       </div>

@@ -83,3 +83,59 @@ Full-feature, HIGH complexity, built in **7 slices in order**, each verified (ts
 - `0011_admin_inventory_and_storage.sql` — LOCAL only (`supabase db reset`); remote is empty/unlinked. Idempotent + re-runnable.
 - `config.toml` `[storage] enabled = true` (analytics + edge_runtime remain OFF — they, not storage, caused the original boot regression). If storage ever regresses local boot, the fallback is a filesystem/`public/` dev shim behind the `image-write.ts` interface (documented in that module).
 - Bucket `product-images` created via the migration's guarded `storage.buckets` insert (no seed step needed).
+
+---
+
+## Fixes Applied (Stage 6)
+
+### Issue Tracker
+| ID | Severity | Title | Status | File | Notes |
+|----|----------|-------|--------|------|-------|
+| C-* | CRITICAL | (none) | — | — | Review found 0 critical |
+| M-1 | MAJOR | updateProduct no rollback on link-sync failure | FIXED | `src/lib/admin/products/product-write.ts` | Snapshot prior category/tag links; restore on link-sync failure (mirrors createProduct) |
+| M-2 | MAJOR | update cache-bust ignores OLD taxonomy slugs | FIXED | `src/lib/admin/products/product-write.ts` | `bustForUpdate` unions OLD+NEW brand/style/category ids |
+| M-3 | MAJOR | CSV within-row atomicity | FIXED | `src/lib/admin/csv/csv-import-write.ts` | try/catch around link-sync: delete new row / restore prior links before counting |
+| M-4 | MAJOR | variant id not UUID-validated (PostgREST filter) | FIXED | `src/lib/admin/products/variant-input.ts` | `parseVariant` validates non-empty id vs `UUID_PATTERN` → `id-invalid` |
+| M-5 | MAJOR | last-page "Mostrando X–Y" range wrong | FIXED | `src/lib/catalog/pagination.ts`, `product-table.tsx` | new pure `displayRangeFor(page,pageSize,total)` |
+| M-6 | MAJOR | variant row errors keyed by array index | FIXED | `variant-input.ts`, `variant-actions.ts`, `variant-editor.tsx` | stable `key` on `VariantRawInput`; errors keyed by it |
+| M-7 | MAJOR | image-delete stale-closure race | FIXED | `src/components/admin/products/image-manager.tsx` | delete target captured in a ref; confirm reads the ref |
+| M-8 | MAJOR | filter debounce timer not cleared on unmount | FIXED | `src/components/admin/products/product-filters.tsx` | `useEffect` cleanup clears the timer |
+| M-9 | MAJOR | non-null `!` on `.find()` ×3 (AC-33) | FIXED | `src/components/admin/taxonomy/taxonomy-manager.tsx` | replaced with `if (!row) return;` guards |
+| m-1 | MINOR | image MIME trusts client `file.type` | FIXED | `src/lib/admin/products/image-write.ts` | sniff JPEG/PNG/WEBP magic bytes; contentType from sniffed type |
+| m-2 | MINOR | CSV escape omits leading TAB/CR | FIXED | `src/lib/admin/csv/csv-parse.ts` | lead-char set `/^[=+\-@\t\r]/` |
+| m-3 | MINOR | list search leaves `. : \` | FIXED | `src/lib/admin/products/list-query.ts` | strip `. : \` too |
+| m-4 | MINOR | setCoverImage not atomic | FIXED | `src/lib/admin/products/image-write.ts` | set-new-first then clear-others → never zero covers |
+| m-5 | MINOR | dry-run misses duplicate SLUGs | FIXED | `src/lib/admin/csv/csv-product-map.ts` | `seenSlugs` set in `buildImportDiff` |
+| m-6 | MINOR | CSV export unbounded | FIXED | `src/lib/admin/csv/csv-generate.ts` | `.limit(CSV_EXPORT_MAX_ROWS)` |
+| m-7 | MINOR | negative-result not in `aria-describedby` | FIXED | `inventory-adjust-dialog.tsx` | fold into amount field `error` prop |
+| m-8 | MINOR | uncontrolled fields don't reset | FIXED | `taxonomy-entity-dialog` usage, `product-form.tsx` | `key` per entity / per submission |
+| m-9 | MINOR | qa-inbox double-renders errors | FIXED | `src/components/admin/qa/qa-inbox.tsx` | split contentError (field) / actionError (Banner) |
+| nit-1 | NIT | fields.tsx 466 lines | SKIPPED | — | under hard cap, ESLint green (acknowledged) |
+| nit-2 | NIT | `aria-describedby={cn(...)}` reads oddly | SKIPPED | — | works; cosmetic, touches every primitive |
+| nit-3 | NIT | FIELD_ORDER/testid duplication | SKIPPED | — | refactor risk > benefit; sources consistent |
+| nit-4 | NIT | pagination ellipsis index key | SKIPPED | — | harmless (stable, non-interactive) |
+| nit-5 | NIT | `<option>` indent via NBSP | FIXED | `product-filters.tsx` | visible `"— "` glyph prefix |
+| nit-6 | NIT | reset setTimeout magic number, no cleanup | FIXED | `csv-import-dialog.tsx` | `RESET_AFTER_CLOSE_MS` + ref + cleanup |
+| nit-7 | NIT | sr-only "Close" untranslated | FIXED | `src/components/ui/dialog.tsx` | → "Cerrar" (admin es-MX only) |
+
+### Summary
+- Critical: 0/0 (none found)
+- Major: 9/9 fixed, 0 skipped
+- Minor: 9/9 fixed, 0 skipped
+- Nit: 4/7 fixed, 3 skipped (nit-1/2/3/4 cosmetic-or-refactor-risk; nit-4 harmless)
+
+### Regression tests added
+- Data-integrity (integration, live local Supabase, exercise the real server-only write modules with `server-only` stubbed in the integration config):
+  - `tests/integration/admin-catalog-write-atomicity.integration.test.ts` — M-1 (restore on update link-fail), M-2 (old+new facet bust), M-3 create (delete on link-fail) + update (restore prior links). Each fails without its fix.
+- Pure logic (unit):
+  - M-4 UUID id validation + break-out payloads (`variant-input.test.ts`).
+  - M-5 `displayRangeFor` incl. last-page (`pagination.test.ts`).
+  - M-6 stable-key error attribution (`variant-input.test.ts`).
+  - m-2 TAB/CR escape (`csv-parse.test.ts`), m-5 slug-dup dry-run (`csv-product-map.test.ts`).
+- Client-only where pure logic isn't extractable (M-7 Radix timing, m-1 sniff-reject through the server-only upload path): covered by the fix's structure + noted for e2e (Stage 7 QA / Stage 11).
+
+### Test Results After Fixes
+- tsc --noEmit: 0 | eslint: clean | tsconfig: unchanged
+- Unit: 1462 total | 1462 passed | 0 failed (87 files; +11 vs 1451 baseline)
+- Integration: 202 total | 202 passed | 0 failed (18 files; +5 vs 197 baseline) via `scripts/run-integration.sh`
+- DB left pristine-seeded (30 products, 0 stray rows); port 3000 clear

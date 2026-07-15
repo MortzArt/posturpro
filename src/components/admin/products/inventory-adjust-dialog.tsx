@@ -157,7 +157,9 @@ export function InventoryAdjustDialog({
             testid="inventory-adjust-amount"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
-            error={amountError}
+            // Surface the negative-result case as THIS field's error so it wires
+            // into the input's aria-describedby for SR users (m-7).
+            error={wouldGoNegative ? "El inventario no puede quedar negativo." : amountError}
             inputClassName="tabular-nums"
           />
 
@@ -186,14 +188,6 @@ export function InventoryAdjustDialog({
                 ? `(${parsedAmount >= 0 ? "+" : ""}${parsedAmount})`
                 : null}
             </p>
-          ) : null}
-
-          {wouldGoNegative ? (
-            <FieldError
-              id="inventory-negative"
-              testid="inventory-adjust-negative"
-              message="El inventario no puede quedar negativo."
-            />
           ) : null}
 
           {writeError ? (

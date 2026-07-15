@@ -25,6 +25,13 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Stub `server-only` to a no-op so integration tests can import the actual
+      // `server-only` write modules (product-write, csv-import-write, …) and
+      // exercise their real compensation/rollback logic against the live DB —
+      // not a hand-replicated copy of the sequence. The guard's only job is to
+      // keep the secret key out of the client bundle, irrelevant here (node,
+      // real service key). Matches the module's own `react-server` empty entry.
+      "server-only": path.resolve(__dirname, "./node_modules/server-only/empty.js"),
     },
   },
 });

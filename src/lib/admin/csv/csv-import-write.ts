@@ -20,8 +20,8 @@ export interface ImportWriteResult {
   failed: { sku: string; message: string }[];
 }
 
-/** Slug → id maps for taxonomy resolution. */
-interface TaxonomyMaps {
+/** Slug → id maps for taxonomy resolution. Exported for within-row atomicity tests (M-3). */
+export interface TaxonomyMaps {
   brandBySlug: Map<string, string>;
   styleBySlug: Map<string, string>;
   categoryBySlug: Map<string, string>;
@@ -52,8 +52,26 @@ export async function applyImport(rows: ImportProductValues[]): Promise<ImportWr
   return result;
 }
 
-/** Upsert one product by SKU + reconcile its M2M links. Returns true if created. */
-async function upsertProduct(
+/** A product row's prior M2M link state, snapshotted before an update. */
+interface LinkSnapshot {
+  categoryIds: string[];
+  tagIds: string[];
+}
+
+/**
+ * Upsert one product by SKU + reconcile its M2M links WITH within-row atomicity
+ * (M-3). The row is not counted created/updated until BOTH the product write and
+ * the link sync succeed. If the link sync throws:
+ *   - a newly-inserted row is deleted (full rollback), and
+ *   - an updated row's prior links are restored,
+ * so a failing row never persists a half-written product while being reported as
+ * failed. Per-row isolation (AC-31) is unchanged: the throw propagates to
+ * `applyImport`, which records the failure and continues with the next row.
+ * Returns true if the product was created. Exported for the M-3 within-row
+ * atomicity regression test (drives a forced link-sync failure with a poisoned
+ * taxonomy map); production callers go through {@link applyImport}.
+ */
+export async function upsertProduct(
   db: AdminClient,
   row: ImportProductValues,
   maps: TaxonomyMaps,
@@ -81,23 +99,60 @@ async function upsertProduct(
   };
 
   const { data: existing } = await db.from("products").select("id").eq("sku", row.sku).maybeSingle();
-  let productId: string;
-  let created: boolean;
   if (existing) {
+    const before = await snapshotLinks(db, existing.id);
     const { error } = await db.from("products").update(columns).eq("id", existing.id);
     if (error) throw new Error(error.message);
-    productId = existing.id;
-    created = false;
-  } else {
-    const { data, error } = await db.from("products").insert(columns).select("id").single();
-    if (error) throw new Error(error.message);
-    productId = data.id;
-    created = true;
+    try {
+      await syncCategories(db, existing.id, row.categorySlugs, maps.categoryBySlug);
+      await syncTags(db, existing.id, row.tagNames);
+    } catch (cause) {
+      await restoreLinks(db, existing.id, before);
+      throw cause;
+    }
+    return false;
   }
 
-  await syncCategories(db, productId, row.categorySlugs, maps.categoryBySlug);
-  await syncTags(db, productId, row.tagNames);
-  return created;
+  const { data, error } = await db.from("products").insert(columns).select("id").single();
+  if (error) throw new Error(error.message);
+  const productId = data.id;
+  try {
+    await syncCategories(db, productId, row.categorySlugs, maps.categoryBySlug);
+    await syncTags(db, productId, row.tagNames);
+  } catch (cause) {
+    // New row: delete it so no half-written product persists (cascades its links).
+    await db.from("products").delete().eq("id", productId);
+    throw cause;
+  }
+  return true;
+}
+
+/** Read a product's current category + tag link ids. */
+async function snapshotLinks(db: AdminClient, productId: string): Promise<LinkSnapshot> {
+  const [categories, tags] = await Promise.all([
+    db.from("product_categories").select("category_id").eq("product_id", productId),
+    db.from("product_tags").select("tag_id").eq("product_id", productId),
+  ]);
+  return {
+    categoryIds: (categories.data ?? []).map((rowData) => rowData.category_id),
+    tagIds: (tags.data ?? []).map((rowData) => rowData.tag_id),
+  };
+}
+
+/** Restore a product's category/tag links to a prior snapshot (M-3 rollback). */
+async function restoreLinks(db: AdminClient, productId: string, snapshot: LinkSnapshot): Promise<void> {
+  await db.from("product_categories").delete().eq("product_id", productId);
+  if (snapshot.categoryIds.length > 0) {
+    const rows = snapshot.categoryIds.map((categoryId) => ({ product_id: productId, category_id: categoryId }));
+    const { error } = await db.from("product_categories").insert(rows);
+    if (error) console.error(`[csv-import] category link restore failed: ${error.message}`);
+  }
+  await db.from("product_tags").delete().eq("product_id", productId);
+  if (snapshot.tagIds.length > 0) {
+    const rows = snapshot.tagIds.map((tagId) => ({ product_id: productId, tag_id: tagId }));
+    const { error } = await db.from("product_tags").insert(rows);
+    if (error) console.error(`[csv-import] tag link restore failed: ${error.message}`);
+  }
 }
 
 /** Replace a product's category links from slugs. */

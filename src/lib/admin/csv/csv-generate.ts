@@ -10,7 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { generateCsv } from "@/lib/admin/csv/csv-parse";
 import { centsToPesos } from "@/lib/money";
 import { formatMmToCm, formatGToKg } from "@/lib/admin/units";
-import { CSV_COLUMNS } from "@/lib/config";
+import { CSV_COLUMNS, CSV_EXPORT_MAX_ROWS } from "@/lib/config";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -86,7 +86,9 @@ async function readProducts(db: AdminClient): Promise<ExportProduct[]> {
     .select(
       "id, slug, sku, name, description, brand_id, style_id, price_cents, compare_at_price_cents, cost_price_cents, stock, status, width_mm, depth_mm, height_mm, seat_height_mm, weight_g, material_frame, material_upholstery, material_finish",
     )
-    .order("name", { ascending: true });
+    .order("name", { ascending: true })
+    // Bound the full-table read so the export can't exhaust memory (m-6).
+    .limit(CSV_EXPORT_MAX_ROWS);
   if (error) throw new Error(`[csv-generate] products failed: ${error.message}`);
   return (data ?? []) as ExportProduct[];
 }

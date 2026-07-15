@@ -4,11 +4,11 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Message01Icon } from "@hugeicons/core-free-icons";
+import { Message01Icon, Alert02Icon } from "@hugeicons/core-free-icons";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { TextareaField, FieldError } from "@/components/admin/form/fields";
+import { TextareaField, Banner } from "@/components/admin/form/fields";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -82,37 +82,43 @@ function EmptyState({ filter }: { filter: QaFilter }) {
 
 function QuestionCard({ question, onChanged }: { question: AdminQuestion; onChanged: () => void }) {
   const [answer, setAnswer] = useState(question.answer ?? "");
-  const [error, setError] = useState<string | null>(null);
+  // Content-validation errors go on the answer field; transient action-write
+  // failures go to a Banner — never both, never the same message twice (m-9).
+  const [contentError, setContentError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [pending, startTransition] = useTransition();
   const isAnswered = question.answer !== null;
 
   const onPublish = (): void => {
-    setError(null);
+    setContentError(null);
+    setActionError(null);
     const trimmed = answer.trim();
-    if (trimmed.length === 0) { setError("Escribe una respuesta antes de publicar."); return; }
-    if (trimmed.length > QA_ANSWER_MAX_LENGTH) { setError(`La respuesta no puede superar ${QA_ANSWER_MAX_LENGTH} caracteres.`); return; }
+    if (trimmed.length === 0) { setContentError("Escribe una respuesta antes de publicar."); return; }
+    if (trimmed.length > QA_ANSWER_MAX_LENGTH) { setContentError(`La respuesta no puede superar ${QA_ANSWER_MAX_LENGTH} caracteres.`); return; }
     startTransition(async () => {
       const result = await answerQuestionAction(question.id, trimmed);
       if (result.ok) onChanged();
-      else setError("No se pudo publicar. Intenta de nuevo.");
+      else setActionError("No se pudo publicar. Intenta de nuevo.");
     });
   };
 
   const onTogglePublish = (): void => {
+    setActionError(null);
     startTransition(async () => {
       const result = await setPublishedAction(question.id, !question.isPublished);
       if (result.ok) onChanged();
-      else setError("No se pudo actualizar. Intenta de nuevo.");
+      else setActionError("No se pudo actualizar. Intenta de nuevo.");
     });
   };
 
   const onDelete = (): void => {
     setPendingDelete(false);
+    setActionError(null);
     startTransition(async () => {
       const result = await deleteQuestionAction(question.id);
       if (result.ok) onChanged();
-      else setError("No se pudo eliminar. Intenta de nuevo.");
+      else setActionError("No se pudo eliminar. Intenta de nuevo.");
     });
   };
 
@@ -141,7 +147,7 @@ function QuestionCard({ question, onChanged }: { question: AdminQuestion; onChan
         maxLength={QA_ANSWER_MAX_LENGTH}
         rows={3}
         testid={`qa-answer-${question.id}`}
-        error={error}
+        error={contentError}
         disabled={pending}
       />
       <p className="text-right text-xs tabular-nums text-muted-foreground" aria-live="polite">
@@ -162,8 +168,8 @@ function QuestionCard({ question, onChanged }: { question: AdminQuestion; onChan
         </Button>
       </div>
 
-      {error && !answer ? (
-        <FieldError id={`qa-error-${question.id}`} message={error} testid={`qa-error-${question.id}`} />
+      {actionError ? (
+        <Banner role="alert" tone="error" icon={Alert02Icon} message={actionError} testid={`qa-error-${question.id}`} />
       ) : null}
 
       <AlertDialog open={pendingDelete} onOpenChange={setPendingDelete}>

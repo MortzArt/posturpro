@@ -79,7 +79,7 @@ export function TaxonomyManager(props: TaxonomyManagerProps) {
             emptyLabel="Aún no hay marcas."
             rows={props.brands.map((brand) => ({ id: brand.id, primary: brand.name, secondary: brand.slug, active: brand.isActive }))}
             table="brands"
-            onEdit={(id) => { const b = props.brands.find((x) => x.id === id)!; openEdit("brand", { ...EMPTY_DRAFT, id, name: b.name, slug: b.slug, description: b.description ?? "", logoUrl: b.logoUrl ?? "", isActive: b.isActive }); }}
+            onEdit={(id) => { const b = props.brands.find((x) => x.id === id); if (!b) return; openEdit("brand", { ...EMPTY_DRAFT, id, name: b.name, slug: b.slug, description: b.description ?? "", logoUrl: b.logoUrl ?? "", isActive: b.isActive }); }}
             onDelete={(id, label) => setDeleteTarget({ table: "brands", id, label, hasChildren: false })}
             onRefresh={refresh}
           />
@@ -98,7 +98,7 @@ export function TaxonomyManager(props: TaxonomyManagerProps) {
             emptyLabel="Aún no hay estilos."
             rows={props.styles.map((style) => ({ id: style.id, primary: style.name, secondary: style.slug, active: style.isActive }))}
             table="styles"
-            onEdit={(id) => { const s = props.styles.find((x) => x.id === id)!; openEdit("style", { ...EMPTY_DRAFT, id, name: s.name, slug: s.slug, description: s.description ?? "", isActive: s.isActive }); }}
+            onEdit={(id) => { const s = props.styles.find((x) => x.id === id); if (!s) return; openEdit("style", { ...EMPTY_DRAFT, id, name: s.name, slug: s.slug, description: s.description ?? "", isActive: s.isActive }); }}
             onDelete={(id, label) => setDeleteTarget({ table: "styles", id, label, hasChildren: false })}
             onRefresh={refresh}
           />
@@ -109,7 +109,7 @@ export function TaxonomyManager(props: TaxonomyManagerProps) {
             emptyLabel="Aún no hay etiquetas."
             rows={props.tags.map((tagRow) => ({ id: tagRow.id, primary: tagRow.name, secondary: tagRow.slug, active: null }))}
             table="tags"
-            onEdit={(id) => { const t = props.tags.find((x) => x.id === id)!; openEdit("tag", { ...EMPTY_DRAFT, id, name: t.name, slug: t.slug }); }}
+            onEdit={(id) => { const t = props.tags.find((x) => x.id === id); if (!t) return; openEdit("tag", { ...EMPTY_DRAFT, id, name: t.name, slug: t.slug }); }}
             onDelete={(id, label) => setDeleteTarget({ table: "tags", id, label, hasChildren: false })}
             onRefresh={refresh}
           />
@@ -118,6 +118,9 @@ export function TaxonomyManager(props: TaxonomyManagerProps) {
 
       {dialogKind ? (
         <TaxonomyEntityDialog
+          // Remount per entity so uncontrolled/defaultValue fields reset to the
+          // new draft instead of retaining the previous entity's values (m-8).
+          key={draft?.id || "new"}
           kind={dialogKind}
           open={dialogKind !== null}
           onOpenChange={(open) => { if (!open) setDialogKind(null); }}

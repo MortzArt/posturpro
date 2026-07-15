@@ -92,6 +92,30 @@ export function rangeFor(
 }
 
 /**
+ * The 1-based inclusive `[start, end]` result range to display as
+ * "Mostrando start–end de total". Derived from the page SIZE and the total —
+ * never from the current page's row count, which is smaller on the last page
+ * and would corrupt the start index (M-5). `total === 0` → `{ start: 0, end: 0 }`.
+ *
+ * @param page 1-based, already-clamped page
+ * @param pageSize items per full page
+ * @param total total matching rows across all pages
+ */
+export function displayRangeFor(
+  page: number,
+  pageSize: number,
+  total: number,
+): { start: number; end: number } {
+  const safeTotal = Number.isFinite(total) ? Math.max(0, Math.floor(total)) : 0;
+  if (safeTotal === 0) return { start: 0, end: 0 };
+  const safePage = Math.max(1, Math.floor(page));
+  const safeSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 1;
+  const start = (safePage - 1) * safeSize + 1;
+  const end = Math.min(safePage * safeSize, safeTotal);
+  return { start, end };
+}
+
+/**
  * Build the windowed pagination number set: always first + last, the current
  * page ±1, and an ellipsis sentinel where pages are skipped. Never emits a
  * number outside `[1, lastPage]` and never emits duplicates (AC-9, AC-14).

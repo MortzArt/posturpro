@@ -5,10 +5,14 @@
  * base price). Uniqueness of SKU is a DB concern (mapped from `23505`).
  */
 import { parseMoneyToCents } from "@/lib/admin/settings-input";
-import { COLOR_HEX_PATTERN, VARIANT_COLOR_NAME_MAX_LENGTH } from "@/lib/config";
+import { COLOR_HEX_PATTERN, UUID_PATTERN, VARIANT_COLOR_NAME_MAX_LENGTH } from "@/lib/config";
 
 /** A raw variant row from the editor (all strings; id "" for a new row). */
 export interface VariantRawInput {
+  /** Stable client-side row identity — errors are keyed by this, never the array
+   * index, so a reorder/delete between submit and render can't misattach an
+   * error to the wrong row (M-6). New rows get a synthetic key. */
+  key: string;
   id: string;
   colorName: string;
   colorHex: string;
@@ -26,11 +30,12 @@ export type VariantFieldErrorKey =
   | "sku-required"
   | "sku-duplicate"
   | "price-invalid"
-  | "stock-invalid";
+  | "stock-invalid"
+  | "id-invalid";
 
 /** A per-row error map keyed by field. */
 export type VariantRowErrors = Partial<
-  Record<"colorName" | "colorHex" | "sku" | "priceOverride" | "stock", VariantFieldErrorKey>
+  Record<"id" | "colorName" | "colorHex" | "sku" | "priceOverride" | "stock", VariantFieldErrorKey>
 >;
 
 /** The validated, DB-ready variant values. */
@@ -52,6 +57,13 @@ export type VariantParseResult =
 /** Parse a single variant row. */
 export function parseVariant(raw: VariantRawInput): VariantParseResult {
   const errors: VariantRowErrors = {};
+
+  // A non-empty id must be a canonical UUID (the shape Postgres emits). It is
+  // string-interpolated into the raw PostgREST `not(id.in.(...))` delete filter
+  // downstream, so a crafted id (comma, `)`, nested fragment) could broaden the
+  // delete predicate — validate at the trust boundary (M-4, defense-in-depth).
+  const id = raw.id.trim();
+  if (id !== "" && !UUID_PATTERN.test(id)) errors.id = "id-invalid";
 
   const colorName = raw.colorName.trim();
   if (colorName === "") errors.colorName = "color-required";
@@ -76,7 +88,7 @@ export function parseVariant(raw: VariantRawInput): VariantParseResult {
   return {
     ok: true,
     values: {
-      id: raw.id.trim() === "" ? null : raw.id.trim(),
+      id: id === "" ? null : id,
       color_name: colorName,
       color_hex: colorHex,
       sku,
@@ -108,26 +120,27 @@ function parseStock(raw: string): number | null {
 /**
  * Parse a whole set of variant rows. Detects duplicate SKUs WITHIN the set
  * (before hitting the DB). Returns either the parsed set or per-row errors keyed
- * by the row index.
+ * by the row's STABLE `key` (M-6 — never the array index, which drifts on a
+ * reorder/delete between submit and render).
  */
 export function parseVariantSet(
   rows: VariantRawInput[],
-): { ok: true; values: VariantParsed[] } | { ok: false; rowErrors: Record<number, VariantRowErrors> } {
-  const rowErrors: Record<number, VariantRowErrors> = {};
+): { ok: true; values: VariantParsed[] } | { ok: false; rowErrors: Record<string, VariantRowErrors> } {
+  const rowErrors: Record<string, VariantRowErrors> = {};
   const parsed: VariantParsed[] = [];
-  const skuSeen = new Map<string, number>();
+  const skuSeen = new Map<string, string>();
 
-  rows.forEach((row, index) => {
+  rows.forEach((row) => {
     const result = parseVariant(row);
     if (!result.ok) {
-      rowErrors[index] = result.errors;
+      rowErrors[row.key] = result.errors;
       return;
     }
     const skuKey = result.values.sku.toLowerCase();
     if (skuSeen.has(skuKey)) {
-      rowErrors[index] = { sku: "sku-duplicate" };
+      rowErrors[row.key] = { sku: "sku-duplicate" };
     } else {
-      skuSeen.set(skuKey, index);
+      skuSeen.set(skuKey, row.key);
       parsed.push(result.values);
     }
   });
