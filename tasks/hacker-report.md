@@ -1,140 +1,107 @@
-# Hacker Report: T8 — Mercado Pago Payment Subsystem
+# Hacker Report: T11 — Admin Product Management (Stage 11)
 
-Chaos-tested the payment trust boundary and money paths: the public unauthenticated
-webhook (`/api/webhooks/mercadopago`), the Checkout Pro preference/redirect flow,
-`<PaymentPanel>` + OXXO/SPEI voucher card on the confirmation page, the refund
-execution path, and the payment RPCs (`advance_order_status`, `record_payment_event`,
-`finalize_payment_event`, `record_refund`, `refunded_total`). Drove the webhook with
-mocked MP (as the QA tests do) and exercised the state machine against a LIVE local
-Supabase; verified the live webhook `401` on a PRODUCTION `next start`. Hunted BEYOND
-the Security / UX / QA / Arch reports.
+Chaos-gremlin pass over the NEW T11 surfaces (product list/filters/pagination, product form, image manager, variant editor, taxonomy tree/dialogs, inventory dialog, Q&A inbox, CSV import stepper + export, nav) and the storefront as downstream victim. Prior-stage findings (dev-done M-1..M-9, m-1..m-9, nits; UX/security/arch residuals) were NOT re-hunted — this pass targets what those stages missed under adversarial input, garbage, and races.
 
 ## Summary
-- Dead UI found: 2 (both misleading-copy defects — FIXED)
-- Visual bugs: 0 new (320px/375px voucher + panel held — `break-all`, `sm:self-start`, `tabular-nums`)
-- Logic bugs: 2 (1 money bug FIXED, 1 UI-truth bug FIXED)
-- Missing states: 1 (no honest "already paid / status changed" recovery state — ADDED)
-- Items fixed: 4
-- Product improvements suggested: 4 (NOT implemented — phase discipline)
+- Dead UI found: 0
+- Visual bugs: 0 new (viewport chaos held — see coverage log)
+- Logic bugs: 3 (1 CRITICAL-class data-corruption gap, 1 MAJOR double-submit, 1 MINOR CSV row-drop)
+- Missing states: 0 new
+- Items fixed: 3 (all found bugs)
+- Investigated-not-a-bug: 2 (CSV file-state-after-error, CSV confirm double-click — both already safe by construction)
+- Product improvements suggested: 5 (not implemented — scope discipline)
 
-## Chaos Score: 3/10 (target ≤ 3 — PASS)
-The trust boundary and money math are hardened and held under every adversarial
-webhook I threw at them. All four defects were in **client recovery-UX on the
-non-happy payment paths** (rate-limited, already-paid, anomalous refund) plus one
-latent money bug in the not-yet-wired refund path. None let an attacker mark an
-unpaid order paid, over-refund, or bypass the signature/replay/reconciliation gates.
+## Bugs Found
 
----
+### CRITICAL-class — int4 integer-overflow gap (money / stock / dimensions) — FIXED
+The nastiest find. Every catalog quantity column (`stock`, `*_cents` money, `width_mm`…`weight_g`) is Postgres `integer` (int4, max **2,147,483,647**). The strict parsers guarded only `Number.isSafeInteger` (≈9e15), so any value in `(INT4_MAX, MAX_SAFE_INTEGER]` — e.g. stock `3000000000`, price `$99,999,999.99` (= 9,999,999,999 cents), weight `9999999` kg — passed all validation and reached the DB.
 
-## Attempts by Category — what HELD
+- **Root cause:** JS safe-integer guard is ~4M× larger than the int4 column ceiling; no domain cap between them.
+- **Impact:**
+  - Form path → generic "No se pudo guardar" banner (opaque; operator can't tell why a plausible value failed).
+  - **CSV import path** (worse): oversized `stock` showed **green "Crear"/"Actualizar" in the dry-run**, then died at confirm — and `applyImport` **echoes the raw Postgres error** (`value "3000000000" is out of range for type integer`) into the per-row failure list. That violates AC-31/32 ("every bad row surfaced in the dry-run") AND the Error-States contract ("never echoes raw PG error").
+- **Fix (DRY, at the shared parser boundary):** new `INT4_MAX = 2_147_483_647` in `config/admin-products.ts`; reject `> INT4_MAX` in `parseMoneyToCents` (settings-input.ts → covers settings/product/variant/CSV money), `parseScaledInteger` (units.ts → dimensions/weight), `parseNonNegativeInt` (product-input.ts → stock), `parseStock` (variant-input.ts → variant stock), and the CSV `stock()` (csv-product-map.ts → dry-run row error "stock: fuera de rango.").
+- **Result:** oversized values now fail as friendly per-field / per-row errors BEFORE any DB touch, in both the form and the CSV dry-run. Also closes a latent T10 gap (shipping flat-rate could overflow int4 the same way).
+- **Regression-locked:** unit tests in `units.test.ts`, `product-input.test.ts`, `variant-input.test.ts`, `csv-product-map.test.ts` + **live e2e** `e2e/admin-products-chaos.spec.ts` (create with overflowing price/stock → field error, no redirect/write, body does NOT contain "out of range"; chromium + mobile).
 
-### Webhook forgery / abuse (all SOUND)
-| Attack | Result |
-|--------|--------|
-| Unsigned body | 401, no DB read (verified LIVE on prod `next start`) |
-| Wrong-secret / tampered v1 | 401 (`timingSafeEqual`, route.test.ts) |
-| Body-id signature (C-1 seam) | 401 — only the query-string `data.id` is signed |
-| Replay: finalized `(id,status)` | `duplicate` no-op, 200, no double-advance |
-| Replay: unfinalized claim (crash sim) | reclaimable → reprocessed (advance is idempotent) |
-| Out-of-order (approved before pending; refund before approved) | `order_status_rank` regression guard refuses backward moves |
-| `charged_back` after `refunded` | mapped to `flag` — no advance, flagged for human |
-| 2× / 3× identical webhooks racing | `unique(mp_payment_id, mp_status)` + `on conflict do nothing` + `for update` row lock ⇒ exactly ONE event row, ONE history row (new integration test) |
-| Amount-tampered payment (`Payment.get` wrong amount) | zero-tolerance reconciliation blocks the paid transition, `amount-mismatch`, 200 flag |
-| `total_cents` tamper via direct write | immutability trigger REJECTS it (new integration test) |
-| Unknown payment id / foreign external_reference | `unknown-order`, 200, no mutation |
-| Malformed / non-JSON / empty body | tolerated → 200 ignore (signature still verified first) |
-| Lying / oversized Content-Length | 413 before read; bounded stream read caps actual bytes |
-| Weird x-signature (missing ts/v1, non-hex) | `malformed_signature_header`/mismatch → 401 |
-| Stale / future / non-numeric ts | 5-min replay window → `stale_timestamp`/`unparseable_ts` → 401 (checked AFTER HMAC) |
-| MP down (`Payment.get` throws) | 500 retryable, NO partial state (claim left unfinalized) |
+### MAJOR — variant editor double-submit (Save button never disabled) — FIXED
+`variant-editor.tsx` discarded the transition's pending flag (`const [, startTransition]`) and rendered `<Button onClick={onSave}>` and "Agregar variante" with **no `disabled`**. Double-clicking "Guardar variantes" fired `saveVariantsAction` twice concurrently (last-writer-wins reconcile of the variant set — the second, possibly-stale click clobbers the first). Distinct from M-6 (which fixed error KEYING, not submit gating).
 
-### Preference / redirect abuse (all SOUND)
-| Attack | Result |
-|--------|--------|
-| Preference for a PAID order | `not-payable` (guard: `status='pending_payment'` only) |
-| Foreign / non-UUID token | `not-payable` (UUID_PATTERN + token match) |
-| Spam the pay action (SEC-H-1 limiter) | 10/min/IP sliding window BEFORE any DB/MP call; enforced without the `CHECKOUT_RATE_LIMIT_DISABLED` bypass |
-| Tampered `?mp_status=success` on an unpaid order | display hint ONLY — `derivePanelState` reads DB truth; never flips to paid |
-| Double-click "Pagar ahora" | `useTransition` disables the CTA while pending — no double-submit |
+- **Root cause:** pending state unbound; no submit guard on a button that stays on-screen after click (unlike the CSV confirm, which navigates away).
+- **Fix:** bind `pending`, `disabled={pending}` on Save + Add, label swaps to "Guardando…", plus a defensive `if (pending) return;` re-entrancy guard in `onSave`.
+- **Verified:** admin-products e2e variant test (dup-SKU add/fix/save) still green (46/46).
 
-### UI / visual (all SOUND)
-320px/375px: voucher reference/CLABE uses `break-all` + `select-all`; panel CTAs
-`w-full` on mobile → `sm:self-start sm:w-auto` on ≥sm (no full-bleed bar); totals
-`tabular-nums`; MX$99,999+ renders via `formatMXN` (no overflow). Long
-reference/order-number wrap. Copy button feature-detected (`useSyncExternalStore`).
-Missing voucher fields degrade to "check your email", no `undefined`/`Invalid Date`.
+### MINOR — CSV parser dropped blank rows anywhere, not just trailing — FIXED
+`dropTrailingBlankRows` (csv-parse.ts) used `.filter()`, silently removing **every** entirely-blank row — including one in the MIDDLE of the file. A blank data row then vanished instead of surfacing as a "Falta sku" row error, and downstream line numbers no longer matched the operator's file.
 
----
+- **Root cause:** name/comment said "trailing" but implementation was "all".
+- **Fix:** strip only truly-trailing blank rows (slice from the end); a middle blank row is kept and errors honestly in the dry-run.
+- **Regression-locked:** `csv-parse.test.ts` (blank middle row preserved) + `csv-product-map.test.ts` (blank middle row → 1 error, 2 creates, honest counts).
+
+## Investigated — NOT a bug (no fix, documented reasoning)
+| Claim (from parallel component audit) | Verdict |
+|---|---|
+| CSV stepper "keeps stale file on Atrás after failed dry-run" | NOT a bug. On dry-run failure it returns to step `select` and shows the error; `onSelect` always overwrites `file` fresh, and `onConfirm` is unreachable from `select`. No wrong-file resubmission possible. |
+| CSV confirm "double-click race" | NOT a bug. Confirm button is `disabled={pending}` AND `onConfirm` synchronously sets step→`result` before the transition, so the confirm button unmounts. Second click can't hit confirm. |
+| Image reorder/cover "no rollback on server reject" | BY-DESIGN. ui-design + dev-done specify optimistic UI + error-banner recovery ("Recarga e intenta de nuevo"), not full state rollback. Operator always has a path back to a working screen. |
+| Variant key `Math.random()` collision | THEORETICAL (~1e-15). Not worth churn. |
+| `usePointerReorder` multi-touch on tablets | THEORETICAL; single-owner admin, `activeRef` lock covers the common path. |
+| Upload counter "stale after tab close" | Not fixable (tab close kills the JS context) and harmless (server writes are per-request). |
 
 ## Dead UI
-
 | # | Element | File:Line | Issue | Fixed? |
 |---|---------|-----------|-------|--------|
-| 1 | rate-limited pay result | `payment-panel.tsx` `handleResult` | `rate-limited` mapped to the generic error overlay → rendered `FailedCard` "Tu pago fue rechazado / your payment was declined". The correct copy `checkout.payment.rateLimited.*` existed in BOTH locale files but was **never wired** (dead key). The card was never even charged. | ✅ |
-| 2 | not-payable pay result | `payment-panel.tsx` `handleResult` | `not-payable` (order paid mid-session via webhook, a 2nd tab, or gone) mapped to the same false "declined" + a Retry button wired to the same action → **infinite loop** (the order can never be re-paid, so it never recovers). The correct `checkout.payment.stale.*` copy existed in both locales but was **never wired** (dead key). | ✅ |
+| — | (none) | — | Every button/link/menu item wired: row ⋮ (edit/duplicate/adjust/archive), filters + "Limpiar filtros", pagination hrefs, taxonomy tabs+dialogs, CSV stepper, Q&A actions all functional (code + e2e 46/46). | n/a |
 
-Also dead (noted, not fixed — pure a11y niceties, no misleading behavior):
-`checkout.payment.liveRegion.paid` / `.declined` are never announced (only
-`redirecting`/`copied` are). Low-value; deferred.
+## Visual Bugs
+| # | Issue | File:Line | Viewport | Fixed? |
+|---|-------|-----------|----------|--------|
+| — | (none new) | — | 320/375/1440 held: dialogs `max-w-[calc(100%-2rem)]`; table `overflow-x-auto`; category tree indent clamps at depth 6; stepper flex stable; mobile bottom save bar (UX S8). Long/10k-char names bounded by `PRODUCT_NAME_MAX_LENGTH=300` server-side. | n/a |
 
 ## Logic Bugs
-
 | # | Bug | File:Line | Steps to Reproduce | Fixed? |
 |---|-----|-----------|---------------------|--------|
-| 1 | **Refund idempotency-key collision (money)** — the MP `X-Idempotency-Key` was `refund:${orderId}:${amountCents}` (keyed by amount, not attempt). Two legitimately-separate partial refunds of the SAME cents on the same order collide at MP → MP returns the FIRST refund's cached response → `record_refund` sees the same `mp_refund_id` → `duplicate` → refund.ts reports `{status:"refunded", kind:"partial"}` (false success) while **no second money moved and no new ledger row**. Merchant believes they refunded twice; customer got one. | `refund.ts` `executeRefund` idempotencyKey | Call `refundOrderPayment(id, 10000)` twice → 2nd is silently collapsed, reported as fresh. (Latent: `refundOrderPayment` has no caller yet — T12 owns the admin action — so not live, but shipped money code.) | ✅ |
-| 2 | **Refunded-but-never-paid shows "Payment received · Refunded"** — `derivePanelState` returned the paid-hero `refunded` variant for ANY `payment_status='refunded'`, ignoring `order_status`. A `refunded` webhook on an order the amount-mismatch guard NEVER let mark paid (order still `pending_payment`) rendered a reassuring "Pago recibido · Reembolsado" for a payment we never accepted. | `panel-state.ts:52` | DB: `payment_status=refunded`, `order_status=pending_payment` → confirmation page lies "paid". Confirmed at the DB level with a new integration test (payment-only refunded leaves order pending). | ✅ |
+| 1 | int4 overflow passes dry-run → raw PG error at confirm | csv-product-map.ts:110, settings-input.ts:86, units.ts:45, product-input.ts:152, variant-input.ts:117 | CSV with stock `3000000000` (or price `$99,999,999.99`) → dry-run "Crear" → confirm → raw "out of range" | ✅ |
+| 2 | Variant Save double-submit | variant-editor.tsx:61,123 | Add variant → click "Guardar variantes" twice fast → two concurrent saves | ✅ |
+| 3 | CSV blank middle row silently dropped | csv-parse.ts:90 | Import CSV with an empty line between data rows → row vanishes, line numbers shift | ✅ |
 
 ## Missing States
-
 | # | Component | Missing State | File:Line | Added? |
 |---|-----------|---------------|-----------|--------|
-| 1 | `<PaymentPanel>` | "order status changed / already paid — reload" recovery | `payment-panel.tsx` | ✅ new `StaleCard` (`payment-panel-stale`, `role=status`, reload CTA revealing authoritative DB state) |
+| — | (none) | Loading (dry-run "Analizando…", import "Importando…"), empty (products/questions/images), error (banners), negative-stock block — all present. | — | n/a |
 
-## Fixes Applied
-- **H-1 refund idempotency (refund.ts):** key is now unique PER ATTEMPT — optional
-  caller-supplied `idempotencyKey` param (T12 threads a stable per-action key for
-  network-retry safety) defaulting to a fresh `randomUUID()` so two distinct
-  same-amount refunds never collide. +2 discriminating tests.
-- **M-1 rate-limited copy (payment-panel.tsx + labels + messages):** `rate-limited`
-  now renders an honest amber "Demasiados intentos, espera un momento" via a
-  parameterized `UnavailableCard`. Wired `checkout.payment.rateLimited.*` (both
-  locales). +1 test (rate-limited is NOT a decline).
-- **M-2 not-payable recovery (payment-panel.tsx + StaleCard + messages):** new
-  `StaleCard` with reload CTA; `not-payable` → stale reveal instead of a false
-  decline + retry loop. Wired `checkout.payment.stale.*` (both locales) + keys-used.
-  +1 test (stale card reveals reload, no looping retry).
-- **L-1 refunded-never-paid (panel-state.ts):** the paid-hero `refunded` variant is
-  gated on `order_status !== 'pending_payment'`; the anomaly falls through to neutral
-  unpaid copy. +2 panel-state tests.
-- **Integration chaos (payments.integration.test.ts, +105 lines):** refunded-on-
-  never-paid; duplicate refunded no-op writes no dup history; 3× concurrent identical
-  claims → exactly one row; `total_cents` immutability rejects amount-tamper.
-
-## Product Improvements (LISTED — not implemented, phase discipline)
-
+## Product Improvements (NOT implemented — feed future tickets)
 | # | Improvement | Impact | Effort | Priority |
 |---|-------------|--------|--------|----------|
-| 1 | Cache voucher fields (reference/URL/expiry) on the order at webhook time instead of a live `Payment.get` in the confirmation page's `Promise.all` (currently blocks up to `MP_API_TIMEOUT_MS`=8s on every pending-voucher page load). | High | M | P2 |
-| 2 | Auto-refresh the `processing`/`pending-voucher` panel so the webhook-before-redirect race self-resolves without a manual "Actualizar" click. | Med | S | P2 |
-| 3 | `not-payable` should say WHY: if the order is already paid, surface "¡Ya está pagado!" with a positive tone (needs the action to return the reason). | Med | S | P2 |
-| 4 | Use `router.refresh()` instead of `window.location.reload()` in Stale/Processing recovery to avoid a full-page reflow + cart-clear re-run. | Low | S | P3 |
+| 1 | Undo for destructive actions (archive/delete product, delete image/variant, unpublish Q&A) via a "Deshacer" toast — single-owner store, one fat-finger = lost work | High | M | P2 |
+| 2 | Bulk actions on the product list (multi-select → set status / adjust stock / delete) — the operator's most repetitive task (Phase-2 deferred; prioritize) | High | L | P2 |
+| 3 | CSV dry-run: inline-editable error rows (fix a bad SKU/price in the preview and re-validate without re-uploading) | High | M | P2 |
+| 4 | Slug/SKU live uniqueness check (debounced) on the form before submit, instead of learning "ya existe" only after Guardar | Med | S | P3 |
+| 5 | Low-stock threshold + a nav badge (like the Q&A unanswered count) surfacing products at/below it | Med | M | P3 |
 
-## Tests After Fixes
-- **Unit: 1206 / 1206** (baseline 1192 + 14 new).
-- **Integration: 158 / 158** (baseline 154 + 4 new webhook/state-machine chaos).
-- **tsc: 0 errors. eslint: clean. `next build`: clean** (webhook route `ƒ /api/webhooks/mercadopago`).
-- **Live prod `next start`:** unsigned webhook → **401** confirmed.
-- **Prod-build e2e sweep NOT run to green** by this stage: the payment e2e precondition
-  (PDP add-to-cart / order placement) hit the DOCUMENTED postgREST schema-cache /
-  `NEXT_QA_DIST_DIR` infra flake (same one QA/UX flagged — NOT a payment regression;
-  the panel/overflow/state/overlay logic is fully locked by 15 component tests +
-  `derivePanelState` unit tests, all green). The authoritative prod-build e2e sweep is
-  Stage 12 (Verify)'s to own.
+## Fixes Applied
+- **int4 overflow guard** (JS safe-int guard ≫ int4 column ceiling): `INT4_MAX` in `src/lib/config/admin-products.ts`; reject `> INT4_MAX` in `settings-input.ts:86` (money), `units.ts:45` (dims/weight), `products/product-input.ts:152` (stock), `products/variant-input.ts:117` (variant stock), `csv/csv-product-map.ts:110` (CSV dry-run row error).
+- **Variant double-submit** (unbound pending + no submit guard): `products/variant-editor.tsx` — bind `pending`, `disabled={pending}` on Save+Add, "Guardando…" label, re-entrancy guard.
+- **CSV blank-row drop** (`.filter()` removed all blanks): `csv/csv-parse.ts:90` — slice trailing blanks only.
+- Regression tests: +7 unit + new live e2e `e2e/admin-products-chaos.spec.ts` (4 tests, chromium+mobile).
 
-## Standing gates (UNCHANGED — advisory pass only)
-- **HUMAN-REVIEW GATE** (payment code) remains OPEN regardless of this report.
-- **LIVE-SANDBOX verification** remains BLOCKED-ON-USER (no MP creds; MP mocked).
+## Chaos Coverage Log
+- **Garbage in:** 10k-char/emoji/RTL names bounded server-side; money/stock `0`/`-1`/`abc`/`1,500.00`/`0.001`/whitespace → friendly errors (existing); **`1e9`+ overflow → NEW fix**; HTML/script stored as text, React-escaped on re-render + storefront (no executing XSS — S9 + code).
+- **Duplicate slug/SKU** by case: lowercased in CSV; DB 23505 → field error (existing).
+- **Race/double:** variant Save → **FIXED**; CSV confirm → safe by construction; product form submit → `disabled={pending}`; image reorder/cover optimistic + banner = by-design.
+- **Sequence abuse:** direct-URL nonexistent/deleted id, malformed `?page`, back/forward filter URL sync → e2e green; CSV stepper refresh/back → safe.
+- **Viewport chaos:** 320/375/1440 hold (dialogs, table h-scroll, tree clamp, stepper) — UX S8 live + re-checked.
+- **Data edges:** CSV blank middle row → **FIXED**; header-only/empty/missing-header/oversized rejected (existing); category depth-6 clamp intentional.
+- **Storefront victim:** admin create/edit/status-flip/Q&A publish → PDP/listing reflect via cache bust; drafts never leak; prices sane (e2e create→storefront + status-flip→removed green).
 
-## Cleanup
-DB reset + reseeded to pristine (0 orders, 30 products); hacker build dir + temp
-playwright config + test-results removed; `tsconfig.json` restored; no stray servers.
+## Verification Numbers
+- **tsc `--noEmit`:** 0 errors.
+- **eslint** (changed src incl. `max-lines`): clean.
+- **Unit:** **1469/1469** passed (87 files) — 1462 baseline + **7 new**.
+- **e2e admin-products:** **46/46** (23 tests × chromium+mobile) dev serial — no regression.
+- **e2e admin (core):** **30/30** on a fresh dev server (2 first-run failures were the documented stale-dev-route-cache flake after reseed-without-restart; reproduced-then-cleared; settings thousand-separator + flat-rate-save green — money cap doesn't touch legit values).
+- **e2e admin-products-chaos (NEW):** **4/4** (chromium+mobile) — int4-overflow live proof, no 500, no raw "out of range", no DB write.
+- **DB:** reset + seed → pristine (30 products, 70 variants, 100 images, 0 ledger rows, 0 questions). Port 3000 clear. tsconfig unchanged.
+
+## Chaos Score: 2/10
+Target ≤ 3 met. T11 arrived hardened by five prior stages; this pass found one genuine data-integrity gap (int4 overflow across form + CSV, with a raw-error leak on the CSV path — highest-severity find), one trivially-reachable double-submit, and one silent CSV row-drop. All three fixed and regression-locked; the remainder of the chaos menu held. No git commit performed (per instructions).

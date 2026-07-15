@@ -82,6 +82,36 @@ describe("buildImportDiff", () => {
     if (second.action === "error") expect(second.message).toContain("Slug repetido");
   });
 
+  it("errors on an int4-overflowing stock in the dry-run, not at confirm (hacker)", () => {
+    // 3e9 passes /^\d+$/ but overflows the int4 stock column — surface it in the
+    // preview instead of letting it commit-fail with a raw Postgres error.
+    const diff = diffFor("silla-e,SKU-E,Silla E,,,,,,999.00,,,3000000000,active,,,,,,,,");
+    if ("error" in diff) throw new Error(diff.error);
+    expect(diff.errorCount).toBe(1);
+    const row = diff.rows[0];
+    expect(row.action).toBe("error");
+    if (row.action === "error") expect(row.message).toContain("fuera de rango");
+  });
+
+  it("errors on a int4-overflowing price in the dry-run (hacker)", () => {
+    const diff = diffFor("silla-f,SKU-F,Silla F,,,,,,99999999.99,,,1,active,,,,,,,,");
+    if ("error" in diff) throw new Error(diff.error);
+    expect(diff.errorCount).toBe(1);
+  });
+
+  it("keeps a blank middle row as an errored row (line numbers honest, hacker)", () => {
+    // A genuinely-blank row in the middle must NOT be silently dropped — it
+    // errors as a missing sku so the operator sees which line is wrong.
+    const diff = diffFor(
+      "silla-g,SKU-G,Silla G,,,,,,10.00,,,1,active,,,,,,,,\n" +
+      "\n" +
+      "silla-h,SKU-H,Silla H,,,,,,10.00,,,1,active,,,,,,,,",
+    );
+    if ("error" in diff) throw new Error(diff.error);
+    expect(diff.createCount).toBe(2);
+    expect(diff.errorCount).toBe(1);
+  });
+
   it("rejects a missing required header", () => {
     const diff = buildImportDiff(parseCsv("name,price\nSilla,10.00"), context);
     expect("error" in diff).toBe(true);

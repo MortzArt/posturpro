@@ -13,6 +13,7 @@ import {
   PRODUCT_NAME_MAX_LENGTH,
   PRODUCT_DESCRIPTION_MAX_LENGTH,
   MATERIAL_MAX_LENGTH,
+  INT4_MAX,
 } from "@/lib/config";
 import type { ProductFormValues } from "@/app/admin/(app)/products/products-form-state";
 
@@ -150,7 +151,11 @@ function parseNonNegativeInt(
     return { ok: false, error: trimmed.startsWith("-") ? "int-negative" : "int-invalid" };
   }
   const value = Number(trimmed);
-  if (!Number.isSafeInteger(value)) return { ok: false, error: "int-invalid" };
+  // Reject JS-unsafe integers AND anything the int4 `stock` column can't hold
+  // (a value in (INT4_MAX, MAX_SAFE_INTEGER] would overflow the column).
+  if (!Number.isSafeInteger(value) || value > INT4_MAX) {
+    return { ok: false, error: "int-invalid" };
+  }
   return { ok: true, value };
 }
 

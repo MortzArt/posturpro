@@ -8,6 +8,7 @@
  * overflow, and treats blank as "not provided" (null) rather than an error —
  * dimensions/weight are optional (0002 columns are nullable).
  */
+import { INT4_MAX } from "@/lib/config";
 
 /** Field-error keys for dimension/weight parsing (localized in the form). */
 export type UnitFieldError =
@@ -43,7 +44,10 @@ function parseScaledInteger(raw: string, factor: number): UnitParseResult {
   }
   // Scale then round to guard against binary float drift (e.g. 12.1 * 10).
   const scaled = Math.round(Number(stripped) * factor);
-  if (!Number.isSafeInteger(scaled)) {
+  // Reject JS-unsafe integers AND anything the int4 mm/g columns can't hold, so
+  // an oversized dimension/weight fails as a friendly error rather than a raw
+  // Postgres int4 overflow at write time.
+  if (!Number.isSafeInteger(scaled) || scaled > INT4_MAX) {
     return { ok: false, error: "unit-overflow" };
   }
   return { ok: true, value: scaled };

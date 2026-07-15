@@ -58,7 +58,7 @@ export function VariantEditor({
   const [writeError, setWriteError] = useState(false);
   const [saved, setSaved] = useState(false);
   const [pendingDeleteKey, setPendingDeleteKey] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [pending, startTransition] = useTransition();
 
   const update = (key: string, field: keyof VariantRawInput, value: string): void => {
     setRows((prev) => prev.map((row) => (row.key === key ? { ...row, [field]: value } : row)));
@@ -77,6 +77,9 @@ export function VariantEditor({
   };
 
   const onSave = (): void => {
+    // Guard against a double-submit: the in-flight save keeps the button
+    // disabled below, but ignore a re-entrant call defensively too.
+    if (pending) return;
     setErrors({});
     setWriteError(false);
     startTransition(async () => {
@@ -116,12 +119,12 @@ export function VariantEditor({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="secondary" size="sm" onClick={addRow} data-testid="admin-variant-add">
+        <Button type="button" variant="secondary" size="sm" onClick={addRow} disabled={pending} data-testid="admin-variant-add">
           <HugeiconsIcon icon={PlusSignIcon} size={13} strokeWidth={2} aria-hidden />
           Agregar variante
         </Button>
-        <Button type="button" size="sm" onClick={onSave} data-testid="admin-variant-save">
-          Guardar variantes
+        <Button type="button" size="sm" onClick={onSave} disabled={pending} data-testid="admin-variant-save">
+          {pending ? "Guardando…" : "Guardar variantes"}
         </Button>
         {saved ? <span className="text-xs text-muted-foreground" role="status">Variantes guardadas.</span> : null}
       </div>

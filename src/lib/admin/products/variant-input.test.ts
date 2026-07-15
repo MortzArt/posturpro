@@ -31,6 +31,12 @@ describe("parseVariant", () => {
     if (!result.ok) return;
     expect(result.values.price_override_cents).toBe(199900);
   });
+  it("rejects an int4-overflowing variant stock (hacker)", () => {
+    const result = parseVariant(raw({ stock: "3000000000" }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.stock).toBe("stock-invalid");
+  });
   it("rejects a bad hex", () => {
     const result = parseVariant(raw({ colorHex: "111111" }));
     expect(result.ok).toBe(false);

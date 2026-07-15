@@ -73,6 +73,22 @@ describe("parseProductInput", () => {
     expect(result.fieldErrors.status).toBe("status-invalid");
   });
 
+  it("rejects an int4-overflowing stock and money before the DB (hacker)", () => {
+    // 3e9 passes /^\d+$/ and Number.isSafeInteger but overflows the int4 column;
+    // must be rejected as a field error, not fail at the DB with a raw error.
+    const overStock = parseProductInput(values({ ...valid, stock: "3000000000" }));
+    expect(overStock.ok).toBe(false);
+    if (!overStock.ok) expect(overStock.fieldErrors.stock).toBe("int-invalid");
+    // $99,999,999.99 → 9,999,999,999 cents > INT4_MAX.
+    const overMoney = parseProductInput(values({ ...valid, price: "99999999.99" }));
+    expect(overMoney.ok).toBe(false);
+    if (!overMoney.ok) expect(overMoney.fieldErrors.price).toBe("money-overflow");
+    // A weight that scales past int4 grams is an overflow, not "valid".
+    const overWeight = parseProductInput(values({ ...valid, weight_kg: "9999999" }));
+    expect(overWeight.ok).toBe(false);
+    if (!overWeight.ok) expect(overWeight.fieldErrors.weight_kg).toBe("unit-overflow");
+  });
+
   it("treats blank optional money/dimensions as null", () => {
     const result = parseProductInput(valid);
     expect(result.ok).toBe(true);

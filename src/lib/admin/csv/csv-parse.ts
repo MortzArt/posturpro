@@ -86,9 +86,20 @@ export function parseCsv(input: string): string[][] {
   return dropTrailingBlankRows(rows);
 }
 
-/** Drop rows that are entirely empty (a trailing blank line). */
+/**
+ * Drop ONLY trailing entirely-empty rows (a file ending in blank lines). A blank
+ * row in the MIDDLE is preserved so it becomes a real row plan (it errors as a
+ * missing sku/name in the dry-run) instead of being silently dropped, which
+ * would misalign line numbers with the operator's file.
+ */
 function dropTrailingBlankRows(rows: string[][]): string[][] {
-  return rows.filter((row) => !(row.length === 1 && row[0] === ""));
+  let end = rows.length;
+  while (end > 0) {
+    const row = rows[end - 1];
+    if (row.length === 1 && row[0] === "") end -= 1;
+    else break;
+  }
+  return rows.slice(0, end);
 }
 
 /** Whether a field needs RFC-4180 quoting (comma, quote, or newline). */

@@ -10,7 +10,7 @@
  * `0` / `0.00` are VALID (flat 0 = always free, threshold 0 = free for everyone,
  * edge 6). A cents value beyond `Number.MAX_SAFE_INTEGER` is rejected (overflow).
  */
-import { EMAIL_PATTERN } from "@/lib/config";
+import { EMAIL_PATTERN, INT4_MAX } from "@/lib/config";
 import { pesosToCents } from "@/lib/money";
 
 /** Editable settings field ids (match the form field names). */
@@ -84,7 +84,10 @@ export function parseMoneyToCents(
     return { ok: false, error: "money-invalid" };
   }
   const cents = pesosToCents(Number(stripped));
-  if (!Number.isSafeInteger(cents)) {
+  // Reject JS-unsafe integers AND anything the int4 money columns can't hold —
+  // an int4-overflowing value would otherwise pass here and fail at the DB with
+  // a raw "out of range" error (hacker: money/CSV int4 overflow gap).
+  if (!Number.isSafeInteger(cents) || cents > INT4_MAX) {
     return { ok: false, error: "money-overflow" };
   }
   return { ok: true, cents };

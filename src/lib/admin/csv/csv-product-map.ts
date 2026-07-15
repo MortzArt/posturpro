@@ -9,7 +9,7 @@
 import { parseMoneyToCents } from "@/lib/admin/settings-input";
 import { parseCmToMm, parseKgToG } from "@/lib/admin/units";
 import { isValidSlug } from "@/lib/admin/products/slug";
-import { CSV_COLUMNS, CSV_REQUIRED_COLUMNS } from "@/lib/config";
+import { CSV_COLUMNS, CSV_REQUIRED_COLUMNS, INT4_MAX } from "@/lib/config";
 
 /** The sets of existing keys the diff is computed against. */
 export interface ImportContext {
@@ -106,11 +106,15 @@ function dimension(raw: string, column: string): number | null {
   return result.value;
 }
 
-/** Parse a non-negative integer stock cell. */
+/** Parse a non-negative integer stock cell (rejected beyond the int4 ceiling). */
 function stock(raw: string): number {
   if (raw === "") return 0;
   if (!/^\d+$/.test(raw)) throw "stock: número inválido.";
-  return Number(raw);
+  const value = Number(raw);
+  // Surface an int4-overflowing stock as a dry-run row error instead of letting
+  // it pass preview then fail at confirm with a raw Postgres "out of range".
+  if (!Number.isSafeInteger(value) || value > INT4_MAX) throw "stock: fuera de rango.";
+  return value;
 }
 
 /** Parse the status cell (default draft). */

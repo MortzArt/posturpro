@@ -5,7 +5,7 @@
  * base price). Uniqueness of SKU is a DB concern (mapped from `23505`).
  */
 import { parseMoneyToCents } from "@/lib/admin/settings-input";
-import { COLOR_HEX_PATTERN, UUID_PATTERN, VARIANT_COLOR_NAME_MAX_LENGTH } from "@/lib/config";
+import { COLOR_HEX_PATTERN, INT4_MAX, UUID_PATTERN, VARIANT_COLOR_NAME_MAX_LENGTH } from "@/lib/config";
 
 /** A raw variant row from the editor (all strings; id "" for a new row). */
 export interface VariantRawInput {
@@ -114,7 +114,8 @@ function parseStock(raw: string): number | null {
   if (trimmed === "") return 0;
   if (!/^\d+$/.test(trimmed)) return null;
   const value = Number(trimmed);
-  return Number.isSafeInteger(value) ? value : null;
+  // Reject anything the int4 `stock` column can't hold, not just JS-unsafe ints.
+  return Number.isSafeInteger(value) && value <= INT4_MAX ? value : null;
 }
 
 /**

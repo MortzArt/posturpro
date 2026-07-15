@@ -47,6 +47,11 @@ describe("parseKgToG", () => {
   it("rejects overflow-scale junk", () => {
     expect(parseKgToG("-1")).toEqual({ ok: false, error: "unit-negative" });
   });
+  it("rejects a value that scales past the int4 column ceiling (hacker)", () => {
+    // 9,999,999 kg → 9,999,999,000 g > INT4_MAX: overflow, not a valid write.
+    expect(parseKgToG("9999999")).toEqual({ ok: false, error: "unit-overflow" });
+    expect(parseCmToMm("300000000")).toEqual({ ok: false, error: "unit-overflow" });
+  });
 });
 
 describe("format round-trip", () => {

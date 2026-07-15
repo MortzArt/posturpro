@@ -69,6 +69,17 @@ export const ADJUSTMENT_REASON_MAX_LENGTH = 500;
 /** Q&A answer length bound (AC-28). Matches the DB CHECK `1..5000` (0004). */
 export const QA_ANSWER_MAX_LENGTH = 5000;
 
+/**
+ * PostgreSQL `integer` (int4) upper bound. Every catalog quantity column
+ * (`stock`, `*_cents` money, `width_mm`/…/`weight_g`) is declared `integer`, so
+ * any value in `(INT4_MAX, Number.MAX_SAFE_INTEGER]` passes the JS `isSafeInteger`
+ * guard yet OVERFLOWS the column at write time. The strict parsers reject beyond
+ * this bound BEFORE the DB so an oversized value surfaces as a friendly field /
+ * dry-run error instead of a raw Postgres "out of range for type integer" (which
+ * the CSV path would otherwise echo to the operator). 2^31 − 1.
+ */
+export const INT4_MAX = 2_147_483_647;
+
 /** Product/entity free-text field bounds (match the 0002/0006 DB CHECKs). */
 export const PRODUCT_NAME_MAX_LENGTH = 300;
 export const PRODUCT_DESCRIPTION_MAX_LENGTH = 20_000;

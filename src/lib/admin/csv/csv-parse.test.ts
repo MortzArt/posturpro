@@ -23,6 +23,16 @@ describe("parseCsv (RFC-4180)", () => {
   it("drops a trailing blank line", () => {
     expect(parseCsv("a,b\n1,2\n")).toEqual([["a", "b"], ["1", "2"]]);
   });
+  it("drops multiple trailing blank lines but not a leading/middle one (hacker)", () => {
+    // A blank row in the MIDDLE is kept (it becomes a row the caller can error
+    // on), only truly-trailing blanks are stripped — line numbers stay honest.
+    expect(parseCsv("a,b\n1,2\n\n3,4\n\n\n")).toEqual([
+      ["a", "b"],
+      ["1", "2"],
+      [""],
+      ["3", "4"],
+    ]);
+  });
   it("keeps ragged rows for the caller to validate", () => {
     expect(parseCsv("a,b,c\n1,2")).toEqual([["a", "b", "c"], ["1", "2"]]);
   });
