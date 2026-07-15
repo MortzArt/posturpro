@@ -170,7 +170,7 @@ function VariantRow({
       <input aria-label="SKU" placeholder="SKU" value={row.sku} onChange={(e) => onChange("sku", e.target.value)} className={cn(cellClasses, "font-mono")} data-testid="admin-variant-sku" />
       <input aria-label="Precio (blanco = base)" inputMode="decimal" placeholder={basePrice ? `hereda ${formatMXNSafe(basePrice)}` : "base"} value={row.priceOverride} onChange={(e) => onChange("priceOverride", e.target.value)} className={cn(cellClasses, "w-24 tabular-nums")} data-testid="admin-variant-price" />
       <input aria-label="Stock" inputMode="numeric" placeholder="0" value={row.stock} onChange={(e) => onChange("stock", e.target.value)} className={cn(cellClasses, "w-16 tabular-nums")} data-testid="admin-variant-stock" />
-      <button type="button" aria-label="Eliminar variante" onClick={onDelete} className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive" data-testid="admin-variant-delete">
+      <button type="button" aria-label="Eliminar variante" onClick={onDelete} className="inline-flex size-9 items-center justify-center justify-self-end rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/30 sm:size-8" data-testid="admin-variant-delete">
         <HugeiconsIcon icon={Delete02Icon} size={16} strokeWidth={2} aria-hidden />
       </button>
       {errors ? (

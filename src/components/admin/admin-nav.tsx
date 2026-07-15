@@ -102,7 +102,10 @@ function LiveRow({
           data-testid={`admin-nav-${item.id}-badge`}
           className="ml-auto tabular-nums"
         >
-          {badgeCount}
+          <span aria-hidden>{badgeCount}</span>
+          <span className="sr-only">
+            {badgeCount === 1 ? "1 pregunta sin responder" : `${badgeCount} preguntas sin responder`}
+          </span>
         </Badge>
       ) : null}
     </Link>

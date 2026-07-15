@@ -51,7 +51,7 @@ export function CategoryMultiSelect({
                 aria-label={`Quitar ${chip.label}`}
                 onClick={() => toggle(chip.value)}
                 disabled={disabled}
-                className="text-muted-foreground hover:text-foreground"
+                className="-mr-1 inline-flex size-5 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30"
               >
                 <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={2} aria-hidden />
               </button>
@@ -65,15 +65,21 @@ export function CategoryMultiSelect({
         onClick={() => setOpen((value) => !value)}
         disabled={disabled}
         aria-expanded={open}
+        aria-controls="admin-product-category-list"
         data-testid="admin-product-category-toggle"
-        className="inline-flex w-fit items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted disabled:opacity-60"
+        className="inline-flex min-h-9 w-fit items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60"
       >
         <HugeiconsIcon icon={PlusSignIcon} size={13} strokeWidth={2} aria-hidden />
         {open ? "Cerrar" : "Elegir categorías"}
       </button>
 
       {open ? (
-        <div className="max-h-56 overflow-y-auto rounded-md border border-border p-2">
+        <div
+          id="admin-product-category-list"
+          role="group"
+          aria-label="Categorías disponibles"
+          className="max-h-56 overflow-y-auto rounded-md border border-border p-2"
+        >
           {options.length === 0 ? (
             <p className="text-xs text-muted-foreground">No hay categorías. Créalas en Taxonomía.</p>
           ) : (
@@ -150,7 +156,7 @@ export function TagInput({
               aria-label={`Quitar ${tag}`}
               onClick={() => remove(tag)}
               disabled={disabled}
-              className="text-muted-foreground hover:text-foreground"
+              className="-mr-1 inline-flex size-5 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30"
             >
               <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={2} aria-hidden />
             </button>

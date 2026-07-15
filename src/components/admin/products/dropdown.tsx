@@ -57,7 +57,7 @@ export function DropdownMenuTrigger({
         if (!event.defaultPrevented) setOpen(!open);
       }}
       className={cn(
-        "inline-flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50",
+        "inline-flex size-9 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50 sm:size-8",
         className,
       )}
       {...rest}

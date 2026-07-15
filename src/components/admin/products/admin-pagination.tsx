@@ -44,7 +44,7 @@ export function AdminPagination({ page, lastPage, filters }: AdminPaginationProp
             aria-current={item === page ? "page" : undefined}
             data-testid={`admin-page-${item}`}
             className={cn(
-              "min-h-8 min-w-8 rounded-md px-2.5 py-1 text-center text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+              "inline-flex min-h-9 min-w-9 items-center justify-center rounded-md px-2.5 py-1 text-center text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/30 sm:min-h-8 sm:min-w-8",
               item === page ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:bg-muted/60",
             )}
           >
@@ -75,7 +75,7 @@ function PageArrow({
 }) {
   const icon = direction === "prev" ? ArrowLeft01Icon : ArrowRight01Icon;
   const classes =
-    "inline-flex size-8 items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/30";
+    "inline-flex size-9 items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/30 sm:size-8";
   if (disabled) {
     return (
       <span aria-disabled className={cn(classes, "text-muted-foreground/40")}>

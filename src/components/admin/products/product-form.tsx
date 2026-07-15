@@ -114,11 +114,17 @@ export function ProductForm(props: ProductFormProps) {
       noValidate
       onChange={() => setDirty(true)}
       data-testid="admin-product-form"
-      className="flex flex-col gap-6"
+      // Bottom padding on mobile clears the thumb-reach action bar that is
+      // fixed to the viewport bottom below `md` (see the action-bar classes).
+      className="flex flex-col gap-6 pb-20 md:pb-0"
     >
       <UnsavedChangesGuard dirty={dirty} />
 
-      <div className="sticky top-0 z-30 -mx-4 flex items-center justify-end gap-2 border-b border-border bg-background/80 px-4 py-3 backdrop-blur md:-mx-6 md:px-6">
+      {/* Action bar: sticky at the top on desktop (always visible while the
+          operator scans the long form); fixed to the bottom on mobile so
+          "Guardar" stays within thumb reach without scrolling back up a long
+          single-column form (ui-design §2.1). */}
+      <div className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-end gap-2 border-t border-border bg-background/80 px-4 py-3 backdrop-blur md:sticky md:inset-x-auto md:bottom-auto md:top-0 md:-mx-6 md:border-t-0 md:border-b md:px-6">
         <Button
           type="button"
           variant="ghost"

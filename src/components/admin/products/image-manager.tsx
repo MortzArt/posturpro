@@ -285,7 +285,7 @@ function ImageCard({
           type="button"
           aria-label="Reordenar (arrastra o usa las flechas)"
           onPointerDown={onPointerDownHandle}
-          className="cursor-grab touch-none text-muted-foreground"
+          className="inline-flex size-9 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 sm:size-8"
           style={{ touchAction: "none" }}
         >
           <HugeiconsIcon icon={DragDropVerticalIcon} size={16} strokeWidth={2} aria-hidden />
@@ -335,11 +335,11 @@ function IconButton({
       disabled={disabled}
       data-testid={testid}
       className={cn(
-        "inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-30",
+        "inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-30 sm:size-8",
         destructive && "hover:text-destructive",
       )}
     >
-      <HugeiconsIcon icon={icon} size={13} strokeWidth={2} aria-hidden />
+      <HugeiconsIcon icon={icon} size={16} strokeWidth={2} aria-hidden />
     </button>
   );
 }
