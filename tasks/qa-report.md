@@ -1,156 +1,128 @@
-# QA Report: T9 — Transactional emails (Standard S5 — Quality Gate)
+# QA Report: T10 — Admin foundation
 
-Standard pipeline S5 (QA) is the terminal quality gate (no verify stage). Verdict at bottom.
+**Verdict: PASS** — Confidence **HIGH**.
+Stage 7 (QA) found and fixed one real **P1 config bug** that made admin login
+100% non-functional (`ADMIN_PASSWORD_HASH` mangled by dotenv `$`-expansion). After
+the fix, every acceptance criterion and edge case is covered and green.
 
 ## Test Suite Summary
+| Type | Written (new) | Passed | Failed | Skipped |
+|------|--------------|--------|--------|---------|
+| Unit | 4 | 1370 | 0 | 0 |
+| Integration | 8 | 188 | 0 | 0 |
+| E2E (admin) | 15 (×2 projects = 30) | 30 | 0 | 0 |
+| E2E (storefront regression, R2) | 0 (existing) | 78 | 0 | 0 |
+| **Total** | **27 new** | **all green** | **0** | **0** |
 
-| Type | Scope | Added this stage | Passed | Failed | Skipped |
-|------|--------|--------|--------|--------|---------|
-| Unit | 68 files | +13 cases (3 files modified) | 1281 | 0 | 0 |
-| Integration | 13 files | +13 cases (email.integration) | 180 | 0 | 0 |
-| E2E (T8 regression gate) | 3 suites | 0 (regression only) | cart 46/46; checkout+payment: see note | — | — |
-| **Total (unit+int)** | — | **+26** | **1461** | **0** | **0** |
+- Unit: **1370/1370** (78 files) — baseline 1366 + 4 new (`actions.test.ts`).
+- Integration: **188/188** (14 files) — baseline 180 + 8 new (`store-settings-write.integration.test.ts`), via `scripts/run-integration.sh`.
+- E2E admin: **30/30** (`e2e/admin.spec.ts`, chromium + mobile).
+- E2E storefront regression: chromium **39/39** + mobile **39/39** = **78/78** (payment 8 + checkout 24 + cart 46), reseed-between-projects (the baseline method). Middleware change does NOT regress the storefront.
 
-Baselines (post-S4): unit 1271/1271 (68 files), integration 168/168 (13 files), tsc 0, eslint clean.
-After S5: **unit 1281/1281**, **integration 180/180**, tsc 0, eslint clean. (vitest counts `it.each`
-expansions, so reported case-count deltas differ from the raw +N per description.)
+## Bug Found & Fixed (P1 — login was fully broken)
+**`ADMIN_PASSWORD_HASH` destroyed by env `$`-expansion.** The scrypt hash
+`scrypt$16384$8$1$<salt>$<hash>` was stored UNquoted in `.env.local`. Next's env
+loader (`@next/env` → dotenv-expand) treats `$16384`, `$8`, `$1`, `$salt`, `$hash`
+as variable expansions, collapsing the 178-char hash to the 10-char string
+`scrypt6384`. `verifyCredentials()` then always returned `false` → **the correct
+Owner password NEVER authenticated** (login silently showed "Correo o contraseña
+incorrectos" for valid creds).
 
-## Tests Written (this stage)
+- **How found:** admin login-success e2e failed on both prod and dev servers.
+  Bisected with a temporary in-action log: FormData was correct
+  (`email="admin@posturpro.mx"`, `pwlen=18`) but the server's
+  `process.env.ADMIN_PASSWORD_HASH` was `scrypt6384` (len 10). Reproduced
+  deterministically with `@next/env`'s `loadEnvConfig`.
+- **Fix:** backslash-escaped every `$` in the `.env.local` value
+  (`scrypt\$16384\$8\$1\$…`). Verified: `@next/env` now yields the full 178-char
+  hash and `posturpro-dev-2026` verifies against it. (Single-quoting is NOT
+  sufficient — `@next/env` still expands inside single quotes.)
+- **Test that covers it:** the full login-success e2e (`admin.spec.ts` "correct
+  creds land on /admin/settings and set a scoped HttpOnly cookie") + the
+  round-trip save now pass 30/30. This flow is the regression lock.
+- **ACTION REQUIRED (orchestrator/dev):** `.env.local` is **gitignored**, so this
+  fix does NOT propagate. Two follow-ups for Stage 8+/deploy:
+  1. Update the hash-generation snippet in `dev-done.md` to instruct escaping `$`
+     when pasting into any `.env*` file — otherwise every deploy will silently
+     break login the same way.
+  2. Consider a dev-only startup self-check that fails loudly if
+     `ADMIN_PASSWORD_HASH` doesn't parse as `scrypt$N$r$p$salt$hash` (6 `$`-parts),
+     turning this silent misconfig into an obvious error. (Recommendation, not
+     blocking — the running config is now correct.)
 
-### Unit — `src/lib/email/dispatch.test.ts` (6 → 15)
-- **bounded-send TIMEOUT branch (edge 2)**: fake-timers prove a hung provider resolves via the
-  `send timeout` branch (NOT a throw); the ledger row is left un-finalized. Closes the S4-noted gap
-  (Promise.race timeout vs throw was untested).
-- **provider THROW vs `{ok:false}` reject**: both isolated, distinct reason strings, neither finalizes.
-- **claim RPC error path**: `claim === "error"` → `{ok:false, reason:"claim failed"}`, never a send.
-- **locale end-to-end (edge 3, AC-12)**: an `en` order's customer email builds the `/en/…` URL; the
-  owner alert for the SAME order stays prefix-free (es-MX); an `es-MX` order stays prefix-free.
-
-### Unit — `src/lib/email/templates/templates.test.ts` (escaping sweep, AC-11/injection)
-- Hostile **variant label** escaped in `order_confirmation` (HTML escaped, plain-text tag-free).
-- Hostile **cancel reason** escaped in `cancelled`.
-- Hostile **voucher reference + verification code** escaped in `voucher_instructions`.
-  (customerName, productName, contact message were already covered; these close the remaining
-  user/provider-supplied fields that reach live-template HTML — QA focus #5.)
-
-### Unit — `src/lib/payments/process-payment.test.ts` (AC-13)
-- Email dispatch **resolving `{ok:false}` (timeout/reject, not a throw)** still yields webhook
-  `processed`+200 with the payment claim finalized — discriminates resolve-failure from the
-  already-covered throw path.
-
-### Integration — `tests/integration/email.integration.test.ts` (10 → 22)
-- **transition_kind matrix (TD-2, AC-2)** against the live RPC: `paid`, `payment_pending` (real
-  payment change), `payment_failed`, `preparing`, `shipped`, `delivered`, `cancelled`,
-  `payment_authorized` (payment-only), `refunded` (payment-only from==to row).
-- **Regression contract unchanged from T8**: backward move → `regression_blocked` + kind `noop`;
-  nonexistent order → `order_not_found` + kind `noop`.
-- **Concurrent claim race (edge 1, AC-5, QA focus #6)**: 8 concurrent `claim_email_send` for the same
-  triple → exactly one `'new'`, seven `'duplicate'`, exactly one physical row.
-
-## Acceptance Criteria Coverage (20/20 PASS)
-
+## Acceptance Criteria Coverage
 | # | Criterion | Test(s) | Status |
 |---|-----------|---------|--------|
-| AC-1 | 0010 idempotent, applies on `db reset`, local-only | run-integration.sh resets 0001..0010 clean each run | PASS |
-| AC-2 | `advance_order_status` returns `transition_kind` from fixed set, derived in-RPC | email.integration transition_kind matrix (10 kinds) | PASS |
-| AC-3 | history `transition_kind` written on every insert | email.integration paid→history | PASS |
-| AC-4 | `orders.locale` NOT NULL default es-MX + CHECK; persisted | email.integration persist + CHECK-reject; checkout builders supply locale | PASS |
-| AC-5 | `email_sends` unique+RLS+grant+claim RPC (race-safe) | email.integration ledger + **concurrent-claim race**; anon RLS-deny | PASS |
-| AC-6 | provider one module, `sendEmail`, env key, server-only | provider.test; `import "server-only"` | PASS |
-| AC-7 | `getEmailEnv()` validates 3 vars, throws | provider.test partial-config | PASS |
-| AC-8 | dev-preview no network, returns success | provider.test; verified LIVE (dev run logged `[email] PREVIEW`) | PASS |
-| AC-9 | provider mocked; missing key swallowed | all tests mock provider; provider.test + process-payment isolation | PASS |
-| AC-10 | 8 templates `{subject,html,text}` typed | templates.test (all 8) | PASS |
-| AC-11 | 6 customer templates both locales; MXN; single-brace; injection-safe | templates.test both-locale + **escaping sweep**; keys-used symmetry green | PASS |
-| AC-12 | owner+relay single-locale es-MX | templates.test + **dispatch locale test** (owner es-MX for an `en` order) | PASS |
-| AC-13 | dispatch failure-isolated + non-blocking | dispatch throw/reject/**timeout**; process-payment isolation (throw + **resolve `{ok:false}`**) → 200 | PASS |
-| AC-14 | checkout → confirmation + owner, non-blocking | actions.ts triggerOrderEmails; **verified LIVE** — dev order fired `order_confirmation` preview | PASS |
-| AC-15 | paid → payment_received once (dedupe mp_payment_id) | process-payment 'paid'; dispatch dedupe; email.integration distinct-kind | PASS |
-| AC-16 | pending voucher once; skip if no data | process-payment OXXO + skip-no-reference; voucher-data null path | PASS |
-| AC-17 | shipped/cancelled/refund/contact seams built+tested, not wired | templates.test + dispatch seams; `// T12/T13 wiring seam` | PASS |
-| AC-18 | webhook route email-free; trigger post-advance | route.ts zero email imports; trigger in process-payment after advance+finalize | PASS |
-| AC-19 | hacker-report.md untouched | not modified | PASS |
-| AC-20 | T7/T8 unchecked in BUILD_PLAN | not modified | PASS |
+| AC-1 | Unauth `/admin/*` (except login) → redirect to login, no admin markup | e2e: "GET /admin redirects…no admin markup", "GET /admin/settings…redirects", curl smoke (307, 0 admin-markup matches) | PASS |
+| AC-2 | Correct creds set HttpOnly/Lax/Secure(prod)/Path=/admin cookie, redirect to /admin; case-insensitive email; constant-time pw | e2e: "correct creds land…scoped HttpOnly cookie" (httpOnly, path=/admin, sameSite=Lax); unit `auth.test.ts`, `session.test.ts` | PASS |
+| AC-3 | Wrong email OR pw → single generic error, no enumeration, timing-parity | e2e: "wrong password…generic error", "unknown email…SAME generic error"; unit `auth.test.ts` (dummy-hash timing parity) | PASS |
+| AC-4 | Cookie HMAC-SHA256 tamper-evident; forgery/truncation fails `timingSafeEqual` | unit `session.test.ts`, `session-parity.test.ts`, `session-edge.test.ts` (tampered/forged/truncated rejected, Node↔Edge identical) | PASS |
+| AC-5 | Session expires after max-age; expired-but-signed rejected | unit `session.test.ts` ("expired-but-signed"), `session-payload.test.ts` (`isWithinMaxAge`) | PASS |
+| AC-6 | Logout clears cookie, redirects to login; AC-1 holds after | e2e: "after logout, /admin redirects to login again" (direct URL post-logout re-redirects) | PASS |
+| AC-7 | Authed `/admin/login` → redirect to /admin | e2e: "while authed, /admin/login redirects to /admin" | PASS |
+| AC-8 | Settings renders 4 fields pre-populated (money in pesos) | e2e: "settings form is pre-populated…" (flat rate = 500.00); integration singleton shape | PASS |
+| AC-9 | Save updates row via admin client, busts cache tag, success banner; storefront reflects | e2e round-trip: change flat rate → save → success → reload persists → **cart summary-shipping shows 742.00** → restore; integration UPDATE + updated_at; unit `actions.test.ts` (writes only after valid session) | PASS |
+| AC-10 | Server validation rejects blank/long name, bad email, negative/non-numeric/>2-dec/overflow money; field errors; form stays filled | e2e: "thousand-separator money rejected…form stays filled", "blank name rejected"; unit `settings-input.test.ts`; integration DB CHECK constraints | PASS |
+| AC-11 | Nav shell: store name, Settings live+active, Products/Orders disabled placeholders, logout | e2e: "Settings live+active; Products/Orders disabled placeholders" (aria-current, aria-disabled) | PASS |
+| AC-12 | Admin secrets server-only, never `NEXT_PUBLIC_`, absent from client bundle | unit `secret-exposure.test.ts`; `.env.local` has no `NEXT_PUBLIC_` admin var | PASS |
+| AC-13 | Cookie name distinct from `NEXT_LOCALE`/cart, Path=/admin, storefront byte-unchanged | e2e cookie-name assertion; storefront regression 78/78; `/` & `/en` 200 throughout | PASS |
+| AC-14 | No migration (row+CHECKs+trigger already exist) | integration confirms singleton + CHECKs live at migrations 0001..0010; no 0011 added | PASS |
+| AC-15 | Login rate-limited per IP; env-flag escape hatch | unit `login-rate-limit.test.ts` (cap/release/strict `==="1"` hatch) | PASS |
+| AC-16 | tsc strict, ESLint max-lines, no `any`/`!`, session fns ≤30 lines | `tsc --noEmit` clean (only stale `.next/dev/types` artifacts), ESLint clean | PASS |
 
-## Edge Case Coverage (7/7 PASS)
-
+## Edge Case Coverage
 | # | Edge Case | Test | Status |
 |---|-----------|------|--------|
-| 1 | Duplicate/redelivered webhook → one email | email.integration claim once/dup + **concurrent-claim race**; dispatch duplicate short-circuit | PASS |
-| 2 | Provider down/times out → 200, un-finalized | **dispatch TIMEOUT test** (distinct from throw) + process-payment **resolve-`{ok:false}`**; at-most-once confirmed S4 | PASS |
-| 3 | Order in `/en/` → en emails, owner es-MX | **dispatch locale end-to-end** (en customer URL, prefix-free owner); email.integration en persist | PASS |
-| 4 | OXXO paid days later → both emails once | email.integration distinct email_kind → distinct rows | PASS |
-| 5 | charged_back/mismatch → no customer email | process-payment refund/mismatch/flagged (kind ≠ 'paid') | PASS |
-| 6 | Undeliverable valid email | dispatch provider-failure isolation; logs never contain the address | PASS |
-| 7 | Locale mutation attempt after creation | email.integration stable across a full transition sequence | PASS |
+| 1 | Forged/tampered cookie → unauthenticated | unit `session.test.ts` / `session-parity.test.ts` | PASS |
+| 2 | Expired-but-signed cookie → rejected | unit `session.test.ts` "expired-but-signed" | PASS |
+| 3 | Secret rotated → all cookies invalid | unit `session.test.ts` "different secret" | PASS |
+| 4 | Missing admin env → generic "no disponible", never "any pw works" | unit `auth.test.ts` (blank hash never authenticates) + action catches `MissingEnvVarError` | PASS |
+| 5 | Concurrent save → last-write-wins on singleton | integration UPDATE + updated_at trigger | PASS |
+| 6 | Money 0 / 0.00 valid (flat & threshold) | unit `settings-input.test.ts`; integration accepts 0/0 (CHECK `>= 0`) | PASS |
+| 7 | Locale-formatted money (`1,000.00`, `$500`) rejected/normalized, never mis-coerced | e2e "thousand-separator rejected"; unit `settings-input.test.ts` | PASS |
+| 8 | `store_settings` row absent → seed defaults + "save to create" | code path (`settings/page.tsx` rowMissing, INSERT in `updateStoreSettings`); unit-covered | PASS (code path; no live empty-DB e2e) |
+| 9 | Direct POST to saveStoreSettings w/o session → rejected, no DB write | unit `actions.test.ts` (absent+tampered cookie → redirect, `updateStoreSettings` never called) | PASS |
+| 10 | `/admin/`, case/slash variants → guarded, storefront never rewrites | e2e "trailing-slash /admin/…no leak"; curl `/admin/`=307/308→login, `/`,`/en`=200 | PASS |
 
-## Regression-Lock: S4 M-1 (unescaped email button `href`)
+## Tests Written
+### Unit — `src/app/admin/actions.test.ts` (4)
+- absent cookie → `saveStoreSettings` redirects to login, `updateStoreSettings` never called (edge 9)
+- tampered cookie → redirects, DB untouched (edge 9)
+- valid session → DB written once, status "success" (AC-9)
+- valid session + invalid input → field errors, no DB write (AC-10)
 
-| Lock | Test | Status |
-|------|------|--------|
-| `renderButton` attribute-escapes href so `"` cannot break out | `layout.test.ts` — payload `https://x/"><img src=y onerror=alert(1)>` asserts `"><img` never verbatim + `&quot;&gt;&lt;img` present | PASS (locked) |
-| Well-formed provider URL unchanged except HTML-significant `&` | layout.test "leaves a normal URL unchanged" | PASS |
-| Live callers (MP voucherUrl, carrier trackingUrl) still render | voucher-instructions + shipped template tests pass | PASS |
+### Integration — `tests/integration/store-settings-write.integration.test.ts` (8)
+- singleton is a single seeded MXN row (AC-8)
+- UPDATE by id changes the 4 columns, bumps `updated_at`, leaves currency (AC-9, edge 5)
+- accepts money 0/0 (edge 6)
+- DB CHECK rejects blank name, name >200, negative flat rate, negative threshold (AC-10 defense-in-depth)
+- anon (publishable-key) client CANNOT write the singleton — RLS grant boundary (AC-5/AC-13 model)
 
-The M-1 fix is covered by a dedicated adversarial test that fails if `escapeHtml(href)` is removed.
+### E2E — `e2e/admin.spec.ts` (15 × chromium+mobile = 30)
+Unauth protection (3), login failures/no-enumeration (3), login success + cookie + AC-7 (3), nav shell (1), settings validation (2), logout (1), settings save round-trip + storefront shipping reflection (1), storefront locale-routing sanity (1). Selectors follow the resilience rules (data-testid + getByRole/URL; no getByText on interactive controls; visible-filter for the dual desktop-sidebar/mobile-drawer nav+logout).
 
-## Suite Results (authoritative, re-run this stage)
+## Suite Runs (exact)
+- Unit: `npx vitest run` → **1370 passed (78 files)**, 0 failed.
+- Integration: `bash scripts/run-integration.sh` → **188 passed (14 files)**, 0 failed (resets+seeds local Supabase first).
+- E2E admin: `npx playwright test admin.spec.ts` → **30 passed**.
+- E2E storefront regression (prod build, reseed-per-project): chromium **39** + mobile **39** = **78 passed**.
 
-- `npx vitest run` → **68 files, 1281 passed, 0 failed**.
-- `scripts/run-integration.sh` (fresh reset → seed → run, applies 0001..0010) → **13 files, 180 passed, 0 failed**.
-- `tsc --noEmit` → **0 errors**; `eslint` on all 4 changed files → **clean**.
-- E2E (T8 regression gate, prod build + NEXT_QA_DIST_DIR + CHECKOUT_RATE_LIMIT_DISABLED=1):
-  **cart 46/46 PASS** on the production build; checkout/payment order-placing suites BLOCKED
-  (environmental, not T9) — see below.
+## Notes on E2E Environment (for the orchestrator)
+- **Killed the orchestrator's interactive dev server** on port 3000 (PID ~2365) for the prod-build e2e, as authorized. **Port 3000 is now CLEAR** — no server left running; the orchestrator should restart its own dev server if needed.
+- **Authenticated admin e2e ran against a DEV server, not the prod build.** Reason: `next start` forces `NODE_ENV=production` → the session cookie is `Secure` → the browser rejects it over plain `http://localhost:3000`, so no authenticated flow can set a session on the HTTP test server. This is CORRECT product behavior (AC-2 requires `Secure` in prod). The **unauth guard + storefront regression were verified on the authoritative PROD build**; the authenticated flows (login, settings round-trip, logout) were verified on a dev server (per-request render, non-Secure cookie). To run authenticated admin e2e on a prod build in CI, serve over HTTPS or gate `Secure` behind an explicit deploy flag rather than `NODE_ENV`.
+- **`.env.local` was modified** (the `$`-escape fix above). It is gitignored — see ACTION REQUIRED. Left in the corrected state so the app works locally.
+- **Cleanup done:** DB left pristine-seeded (`db reset` + seed), `NEXT_QA_DIST_DIR` build dir (`.next-qa-t10`) removed, `tsconfig.json` restored clean (verified `git status` clean for it), no stray servers.
+- The **8 mobile order-placing failures** seen in a combined all-projects storefront run are a pre-existing cross-project **stock-depletion race** (chromium + mobile placing orders on one un-reseeded DB), NOT a T10 regression: the same tests pass 39/39 per project with a reseed between, chromium passed in the combined run, and `/`+`/en` stayed 200 throughout. The T10 middleware branch returns before next-intl.
 
-## E2E order-placing suites — investigation (checkout + payment)
+## Untested Areas / Residual Risk
+- **Edge 8 (empty `store_settings` DB) has no live e2e** — covered by the seeded-defaults code path + `updateStoreSettings` INSERT branch (unit/logic), not exercised against an actually-empty table end-to-end. LOW risk (single INSERT path, fails safe).
+- **Rate limiter is per-instance in-memory** (documented best-effort) — escape hatch and cap/release are unit-tested; multi-instance behavior out of scope for a single-owner surface. LOW risk.
+- **Live MP/email side effects** remain blocked-on-user (placeholder creds) — unchanged by T10, unrelated.
+- **Authenticated prod-build e2e over HTTPS** not run (see environment note) — auth logic is unit + dev-e2e verified and the prod build compiles the same code; MEDIUM-LOW risk, mitigated by the Secure-cookie behavior being intentional.
 
-The order-placing specs assert a client redirect to `/checkout/confirmacion/{token}` after the
-`placeOrder` Server Action. On the **production build** (tested with BOTH `NEXT_QA_DIST_DIR=.next-qa`
-and the default `.next`) these fail: the browser stays on `/checkout`, no order is created, no email
-fires. This is **NOT a T9 regression**:
-
-- **Proven correct on the dev server (identical T9 code):** `checkout.spec.ts` → **24/24 PASS**. Dev
-  logs show `POST /checkout 200 → placeOrder → [email] PREVIEW (order_confirmation) → GET
-  /checkout/confirmacion/…` — T9's AC-14 confirmation email fires end-to-end, live.
-- **Root cause is a prod-build / harness Server-Action issue, orthogonal to T9.** A network probe
-  showed the action POST returning 200 while the client navigation to the confirmation page is
-  `ERR_ABORTED`; dev logs show many `placeOrder(..., {})` calls receiving **empty FormData** (a
-  React 19 / Next 16.2.9 uncontrolled-form submission race). It equally affects T7's checkout core
-  (previously shipped) and reproduces with the default dist dir — not introduced by T9, not caused by
-  `NEXT_QA_DIST_DIR`.
-- **Payment suite** (also placeOrder-then-redirect) fails the same way even serially/1-worker; the
-  dev run again shows T9 email previews firing on orders that DO submit — the trigger wiring is fine.
-
-Net: every T9-owned behavior on the checkout path is verified (unit + integration + the live dev-run
-email preview). The unverifiable-on-prod-build item is the pre-existing client redirect after a
-Server Action — a T7-surface/harness concern, not a T9 acceptance criterion.
-
-## Bugs Found & Fixed
-
-- **None in T9 code.** QA is test-only; no production code changed this stage. One of my new
-  integration cases initially encoded a wrong premise (advancing to the identical
-  `(pending_payment, pending)` state expecting `payment_pending`) — corrected to force a real
-  payment_status change, which in turn *validates* the documented `noop`-on-no-material-change
-  behavior (a redelivery must not re-trigger a customer email). Test fix, not a code bug.
-
-## Untested Areas
-
-- **Live email send** — BLOCKED-ON-USER (no `EMAIL_*` creds; no verified Resend domain). Provider
-  mocked everywhere; dev preview verified live. Risk: LOW.
-- **Order-placing e2e on the production build** — BLOCKED by an environmental prod-build Server-Action
-  redirect issue (above). Same flows pass on dev with T9 code, T9 email trigger confirmed firing.
-  Risk to T9: LOW. Broader release risk: MEDIUM and T7-scoped.
-
-## Confidence: HIGH (for T9)
-
-All 20 ACs and all 7 edge cases have passing tests; the S4 M-1 finding is regression-locked with an
-adversarial payload; every item the QA focus flagged as possibly-missed — transition_kind matrix,
-concurrent ledger race, timeout-vs-throw discrimination, locale end-to-end, injection sweep — is now
-covered and green. Unit 1281/1281, integration 180/180, tsc 0, eslint clean, migrations 0001..0010
-apply clean. The one unverifiable surface (prod order-placing e2e) is a pre-existing, non-T9,
-T7/harness issue, and the identical flow is proven on dev including live T9 email dispatch.
-
-**Standard-tier quality gate: PASS for T9.** No /full-cycle re-run required for T9 correctness. Flag
-for the orchestrator: the prod-build e2e Server-Action reliability is an environment/T7 concern worth
-a separate ticket, independent of T9.
+## Confidence: HIGH
+Every AC (16/16) and edge case (10/10) has coverage and passes. A real P1 login
+bug was caught and fixed with a regression-locking e2e. All baselines hold or grew
+(unit 1370, integration 188, e2e storefront 78). The one caveat (authenticated
+e2e on dev vs prod build) is a well-understood, intentional Secure-cookie
+constraint, not a product defect.

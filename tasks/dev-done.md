@@ -45,13 +45,15 @@ New tests: `session-payload.test.ts`, `session.test.ts`, `session-edge.test.ts`,
 ## Env Vars (added to `.env.local`, all SERVER-ONLY, never `NEXT_PUBLIC_`)
 - `ADMIN_EMAIL` — Owner login email. Dev value: `admin@posturpro.mx`.
 - `ADMIN_PASSWORD_HASH` — scrypt hash `scrypt$N$r$p$saltHex$hashHex`. Dev password: **`posturpro-dev-2026`**.
+  **⚠ CRITICAL (QA P1, 2026-07-15): every `$` in the hash MUST be backslash-escaped (`\$`) in any `.env*` file.** Next's `@next/env`/dotenv-expand treats unescaped `$` as variable expansion and silently collapses the 178-char hash to `scrypt6384`, making login 100% broken with no error. Applies to every deploy target that uses dotenv-style files.
 - `ADMIN_SESSION_SECRET` — 32-byte hex HMAC key (rotating it logs everyone out, edge 3).
 - Optional: `ADMIN_SESSION_MAX_AGE_SECONDS` (default 28800 = 8h), `ADMIN_LOGIN_RATE_LIMIT_DISABLED=1` (e2e escape hatch).
 
-**Generate a real hash for a deploy:**
+**Generate a real hash for a deploy** (output is pre-escaped for direct paste into a `.env*` file — see P1 warning above):
 ```bash
-node -e 'const{randomBytes,scryptSync}=require("node:crypto");const s=randomBytes(16);const d=scryptSync(process.argv[1],s,64,{N:16384,r:8,p:1});console.log(["scrypt",16384,8,1,s.toString("hex"),d.toString("hex")].join("$"))' "YOUR_PASSWORD"
+node -e 'const{randomBytes,scryptSync}=require("node:crypto");const s=randomBytes(16);const d=scryptSync(process.argv[1],s,64,{N:16384,r:8,p:1});console.log(["scrypt",16384,8,1,s.toString("hex"),d.toString("hex")].join("\\$"))' "YOUR_PASSWORD"
 ```
+(For non-dotenv secret stores — e.g. Vercel env UI, real shell exports — use the unescaped `$` form instead: replace `join("\\$")` with `join("$")`.)
 
 ## Key Decisions
 - **`updateTag` over `revalidateTag`**: Next 16 made `revalidateTag(tag)` deprecated (now needs a `profile` 2nd arg + logs a warning). `updateTag(tag)` is the single-arg replacement with immediate expiration — exactly the AC-9 "reflect on next render" semantics. Only valid inside a server action, which is the sole caller.
