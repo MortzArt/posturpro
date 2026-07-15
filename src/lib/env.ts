@@ -178,3 +178,55 @@ export function getEmailEnv(
     ownerAddress: requireEnv("EMAIL_OWNER_ADDRESS", source),
   };
 }
+
+/* ========================================================================= *
+ * Admin authentication (T10, AC-2, AC-3, AC-4, AC-12)
+ *
+ * SAFETY MODEL — same discipline as the Supabase + MP + email secrets above:
+ *  - ADMIN_PASSWORD_HASH  : server-only SECRET (scrypt `N$r$p$salt$hash`, verified
+ *    constant-time against the submitted password). NEVER `NEXT_PUBLIC_`.
+ *  - ADMIN_SESSION_SECRET : server-only SECRET (HMAC-SHA256 key that signs the
+ *    session cookie payload). Rotating it invalidates every issued session
+ *    (the documented "log everyone out" lever, edge 3). NEVER `NEXT_PUBLIC_`.
+ *  - ADMIN_EMAIL          : the single Owner's login email. Not strictly a secret,
+ *    but read here so all admin credentials are single-sourced + validated
+ *    together, and compared case-insensitively at the auth boundary (AC-2).
+ *
+ * All three are exposed ONLY through `getAdminEnv()`, reached exclusively from the
+ * `server-only`-guarded admin auth/session modules (`src/lib/admin/*`) and the
+ * admin server actions — never from a client bundle. A blank/missing var throws a
+ * named {@link MissingEnvVarError}, which the login action CATCHES → generic
+ * "no disponible" and grants nothing (edge 4 / R5): a missing hash must NEVER be
+ * treated as "any password works".
+ * ========================================================================= */
+
+/** Server-only admin auth config (T10 AC-2, AC-3, AC-4). */
+export interface AdminEnv {
+  /** Owner login email; compared case-insensitively (AC-2). */
+  email: string;
+  /** scrypt-derived password hash (`N$r$p$saltHex$hashHex`). SECRET. */
+  passwordHash: string;
+  /** HMAC-SHA256 key signing the session cookie payload (AC-4). SECRET. */
+  sessionSecret: string;
+}
+
+/**
+ * Server-only admin environment. Reads + validates the three required admin vars
+ * and throws a named {@link MissingEnvVarError} if any is absent/blank. The login
+ * action CATCHES this so a missing var surfaces a generic "no disponible" message
+ * and never authenticates (edge 4 / R5) rather than leaking a stack trace.
+ *
+ * Must only be reached from server code (the admin modules enforce this with
+ * `import "server-only"`).
+ *
+ * @throws {MissingEnvVarError} if a required admin var is missing/blank
+ */
+export function getAdminEnv(
+  source: Record<string, string | undefined> = process.env,
+): AdminEnv {
+  return {
+    email: requireEnv("ADMIN_EMAIL", source),
+    passwordHash: requireEnv("ADMIN_PASSWORD_HASH", source),
+    sessionSecret: requireEnv("ADMIN_SESSION_SECRET", source),
+  };
+}

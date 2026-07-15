@@ -10,10 +10,11 @@
  */
 import "server-only";
 import { cache } from "react";
-import { unstable_cache } from "next/cache";
+import { unstable_cache, updateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createPublicClient } from "@/lib/supabase/public";
-import { CATALOG_REVALIDATE_SECONDS } from "@/lib/config";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { CATALOG_REVALIDATE_SECONDS, CURRENCY } from "@/lib/config";
 import type { Database } from "@/lib/supabase/database.types";
 
 /** The typed `store_settings` row shape. */
@@ -123,7 +124,7 @@ export const STORE_SETTINGS_CACHE_TAG = "store-settings" as const;
  * never touches `cookies()` — every route under it can then be statically
  * optimized / ISR. Wrapped in `unstable_cache` (NOT React `cache`): it survives
  * across requests, revalidates on `CATALOG_REVALIDATE_SECONDS`, and is busted
- * on demand by `revalidateTag(STORE_SETTINGS_CACHE_TAG)` (admin save, T10).
+ * on demand by `updateTag(STORE_SETTINGS_CACHE_TAG)` (admin save, T10).
  * Degrades to `null` exactly like `getStoreSettings` — never throws.
  */
 export const getStoreSettingsStatic = unstable_cache(
@@ -134,3 +135,89 @@ export const getStoreSettingsStatic = unstable_cache(
     revalidate: CATALOG_REVALIDATE_SECONDS,
   },
 );
+
+/**
+ * The four admin-editable settings columns (T10). Currency stays MXN (seeded,
+ * not user-editable in Phase 1), so it is written only when creating the row.
+ */
+export interface StoreSettingsWrite {
+  store_name: string;
+  contact_email: string;
+  shipping_flat_rate_cents: number;
+  free_shipping_threshold_cents: number;
+}
+
+/** Outcome of a settings write (never leaks a raw PG error to the caller). */
+export type UpdateStoreSettingsResult =
+  | { ok: true }
+  | { ok: false; reason: "write-failed" };
+
+/**
+ * Write the store settings through the RLS-BYPASS admin client (T10 AC-9) and
+ * bust the storefront read cache so the footer/checkout reflect the new values
+ * on their next render. Co-located with the read path (SRP) so both sides of the
+ * `store_settings` boundary live in one module and share `STORE_SETTINGS_CACHE_TAG`.
+ *
+ * The row is a DB-enforced singleton (migration 0006). Normal case: UPDATE the
+ * existing row by id. Missing-row edge (fresh/broken DB, edge 8): INSERT the
+ * singleton (seeding `currency` from config). Last write wins on concurrent tabs
+ * (single owner, edge 5). Raw PG errors are logged with context and mapped to a
+ * friendly enum — never echoed to the UI.
+ */
+export async function updateStoreSettings(
+  input: StoreSettingsWrite,
+): Promise<UpdateStoreSettingsResult> {
+  const db = createAdminClient();
+  const { data: existing, error: readError } = await db
+    .from("store_settings")
+    .select("id")
+    .maybeSingle();
+
+  if (readError) {
+    console.error(
+      `[store-settings] Failed to read singleton before write: ${readError.message}`,
+    );
+    return { ok: false, reason: "write-failed" };
+  }
+
+  const writeError = existing
+    ? await updateExistingRow(db, existing.id, input)
+    : await insertSingletonRow(db, input);
+
+  if (writeError) {
+    console.error(`[store-settings] Settings write failed: ${writeError}`);
+    return { ok: false, reason: "write-failed" };
+  }
+
+  // `updateTag` (Next 16) busts the legacy `unstable_cache` tag with immediate
+  // expiration — the single-arg replacement for the now-deprecated
+  // `revalidateTag(tag)`. Only valid inside a server action, which is the sole
+  // caller (`saveStoreSettings`). The storefront footer/checkout re-read the
+  // fresh row on their next render (AC-9).
+  updateTag(STORE_SETTINGS_CACHE_TAG);
+  return { ok: true };
+}
+
+/** UPDATE the existing singleton row by id; returns an error message or null. */
+async function updateExistingRow(
+  db: ReturnType<typeof createAdminClient>,
+  id: string,
+  input: StoreSettingsWrite,
+): Promise<string | null> {
+  const { error } = await db
+    .from("store_settings")
+    .update(input)
+    .eq("id", id);
+  return error ? error.message : null;
+}
+
+/** INSERT the singleton row (missing-row edge 8); returns an error message or null. */
+async function insertSingletonRow(
+  db: ReturnType<typeof createAdminClient>,
+  input: StoreSettingsWrite,
+): Promise<string | null> {
+  const { error } = await db
+    .from("store_settings")
+    .insert({ ...input, currency: CURRENCY });
+  return error ? error.message : null;
+}

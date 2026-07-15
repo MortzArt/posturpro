@@ -1,152 +1,111 @@
-# Dev Summary: T9 — Transactional emails
+# Dev Summary: T10 — Admin foundation
 
-Standard pipeline S3 (Dev). Feature type: logic-only (email has an inbox surface, no in-app UI).
-Provider: **Resend** behind a one-module `provider.ts` boundary. Migration 0010 applied LOCAL-only.
+Self-managed HMAC-signed HttpOnly session-cookie auth (NOT Supabase Auth) + a
+locale-free `/admin` shell + Store Settings editor. Defense-in-depth guard
+(Edge middleware → Web Crypto verify; Node layout + per-action re-verify). es-MX
+only. Zero new deps. No migration.
 
 ## Files Changed
 
 | Path | Change | Summary |
 |------|--------|---------|
-| `supabase/migrations/0010_email_transitions.sql` | created | TD-2 `transition_kind` (derived in-RPC + returned + written to history); `orders.locale`; `email_sends` ledger + `claim_email_send`/`finalize_email_send`; `create_order` persists locale. Idempotent, LOCAL-only. |
-| `src/lib/email/email-kinds.ts` | created | `EMAIL_KINDS` const + `EmailKind` type + `ONE_PER_ORDER_DEDUPE_KEY`. No magic strings. |
-| `src/lib/email/brand.ts` | created | Single swap point for neutral email brand tokens (colors, layout, typography, store-name fallback, logo slot). |
-| `src/lib/email/render.ts` | created | Pure render helpers: `escapeHtml`, `money` (via money.ts), item-table + totals builders, plain-text derivations. |
-| `src/lib/email/layout.ts` | created | 600px table shell (`wrapEmail`), header/footer chrome, `renderButton`/`renderHeading`/`renderParagraph`/`renderCallout`. Inline styles only. |
-| `src/lib/email/provider.ts` | created | The single Resend boundary. `sendEmail(...)`; dev-preview short-circuit (AC-8); `import "server-only"`. Provider swap = one function (`deliver`). |
-| `src/lib/email/ledger.ts` | created | Typed `claimEmailSend`/`finalizeEmailSend` wrappers over the RPCs. Never throw. |
-| `src/lib/email/order-url.ts` | created | Absolute confirmation URL builder (`/en` prefix for English). |
-| `src/lib/email/voucher-data.ts` | created | Pure adapter from the T8 `VoucherView` → email `VoucherData` (reuses `extractVoucher`, no duplicate extraction). |
-| `src/lib/email/dispatch.ts` | created | Orchestration: claim → render → send → finalize, failure-isolated. Live sends + T12/T13 seams. |
-| `src/lib/email/templates/types.ts` | created | `RenderedEmail`, `EmailTranslator`, `EmailChrome`, per-template input types. |
-| `src/lib/email/templates/sections.ts` | created | Shared localized content sections (items table, totals, view-order button, greeting, callout). |
-| `src/lib/email/templates/order-confirmation.ts` | created | Template (customer, both locales). |
-| `src/lib/email/templates/payment-received.ts` | created | Template (customer, both locales, names paid amount). |
-| `src/lib/email/templates/voucher-instructions.ts` | created | Template (customer, both locales, OXXO/SPEI branch). |
-| `src/lib/email/templates/shipped.ts` | created | Template (customer, both locales) — T12 seam. |
-| `src/lib/email/templates/cancelled.ts` | created | Template (customer, both locales) — T12 seam. |
-| `src/lib/email/templates/refund-issued.ts` | created | Template (customer, both locales) — T12 seam. |
-| `src/lib/email/templates/new-order-owner.ts` | created | Owner alert — single-locale es-MX (AC-12). |
-| `src/lib/email/templates/contact-relay.ts` | created | Contact relay — single-locale es-MX, quotes msg verbatim in body — T13 seam. |
-| `src/lib/email/templates/test-translator.ts` | created | Test-only translator built from the real dictionaries (used by templates.test). |
-| `src/lib/env.ts` | modified | Added `EmailEnv` + `getEmailEnv()` (mirrors `getMercadoPagoEnv`). |
-| `src/lib/config.ts` | modified | Added `siteOrigin()`, `EMAIL_DEV_PREVIEW_ENV`, `EMAIL_SEND_TIMEOUT_MS`, `OWNER_EMAIL_LOCALE`. |
-| `src/lib/supabase/database.types.ts` | modified | `TransitionKind` type; `transition_kind` on `AdvanceOrderStatusResult` + history; `locale` on orders + `CreateOrderPayload`; `email_sends` table; `ClaimEmailSendArgs`/`FinalizeEmailSendArgs` + Functions. |
-| `src/lib/payments/process-payment.ts` | modified | After a successful advance+finalize, branch on `transition_kind` to trigger `payment_received`/`voucher_instructions`. Fully isolated; route stays email-free (AC-18). |
-| `src/app/[locale]/checkout/actions.ts` | modified | Persist active locale into `create_order` payload; trigger confirmation + owner alert on success (isolated, non-blocking). |
-| `src/lib/checkout/order-read.ts` | modified | Added `getOrderForEmail` sibling reader (locale/method/token/items) — confirmation view model unchanged. |
-| `src/messages/es-MX.json`, `src/messages/en.json` | modified | New symmetric `email` block. |
-| `tests/integration/checkout-{rpc,read}.integration.test.ts` | modified | Added `locale` to test `CreateOrderPayload` builders (now required). |
-| email `*.test.ts`, `tests/integration/email.integration.test.ts`, `process-payment.test.ts` | created/modified | Unit + integration coverage (see Test Counts). |
-| `package.json` / `package-lock.json` | modified | Added `resend` `^4.8.0`. |
+| `src/lib/env.ts` | modified | Added `getAdminEnv()` (`email`, `passwordHash`, `sessionSecret`) + `AdminEnv` — server-only, follows the MP/email accessor pattern; throws `MissingEnvVarError` on blank (edge 4 / R5). |
+| `src/lib/admin/constants.ts` | created | Non-secret constants: cookie name (`posturpro_admin_session`), paths, `getSessionMaxAgeSeconds()` (8h default, env-overridable), login rate-limit config, `ADMIN_NAV_ITEMS` data-driven nav (Settings live; Products/Orders `soon`). Next-import-free → safe in Edge + client. |
+| `src/lib/admin/session-payload.ts` | created | PURE runtime-agnostic codec: base64url encode/decode, `splitCookie`, `decodePayload` (version-checked), `isWithinMaxAge` (AC-5, edge 2). Shared by Node + Edge verifiers (R1). No crypto, no Next. |
+| `src/lib/admin/session.ts` | created | `server-only`. AUTHORITATIVE `node:crypto` HMAC-SHA256 sign/verify (`createSessionCookieValue`, `isSessionValid`); constant-time `timingSafeEqual` (mirrors `webhook.ts`), then decode + expiry. |
+| `src/lib/admin/session-edge.ts` | created | Edge (`crypto.subtle`) verify for middleware (R1). Same cookie format + secret; constant-time byte compare; fails closed on unset secret. NO `server-only` (throws in Edge). |
+| `src/lib/admin/auth.ts` | created | `server-only`. scrypt password hashing (`scrypt$N$r$p$salt$hash`), `verifyCredentials` — case-insensitive email, constant-time password, dummy-hash timing parity on unknown email (R3), never authenticates on missing/unparseable hash (R5). `generatePasswordHash` for the dev/deploy hash command. |
+| `src/lib/admin/login-rate-limit.ts` | created | Per-IP login limiter via the shared `sliding-window` core (AC-15); `ADMIN_LOGIN_RATE_LIMIT_DISABLED=1` e2e escape hatch (mirrors checkout). |
+| `src/lib/admin/settings-input.ts` | created | PURE settings parser (AC-8, AC-10, edges 6/7, R7): strict `^\d+(\.\d{1,2})?$` money after `$`/space strip (rejects thousand separators, accepts 0/0.00, cents-overflow guard), name 1–200, email via shared `EMAIL_PATTERN`. Collects all field errors. |
+| `src/lib/admin/session-guard.ts` | created | `server-only`. `hasValidAdminSession()` — thin `next/headers cookies()` → `isSessionValid` wrapper for server components; a missing-env failure → not authenticated (never "valid"). |
+| `src/lib/store-settings.ts` | modified | Added `updateStoreSettings()` (admin-client write to the singleton; UPDATE by id, INSERT on missing-row edge 8; `updateTag(STORE_SETTINGS_CACHE_TAG)` busts the storefront read, AC-9). Co-located with the read path (SRP). |
+| `src/middleware.ts` | modified | Added a tight `/admin` branch that returns BEFORE next-intl ever sees the request (R2): allow `/admin/login`, redirect unauthenticated `/admin/*` to login, redirect authed `/admin/login`→`/admin` (AC-7). Storefront locale/cart path byte-for-byte unchanged. |
+| `src/app/admin/layout.tsx` | created | Parallel ROOT layout: own `<html lang="es-MX">`/`<body>` + font; no next-intl/cart/site chrome; `robots: noindex`. No guard here (login sits under it). |
+| `src/app/admin/(app)/layout.tsx` | created | Authenticated sub-layout: authoritative session guard (defense-in-depth) → redirect to login if invalid; wraps children in `AdminShell` seeded with the live store name. |
+| `src/app/admin/(app)/page.tsx` | created | `/admin` → `redirect("/admin/settings")` (no dead dashboard). T11/T12 overview seam documented. |
+| `src/app/admin/(app)/settings/page.tsx` | created | Server reads live `store_settings`, seeds the form (money → `centsToPesos().toFixed(2)`), flags `rowMissing` (edge 8) with `SEED_*` defaults. |
+| `src/app/admin/login/page.tsx` | created | Server login screen; already-authed → `redirect("/admin")` (AC-7); passes only `storeName` to the client (no secret crosses, AC-12). |
+| `src/app/admin/actions.ts` | created | `"use server"`: `login` (rate-limit → verify → set cookie → redirect; generic errors, no enumeration; catches `MissingEnvVarError`→"unavailable"), `logout` (maxAge=0 → redirect), `saveStoreSettings` (re-verify session first → parse → write → bust cache). |
+| `src/app/admin/admin-form-state.ts` | created | Serializable `AdminLoginState` / `AdminSettingsState` + `initial*` (the `"use server"` state-split rule). |
+| `src/components/admin/admin-shell.tsx` | created | `"use client"` chrome: persistent sidebar ≥md, sticky top bar + slide-in drawer <md (reuses `.drawer-panel`/`.drawer-scrim`); active section derived from `usePathname()` (no prop threading). |
+| `src/components/admin/admin-nav.tsx` | created | Data-driven nav from `ADMIN_NAV_ITEMS`: live `next/link` (aria-current), `soon` disabled span + "próximamente" `Badge`, shared logout. |
+| `src/components/admin/logout-button.tsx` | created | Real `<form action={logout}>` POST (works without JS); full + `compact` presentations. |
+| `src/components/admin/admin-page.tsx` | created | Generic section wrapper (title/description/divider) reused by Settings now, T11/T12 later. |
+| `src/components/admin/login-form.tsx` | created | `"use client"` `useActionState(login)`: autofocus email, pending label swap + disabled fields, single generic error banner (no per-field blame, AC-3), `.enter-fade`. |
+| `src/components/admin/store-settings-form.tsx` | created | `"use client"` `useActionState(saveStoreSettings)`: money fields `inputmode="decimal"` + `$` adornment + `tabular-nums`, inline field errors + focus-first-invalid, success/error/row-missing banners, pending state. |
+| `.env.local` | modified (gitignored) | Added `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET` (see below). |
 
-## Migration 0010 contents (LOCAL-only; verified via `supabase db reset`)
+New tests: `session-payload.test.ts`, `session.test.ts`, `session-edge.test.ts`, `auth.test.ts`, `settings-input.test.ts`, `login-rate-limit.test.ts`, `secret-exposure.test.ts` (all colocated under `src/lib/admin/`).
 
-- **TD-2**: `order_status_history.transition_kind text` (nullable). New pure helper `email_transition_kind(to_status, payment_status, payment_only)` derives the fixed set `paid | payment_pending | payment_failed | payment_authorized | refunded | shipped | cancelled | delivered | preparing | noop`. `advance_order_status` rewritten (same signature/behavior) to return `transition_kind` in the jsonb AND write it to every history row. An idempotent re-notification with no material change reports `noop` (so a redelivery never re-triggers a customer email).
-- **`orders.locale text not null default 'es-MX' check (locale in ('es-MX','en'))`**. Set once at creation; NOT in the advance UPDATE set → never mutated (edge 7).
-- **`email_sends`** ledger: `unique(order_id, email_kind, dedupe_key)`, `dedupe_key` NOT NULL default `''`, `sent_at` for claim-then-finalize, `order_id` FK ON DELETE CASCADE. RLS enabled, no policies, `grant all ... to service_role` (explicit — 0005's blanket grant does not cover later tables).
-- **`claim_email_send(order_id, email_kind, dedupe_key) -> 'new'|'duplicate'`** (insert-on-conflict-do-nothing) + **`finalize_email_send(...)`**. SECURITY DEFINER, empty search_path, service_role-only execute.
-- **`create_order`** re-declared (0008 body verbatim + `locale` clamp to shipped set with es-MX fallback + `transition_kind='noop'` on the initial history row).
+## Data-Testids Added
+- `admin-login-form`, `admin-login-email`, `admin-login-password`, `admin-login-submit`, `admin-login-error` — login screen
+- `admin-nav-settings` / `admin-nav-products` / `admin-nav-orders`, `admin-logout`, `admin-nav-trigger` / `admin-nav-close` / `admin-nav-panel` / `admin-nav-overlay` — shell + nav
+- `admin-settings-form`, `admin-settings-name` (+`-error`), `admin-settings-email` (+`-error`), `admin-settings-flat-rate` (+`-error`), `admin-settings-threshold` (+`-error`), `admin-settings-submit`, `admin-settings-success`, `admin-settings-error`, `admin-settings-row-missing` — settings form
 
-## Trigger wiring points
+## Env Vars (added to `.env.local`, all SERVER-ONLY, never `NEXT_PUBLIC_`)
+- `ADMIN_EMAIL` — Owner login email. Dev value: `admin@posturpro.mx`.
+- `ADMIN_PASSWORD_HASH` — scrypt hash `scrypt$N$r$p$saltHex$hashHex`. Dev password: **`posturpro-dev-2026`**.
+- `ADMIN_SESSION_SECRET` — 32-byte hex HMAC key (rotating it logs everyone out, edge 3).
+- Optional: `ADMIN_SESSION_MAX_AGE_SECONDS` (default 28800 = 8h), `ADMIN_LOGIN_RATE_LIMIT_DISABLED=1` (e2e escape hatch).
 
-- **Order confirmation + owner alert** — `src/app/[locale]/checkout/actions.ts` `runCheckout` step 9, after `createOrderViaRpc` (only when not an idempotent reuse). `Promise.allSettled` + belt-and-suspenders catch; never changes the `success` return (AC-13/AC-14). Locale from `getLocale()`.
-- **Payment received / voucher** — `src/lib/payments/process-payment.ts` `triggerTransitionEmail`, after `finalizePaymentEvent`, branching on `advance.result.transition_kind` (`paid` → `payment_received`; `payment_pending` + OXXO/SPEI + voucher data present → `voucher_instructions`). Fully isolated; the webhook route (`route.ts`) has ZERO email code (AC-18).
-- **T12 seams** (`// T12 wiring seam` comments in dispatch.ts): `sendShipped`, `sendCancelled`, `sendRefundIssued` — built + unit-tested, not wired.
-- **T13 seam**: `sendContactRelay` — built + unit-tested, not wired (depends on the Contact page).
+**Generate a real hash for a deploy:**
+```bash
+node -e 'const{randomBytes,scryptSync}=require("node:crypto");const s=randomBytes(16);const d=scryptSync(process.argv[1],s,64,{N:16384,r:8,p:1});console.log(["scrypt",16384,8,1,s.toString("hex"),d.toString("hex")].join("$"))' "YOUR_PASSWORD"
+```
 
-## Env var names (LIVE SEND IS BLOCKED-ON-USER)
+## Key Decisions
+- **`updateTag` over `revalidateTag`**: Next 16 made `revalidateTag(tag)` deprecated (now needs a `profile` 2nd arg + logs a warning). `updateTag(tag)` is the single-arg replacement with immediate expiration — exactly the AC-9 "reflect on next render" semantics. Only valid inside a server action, which is the sole caller.
+- **Route group `(app)` for the guard**: the authoritative session guard + shell live in `admin/(app)/layout.tsx`, so the sibling `/admin/login` renders the clean root layout without being redirected by its own guard. `(app)` doesn't affect URLs.
+- **Active section from `usePathname()`** in `AdminShell`, not a prop — T11/T12 add sections without threading a prop through every page.
+- **scrypt over bcrypt/argon2**: zero new deps, no native bindings; strong KDF in `node:crypto` (ticket decision).
+- **Web Crypto in middleware, node:crypto authoritative** (R1): shared payload codec keeps both in lockstep; middleware is a fast UX gate, the layout/actions are the trust boundary.
 
-No `EMAIL_*` vars exist in `.env.local`. Add these to `.env.local` to go live (read only via `getEmailEnv()`, never `NEXT_PUBLIC_`):
+## Deviations from Ticket/Spec
+- **File names/locations**: spec listed `admin/page.tsx` + `admin/settings/page.tsx`; implemented as `admin/(app)/page.tsx` + `admin/(app)/settings/page.tsx` (route group) so the guard wraps authed pages without catching `/admin/login`. `admin-shell.tsx` and `logout-button.tsx` were extracted from the layout for SRP + reuse (spec allowed either). No behavioral deviation.
+- **Cache bust API**: `updateTag` instead of `revalidateTag` (justified above) — same effect, avoids the Next 16 deprecation warning. The `STORE_SETTINGS_CACHE_TAG` constant is unchanged and shared.
+- **`money-required` vs blank**: blank money is its own error ("Ingresa un monto (usa 0 para gratis)."), distinct from 0 (valid) — matches edge 6/7 intent.
 
-- `EMAIL_API_KEY` — **secret**. Resend API key. Create at https://resend.com → API Keys (`re_...`).
-- `EMAIL_FROM_ADDRESS` — the verified sender, e.g. `pedidos@tudominio.mx`. **Must be on a domain verified in Resend** (Domains → add domain → set the DKIM/SPF DNS records). Unverified domains cannot send live.
-- `EMAIL_OWNER_ADDRESS` — the store operator's inbox for owner alerts + contact relay.
-- `NEXT_PUBLIC_SITE_ORIGIN` (public) — absolute origin for links in emails, e.g. `https://tienda.mx` (no trailing slash). Dev falls back to `http://localhost:3000`.
+## Edge Cases Handled
+1. Forged/tampered cookie → signature mismatch → `false` → redirect (`session.ts`, `session-edge.ts`; tests).
+2. Expired-but-signed cookie → `isWithinMaxAge` false → redirect (`session-payload.ts`; tests).
+3. Secret rotation → all cookies fail HMAC → re-login (test: "different secret").
+4. Missing admin env → `login` catches `MissingEnvVarError` → generic "no disponible", grants nothing; guard treats it as unauthenticated (`actions.ts`, `session-guard.ts`; test).
+5. Concurrent save → last-write-wins on the singleton (single-owner; `updated_at` trigger).
+6. Money 0 / 0.00 valid for both fields (`settings-input.ts`; tests).
+7. Locale-formatted money (`1,000.00`, `1.000,00`, `$500`) → strip `$`/space, reject separators, never coerce (`settings-input.ts`; tests).
+8. `store_settings` row absent → settings page seeds `SEED_*` + info banner; first save INSERTs the singleton (`store-settings.ts`, `settings/page.tsx`).
+9. Direct POST to `saveStoreSettings` without a session → `requireSession()` re-verifies → redirect, DB untouched (`actions.ts`).
+10. `/admin/`, `/admin` case/slash variants → verified via curl (307/308 to login; storefront `/`, `/en` unaffected).
 
-Until set: `EMAIL_DEV_PREVIEW=1` (or simply no `EMAIL_API_KEY`) makes the provider short-circuit — it logs `[email] PREVIEW (no network): to=... subject="..." htmlBytes=... textBytes=...` to stdout and returns success (AC-8). No account needed to preview.
+## How to Test (manual)
+1. `GET /admin` unauthenticated → 307 to `/admin/login` (verified: no admin markup in body).
+2. Log in at `/admin/login` with `admin@posturpro.mx` / `posturpro-dev-2026` → cookie set (HttpOnly, Path=/admin) → `/admin` → `/admin/settings`.
+3. Edit shipping flat rate / threshold in pesos → Guardar → "Configuración guardada."; storefront footer/checkout reflect new shipping on next render.
+4. Try `1,000.00` in a money field → field error "Usa punto decimal y sin separadores…"; form stays filled.
+5. Wrong password → "Correo o contraseña incorrectos." (same for unknown email — no enumeration).
+6. Cerrar sesión → cookie cleared → `/admin/login`; `GET /admin` redirects again.
+7. Verified live on the running dev server: `/`=200, `/en`=200, `/admin`=307→login, `/admin/login`=200, `/admin/settings`(unauth)=307→login, `/admin/`=308→`/admin`.
 
-## Test counts
+## Verification Results
+- `npx tsc --noEmit` → 0 errors.
+- `npx eslint` (admin lib/app/components + middleware/env/store-settings) → clean.
+- `npx next build` (NEXT_QA_DIST_DIR=.next-t10-build) → exit 0; admin routes dynamic, storefront routes unchanged, middleware compiled (Edge Web-Crypto OK). Build dir removed; `tsconfig.json` restored clean.
+- Unit: full suite **1342/1342 (75 files)** — baseline 1281 + 61 new admin tests. (One run showed a single pre-existing flake in `payment-panel.test.tsx` re: `window.location.assign`; passes 17/17 in isolation and the immediate re-run was 1342/1342 — unrelated to T10, which touches no payment/window code.)
+- Integration: not run — T10 adds no migration and no new DB RPC; the only DB touch is the existing `store_settings` singleton via the admin client. `AC-14: NO migration needed` (row + CHECKs + singleton index + `updated_at` trigger already exist, migrations 0003/0006; writes are pure UPDATE/INSERT). Migrations remain 0001..0010.
+- Storefront regression (R2): `/` and `/en` return 200 with the middleware change live; admin branch returns before next-intl.
+- DB left pristine (no seed/reset run). No stray servers started (used the existing session's dev server for read-only curl checks; the prod build used a temp dist dir, now deleted).
 
-- Unit: **1268 passed** (baseline 1206; +62 T9 tests across render/templates/provider/ledger/dispatch/order-url/voucher-data + the process-payment trigger block).
-- Integration: **168 passed** (baseline 158; +10 in `tests/integration/email.integration.test.ts` covering AC-1..AC-5, edges 1/3/4/7 + RLS).
-- `tsc --noEmit`: 0 errors. `eslint .`: clean. `next build`: exit 0. `supabase db reset`: 0010 applies clean (idempotent). DB left pristine-seeded; tsconfig unchanged; no stray servers.
+## Seams for T11/T12
+- **Nav**: flip `ADMIN_NAV_ITEMS[products|orders].status` to `"live"` + set `href` in `src/lib/admin/constants.ts` — no JSX change. `AdminShell` auto-resolves the active section from the path.
+- **New sections**: add `src/app/admin/(app)/products/page.tsx` (and `/orders`) — they inherit the guard + shell automatically.
+- **Dashboard**: replace the `redirect` in `admin/(app)/page.tsx` with an `AdminPage` overview.
+- **Settings write path**: `updateStoreSettings` in `store-settings.ts` is the template for future admin writes (admin client + `updateTag`).
+- **Session/guard**: `hasValidAdminSession()` (server components) + `requireSession()` pattern (in `actions.ts`) are reused verbatim by every future admin page/mutation. T12 refund/email wiring re-verifies the session the same way before calling the server-only refund/email modules.
 
-## Key decisions
+## Known Limitations
+- Single Owner, no roles/registration/reset (Phase 2, out of scope).
+- Rate limiter + session are per-instance in-memory (best-effort, documented); fine for a single-owner low-traffic surface.
+- Full login→settings e2e (server-action POST) is left to QA (Stage 7); the auth/session/parse cores are unit-tested and the round-trip was verified at the Node level against the real `.env.local`.
 
-- **Reused the T8 `extractVoucher`** (`src/lib/payments/order-payment-read.ts`) instead of writing a second voucher extractor (DRY) — bridged to the email shape by the small pure `voucher-data.ts` adapter. This is the only place the two shapes meet.
-- **Dedupe authority = `email_sends` ledger**, not provider idempotency. `dedupe_key` = mp_payment_id for payment-linked emails, `''` for one-per-order.
-- **Bounded send** (`EMAIL_SEND_TIMEOUT_MS = 8000`) raced in dispatch so a slow provider never blocks checkout success or the webhook 200.
-- **Claim-then-finalize for email** (edge 2): a claim lands `sent_at` NULL; finalized only after the provider accepts. A provider-down send leaves the row un-finalized. Decision: Phase-1 dispatch does NOT auto-re-attempt an un-finalized claim (`claim_email_send` returns `duplicate` for any existing row) — the ledger enables a FUTURE manual/queue retry without double-sending. Payment state is never coupled to email state.
-- **Owner + relay emails single-locale es-MX** (AC-12): the operator is the Mexican merchant; `contact_relay` is a relay TO the owner (es-MX chrome, customer message quoted verbatim in the body, customer email as `replyTo` — never in a header).
-- **Email HTML**: table layout, inline styles only, 600px max centered, plain-text alternative on every email, MXN via `money.ts`, all input HTML-escaped (injection defense). No app UI stack (no Tailwind/hugeicons/cn).
-
-## Edge cases handled
-
-- **Edge 1 (duplicate webhook)**: `claim_email_send(order, 'payment_received', mp_payment_id)` → 'new' once, 'duplicate' after → exactly one email. (dispatch.test + email.integration.test)
-- **Edge 2 (provider down during webhook)**: dispatch catches + logs; webhook still 200; `email_sends` row left un-finalized. (process-payment.test isolation test)
-- **Edge 3 (order in /en/)**: `orders.locale='en'` persisted at checkout, read by the webhook path via `getTranslations({ locale })`; owner alert stays es-MX. (email.integration.test)
-- **Edge 4 (OXXO paid days later)**: `payment_received` is a distinct `email_kind` from `voucher_instructions` → distinct ledger row → both send once. (email.integration.test)
-- **Edge 5 (charged_back / mismatch)**: never reach the trigger (transition_kind ≠ 'paid'); no customer email. (process-payment.test refund test)
-- **Edge 6 (undeliverable address)**: provider bounce → dispatch logs + swallows; order flow unaffected (AC-13). Logs carry order id + kind + reason only — never the address.
-- **Edge 7 (locale mutation attempt)**: locale stable across a full transition sequence. (email.integration.test)
-- **Voucher data absent at pending**: logged `voucher email skipped: no voucher data ...`, no partial email (AC-16). (process-payment.test skip test)
-- **Template render throws**: `dispatchEmail` try/catch around render+send logs + skips that one email.
-- **Missing `EMAIL_API_KEY` in prod**: `getEmailEnv()` throws `MissingEnvVarError` → provider/dispatch catch + swallow, no throw into critical path. (provider.test partial-config test)
-
-## How to test (manual, dev preview)
-
-1. `npx supabase start` then `npm run db:reset && npm run db:seed`.
-2. `EMAIL_DEV_PREVIEW=1 npm run dev` (or leave `EMAIL_API_KEY` unset — same effect).
-3. Place an order in the storefront → watch the dev server logs for two `[email] PREVIEW` lines (order_confirmation to the customer, new_order_owner to the owner). Switch to `/en` and place another to see English copy in the confirmation preview.
-4. To verify the webhook path without live MP: the integration suite (`npm run test:integration`) exercises the ledger + transition_kind end-to-end; the unit suite exercises the trigger with a mocked provider.
-
-## Known limitations
-
-- **No live-send verification** — BLOCKED-ON-USER (no `EMAIL_*` creds; no verified Resend domain). All tests mock the provider; dev uses preview mode.
-- **No auto-retry / queue** — Phase-1 dispatch is in-request, best-effort, isolated. The `email_sends` ledger (claim-then-finalize) is the substrate for a future retry without double-sends; T9 does not build the retry loop.
-- **Voucher email only where MP returns reference data** — T8 does not persist OXXO/SPEI voucher fields (they are re-fetched from MP). T9 extracts the voucher from the authoritative payment the webhook already fetched; if the reference is absent it skips (no partial email). No new voucher-persistence schema was added (documented gap).
-- **`shipped`/`cancelled`/`refund_issued`/`contact_relay` are not live-wired** (T12/T13) — templates + send functions + documented seams only.
-
-## Dependencies added
-
-- `resend` `^4.8.0` — first-class TypeScript SDK, trivially mockable (single-module boundary), works from the Node server runtime. Postmark remains the documented fallback (swapping = replace `deliver()` in `provider.ts`).
-
-## Deviations from the ticket
-
-- **Voucher extraction reuses the existing T8 `extractVoucher`** rather than a new `email/voucher-extract.ts` (the ticket's file list implied a fresh module). Rationale: DRY (CLAUDE.md) — a well-tested extractor already existed; a duplicate would drift. The email-specific mapping lives in the small pure `voucher-data.ts` adapter instead.
-- **Added `finalize_email_send` RPC + `NEXT_PUBLIC_SITE_ORIGIN`** (not explicitly listed): claim-then-finalize needs a finalize step (mirrors the payment spine, edge 2), and absolute email links require a configurable origin. Both are additive and non-breaking.
-- **`CreateOrderPayload.locale` is required** (not optional): the checkout action always sends it, and the RPC clamps a bad/missing value to es-MX. Two existing integration test builders were updated to supply it.
-
-## Review + Fix Pass (S4 ReviewFix — commit bdd37bc reviewed)
-
-### Issues Found & Fixed
-
-| ID  | Severity | Title | Status | File | Fix Applied |
-| --- | -------- | ----- | ------ | ---- | ----------- |
-| M-1 | MAJOR | Unescaped `href` in email button (attribute-breakout / HTML injection) | FIXED | src/lib/email/layout.ts:132 | Wrapped href in `escapeHtml()`; two callers pass provider URLs (MP voucherUrl, carrier trackingUrl). Added `src/lib/email/layout.test.ts` (3 tests) incl. an explicit breakout payload |
-| m-1 | MINOR | config comment says `SITE_ORIGIN`, code reads `NEXT_PUBLIC_SITE_ORIGIN` | SKIPPED | src/lib/config.ts | Comment cosmetics only; code correct and consistent with docs |
-| m-2 | MINOR | `renderParagraph(text, false)` escape-bypass has no live caller | SKIPPED | src/lib/email/layout.ts:146 | Currently unreachable with unsafe input; default path is safe |
-| n-1 | NIT | run-integration.sh header comment stale ("0001..0005") | SKIPPED | scripts/run-integration.sh | Out-of-scope non-T9 file; `db reset` applies all migrations regardless |
-
-### Summary
-
-- Critical: 0/0
-- Major: 1/1 fixed
-- Minor: 0/2 fixed, 2 skipped (justified: cosmetic / unreachable)
-- Nit: 0/1 fixed, 1 skipped (out-of-scope)
-
-### Crash-between-claim-and-send verdict
-
-At-most-once by design — CONFIRMED, documented, justified. An unfinalized email claim is NOT
-reclaimable (unlike T8's payment claim); a crash between claim and send permanently suppresses that
-one email, and a future manual/queue retry can use the ledger row without double-sending. Correct
-choice for email (email ≠ money). No timeout leak: `Promise.race` handles the losing promise; timer
-cleared in `finally`.
-
-### Verification (post-fix)
-
-- tsc 0 errors; eslint clean
-- Unit: **1271 passed** (1268 baseline + 3 new layout.test.ts regression tests), 68 files
-- Integration: **168 passed** (13 files) via run-integration.sh (fresh reset+seed, exit 0)
-- `supabase db reset`: 0001..0010 apply clean (idempotent)
-- DB pristine-seeded (0 orders, 0 email_sends); tsconfig unchanged; no stray servers
+## Dependencies Added
+- None. `node:crypto` (scrypt/HMAC/timingSafeEqual) + Web Crypto (`crypto.subtle`) are built-in; shadcn `Button`/`Badge` + Radix `Dialog`/`FocusScope` already vendored.
