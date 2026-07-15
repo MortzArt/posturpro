@@ -1,86 +1,94 @@
-# Research Report: T10 — Admin foundation
+# Research Report: T11 — Admin: Product Management
 
 ## Codebase Analysis
 
 ### Existing Patterns
 
-- **Strict env / secret boundary** — `src/lib/env.ts`. `getPublicEnv` (NEXT_PUBLIC only) vs `getServerEnv`/`getMercadoPagoEnv`/`getEmailEnv` (server secrets), all via `requireEnv` which throws a named `MissingEnvVarError`. **Reuse:** add `getAdminEnv()` here for `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH`/`ADMIN_SESSION_SECRET`, following the MP/email block verbatim (comment block + interface + accessor). This is the ONLY place admin secrets are read.
-- **`server-only` guard for secret access** — `src/lib/supabase/admin.ts:10`, `src/lib/supabase/public.ts`, `src/lib/store-settings.ts:11`. Importing these from a client bundle is a build error. **Reuse:** `src/lib/admin/session.ts` and `auth.ts` start with `import "server-only"`.
-- **HMAC + constant-time verify** — `src/lib/payments/webhook.ts:26` (`createHmac`, `timingSafeEqual`) and `timingSafeHexEqual` (`webhook.ts:188`) which length-checks then `timingSafeEqual`s decoded buffers. **Reuse strategy:** the admin session signer is structurally identical — HMAC-SHA256 the payload, hex-encode, compare with `timingSafeHexEqual`-style helper. Copy the discipline (never `===` on signatures; length check is not a timing leak for fixed-length digests), do not copy-paste the function (DRY-with-judgment; different secret, different payload).
-- **`randomUUID` / node:crypto in server modules** — `src/lib/payments/refund.ts:26`. Confirms `node:crypto` is available in server-action/route runtime (Node runtime), NOT necessarily the Edge middleware runtime — see Risk R1.
-- **Server-action + serializable state contract** — `src/app/[locale]/checkout/actions.ts` (`"use server"`, `placeOrder(prevState, formData)`) paired with `checkout-form-state.ts` (types only, because a `"use server"` file may export only async fns). Q&A (`src/lib/qa/…` + `qa-form-state.ts`) is the same shape. **Reuse:** `src/app/admin/actions.ts` + `src/app/admin/admin-form-state.ts`. Raw PG errors are mapped to friendly enums, never echoed (`actions.ts:23`, `mapThrownError`).
-- **Best-effort per-IP rate limiter with test escape hatch** — `src/lib/checkout/rate-limit.ts` (`checkCheckoutRateLimit`, disabled by `CHECKOUT_RATE_LIMIT_DISABLED`), keyed by `clientIp` from the canonical `src/lib/request/client-ip.ts`. **Reuse:** a parallel `checkLoginRateLimit` (or generalize) for AC-15, with an `ADMIN_LOGIN_RATE_LIMIT_DISABLED` flag so e2e can log in freely.
-- **Tag-cached read + bust-on-write** — `src/lib/store-settings.ts`: `getStoreSettingsStatic` is `unstable_cache([...], {tags:[STORE_SETTINGS_CACHE_TAG]})`; doc comment explicitly says busted "on demand by `revalidateTag(STORE_SETTINGS_CACHE_TAG)` (admin save, T10)." **Reuse:** the save action calls `revalidateTag(STORE_SETTINGS_CACHE_TAG)` — the seam is pre-built (AC-9).
-- **Money boundary** — `src/lib/money.ts` (`formatMXN`, `pesosToCents`, `centsToPesos`); integer cents everywhere (`config/shared.ts`). **Reuse:** settings form displays/edits pesos, stores cents via these helpers (AC-8).
-- **Cookie read/write via `next/headers`** — `src/lib/supabase/server.ts` (`await cookies()`, `cookieStore.set(name,value,options)`), Next 16 async cookies. **Reuse:** the login/logout actions set/clear the admin cookie the same way (`HttpOnly`, `SameSite=Lax`, `Secure` in prod, `Path=/admin`).
-- **Layout as auth/render boundary** — `src/app/[locale]/layout.tsx` reads settings, sets `<html lang>`, wraps children. **Reuse:** `src/app/admin/layout.tsx` is a *parallel, independent* root-ish layout (own `<html lang="es-MX">`, no next-intl provider, no cart/site chrome) that additionally guards the session.
+- **Admin write template** — `updateStoreSettings()` in `src/lib/store-settings.ts:167`: `createAdminClient()` (RLS-bypass) → read-or-insert singleton → `updateTag(STORE_SETTINGS_CACHE_TAG)`. Reuse: every T11 write is the same shape (admin client, mutate, bust tags, map raw error to a friendly enum, never throw the PG error to the UI). The read/write live in the same module (SRP). T11 generalizes this from a singleton to keyed entities.
+- **Pure input parser** — `parseStoreSettingsInput()` in `src/lib/admin/settings-input.ts:128`: no I/O, no Next imports, collects ALL field errors in one pass, returns a discriminated union `{ok:true, values} | {ok:false, fieldErrors}`. Reuse: `product-input.ts`, `variant-input.ts`, taxonomy/inventory/csv-row parsers copy this discipline. `parseMoneyToCents()` (`settings-input.ts:66`) is the strict money boundary — reuse verbatim (strips one `$`, rejects thousand separators, 3+ decimals, overflow); the cm/kg → mm/g parser mirrors it.
+- **Server-action + form-state split** — `src/app/admin/actions.ts` (`"use server"`, only async exports) + `src/app/admin/admin-form-state.ts` (serializable state types/initial values for `useActionState`). `saveStoreSettings` (`actions.ts:114`) calls `await requireSession()` FIRST, then parses, then writes, returning `{status, fieldErrors?, values, submissionId}`. Reuse: identical pattern per T11 write; `requireSession()` (`actions.ts:145`) is copy-forward (or extract to a shared `src/lib/admin/require-session.ts`).
+- **Client form** — `store-settings-form.tsx`: `useActionState`, `pending` disables inputs + swaps the submit label, `submissionId`-keyed success banner (`role="status"`), focus-first-invalid on `state.status==="invalid"`, `MoneyField` with `inputmode="decimal"` + `$` adornment (never `type="number"`), `.enter-fade` RM-safe motion. Reuse: the field components (`TextField`, `MoneyField`, `FieldError`, `Banner`) are the visual/interaction primitives to extract and share across every T11 form.
+- **Cached catalog read + pure pagination** — `cachedRead()` in `read-primitives.ts:68`, `listProducts()` in `queries.ts:79` (count → clamp → range), pure math in `pagination.ts` (`parsePageParam`, `rangeFor`, `lastPageFor`, `paginationWindow`, `canonicalPageKey`). Reuse strategy: the admin list reuses ONLY the pure `pagination.ts` math; it must NOT use `cachedRead` (admin data is live) and must query the base `products` table via the admin client (not `products_public`) to see draft/archived.
+- **Embedded-relation normalization** — `firstOrSelf()` (`read-primitives.ts:46`) collapses a PostgREST to-one embed that may surface as an array. Reuse in the admin edit-form read (brand/style embeds).
+- **Seed idempotency by natural key** — `scripts/seed.ts` + `scripts/seed-data/products.ts`: upsert brands/styles/tags/categories on `slug`, products on `slug`, variants on `sku`, images on `(product_id, url)`. The CSV importer should match products by SKU and taxonomy by slug — the same natural keys the schema already enforces unique.
 
 ### Relevant Files
 
 | File | Purpose | Relevance | Action |
 | ---- | ------- | --------- | ------ |
-| `src/lib/env.ts` | Validated env accessors, secret boundary | Add `getAdminEnv()` | Modify |
-| `src/middleware.ts` | next-intl locale middleware | Add `/admin` guard branch; keep storefront intact | Modify |
-| `src/lib/store-settings.ts` | Cached read + `STORE_SETTINGS_CACHE_TAG` | Bust tag on save; optional `updateStoreSettings` | Reference / Modify |
-| `src/lib/supabase/admin.ts` | RLS-bypass client (`createAdminClient`) | The settings-write client | Reference |
-| `src/lib/payments/webhook.ts` | HMAC + `timingSafeEqual` reference impl | Signing/verify blueprint | Reference |
-| `src/lib/money.ts` | `pesosToCents`/`centsToPesos`/`formatMXN` | Money boundary in settings form | Reference |
-| `src/lib/checkout/rate-limit.ts` | Best-effort per-IP limiter + disable flag | Login rate limit blueprint | Reference |
-| `src/lib/request/client-ip.ts` | Canonical client IP | Limiter key | Reference |
-| `src/app/[locale]/checkout/actions.ts` + `checkout-form-state.ts` | Server-action + state-type split | Login/settings action blueprint | Reference |
-| `supabase/migrations/0003_commerce.sql:149` | `store_settings` table def | Column names + CHECKs | Reference |
-| `supabase/migrations/0006_data_integrity_hardening.sql:50` | singleton index + name CHECK | Constraints the form must respect | Reference |
-| `supabase/migrations/0005_rls_policies.sql:203` | `store_settings` grants (select only) | Confirms writes must use admin client | Reference |
-| `src/lib/config/shared.ts` | `SEED_STORE_NAME`, `SEED_STORE_CONTACT_EMAIL`, shipping seeds | Defaults for missing-row edge | Reference |
-| `src/lib/payments/secret-exposure.test.ts` | Client-bundle secret leak test | Blueprint for AC-12 test | Reference |
-| `src/app/[locale]/layout.tsx` | Storefront layout pattern | Admin layout parallel | Reference |
-| `src/components/ui/{button,input,label}.tsx` | shadcn primitives (vendored) | Login + settings form | Reference |
+| `supabase/migrations/0002_catalog.sql` | products/variants/images/brands/categories/styles/tags DDL + cycle trigger | The full model T11 edits; column names, CHECKs, FKs, `(product_id,url)` unique | Reference |
+| `supabase/migrations/0004_content_qa.sql` | `product_questions` (answer/is_published/answered_at) | Q&A answering target | Reference |
+| `supabase/migrations/0005_rls_policies.sql` | RLS baseline, `products_public` view, service_role grants | Why admin uses the secret client; new table needs `grant … to service_role` | Reference |
+| `supabase/migrations/0006_data_integrity_hardening.sql` | slug/name/free-text CHECKs, no-blank | Constraints the parsers must pre-satisfy; `add_check_if_absent` helper for 0011 | Reference |
+| `supabase/config.toml:42-48` | `[storage]` + `[edge_runtime]` DISABLED | Must re-enable `[storage]`; documents the boot-regression risk | Modify |
+| `next.config.ts:27-44` | `next/image` remotePatterns | Supabase Storage host ALREADY allow-listed — no change needed | Reference (confirm) |
+| `scripts/seed.ts`, `scripts/seed-data/products.ts` | seed orchestration + `seedImageUrl` | Import-key parity; bucket seed step if any | Reference / touch |
+| `src/lib/store-settings.ts:167` | `updateStoreSettings` write template | THE write pattern to copy | Reference |
+| `src/lib/admin/settings-input.ts` | pure parser + `parseMoneyToCents` | Reuse the parser discipline + money fn | Reference / reuse |
+| `src/app/admin/actions.ts` | login/logout/save actions, `requireSession` | Action template; `requireSession` copy-forward | Reference |
+| `src/app/admin/admin-form-state.ts` | serializable state contracts | Pattern for `products-form-state.ts` | Reference |
+| `src/components/admin/store-settings-form.tsx` | client form primitives | Extract `MoneyField`/`Banner`/`FieldError` to share | Reference / refactor |
+| `src/lib/admin/constants.ts:97` | `ADMIN_NAV_ITEMS` (`products` = soon) | Flip to `live`; add sections | Modify |
+| `src/app/admin/(app)/layout.tsx` | guard + `AdminShell` wrapper | New routes inherit it automatically | Reference |
+| `src/components/admin/admin-page.tsx` | section header wrapper | Reuse for every T11 page | Reference / reuse |
+| `src/lib/catalog/pagination.ts` | pure pagination math | Reuse for the admin list | Reference / reuse |
+| `src/lib/catalog/queries.ts:53` + `product-detail.ts:36` | `CATALOG_CACHE_TAG`, `productCacheTag`, `brand:/category:/style:` tags | The exact tags admin writes must bust | Reference / import |
+| `src/lib/supabase/admin.ts` | `createAdminClient()` | The RLS-bypass client for all writes | Reference / reuse |
+| `src/lib/money.ts` | `formatMXN`, `pesosToCents`, `centsToPesos` | List/format + parse | Reference / reuse |
+| `src/app/[locale]/producto/[slug]/actions.ts:98` | anon Q&A insert path | Confirms Q&A is read/insert-only today; admin adds the answer/publish write | Reference |
 
 ### Data Flow
 
-**Login:** browser POSTs `/admin/login` form → `login()` server action → `checkLoginRateLimit(clientIp)` → `verifyCredentials(email, password)` (`getAdminEnv()` → scrypt compare, constant-time; dummy-hash on unknown email) → on success `createSessionCookieValue()` (HMAC over `{issuedAt, v}`) → `cookies().set(ADMIN_SESSION_COOKIE_NAME, value, {httpOnly, sameSite:"lax", secure, path:"/admin", maxAge})` → `redirect("/admin")`. On failure → `{status:"error"}` generic.
+**Product edit (write):** owner submits `product-form.tsx` `<form action={updateProduct}>` → `useActionState` posts FormData → `updateProduct` (`"use server"`) `await requireSession()` (redirect on fail, no DB touch) → `parseProductInput(FormData)` (pure; field errors return early, form stays filled) → `product-write.ts` `createAdminClient()` UPDATE `products` + reconcile `product_categories`/`product_tags` (catch `23505` → field error) → `bustProductTags(slug, {brandSlug, styleSlug, categorySlugs})` calls `updateTag('catalog')` + `updateTag('product:'+slug)` + touched taxonomy tags → return `{status:"success", submissionId}` → client shows keyed banner. Next storefront render of `/producto/[slug]` (cached under `product:<slug>`+`catalog`) re-reads fresh.
 
-**Guarded request:** browser GET `/admin/settings` → `middleware` matches `/admin/*`, reads cookie, verifies signature+expiry → if invalid `NextResponse.redirect("/admin/login")`; if valid `NextResponse.next()` → `admin/layout.tsx` server component re-verifies (defense-in-depth) → renders nav + page → `admin/page.tsx` reads live `store_settings` (via `getStoreSettings`/`getStoreSettingsStatic`) → seeds form.
+**Admin product list (read):** `/admin/products?search=&brand=&status=&page=` server component → `parseListFilters(searchParams)` (pure, bounded) → `listAdminProducts(filters)` → `createAdminClient()` count-only query with filters → `parsePageParam(rawPage, lastPage)` → `.range(from,to)` data query with the same filters, `.order('updated_at', desc)` → returns rows (any status) → `product-table.tsx` renders. No `unstable_cache` — always live.
 
-**Save settings:** browser POSTs settings form → `saveStoreSettings()` action → re-verify session (reject if absent, edge 9) → `parseStoreSettingsInput(formData)` (pure; pesos→cents, validate) → `createAdminClient().from("store_settings").update({...}).eq("id", row.id)` (or update-the-singleton) → `revalidateTag(STORE_SETTINGS_CACHE_TAG)` → `{status:"success"}`. Storefront `getStoreSettingsStatic` cache is now busted → footer/checkout render new values.
+**Image upload:** `image-upload-field.tsx` client-validates type/size → server action receives the File → server re-validates → `createAdminClient().storage.from('product-images').upload(path, file)` → on success insert `product_images {product_id, url:publicUrl, variant_id?, sort_order, is_primary}` → on insert failure best-effort `storage.remove([path])` → bust `catalog`+`product:<slug>`.
+
+**Inventory adjustment:** `inventory-adjust-dialog.tsx` → action → `parseAdjustment` → `createAdminClient().rpc('record_inventory_adjustment', {...})` (atomic: updates `products.stock`/`variant.stock` + inserts `inventory_adjustments`, rejects negative) → bust `catalog`+`product:<slug>`.
+
+**CSV import:** upload → parse (RFC-4180) → `buildImportDiff(rows, existingSkus, taxonomySlugs)` (pure dry-run) → preview UI (create/update/errors) → owner confirms → batched writes (resilient per-row) → bust `catalog` once → summary.
 
 ### Similar Features (Reference Implementations)
 
-- **Mercado Pago webhook** (`src/lib/payments/webhook.ts`, `+ config.ts`, `+ webhook.test.ts`) — the closest analog to admin session signing: server-only secret from `env.ts`, HMAC-SHA256, constant-time compare, exhaustive unit tests over forged/malformed inputs. Follow this bar for `session.test.ts`.
-- **Checkout action** (`actions.ts` + `checkout-form-state.ts` + `form-parsing.ts`) — the template for splitting: `"use server"` orchestration file, a types-only state file, and a pure parsing/validation lib (`form-parsing.ts`, `checkout/address.ts`). Mirror as `actions.ts` / `admin-form-state.ts` / `settings-input.ts`. Keeps each file small (clean-code) and the parser unit-testable without Next.
-- **Store-settings read** (`store-settings.ts`) — already models graceful degradation (returns `null`, never throws) and the cache tag. The write path is the missing half T10 adds.
+- **T10 Store Settings** (`store-settings.ts` + `actions.ts` + `settings-input.ts` + `store-settings-form.tsx`) — the closest reference: it IS one instance of the exact write pattern every T11 slice repeats. Key patterns to follow: pure parser boundary, `requireSession` first, admin client, tag bust, serializable state, keyed success banner, focus-first-invalid, strict money field.
+- **T3 catalog list** (`queries.ts` `listProducts` + `queries-internal.ts` count→clamp→range + `pagination.ts`) — the read/pagination reference. Follow the count→clamp→range shape; diverge by using the admin client + base table + no cache.
+- **T4 Q&A** (`product-detail.ts:214` read published + `producto/[slug]/actions.ts:98` anon insert) — shows exactly the half of Q&A that exists; T11 supplies the missing admin answer/publish write.
+- **Category cycle guard** (`0002_catalog.sql:47` trigger + `categories_no_self_parent` CHECK) — the admin category UI must respect and surface these, not reimplement them.
 
 ## Dependency Analysis
 
 ### Existing Dependencies to Leverage
 
-- `node:crypto` (built-in) — `createHmac`, `timingSafeEqual`, `scrypt`/`scryptSync`, `randomBytes`. For the password hash use scrypt (in Node stdlib, no new dep) with a per-hash random salt encoded into `ADMIN_PASSWORD_HASH` (e.g. `scrypt$N$salt$hash`).
-- `@supabase/supabase-js` `2.110.2` — `createAdminClient` for the settings UPDATE.
-- shadcn/ui (`button`, `input`, `label` present; `radix-ui` `1.6.0` available) — login + settings forms.
-- `next` `16.2.9` — `cookies()` (async), `redirect()`, `revalidateTag()`, `useActionState`, middleware `NextResponse`.
-- `next-intl` `4.13.2` — unchanged; admin sits OUTSIDE its locale scope.
+- `@supabase/supabase-js` `^2.110.2` — the admin client (`createAdminClient`) exposes `.from()`, `.rpc()`, AND `.storage.from(bucket).upload/remove/getPublicUrl` for image handling. No separate storage SDK needed.
+- `next/cache` `updateTag` — Next 16 cache-bust (already used in `store-settings.ts:197`); the ONLY correct bust primitive here.
+- `@hugeicons/react` + `@hugeicons/core-free-icons` — all icons (drag handle, upload, trash, etc.). Never mix icon sets.
+- `shadcn` `^4.13.0` (devDep, CLI) — vendor `table`, `textarea`, `dialog`, `tabs` as source (not runtime deps).
+- `react` 19.2 `useActionState` / `useOptimistic` — form state + optimistic image reorder.
+- `src/lib/money.ts`, `src/lib/catalog/pagination.ts`, `src/lib/admin/settings-input.ts` (money parser), `src/lib/utils.ts` (`cn`) — internal, reuse directly.
 
 ### New Dependencies Needed
 
-- **None.** Explicitly avoid `next-auth`/`lucia`/`bcrypt`/`argon2`: a single hardcoded Owner does not justify an auth framework, and adding a native-binding hash lib (bcrypt/argon2) complicates the build. `node:crypto` scrypt is a first-class, dependency-free password KDF and is sufficient here. (If Security later insists on argon2, that is a follow-up, not a Phase-1 blocker.)
+- **None.** CSV parse/generate is hand-rolled (RFC-4180 is ~80 lines pure). Drag ordering uses native HTML5 drag / pointer events + keyboard fallback. This satisfies the ticket's zero-new-dep constraint and CLAUDE.md's "grep for an existing one" rule. If UI-design finds native drag genuinely unworkable for the accessibility bar, `@dnd-kit/core` is the recommended fallback (tree-shakeable, a11y-first) — but it must be justified, pinned, and is not the default.
 
 ### Internal Dependencies
 
-- `middleware.ts` depends on session verification — implication: verification logic must be importable in the **Edge runtime**. `node:crypto` may not be available there → see Risk R1. Keep `session.ts` free of Next imports so it can be used in both runtimes, or split a Web-Crypto verify path.
-- `saveStoreSettings` depends on `STORE_SETTINGS_CACHE_TAG` staying the single tag both reads use — implication: don't fork the tag; import the constant, don't re-declare.
-- Admin layout must NOT import the storefront `CartProvider`/`SiteHeader`/`NextIntlClientProvider` — implication: admin is a sibling route tree, not nested under `[locale]`, so it needs its own `<html>` (Next allows multiple root layouts for disjoint segments).
+- `image-write.ts` depends on the `product-images` bucket existing (0011/config) — implication: Slice 3 is blocked by Slice 0.
+- `inventory-write.ts` depends on `record_inventory_adjustment` RPC (0011) → `database.types.ts` regenerated — implication: run `db:types` after 0011 before typing the RPC call.
+- The admin list read depends on the base `products` table via the admin client — it deliberately does NOT depend on `products_public` (which hides draft/archived and cost_price).
+- `cache-tags.ts` depends on the exported tag constants in `queries.ts`/`product-detail.ts` — import them, never re-declare the strings (single source of truth).
 
 ## External Research
 
-### Framework Documentation
-
-- **Next.js 16 App Router — multiple root layouts:** route groups / disjoint top-level segments (`app/[locale]/...` and `app/admin/...`) can each own an `<html>`/`<body>`. `admin/layout.tsx` being a root layout for the `/admin` subtree is the sanctioned way to give admin its own chrome and lang without inheriting storefront providers.
-- **Middleware runtime:** Next middleware runs on the **Edge runtime** by default, where Node built-ins (`node:crypto`) are historically unavailable; the **Web Crypto API** (`crypto.subtle.importKey`/`sign`, `globalThis.crypto`) is the Edge-safe path for HMAC. Next 16 does allow opting middleware into the Node runtime in some configs — but the safe, portable design is: middleware does a **Web Crypto HMAC verify** (signature + expiry), and the layout/action does the authoritative `node:crypto` verify. Both share the same secret and payload format. Document whichever path Dev picks (Risk R1).
-- **Cookie security:** `HttpOnly` (no JS access → mitigates XSS token theft), `SameSite=Lax` (CSRF mitigation for top-level nav; forms POST same-site so Lax is fine), `Secure` (prod only — localhost is http), `Path=/admin` (cookie never sent to storefront routes → keeps sessions separate, AC-13). `__Host-` prefix would force `Secure`+`Path=/`+no-Domain; we deliberately want `Path=/admin`, so a plain name (not `__Host-`) is correct.
-
 ### API Documentation
 
-- N/A — no external HTTP API. Admin talks only to the local Supabase Postgres via the admin client.
+- **Supabase Storage (local, self-hosted CLI):** the bucket is created via SQL (`insert into storage.buckets (id, name, public) values ('product-images','product-images', true)`) inside migration `0011`, or via `storage.from().createBucket` at seed time. Public buckets serve objects at `https://<ref>.supabase.co/storage/v1/object/public/<bucket>/<path>` — the exact pattern already allow-listed in `next.config.ts`. RLS on `storage.objects` governs writes; the service_role (admin client) bypasses it, so no storage policy is strictly required for Phase 1 writes (owner-only). Gotcha: `upload` rejects duplicate paths unless `upsert:true`; use a content-hash or product-id/uuid path to avoid collisions.
+- **Storage re-enable cost/risk (the key decision):** `config.toml:37-41` documents WHY storage was disabled — its container ran ~30s of `vector_store` migrations before binding port 5000, exceeding the CLI health-check window under Docker load and aborting `supabase start`/`db reset` (observed 2026-07-14). `[analytics]` (Logflare/vector) is ALSO disabled and is the heavy/flaky coupling. **Recommendation: re-enable `[storage]` only** (leave `[analytics]` and `[edge_runtime]` off). Modern `supabase` CLI storage no longer hard-couples to the analytics/vector stack for a plain buckets+objects workload, so with analytics off the storage container should bind within the window. **This must be VERIFIED with a clean `supabase stop && supabase start && supabase db reset` before ship (AC-2, edge 10).** If it regresses, the fallback is a local **filesystem/`public/`-dir upload** dev shim behind the same `image-write.ts` interface (swappable for real Storage in staging) — but Supabase Storage is preferred because the storefront and `next.config` already assume that URL shape, keeping dev and prod identical.
+
+### Library Documentation
+
+- **RFC-4180 CSV** — the rules to implement: fields separated by `,`, records by CRLF (accept LF too); a field containing `,`/`"`/newline must be double-quoted; a literal `"` inside a quoted field is escaped by doubling (`""`); strip a leading UTF-8 BOM. Parser is a small state machine (in-quote / out-quote); generator quotes only when needed. Both are pure and exhaustively unit-testable (matches the codebase's `webhook.ts`/`address.ts` pure-boundary discipline).
+- **`next/image` with uploaded URLs** — no code change; the dynamic Supabase host pattern (`next.config.ts:29-37`) covers `/storage/v1/object/public/**`. Confirm `NEXT_PUBLIC_SUPABASE_URL` is set in the env the build reads (it is, per T1).
 
 ## Risk Assessment
 
@@ -88,49 +96,57 @@
 
 | Risk | Likelihood | Impact | Mitigation |
 | ---- | ---------- | ------ | ---------- |
-| **R1: `node:crypto` unavailable in Edge middleware** → build/runtime error when verifying the session in `middleware.ts` | High | High | Use **Web Crypto (`crypto.subtle`)** for the middleware-side HMAC verify (Edge-safe), keep `node:crypto` for the authoritative layout/action verify; OR opt middleware into the Node runtime if the project already does so. Keep `session.ts` payload format runtime-agnostic. Verified as the key design decision for Dev. |
-| **R2: Storefront regression** from middleware change (locale routing / cart cookie) | Medium | High | Scope the `/admin` branch tightly; return `NextResponse.next()`/redirect ONLY for `/admin/*`, delegate everything else to next-intl unchanged. Re-run full e2e (cart 46, checkout 24) on a prod build with correct seed-before-build sequencing (pipeline-state E2E rule). |
-| **R3: Timing/user-enumeration leak** on login | Medium | Medium | Verify the scrypt hash even when the email is unknown (dummy hash of equal cost); single generic error for both wrong-email and wrong-password (AC-3). Covered by an `auth.test.ts` case. |
-| **R4: Secret leaks into client bundle** | Low | Critical | All admin secrets `server-only` + read only via `getAdminEnv()`; add a `secret-exposure`-style test (AC-12). Never `NEXT_PUBLIC_`. Never pass secrets into a `"use client"` component's props. |
-| **R5: Missing/blank `ADMIN_PASSWORD_HASH` treated as "any password works"** | Low | Critical | `getAdminEnv()` throws `MissingEnvVarError` on blank; the login action catches it → generic "no disponible" and grants nothing (edge 4). Add a test that unset hash never authenticates. |
-| **R6: Missing `store_settings` row 500s the settings page** | Low | Medium | Reuse the graceful-null read; seed the form from `SEED_*` and UPSERT on first save (edge 8). |
-| **R7: Money parse coerces locale-formatted input to wrong cents** | Medium | High (wrong shipping charged) | Strict pure parser in `settings-input.ts` with explicit tests for `1,000.00`, `$500`, `1.000,00`, negatives, >2 decimals, overflow (edge 6/7, AC-10). |
+| Re-enabling `[storage]` breaks local `supabase start`/`db reset` (the documented regression) | Medium | High (blocks all local dev + e2e) | Enable storage ONLY (analytics stays off); verify with clean stop/start/reset before ship; documented filesystem fallback behind `image-write.ts` |
+| Ticket is huge (9 features) → files blow the 400-line cap / functions the 30-line cap | High | Medium (eslint `max-lines` error, review churn) | Up-front module decomposition (see Files to Create); one parser + one write module per entity; extract shared form primitives from `store-settings-form.tsx` |
+| Image storage/DB divergence (orphan file or dangling row) | Medium | Medium | Reconcile in `image-write.ts`: DB row is source of truth; best-effort orphan cleanup on either-side failure; log mismatch (edge 4) |
+| CSV import writes garbage or partially applies | Medium | High (corrupts real catalog) | Mandatory dry-run preview (zero writes until confirm); strict per-row parser reusing `parseMoneyToCents`; taxonomy-by-slug (unknown → row error, never auto-create); resilient batch; single cache bust at end |
+| Variant-vs-product stock authority handled inconsistently across list/adjust/CSV | Medium | Medium | Encode the schema rule (variant stock authoritative when variants exist) in ONE shared helper; use it everywhere; make the UI state which field it edits (edge 7) |
+| Admin list read accidentally uses `products_public` (hides draft/archived) or gets cached | Low | High (owner can't see/fix drafts; stale after edits) | Explicit AC-4: base table + admin client + no `unstable_cache`; a test asserts a draft product appears in the admin list |
+| A CSV export / upload route handler under `/api` bypasses the session guard (middleware excludes `/api`) | Medium | Critical (unauth catalog dump/write) | Keep writes in server actions; any route handler lives under `/admin/(app)/` or self-calls `requireSession()` at entry (AC-34, carries the T10 documented `/api/admin/*` rule) |
+| `record_inventory_adjustment` RPC not atomic → ledger diverges from stock | Low | Medium | Single `plpgsql` fn doing both writes in one statement/transaction; CHECK `resulting_stock >= 0`; characterization test |
 
 ### Performance Considerations
 
-- Admin is a low-traffic, single-user surface — no perf concern. The middleware `/admin` branch adds one HMAC verify per admin request only (storefront requests short-circuit before the admin logic). Ensure the storefront path in middleware is not slowed (guard on `pathname.startsWith("/admin")` first).
+- **Admin list N+1 for cover thumbnails:** fetch the cover image per product in the same query via an embedded `product_images` filter (`is_primary=true`) or a batched `IN (product_ids)` stitch (the `queries-internal.ts` pattern) — never one query per row.
+- **CSV row cap:** bound imports with `CSV_MAX_ROWS` (e.g. 5,000) so a 50k-row file can't exhaust memory / block the action; parse streaming-ish or reject early. Export is bounded by the catalog size (Phase 1 ~30–hundreds) — fine.
+- **No cache on admin reads is intentional** — the admin is a single low-traffic user; live correctness > cache hit rate. Add DB indexes (0011) for the filter/order columns so uncached filtered reads stay fast.
 
 ### Security Considerations
 
-- This is THE trust boundary. Enforce: HttpOnly+Secure+SameSite=Lax+Path=/admin cookie; HMAC-signed tamper-evident payload; bounded session lifetime; constant-time credential + signature checks; per-IP login rate limit; server-side re-verification in every mutation (never trust middleware alone); no secret in client bundle; generic error messages (no enumeration, no stack traces). Session invalidation lever = rotate `ADMIN_SESSION_SECRET`. Flag for the Security stage (9) at full depth.
-- `SameSite=Lax` + a state-changing POST is acceptable for a single-owner tool, but the settings/logout actions should still re-verify the session server-side (they do) — that plus Lax is the CSRF story for Phase 1. A dedicated CSRF token is Phase-2 polish, not required here.
+- **Privileged write surface + file upload = the main new attack surface.** Every action must `requireSession()` at entry (defense-in-depth beyond the middleware/layout guard). Server-side re-validate image MIME + size (never trust the client `accept`/size). Store uploads under a non-guessable path (product id + uuid) in a public-read bucket; do not expose the secret key (all in `server-only`/`"use server"`; keep the `secret-exposure` guard green — AC-34).
+- **CSV as an input boundary:** treat every cell as hostile — bound lengths (0006 CHECKs are the backstop), reject formula-injection-prone leading `=`/`+`/`-`/`@` in exported cells if the file may be opened in a spreadsheet (prefix-escape on export), and never build SQL by string concat (PostgREST/RPC parameterizes).
+- **T12 session gate (carry-forward, NOT required for T11):** stateless sessions have no server-side revocation (SEC-M-1); acceptable for T11 product edits, but the session-version check must land before T12's refund-capable sessions. T11 must not regress this posture.
+- **RLS discipline:** the new `inventory_adjustments` table gets RLS enabled with NO anon grant (service_role only) — matches the orders/customers trust model in 0005.
 
 ## Implementation Recommendations
 
 ### Suggested Order of Implementation
 
-1. `src/lib/env.ts` `getAdminEnv()` + `.env.local` placeholders + hash-generation note — everything else reads from here.
-2. `src/lib/admin/constants.ts` + `session.ts` + `auth.ts` with unit tests (pure, no Next) — the security core, test-first (characterization per clean-code).
-3. `src/lib/admin/settings-input.ts` + tests — pure money/field validation.
-4. `src/middleware.ts` `/admin` guard (Edge-safe verify) — protect the tree before building UI behind it.
-5. `src/app/admin/layout.tsx` + `login/page.tsx` + `actions.ts` (login/logout) + `admin-form-state.ts` — get auth working end-to-end.
-6. `src/components/admin/store-settings-form.tsx` + `admin/page.tsx` + `saveStoreSettings` action + `revalidateTag` — the feature.
-7. `src/components/admin/admin-nav.tsx` with disabled Products/Orders slots — the shell T11/T12 inherit.
-8. e2e: unauth redirect, login success/failure, settings save round-trip + storefront reflects new shipping.
+1. **Slice 0 — Foundation** (migration 0011 + storage re-enable + `db:types` + nav flip + admin list read convention). First because every other slice depends on the bucket, the RPC, the regenerated types, and the read layer. Verify `db reset` is green with storage on before proceeding.
+2. **Slice 1 — Product list + filters.** Establishes the entity landing page; low-risk; exercises the new read convention end-to-end.
+3. **Slice 2 — Add/edit product form.** The core write path; establishes the shared form primitives (extract from `store-settings-form.tsx`) every later slice reuses.
+4. **Slice 3 — Images.** Depends on Slice 0 bucket + Slice 2 edit page; highest UI-craft (drag order).
+5. **Slice 4 — Variants.** Depends on Slice 2/3 (variant images); reuses the same parser/write discipline.
+6. **Slice 5 — Taxonomy.** Independent of the product form; can parallelize with 3/4 if desired; handles the cycle/restrict edge cases.
+7. **Slice 6 — Inventory + duplicate + Q&A.** Small, mostly independent writes reusing established patterns.
+8. **Slice 7 — CSV import/export.** LAST — highest risk, depends on the product/taxonomy write layer and the diff being expressible; ships behind the mandatory dry-run.
 
 ### Key Decisions
 
-- **`/admin` locale-free + es-MX-only admin UI** — recommended (see ticket decisions 1 & 2). Justified by single Spanish-speaking owner and routing simplicity; PRODUCT_SPEC does not ask for admin i18n.
-- **Signed cookie over Supabase Auth** — recommended (decision 3). Keeps admin fully separate from `anon`/`authenticated` roles and avoids GoTrue provisioning for one account.
-- **scrypt (node:crypto) over bcrypt/argon2 deps** — recommended: zero new deps, no native bindings, strong KDF.
-- **Defense-in-depth (middleware + layout + action)** — recommended: middleware for fast redirect UX, layout/action for authoritative server-side enforcement.
+- **Image storage: re-enable Supabase Storage (analytics stays off), verify boot, filesystem fallback documented.** Recommended over a bespoke filesystem store because the storefront + `next.config` already assume the Supabase public-URL shape — keeping dev/prod identical and avoiding a later migration.
+- **Admin reads are uncached, base-table, admin-client.** The storefront cached-view pattern is the WRONG tool here (T10 arch requirement). Reuse only the pure `pagination.ts` math.
+- **Cache busting via one shared helper** importing the exported tag constants — bust `catalog` broadly (covers all listings/facets/search) plus the specific `product:`/`brand:`/`style:`/`category:` slug tags touched. Never string-literal a tag.
+- **CSV: hand-rolled, dry-run-gated, SKU/slug-keyed, resilient.** Zero deps; no writes until confirm; unknown taxonomy is a row error, not silent creation.
+- **Extract shared form primitives** (`MoneyField`, `Banner`, `FieldError`, `TextField`) from `store-settings-form.tsx` into `src/components/admin/form/` before building 6 more forms (DRY; avoids copy-paste of a sibling per CLAUDE.md).
 
 ### Anti-Patterns to Avoid
 
-- Don't verify the session ONLY in middleware — middleware can be bypassed by matcher edge cases; the layout and every mutation must re-verify. Instead: three-layer check.
-- Don't add an RLS `update`/`insert` grant to `authenticated` for `store_settings` — it would widen the storefront role for every guest. Instead: write via the RLS-bypass admin client (existing pattern).
-- Don't put admin under `/[locale]/admin` — it collides with `localePrefix:"as-needed"` and forces admin i18n. Instead: sibling `/admin` tree with its own root layout.
-- Don't use `===` to compare signatures/passwords, and don't early-return on unknown email — timing leaks. Instead: `timingSafeEqual` + dummy-hash parity.
-- Don't add admin copy to the next-intl message catalogs — it breaks the storefront es-MX/en symmetry tests. Instead: author admin Spanish inline.
-- Don't feed any admin secret into a `"use client"` component's props or a `NEXT_PUBLIC_` var. Instead: keep verification server-side, pass only booleans/data to client components.
-- Don't re-declare the cache tag string — import `STORE_SETTINGS_CACHE_TAG` so read and bust stay in sync.
+- Don't read the admin list through `products_public` or `cachedRead` — you'll hide drafts/archived and serve stale data after edits. Use the base table + admin client + live read.
+- Don't reimplement the category cycle guard in TS as the only defense — the DB trigger is authoritative; the UI prevention is UX, the caught trigger error is the safety net.
+- Don't hardcode cache-tag strings in T11 — import `CATALOG_CACHE_TAG`/`productCacheTag` etc. so a tag rename can't silently break invalidation.
+- Don't trust client-side image type/size — re-validate server-side; a crafted request can post any bytes.
+- Don't let one bad CSV row abort the batch, and don't write anything before the owner confirms the dry-run.
+- Don't add a customer-email column to `product_questions` to notify askers — out of scope; the schema has no such column by design.
+- Don't copy image files on product duplicate (Phase 1 shares URLs) — a true file-copy is deferred; document it.
+- Don't put a write behind an `/api/admin/*` route handler without a self-`requireSession()` — the middleware matcher excludes `/api`.
+- Don't add a file over ~400 lines — decompose the product form and write layer up front.
