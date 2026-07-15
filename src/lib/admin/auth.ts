@@ -139,3 +139,53 @@ export function verifyCredentials(email: string, password: string): boolean {
 
 /** The dummy hash parsed once (equal-cost target for timing parity on failure). */
 const DUMMY_HASH_PARSED = parsePasswordHash(DUMMY_HASH) as ParsedHash;
+
+/**
+ * DEV-ONLY fail-fast guard for a mangled `ADMIN_PASSWORD_HASH` (QA P1).
+ *
+ * Next's `@next/env`/dotenv-expand treats an UNescaped `$` in a `.env*` value as a
+ * shell-style variable expansion, silently collapsing the 178-char scrypt hash
+ * (`scrypt$16384$8$1$<salt>$<hash>`) to `scrypt6384` — which then NEVER verifies,
+ * so a correctly-configured owner sees "Correo o contraseña incorrectos" with no
+ * clue why. This turns that silent misconfig into a loud, actionable error at
+ * startup instead of a runtime mystery.
+ *
+ * When `passwordHash` is PRESENT but does NOT parse as `scrypt$N$r$p$saltHex$hashHex`
+ * (the exact 6-`$`-field shape), throw with remediation guidance. A missing/blank
+ * hash is NOT flagged here — that path is already handled by `getAdminEnv()` →
+ * `MissingEnvVarError` (edge 4 / R5), and flagging it would defeat the intended
+ * "admin not configured yet" state.
+ *
+ * @param passwordHash the raw `ADMIN_PASSWORD_HASH` value, or undefined if unset
+ * @throws {Error} in a non-production runtime when a present hash fails to parse
+ */
+export function assertAdminPasswordHashFormat(
+  passwordHash: string | undefined = process.env.ADMIN_PASSWORD_HASH,
+): void {
+  // A missing/blank hash is a valid "not configured" state (handled elsewhere).
+  if (passwordHash === undefined || passwordHash.trim() === "") {
+    return;
+  }
+  if (parsePasswordHash(passwordHash) !== null) {
+    return;
+  }
+  throw new Error(
+    "ADMIN_PASSWORD_HASH is set but does not parse as " +
+      "`scrypt$N$r$p$saltHex$hashHex` (6 `$`-separated fields). This is almost " +
+      "always dotenv `$`-expansion mangling the hash: every `$` in the value MUST " +
+      "be backslash-escaped (`\\$`) in a `.env*` file (see dev-done.md). " +
+      "Regenerate the hash and re-escape it, or set it unescaped in a non-dotenv " +
+      "secret store (e.g. the Vercel env UI).",
+  );
+}
+
+/**
+ * Run the dev-only fail-fast hash-format check ONCE at module load, and only in a
+ * non-production runtime. Zero cost on the production request path (the guard is a
+ * no-op branch there — the format is validated by the deploy's hash-gen tooling).
+ * A malformed hash in `next dev` now throws immediately with remediation guidance
+ * instead of silently breaking login (QA P1).
+ */
+if (process.env.NODE_ENV !== "production") {
+  assertAdminPasswordHashFormat();
+}

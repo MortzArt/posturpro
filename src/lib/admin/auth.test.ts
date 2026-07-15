@@ -4,6 +4,7 @@ vi.mock("server-only", () => ({}));
 
 import { MissingEnvVarError } from "@/lib/env";
 import {
+  assertAdminPasswordHashFormat,
   generatePasswordHash,
   parsePasswordHash,
   verifyCredentials,
@@ -135,5 +136,47 @@ describe("verifyCredentials (AC-2, AC-3, R3, R5)", () => {
     expect(() => verifyCredentials("owner@posturpro.mx", PASSWORD)).toThrow(
       MissingEnvVarError,
     );
+  });
+});
+
+// QA P1: a dotenv-mangled ADMIN_PASSWORD_HASH (`$`-expansion collapses the
+// 178-char hash to `scrypt6384`) silently breaks login. The dev-only startup
+// guard turns that silent misconfig into a loud, actionable throw.
+describe("assertAdminPasswordHashFormat (QA P1 fail-fast)", () => {
+  it("passes for a well-formed scrypt hash", () => {
+    expect(() => assertAdminPasswordHashFormat(HASH)).not.toThrow();
+  });
+
+  it("is a no-op for a missing/blank hash (delegated to MissingEnvVarError)", () => {
+    expect(() => assertAdminPasswordHashFormat(undefined)).not.toThrow();
+    expect(() => assertAdminPasswordHashFormat("")).not.toThrow();
+    expect(() => assertAdminPasswordHashFormat("   ")).not.toThrow();
+  });
+
+  it("THROWS on the exact dotenv-`$`-expansion corruption (`scrypt6384`)", () => {
+    // `scrypt$16384$...` with unescaped `$` → dotenv-expand → `scrypt6384`.
+    expect(() => assertAdminPasswordHashFormat("scrypt6384")).toThrow(
+      /ADMIN_PASSWORD_HASH is set but does not parse/,
+    );
+  });
+
+  it("THROWS with backslash-escape remediation guidance", () => {
+    expect(() => assertAdminPasswordHashFormat("garbage")).toThrow(
+      /backslash-escaped/,
+    );
+  });
+
+  it("THROWS on a wrong tag or wrong field count", () => {
+    expect(() => assertAdminPasswordHashFormat("bcrypt$1$2$3$4$5")).toThrow();
+    expect(() => assertAdminPasswordHashFormat("scrypt$16384$8$1$aa")).toThrow();
+  });
+
+  it("reads process.env.ADMIN_PASSWORD_HASH by default", () => {
+    setEnv({ ADMIN_PASSWORD_HASH: "scrypt6384" });
+    expect(() => assertAdminPasswordHashFormat()).toThrow(
+      /does not parse/,
+    );
+    setEnv({ ADMIN_PASSWORD_HASH: HASH });
+    expect(() => assertAdminPasswordHashFormat()).not.toThrow();
   });
 });
