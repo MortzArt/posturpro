@@ -34,7 +34,12 @@ const SCRYPT_KEYLEN = 64;
 const SCRYPT_SALT_BYTES = 16;
 /** Hash format tag. */
 const SCRYPT_TAG = "scrypt";
-/** A fixed dummy hash used for timing parity on unknown email (R3). */
+/**
+ * A fixed dummy hash used for timing parity on unknown email (R3). NOTE: this
+ * runs a real scrypt (cost N=16384) at MODULE LOAD for any module that
+ * transitively imports `auth.ts` — a one-time ~tens-of-ms server-only cold-start
+ * cost, never on the request path. Accepted (see N-3).
+ */
 const DUMMY_HASH = generatePasswordHash("posturpro-dummy-timing-parity");
 
 /** Parsed components of an encoded scrypt hash. */
@@ -115,6 +120,10 @@ function verifyAgainst(password: string, parsed: ParsedHash): boolean {
  */
 export function verifyCredentials(email: string, password: string): boolean {
   const { email: expectedEmail, passwordHash } = getAdminEnv();
+  // Email is the USERNAME, not a secret; enumeration is defended by always
+  // running scrypt below (the timing signal that matters). A `===` length-timing
+  // micro-signal on the username reveals nothing exploitable, so a plain
+  // case-insensitive compare is correct here (m-4).
   const emailMatches =
     email.trim().toLowerCase() === expectedEmail.trim().toLowerCase();
 

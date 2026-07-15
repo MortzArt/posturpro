@@ -49,6 +49,18 @@ describe("admin secret exposure (AC-12)", () => {
   });
 
   it("no \"use client\" file imports a server-only admin module", () => {
+    // Match BOTH the `@/lib/admin/...` alias form AND relative forms
+    // (`../admin/auth`, `../../lib/admin/session`), so a client component cannot
+    // slip a server-only import past this static check by using a relative path
+    // (m-1). We scan every string literal in the file and flag any specifier
+    // whose path ENDS in `admin/<server-only-module>` (with an optional `.ts`).
+    const bareModules = SERVER_ONLY_MODULES.map((mod) =>
+      mod.replace(/^admin\//, ""),
+    );
+    const stringLiteral = /["']([^"']+)["']/g;
+    const serverOnlyEnding = new RegExp(
+      `(?:^|/)admin/(?:${bareModules.join("|")})(?:\\.tsx?)?$`,
+    );
     const violations: string[] = [];
     for (const file of SOURCE_FILES) {
       const source = readFileSync(file, "utf8");
@@ -56,9 +68,13 @@ describe("admin secret exposure (AC-12)", () => {
       if (!isClient) {
         continue;
       }
-      for (const mod of SERVER_ONLY_MODULES) {
-        if (source.includes(`@/lib/${mod}`)) {
-          violations.push(`${path.relative(SRC, file)} imports ${mod}`);
+      for (const [, specifier] of source.matchAll(stringLiteral)) {
+        // Normalize the alias so `@/lib/admin/auth` and `../admin/auth` both
+        // reduce to a path ending in `admin/auth`.
+        const normalized = specifier.replace(/^@\/lib\//, "");
+        if (serverOnlyEnding.test(normalized)) {
+          violations.push(`${path.relative(SRC, file)} imports ${specifier}`);
+          break;
         }
       }
     }

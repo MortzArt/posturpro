@@ -64,6 +64,20 @@ describe("parseMoneyToCents (AC-10, edges 6/7, R7)", () => {
     const huge = `${MAX_SAFE_PESOS + 1000000}`;
     expect(parseMoneyToCents(huge)).toEqual({ ok: false, error: "money-overflow" });
   });
+
+  it("rejects a leading-dot value like .5 (no integer part) (m-7)", () => {
+    expect(parseMoneyToCents(".5")).toEqual({ ok: false, error: "money-invalid" });
+    expect(parseMoneyToCents("$.5")).toEqual({ ok: false, error: "money-invalid" });
+  });
+
+  it("accepts a space after the stripped $ ('$ 500') (m-7)", () => {
+    // Strip one `$`, then trim → "500" is valid. Documents the tolerant behavior.
+    expect(parseMoneyToCents("$ 500")).toEqual({ ok: true, cents: 50000 });
+  });
+
+  it("rejects a double dollar sign '$$500' (only one $ is stripped) (m-7)", () => {
+    expect(parseMoneyToCents("$$500")).toEqual({ ok: false, error: "money-invalid" });
+  });
 });
 
 describe("parseStoreSettingsInput (AC-8, AC-10)", () => {
@@ -116,6 +130,17 @@ describe("parseStoreSettingsInput (AC-8, AC-10)", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.fieldErrors.store_name).toBe("name-too-long");
+    }
+  });
+
+  it("accepts a name at EXACTLY the length cap (boundary, m-7)", () => {
+    const result = parseStoreSettingsInput({
+      ...valid,
+      store_name: "a".repeat(STORE_NAME_MAX_LENGTH),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.values.store_name.length).toBe(STORE_NAME_MAX_LENGTH);
     }
   });
 

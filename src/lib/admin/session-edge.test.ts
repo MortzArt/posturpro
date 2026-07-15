@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createHmac } from "node:crypto";
 import { isSessionValidEdge } from "./session-edge";
 import { encodePayload } from "./session-payload";
+import { signCookie } from "./session-test-fixture";
 
 const SECRET = "edge-test-secret-abcdef0123456789";
 let saved: string | undefined;
@@ -15,11 +15,9 @@ afterEach(() => {
   process.env.ADMIN_SESSION_SECRET = saved;
 });
 
-/** Build a valid cookie value the same way `createSessionCookieValue` does. */
+/** Build a valid cookie value from the SHARED fixture (no per-suite signer, M-1). */
 function validCookie(nowSeconds: number, secret = SECRET): string {
-  const payloadPart = encodePayload(nowSeconds);
-  const sig = createHmac("sha256", secret).update(payloadPart).digest("hex");
-  return `${payloadPart}.${sig}`;
+  return signCookie(nowSeconds, secret);
 }
 
 describe("isSessionValidEdge (R1 — Web Crypto verify parity)", () => {

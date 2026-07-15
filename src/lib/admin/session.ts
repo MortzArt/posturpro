@@ -67,6 +67,15 @@ export function createSessionCookieValue(
  * expiry (AC-5). Returns `true` only when both hold. Never throws for a
  * malformed/forged value; a MISSING secret DOES throw (the caller — layout /
  * action — treats an env failure as unauthenticated, never as "valid").
+ *
+ * INTENTIONAL ASYMMETRY vs `isSessionValidEdge` (M-2): the Edge verifier returns
+ * `false` on a blank/absent secret (fail-closed for a fast UX gate), whereas THIS
+ * authoritative verifier lets `getAdminEnv()` THROW `MissingEnvVarError`. Both are
+ * fail-closed: an empty-string HMAC key must NEVER produce a verdict here, because
+ * an empty key is forgeable. The throw surfaces the misconfiguration loudly and is
+ * mapped to "unauthenticated" by every caller (`session-guard.ts`, `actions.ts`
+ * `requireSession`) — a regression that swallowed it and verified against an empty
+ * key would be a security hole. Pinned by `session.test.ts`.
  */
 export function isSessionValid(
   value: string | undefined | null,

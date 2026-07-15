@@ -121,8 +121,9 @@ function parseEmail(
 /**
  * Parse + validate the whole settings form. Collects ALL field errors in one
  * pass (the form shows every bad field at once); on full success returns the
- * DB-ready values (money as integer cents). Guarantees `CENTS_PER_PESO` is not a
- * dead reference by documenting the overflow bound lives in `parseMoneyToCents`.
+ * DB-ready values (money as integer cents). Each field result is carried in a
+ * guard-narrowed local, so the success branch needs no `as` casts (the parsed
+ * values are already typed by the narrowing).
  */
 export function parseStoreSettingsInput(
   raw: AdminSettingsRawInput,
@@ -132,35 +133,35 @@ export function parseStoreSettingsInput(
   > = {};
 
   const name = parseStoreName(raw.store_name);
+  const email = parseEmail(raw.contact_email);
+  const flat = parseMoneyToCents(raw.shipping_flat_rate);
+  const threshold = parseMoneyToCents(raw.free_shipping_threshold);
+
   if (!name.ok) {
     fieldErrors.store_name = name.error;
   }
-  const email = parseEmail(raw.contact_email);
   if (!email.ok) {
     fieldErrors.contact_email = email.error;
   }
-  const flat = parseMoneyToCents(raw.shipping_flat_rate);
   if (!flat.ok) {
     fieldErrors.shipping_flat_rate = flat.error;
   }
-  const threshold = parseMoneyToCents(raw.free_shipping_threshold);
   if (!threshold.ok) {
     fieldErrors.free_shipping_threshold = threshold.error;
   }
 
-  if (Object.keys(fieldErrors).length > 0) {
+  // Re-check each result independently so TypeScript narrows every local to its
+  // `ok: true` shape — no casts, and the compiler proves all four succeeded.
+  if (!name.ok || !email.ok || !flat.ok || !threshold.ok) {
     return { ok: false, fieldErrors };
   }
-  // Narrowing: all four succeeded (checked above).
   return {
     ok: true,
     values: {
-      store_name: (name as { ok: true; value: string }).value,
-      contact_email: (email as { ok: true; value: string }).value,
-      shipping_flat_rate_cents: (flat as { ok: true; cents: number }).cents,
-      free_shipping_threshold_cents: (
-        threshold as { ok: true; cents: number }
-      ).cents,
+      store_name: name.value,
+      contact_email: email.value,
+      shipping_flat_rate_cents: flat.cents,
+      free_shipping_threshold_cents: threshold.cents,
     },
   };
 }

@@ -52,6 +52,18 @@ describe("encodePayload / decodePayload (AC-4)", () => {
       decodePayload(toBase64Url(JSON.stringify({ v: 1, iat: "x" }))),
     ).toBeNull();
   });
+
+  it("rejects a non-finite iat — Infinity / NaN (m-2)", () => {
+    // `JSON.stringify(Infinity)` → "null", so hand-build the JSON literal. A
+    // JSON number of `1e400` parses to Infinity. If the `!Number.isFinite` guard
+    // were dropped, an Infinity iat would sail through `isWithinMaxAge`.
+    const infinityPayload = toBase64Url('{"v":1,"iat":1e400}');
+    expect(JSON.parse('{"iat":1e400}').iat).toBe(Infinity); // sanity: literal → Infinity
+    expect(decodePayload(infinityPayload)).toBeNull();
+
+    const negInfinityPayload = toBase64Url('{"v":1,"iat":-1e400}');
+    expect(decodePayload(negInfinityPayload)).toBeNull();
+  });
 });
 
 describe("splitCookie (edge 1)", () => {

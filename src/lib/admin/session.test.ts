@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createHmac } from "node:crypto";
 
 vi.mock("server-only", () => ({}));
 
+import { MissingEnvVarError } from "@/lib/env";
 import { createSessionCookieValue, isSessionValid } from "./session";
 import { encodePayload } from "./session-payload";
+import { signPayloadPart } from "./session-test-fixture";
 
 const SECRET = "test-admin-session-secret-0123456789";
 
@@ -28,9 +29,9 @@ afterEach(() => {
   process.env.ADMIN_PASSWORD_HASH = savedHash;
 });
 
-/** Independently sign a payload part (does NOT reuse the module's signer). */
+/** Independently sign a payload part (shared fixture; does NOT reuse the module's signer). */
 function sign(payloadPart: string, secret: string): string {
-  return createHmac("sha256", secret).update(payloadPart).digest("hex");
+  return signPayloadPart(payloadPart, secret);
 }
 
 describe("createSessionCookieValue (AC-4)", () => {
@@ -83,5 +84,24 @@ describe("isSessionValid (AC-4, AC-5, edges 1/2/3)", () => {
   it("rejects a non-hex signature part", () => {
     const payloadPart = encodePayload(now);
     expect(isSessionValid(`${payloadPart}.zzzz`, now)).toBe(false);
+  });
+});
+
+describe("isSessionValid fail-closed contract (M-2, edge 4/R5)", () => {
+  const now = 1_700_000_000;
+
+  it("THROWS MissingEnvVarError when the secret is unset (never verdicts an empty key)", () => {
+    // A well-formed cookie must NOT be verified against an empty-string HMAC key
+    // (empty key is forgeable). The authoritative verifier throws loudly instead
+    // of returning true/false — the caller maps that to unauthenticated.
+    const value = createSessionCookieValue(now); // minted while the secret is set
+    delete process.env.ADMIN_SESSION_SECRET;
+    expect(() => isSessionValid(value, now)).toThrow(MissingEnvVarError);
+  });
+
+  it("THROWS on a blank (whitespace-only) secret too", () => {
+    const value = createSessionCookieValue(now);
+    process.env.ADMIN_SESSION_SECRET = "   ";
+    expect(() => isSessionValid(value, now)).toThrow(MissingEnvVarError);
   });
 });

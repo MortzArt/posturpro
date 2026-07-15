@@ -109,3 +109,45 @@ node -e 'const{randomBytes,scryptSync}=require("node:crypto");const s=randomByte
 
 ## Dependencies Added
 - None. `node:crypto` (scrypt/HMAC/timingSafeEqual) + Web Crypto (`crypto.subtle`) are built-in; shadcn `Button`/`Badge` + Radix `Dialog`/`FocusScope` already vendored.
+
+## Review fixes (Stage 6)
+
+All findings from `tasks/review-findings.md` resolved. 0 CRITICAL, 4 MAJOR, 7 MINOR, 4 NIT.
+
+### Issue Tracker
+| ID | Sev | Title | Status | File | Notes |
+|----|-----|-------|--------|------|-------|
+| M-1 | MAJOR | Node/Edge verifier equivalence untested | FIXED | `session-parity.test.ts` (new), `session-test-fixture.ts` (new) | 8-case cross-runtime fence from ONE shared fixture; killed both copy-pasted per-suite cookie helpers |
+| M-2 | MAJOR | Node throws vs Edge false — unpinned | FIXED | `session.test.ts`, `session-guard.test.ts` (new), `session.ts` | Asserts `isSessionValid` THROWS on unset/blank secret; guard maps throw→`false`; asymmetry documented inline |
+| M-3 | MAJOR | scrypt-on-mismatch not proven | FIXED | `auth.test.ts` | node:crypto mock didn't intercept SUT binding → used sanctioned timing approach: per-path floor + parity (stable ×3) |
+| M-4 | MAJOR | Rate-limit cap/release/escape untested | FIXED | `login-rate-limit.test.ts` | Cardinality cap, sliding release, strict `=== "1"` escape hatch |
+| m-1 | MINOR | Client-import check alias-only | FIXED | `secret-exposure.test.ts` | Matches alias + relative specifiers ending `admin/(auth\|session\|session-guard)` |
+| m-2 | MINOR | `!Number.isFinite(iat)` unexercised | FIXED | `session-payload.test.ts` | Hand-built `1e400`/`-1e400` iat → `null` |
+| m-3 | MINOR | Edge env override readability | SKIPPED | — | UX-only, platform-dependent, Node authoritative — non-hole; deploy-config concern |
+| m-4 | MINOR | Email `===` not constant-time | FIXED (doc) | `auth.ts` | Behavior correct; rationale noted inline (username, not secret) |
+| m-5 | MINOR | Non-atomic missing-row save | SKIPPED | — | Within spec (edge 8 allows recoverable error); single-owner; fails safely |
+| m-6 | MINOR | `as` casts in success branch | FIXED | `settings-input.ts` | Guard-narrowed re-check → zero casts |
+| m-7 | MINOR | Parser boundary cases untested | FIXED | `settings-input.test.ts` | `.5`, `$ 500`, `$$500`, exact-length name |
+| N-1 | NIT | Awkward CENTS_PER_PESO comment | FIXED | `settings-input.ts` | Removed in m-6 rewrite |
+| N-2 | NIT | `typeof Alert02Icon` imprecise | FIXED | `store-settings-form.tsx` | Now `IconSvgElement` |
+| N-3 | NIT | DUMMY_HASH cold-start cost | FIXED (doc) | `auth.ts` | Comment added |
+| N-4 | NIT | Duplicate ISO timestamp in logs | SKIPPED | — | Intentional/portable (bare `console` doesn't timestamp) |
+
+### Summary
+- Critical: 0/0
+- Major: 4/4 FIXED
+- Minor: 5/7 FIXED, 2 SKIPPED (m-3, m-5 — justified)
+- Nit: 3/4 FIXED, 1 SKIPPED (N-4 — justified)
+
+### Production code changed (behavior-preserving)
+- `settings-input.ts` — no-cast guard narrowing (identical output) + docstring; `session.ts` — M-2 inline doc; `auth.ts` — m-4/N-3 inline docs; `store-settings-form.tsx` — N-2 icon type. Everything else is test-only.
+
+### New / changed test files
+- NEW: `session-parity.test.ts` (8), `session-guard.test.ts` (3), `session-test-fixture.ts` (shared signer, not a spec).
+- EXTENDED: `session.test.ts` (+2 M-2), `auth.test.ts` (+2 M-3 timing), `login-rate-limit.test.ts` (+4 M-4), `session-payload.test.ts` (+1 m-2), `settings-input.test.ts` (+4 m-7), `session-edge.test.ts` (helper → shared fixture).
+
+### Test Results After Fixes
+- Total: **1366 | Passed: 1366 | Failed: 0 | Skipped: 0** (77 files; baseline 1342/75 + 24 net new tests).
+- `npx tsc --noEmit`: 0 source errors (the two `.next/dev/types/validator.ts` route-type errors are stale generated artifacts from a running dev server — pre-existing, unrelated to Stage 6, no routes/config touched).
+- ESLint: clean on all touched files.
+- payment-panel flake: did not recur in the full run; 17/17 in isolation.

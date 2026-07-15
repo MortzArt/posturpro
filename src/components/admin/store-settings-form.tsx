@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useId, useRef } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   Alert02Icon,
   CheckmarkCircle02Icon,
@@ -317,7 +317,7 @@ interface BannerProps {
   ref?: React.Ref<HTMLDivElement>;
   role: "status" | "alert";
   tone: "info" | "error";
-  icon: typeof Alert02Icon;
+  icon: IconSvgElement;
   message: string;
   testid: string;
 }

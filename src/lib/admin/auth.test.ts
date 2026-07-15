@@ -77,6 +77,52 @@ describe("verifyCredentials (AC-2, AC-3, R3, R5)", () => {
     expect(verifyCredentials("stranger@example.com", "wrong")).toBe(false);
   });
 
+  // M-3 (anti-enumeration invariant, R3): PROVE the expensive scrypt derivation
+  // actually runs on the unknown-email path — not just that the boolean is false.
+  // A refactor that re-added `if (!emailMatches) return false;` BEFORE the scrypt
+  // work would return in microseconds; a real scrypt at N=16384 takes ms. We
+  // assert (a) a hard floor that only real scrypt can clear on every failure path,
+  // and (b) timing PARITY between unknown-email and wrong-password within a wide
+  // tolerance. Bounds are generous so this is not flaky, but a short-circuit
+  // (sub-millisecond) would still blow the floor.
+  const SCRYPT_FLOOR_MS = 1;
+  const REPEATS = 5;
+
+  /** Median wall-time (ms) of `REPEATS` calls to `verifyCredentials`. */
+  function medianDurationMs(email: string, password: string): number {
+    const samples: number[] = [];
+    for (let i = 0; i < REPEATS; i += 1) {
+      const start = performance.now();
+      verifyCredentials(email, password);
+      samples.push(performance.now() - start);
+    }
+    samples.sort((a, b) => a - b);
+    return samples[Math.floor(samples.length / 2)];
+  }
+
+  it("ACTUALLY runs scrypt on the unknown-email path (M-3, anti-enumeration)", () => {
+    const unknownEmail = medianDurationMs("stranger@example.com", PASSWORD);
+    // A short-circuit would be sub-microsecond; a real scrypt clears the floor.
+    expect(unknownEmail).toBeGreaterThan(SCRYPT_FLOOR_MS);
+  });
+
+  it("runs scrypt on the wrong-password path too, in timing parity (M-3, R3)", () => {
+    const wrongPassword = medianDurationMs("owner@posturpro.mx", "wrong");
+    const unknownEmail = medianDurationMs("stranger@example.com", PASSWORD);
+    const happyPath = medianDurationMs("owner@posturpro.mx", PASSWORD);
+
+    // All three paths run one scrypt → each clears the floor.
+    expect(wrongPassword).toBeGreaterThan(SCRYPT_FLOOR_MS);
+    expect(happyPath).toBeGreaterThan(SCRYPT_FLOOR_MS);
+
+    // Timing PARITY: no path is dramatically faster (which would leak whether the
+    // email exists). Wide tolerance keeps CI stable while still catching a full
+    // short-circuit — a skipped scrypt would be orders of magnitude off, not 5x.
+    const slowest = Math.max(unknownEmail, wrongPassword, happyPath);
+    const fastest = Math.min(unknownEmail, wrongPassword, happyPath);
+    expect(slowest).toBeLessThan(fastest * 5 + SCRYPT_FLOOR_MS);
+  });
+
   it("NEVER authenticates when the stored hash is unparseable (R5)", () => {
     setEnv({ ADMIN_PASSWORD_HASH: "garbage" });
     expect(verifyCredentials("owner@posturpro.mx", PASSWORD)).toBe(false);
