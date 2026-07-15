@@ -1,10 +1,11 @@
 # Pipeline State
 Task: T11 — Admin: product management
-Tier: full-cycle
-Stage: 1
-Agent: ultraplanner-research
+Tier: full-cycle (high) — ALL 12 stages incl. Hacker (Stage 11)
+Stage: 3
+Agent: ultradesign
 Last Updated: 2026-07-15
 Notes: T10 SHIPPED (see summary below) and checked off in BUILD_PLAN.md. User is AFK — run T11 autonomously end-to-end.
+=== S1+2 COMPLETE (commit 4110eb0) — Complexity HIGH (all 12 stages), Feature Type FULL-FEATURE. SCOPE: all 9 sub-features KEPT (CSV import/export = Phase 1 per PRODUCT_SPEC ×3, zero new deps hand-rolled RFC-4180, ships LAST behind mandatory dry-run preview; Q&A answering = small slice, product_questions.answer/is_published/answered_at exist, storefront reads published — NO asker emailing, no email column, don't add). DEFERRED per rule 2: discount-code UI, rich-text editor (plain textarea), translation editing, bulk actions. IMAGE STORAGE DECISION: re-enable [storage] in supabase/config.toml (keep [analytics]/[edge_runtime] OFF — those caused the boot regression, not storage); next.config already allow-lists /storage/v1/object/public/**; MUST verify clean stop&&start&&db reset before ship (AC-2/edge 10); filesystem fallback documented behind image-write.ts interface. NEW: migration 0011 (inventory ledger + atomic RPC), pagination/indexed-filter read convention (T10 arch req). BUILD = 7 SLICES: foundation → list → product form → images → variants → taxonomy → inventory/duplicate/Q&A → CSV; Slice 0 blocks rest. KEY RISKS: storage re-enable vs db reset; clean-code caps under 9 features (up-front module decomposition); CSV catalog corruption (dry-run + per-row strict parse + taxonomy-by-slug); admin list must use BASE TABLE + admin client + NO cache (products_public/cachedRead hides drafts/serves stale — explicit AC); /api/admin/* bypasses middleware guard — writes stay in server actions or self-guard. CACHE TAGS to bust on admin writes (verified): catalog + touched brand:<slug>/style:<slug>/category:<slug>/product:<slug> via ONE shared helper importing CATALOG_CACHE_TAG/productCacheTag, never string literals. FILE MAP: src/lib/admin/products/{list-query,list-filters,product-read}.ts; src/lib/admin/{products,taxonomy,inventory,qa,csv}/* (paired *-input.ts pure parser + *-write.ts) + cache-tags.ts, slug.ts, units.ts; actions+form-state under src/app/admin/(app)/products|taxonomy|qa|import-export/; ~20 components under src/components/admin/products|taxonomy/*; shadcn table/textarea/dialog/tabs vendored via CLI; nav flip in constants.ts; regenerate database.types.ts.
 
 === T10 COMPLETE — SHIP (Stage 12 verdict, quality 9/10, confidence HIGH, 2026-07-15) ===
 - Pipeline: full-cycle medium (hacker skipped). S5 review APPROVE-WITH-FIXES 8.5/10 → S6 all majors fixed; S7 QA PASS HIGH; S8 UX 9.5/10; S9 SECURE (0 crit/high); S10 arch APPROVE 9/10 T11-READY.
