@@ -20,14 +20,31 @@ import { cn } from "@/lib/utils";
 interface AdminNavProps {
   /** Which section is active (drives `aria-current` + emphasis). */
   activeSection: AdminSectionId;
+  /** Unanswered Q&A count → the "Preguntas" badge (T11); 0 renders no badge. */
+  unansweredCount?: number;
 }
 
-export function AdminNav({ activeSection }: AdminNavProps) {
+export function AdminNav({ activeSection, unansweredCount = 0 }: AdminNavProps) {
   return (
     <nav aria-label="Administración" className="flex flex-1 flex-col gap-0.5 p-2">
-      {ADMIN_NAV_ITEMS.map((item) => (
-        <AdminNavRow key={item.id} item={item} active={item.id === activeSection} />
-      ))}
+      {ADMIN_NAV_ITEMS.map((item, index) => {
+        const previousGroup = index > 0 ? ADMIN_NAV_ITEMS[index - 1].group : undefined;
+        const showGroup = item.group !== undefined && item.group !== previousGroup;
+        return (
+          <div key={item.id}>
+            {showGroup ? (
+              <p className="px-3 pb-1 pt-3 text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground/70">
+                {item.group}
+              </p>
+            ) : null}
+            <AdminNavRow
+              item={item}
+              active={item.id === activeSection}
+              badgeCount={item.id === "qa" ? unansweredCount : 0}
+            />
+          </div>
+        );
+      })}
       <div className="mt-auto border-t border-border p-2">
         <LogoutButton />
       </div>
@@ -36,18 +53,34 @@ export function AdminNav({ activeSection }: AdminNavProps) {
 }
 
 /** A single nav row — live+active, live+inactive, or soon (disabled). */
-function AdminNavRow({ item, active }: { item: AdminNavItem; active: boolean }) {
+function AdminNavRow({
+  item,
+  active,
+  badgeCount,
+}: {
+  item: AdminNavItem;
+  active: boolean;
+  badgeCount: number;
+}) {
   if (item.status === "soon") {
     return <SoonRow item={item} />;
   }
-  return <LiveRow item={item} active={active} />;
+  return <LiveRow item={item} active={active} badgeCount={badgeCount} />;
 }
 
 /** Base row layout shared by all three states. */
 const rowClasses =
   "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm outline-none";
 
-function LiveRow({ item, active }: { item: AdminNavItem; active: boolean }) {
+function LiveRow({
+  item,
+  active,
+  badgeCount,
+}: {
+  item: AdminNavItem;
+  active: boolean;
+  badgeCount: number;
+}) {
   return (
     <Link
       href={item.href}
@@ -63,6 +96,15 @@ function LiveRow({ item, active }: { item: AdminNavItem; active: boolean }) {
     >
       <HugeiconsIcon icon={item.icon} size={16} strokeWidth={2} aria-hidden />
       <span>{item.label}</span>
+      {badgeCount > 0 ? (
+        <Badge
+          variant="secondary"
+          data-testid={`admin-nav-${item.id}-badge`}
+          className="ml-auto tabular-nums"
+        >
+          {badgeCount}
+        </Badge>
+      ) : null}
     </Link>
   );
 }

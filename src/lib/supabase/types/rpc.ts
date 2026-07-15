@@ -152,6 +152,27 @@ export type RefundedTotalArgs = {
 };
 
 /**
+ * Args for the `record_inventory_adjustment` RPC (T11, 0011). Exactly one of
+ * `p_delta` / `p_absolute` is meaningful: `p_absolute` (non-null) sets the new
+ * total; otherwise `p_delta` (+/-) is applied. `p_variant_id` null = product-
+ * level. The RPC is atomic (stock update + ledger insert) and rejects a
+ * negative result. Kept a `type` alias (T8 gotcha).
+ */
+export type RecordInventoryAdjustmentArgs = {
+  p_product_id: string;
+  p_variant_id: string | null;
+  p_delta: number | null;
+  p_absolute: number | null;
+  p_reason: string;
+};
+
+/** Result of `record_inventory_adjustment` — the post-write stock + applied delta. */
+export type RecordInventoryAdjustmentResult = {
+  resulting_stock: number;
+  delta: number;
+};
+
+/**
  * The `Database["public"]["Functions"]` block. Args/Returns reference the `type`
  * aliases above — keep them aliases (T8 gotcha).
  */
@@ -215,6 +236,10 @@ export type DatabaseFunctions = {
   refunded_total: {
     Args: RefundedTotalArgs;
     Returns: number;
+  };
+  record_inventory_adjustment: {
+    Args: RecordInventoryAdjustmentArgs;
+    Returns: RecordInventoryAdjustmentResult;
   };
   claim_email_send: {
     Args: ClaimEmailSendArgs;

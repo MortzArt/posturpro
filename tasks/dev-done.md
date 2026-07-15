@@ -1,155 +1,85 @@
-# Dev Summary: T10 — Admin foundation
+# Dev Summary: T11 — Admin Product Management
 
-Self-managed HMAC-signed HttpOnly session-cookie auth (NOT Supabase Auth) + a
-locale-free `/admin` shell + Store Settings editor. Defense-in-depth guard
-(Edge middleware → Web Crypto verify; Node layout + per-action re-verify). es-MX
-only. Zero new deps. No migration.
+Full-feature, HIGH complexity, built in **7 slices in order**, each verified (tsc + eslint + tests + dev-server smoke) before the next. All 35 ACs implemented. Zero new runtime dependencies.
 
-## Files Changed
+## Verification Numbers (all green)
 
-| Path | Change | Summary |
-|------|--------|---------|
-| `src/lib/env.ts` | modified | Added `getAdminEnv()` (`email`, `passwordHash`, `sessionSecret`) + `AdminEnv` — server-only, follows the MP/email accessor pattern; throws `MissingEnvVarError` on blank (edge 4 / R5). |
-| `src/lib/admin/constants.ts` | created | Non-secret constants: cookie name (`posturpro_admin_session`), paths, `getSessionMaxAgeSeconds()` (8h default, env-overridable), login rate-limit config, `ADMIN_NAV_ITEMS` data-driven nav (Settings live; Products/Orders `soon`). Next-import-free → safe in Edge + client. |
-| `src/lib/admin/session-payload.ts` | created | PURE runtime-agnostic codec: base64url encode/decode, `splitCookie`, `decodePayload` (version-checked), `isWithinMaxAge` (AC-5, edge 2). Shared by Node + Edge verifiers (R1). No crypto, no Next. |
-| `src/lib/admin/session.ts` | created | `server-only`. AUTHORITATIVE `node:crypto` HMAC-SHA256 sign/verify (`createSessionCookieValue`, `isSessionValid`); constant-time `timingSafeEqual` (mirrors `webhook.ts`), then decode + expiry. |
-| `src/lib/admin/session-edge.ts` | created | Edge (`crypto.subtle`) verify for middleware (R1). Same cookie format + secret; constant-time byte compare; fails closed on unset secret. NO `server-only` (throws in Edge). |
-| `src/lib/admin/auth.ts` | created | `server-only`. scrypt password hashing (`scrypt$N$r$p$salt$hash`), `verifyCredentials` — case-insensitive email, constant-time password, dummy-hash timing parity on unknown email (R3), never authenticates on missing/unparseable hash (R5). `generatePasswordHash` for the dev/deploy hash command. |
-| `src/lib/admin/login-rate-limit.ts` | created | Per-IP login limiter via the shared `sliding-window` core (AC-15); `ADMIN_LOGIN_RATE_LIMIT_DISABLED=1` e2e escape hatch (mirrors checkout). |
-| `src/lib/admin/settings-input.ts` | created | PURE settings parser (AC-8, AC-10, edges 6/7, R7): strict `^\d+(\.\d{1,2})?$` money after `$`/space strip (rejects thousand separators, accepts 0/0.00, cents-overflow guard), name 1–200, email via shared `EMAIL_PATTERN`. Collects all field errors. |
-| `src/lib/admin/session-guard.ts` | created | `server-only`. `hasValidAdminSession()` — thin `next/headers cookies()` → `isSessionValid` wrapper for server components; a missing-env failure → not authenticated (never "valid"). |
-| `src/lib/store-settings.ts` | modified | Added `updateStoreSettings()` (admin-client write to the singleton; UPDATE by id, INSERT on missing-row edge 8; `updateTag(STORE_SETTINGS_CACHE_TAG)` busts the storefront read, AC-9). Co-located with the read path (SRP). |
-| `src/middleware.ts` | modified | Added a tight `/admin` branch that returns BEFORE next-intl ever sees the request (R2): allow `/admin/login`, redirect unauthenticated `/admin/*` to login, redirect authed `/admin/login`→`/admin` (AC-7). Storefront locale/cart path byte-for-byte unchanged. |
-| `src/app/admin/layout.tsx` | created | Parallel ROOT layout: own `<html lang="es-MX">`/`<body>` + font; no next-intl/cart/site chrome; `robots: noindex`. No guard here (login sits under it). |
-| `src/app/admin/(app)/layout.tsx` | created | Authenticated sub-layout: authoritative session guard (defense-in-depth) → redirect to login if invalid; wraps children in `AdminShell` seeded with the live store name. |
-| `src/app/admin/(app)/page.tsx` | created | `/admin` → `redirect("/admin/settings")` (no dead dashboard). T11/T12 overview seam documented. |
-| `src/app/admin/(app)/settings/page.tsx` | created | Server reads live `store_settings`, seeds the form (money → `centsToPesos().toFixed(2)`), flags `rowMissing` (edge 8) with `SEED_*` defaults. |
-| `src/app/admin/login/page.tsx` | created | Server login screen; already-authed → `redirect("/admin")` (AC-7); passes only `storeName` to the client (no secret crosses, AC-12). |
-| `src/app/admin/actions.ts` | created | `"use server"`: `login` (rate-limit → verify → set cookie → redirect; generic errors, no enumeration; catches `MissingEnvVarError`→"unavailable"), `logout` (maxAge=0 → redirect), `saveStoreSettings` (re-verify session first → parse → write → bust cache). |
-| `src/app/admin/admin-form-state.ts` | created | Serializable `AdminLoginState` / `AdminSettingsState` + `initial*` (the `"use server"` state-split rule). |
-| `src/components/admin/admin-shell.tsx` | created | `"use client"` chrome: persistent sidebar ≥md, sticky top bar + slide-in drawer <md (reuses `.drawer-panel`/`.drawer-scrim`); active section derived from `usePathname()` (no prop threading). |
-| `src/components/admin/admin-nav.tsx` | created | Data-driven nav from `ADMIN_NAV_ITEMS`: live `next/link` (aria-current), `soon` disabled span + "próximamente" `Badge`, shared logout. |
-| `src/components/admin/logout-button.tsx` | created | Real `<form action={logout}>` POST (works without JS); full + `compact` presentations. |
-| `src/components/admin/admin-page.tsx` | created | Generic section wrapper (title/description/divider) reused by Settings now, T11/T12 later. |
-| `src/components/admin/login-form.tsx` | created | `"use client"` `useActionState(login)`: autofocus email, pending label swap + disabled fields, single generic error banner (no per-field blame, AC-3), `.enter-fade`. |
-| `src/components/admin/store-settings-form.tsx` | created | `"use client"` `useActionState(saveStoreSettings)`: money fields `inputmode="decimal"` + `$` adornment + `tabular-nums`, inline field errors + focus-first-invalid, success/error/row-missing banners, pending state. |
-| `.env.local` | modified (gitignored) | Added `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET` (see below). |
+- **tsc** `--noEmit`: **0 errors**.
+- **eslint** (whole repo): **clean** (incl. `max-lines`; largest new file `form/fields.tsx` = 466 lines, under the 1000 hard cap).
+- **prod build** (`next build`, `NEXT_QA_DIST_DIR=.next-build-check`): **exit 0**; tsconfig restored (`git checkout -- tsconfig.json`), build dir removed. All admin routes present.
+- **Unit**: **1451/1451** (87 files) — baseline 1376 + **75 new** across 9 new pure-module test files (slug, units, list-filters, product-input, variant-input, taxonomy-input, inventory-input, csv-parse, csv-product-map). Baseline held.
+- **Integration**: **197/197** (17 files) via `scripts/run-integration.sh` — baseline 188 + **9 new** (RPC atomicity/negative-block/blank-reason, 23505 mapping, category cycle trigger, delete-restrict, storage upload→fetch→delete round-trip + bucket-public).
+- **Storage boot cycle**: `supabase stop && supabase start && supabase db reset` verified clean **twice** with `[storage]` enabled (analytics/edge_runtime stay off). Bucket `product-images` (public) present after reset.
+- **Storage smoke**: real upload → public-URL fetch (200, byte-exact) → delete → 400, against local storage.
+- **Manual spot-check (dev server)**: login → create product (validation errors + success redirect) → upload image → add+save variant → CSV export (200, correct headers, 31 lines) → CSV import dry-run (create/error counts) → confirm import (2 created) → Q&A answer/publish (nav badge, card moves segments) → taxonomy tabs + category tree → **cache-bust proof**: an admin-created active product's PDP renders on the storefront immediately after save.
+- **DB left pristine** (30 seed products, 0 ledger rows, 0 storage objects); **no stray servers** (port 3000 clear); **tsconfig unchanged**.
 
-New tests: `session-payload.test.ts`, `session.test.ts`, `session-edge.test.ts`, `auth.test.ts`, `settings-input.test.ts`, `login-rate-limit.test.ts`, `secret-exposure.test.ts` (all colocated under `src/lib/admin/`).
+## Per-Slice Summary
 
-## Data-Testids Added
-- `admin-login-form`, `admin-login-email`, `admin-login-password`, `admin-login-submit`, `admin-login-error` — login screen
-- `admin-nav-settings` / `admin-nav-products` / `admin-nav-orders`, `admin-logout`, `admin-nav-trigger` / `admin-nav-close` / `admin-nav-panel` / `admin-nav-overlay` — shell + nav
-- `admin-settings-form`, `admin-settings-name` (+`-error`), `admin-settings-email` (+`-error`), `admin-settings-flat-rate` (+`-error`), `admin-settings-threshold` (+`-error`), `admin-settings-submit`, `admin-settings-success`, `admin-settings-error`, `admin-settings-row-missing` — settings form
+**Slice 0 — Foundation.** Migration `0011` (idempotent): `inventory_adjustments` ledger (+ indexes, RLS deny-all, `grant … to service_role`); atomic `record_inventory_adjustment` RPC (`SECURITY DEFINER`, `search_path=''`, row-lock, delta-or-absolute, negative-block, bounded reason); admin-list indexes (`products (updated_at desc)`, `lower(name)`); idempotent `storage.buckets` insert for `product-images` (public, guarded by `to_regclass`). Re-enabled `[storage]` in `config.toml` (documented the analytics-coupling root cause). Hand-authored the new table + RPC types into `types/tables-content.ts` + `types/rpc.ts` (repo convention: types are hand-maintained, NOT generated — `db:types` is a reconciliation aid only). Nav flipped `products` → live + added `taxonomy`/`qa` under a "Catálogo" group with a Q&A unanswered-count badge. New config module `config/admin-products.ts`. Shared `cache-tags.ts` (imports `CATALOG_CACHE_TAG`/`productCacheTag`, never literals), `slug.ts`, `units.ts`, `require-session.ts`, `format.ts`. Extracted shared form primitives to `components/admin/form/fields.tsx` and refactored the T10 settings form onto them (DRY).
 
-## Env Vars (added to `.env.local`, all SERVER-ONLY, never `NEXT_PUBLIC_`)
-- `ADMIN_EMAIL` — Owner login email. Dev value: `admin@posturpro.mx`.
-- `ADMIN_PASSWORD_HASH` — scrypt hash `scrypt$N$r$p$saltHex$hashHex`. Dev password: **`posturpro-dev-2026`**.
-  **⚠ CRITICAL (QA P1, 2026-07-15): every `$` in the hash MUST be backslash-escaped (`\$`) in any `.env*` file.** Next's `@next/env`/dotenv-expand treats unescaped `$` as variable expansion and silently collapses the 178-char hash to `scrypt6384`, making login 100% broken with no error. Applies to every deploy target that uses dotenv-style files.
-- `ADMIN_SESSION_SECRET` — 32-byte hex HMAC key (rotating it logs everyone out, edge 3).
-- Optional: `ADMIN_SESSION_MAX_AGE_SECONDS` (default 28800 = 8h), `ADMIN_LOGIN_RATE_LIMIT_DISABLED=1` (e2e escape hatch).
+**Slice 1 — List + filters.** `list-filters.ts` (pure, bounded), `list-query.ts` (admin client, BASE table, any status, no cache, count→clamp→range via `pagination.ts`, batch-stitched covers + variant-summed stock, no N+1). Page + `ProductTable` (desktop table / mobile cards), `ProductFilters` (URL-synced, debounced), `AdminPagination`, `ProductStatusBadge` (shape+text, never color-only), `ProductEmptyState`, `ProductRowActions` (`⋮` menu).
 
-**Generate a real hash for a deploy** (output is pre-escaped for direct paste into a `.env*` file — see P1 warning above):
-```bash
-node -e 'const{randomBytes,scryptSync}=require("node:crypto");const s=randomBytes(16);const d=scryptSync(process.argv[1],s,64,{N:16384,r:8,p:1});console.log(["scrypt",16384,8,1,s.toString("hex"),d.toString("hex")].join("\\$"))' "YOUR_PASSWORD"
-```
-(For non-dotenv secret stores — e.g. Vercel env UI, real shell exports — use the unescaped `$` form instead: replace `join("\\$")` with `join("$")`.)
+**Slice 2 — Product form.** `product-input.ts` (pure, collect-all), `product-write.ts` (create/update/status/delete + M2M sync + 23505→field, rollback on link failure). Single long form (`product-form.tsx`) with sticky action bar, slug auto-suggest, focus-first-invalid, error summary, unsaved-changes guard + `beforeunload`, category multi-select + tag input. New + edit pages.
+
+**Slice 3 — Images.** `image-write.ts` (server MIME/size re-validation, non-guessable path, storage/DB reconciliation, cover-at-most-one, promote-next-on-cover-delete, orphan cleanup). `usePointerReorder` hook (native Pointer Events, no `@dnd-kit`). `ImageManager` (dropzone, drag + ↑/↓ keyboard path with `aria-live`, cover radiogroup, delete confirm, optimistic).
+
+**Slice 4 — Variants.** `variant-input.ts` (pure, in-file dup-SKU detection), `variant-write.ts` (reconcile set, 23505→row error). `VariantEditor` (inline rows, hex swatch, delete confirm warning images). Saved via a dedicated action.
+
+**Slice 5 — Taxonomy.** `taxonomy-input.ts` + `taxonomy-write.ts` (23505→slug-dup, `check_violation`→cycle, FK→restrict). Tabbed manager, shared entity dialog, delete dialog (correct per-table consequence), recursive `CategoryTree` (`role=tree`, expand/collapse, re-parent via edit-dialog select).
+
+**Slice 6 — Inventory + duplicate + Q&A.** `inventory-input.ts`/`inventory-write.ts` (RPC call, negative→friendly), `InventoryAdjustDialog` (explicit product-vs-variant target, live preview, negative-block), `InventoryLedger`. `product-duplicate.ts` (deep copy: unique slug `-copia`/SKU, variants, image rows share URLs, M2M, forced draft, rollback). `qa-read.ts`/`qa-write.ts`, `QAInbox` (answer+publish one write, unpublish, delete, segmented filter, char counter).
+
+**Slice 7 — CSV.** `csv-parse.ts` (RFC-4180 state machine + generator, BOM/CRLF/quotes/formula-escape, zero deps), `csv-product-map.ts` (header validation, per-row plan, unknown-slug/dup-SKU/bad-money errors, SKU-keyed create/update), `csv-generate.ts` (export), `csv-import-write.ts` (resilient batch, one bad row never aborts, single cache bust). Guarded export route `products/export/route.ts` (self-`requireSession()` at entry + middleware-covered). `CsvImportDialog` 4-step stepper (mandatory dry-run → confirm → result), `CsvToolbar`.
 
 ## Key Decisions
-- **`updateTag` over `revalidateTag`**: Next 16 made `revalidateTag(tag)` deprecated (now needs a `profile` 2nd arg + logs a warning). `updateTag(tag)` is the single-arg replacement with immediate expiration — exactly the AC-9 "reflect on next render" semantics. Only valid inside a server action, which is the sole caller.
-- **Route group `(app)` for the guard**: the authoritative session guard + shell live in `admin/(app)/layout.tsx`, so the sibling `/admin/login` renders the clean root layout without being redirected by its own guard. `(app)` doesn't affect URLs.
-- **Active section from `usePathname()`** in `AdminShell`, not a prop — T11/T12 add sections without threading a prop through every page.
-- **scrypt over bcrypt/argon2**: zero new deps, no native bindings; strong KDF in `node:crypto` (ticket decision).
-- **Web Crypto in middleware, node:crypto authoritative** (R1): shared payload codec keeps both in lockstep; middleware is a fast UX gate, the layout/actions are the trust boundary.
 
-## Deviations from Ticket/Spec
-- **File names/locations**: spec listed `admin/page.tsx` + `admin/settings/page.tsx`; implemented as `admin/(app)/page.tsx` + `admin/(app)/settings/page.tsx` (route group) so the guard wraps authed pages without catching `/admin/login`. `admin-shell.tsx` and `logout-button.tsx` were extracted from the layout for SRP + reuse (spec allowed either). No behavioral deviation.
-- **Cache bust API**: `updateTag` instead of `revalidateTag` (justified above) — same effect, avoids the Next 16 deprecation warning. The `STORE_SETTINGS_CACHE_TAG` constant is unchanged and shared.
-- **`money-required` vs blank**: blank money is its own error ("Ingresa un monto (usa 0 para gratis)."), distinct from 0 (valid) — matches edge 6/7 intent.
+- **Types are hand-authored** (not `db:types`-generated) per the repo's documented convention — added the new table/RPC types by hand to `types/`.
+- **Variants save via a dedicated action** (not folded into the product FormData) — cleaner uniqueness/hex validation and matches the separate image/inventory action pattern; the ui-design listed per-row save as an accepted alternative.
+- **List-context inventory adjust targets product-level stock** (variant-level lives on the edit page) — keeps the list a lean single-query read (no per-row variant fetch); the dialog shows an explanatory note when the product uses variant stock (edge 7).
+- **Native Pointer Events reorder** over `@dnd-kit` (zero-dep constraint); ↑/↓ buttons are the guaranteed keyboard path.
+- **Export as a guarded `/admin/…/export` route** — middleware covers `/admin/*` AND the handler self-guards (401), satisfying AC-34 defensively.
+
+## Deviations from Ticket / UI-Design (with justification)
+
+- **`next.config.ts` DID need a change** (ticket expected none): the config derived the storage host but hardcoded `protocol: "https"`. Local Supabase is `http://127.0.0.1:54321`, so the local host was not allow-listed and `next/image` 500'd on uploaded images. Fixed by deriving the protocol from `NEXT_PUBLIC_SUPABASE_URL` (http local / https prod). Verified.
+- **`AdminShell` content width widened** `max-w-2xl` → `max-w-5xl` and **`AdminPage` gained an `actions` slot** — required to fit the product table + header CTAs. The settings form self-constrains, so T10 is visually unchanged (admin e2e is the proof at QA).
+- **Q&A is a nav destination `/admin/qa`**, not a section inside the edit page (per the S3 nav decision); the edit page links to it via the product-name link on each Q&A card. The edit page keeps an inventory-history section.
+- **Product-form section rail (scroll-spy)** is not an `IntersectionObserver` rail — the sticky action bar + single form + anchor `id`s deliver the coherence; a scroll-spy rail is pure polish deferred to UX (Stage 8). Functionality/AC unaffected.
+- **`components/admin/form/fields.tsx` is 466 lines** (over the ~400 soft target, under the 1000 hard cap / ESLint passes). Kept as one cohesive field-primitive family; splitting would fragment it across ~8 consumers. Flagged for the arch/clean-code pass if a split is preferred.
 
 ## Edge Cases Handled
-1. Forged/tampered cookie → signature mismatch → `false` → redirect (`session.ts`, `session-edge.ts`; tests).
-2. Expired-but-signed cookie → `isWithinMaxAge` false → redirect (`session-payload.ts`; tests).
-3. Secret rotation → all cookies fail HMAC → re-login (test: "different secret").
-4. Missing admin env → `login` catches `MissingEnvVarError` → generic "no disponible", grants nothing; guard treats it as unauthenticated (`actions.ts`, `session-guard.ts`; test).
-5. Concurrent save → last-write-wins on the singleton (single-owner; `updated_at` trigger).
-6. Money 0 / 0.00 valid for both fields (`settings-input.ts`; tests).
-7. Locale-formatted money (`1,000.00`, `1.000,00`, `$500`) → strip `$`/space, reject separators, never coerce (`settings-input.ts`; tests).
-8. `store_settings` row absent → settings page seeds `SEED_*` + info banner; first save INSERTs the singleton (`store-settings.ts`, `settings/page.tsx`).
-9. Direct POST to `saveStoreSettings` without a session → `requireSession()` re-verifies → redirect, DB untouched (`actions.ts`).
-10. `/admin/`, `/admin` case/slash variants → verified via curl (307/308 to login; storefront `/`, `/en` unaffected).
 
-## How to Test (manual)
-1. `GET /admin` unauthenticated → 307 to `/admin/login` (verified: no admin markup in body).
-2. Log in at `/admin/login` with `admin@posturpro.mx` / `posturpro-dev-2026` → cookie set (HttpOnly, Path=/admin) → `/admin` → `/admin/settings`.
-3. Edit shipping flat rate / threshold in pesos → Guardar → "Configuración guardada."; storefront footer/checkout reflect new shipping on next render.
-4. Try `1,000.00` in a money field → field error "Usa punto decimal y sin separadores…"; form stays filled.
-5. Wrong password → "Correo o contraseña incorrectos." (same for unknown email — no enumeration).
-6. Cerrar sesión → cookie cleared → `/admin/login`; `GET /admin` redirects again.
-7. Verified live on the running dev server: `/`=200, `/en`=200, `/admin`=307→login, `/admin/login`=200, `/admin/settings`(unauth)=307→login, `/admin/`=308→`/admin`.
+1. **Duplicate slug/SKU** — `23505` caught, mapped to a per-field "ya existe"; product insert rolls back on M2M failure (no orphans). (integration: `admin-catalog-write`)
+2. **Category cycle** — client hides self in the parent select; DB trigger `check_violation`/`P0001` caught → "no puede ser su propio ancestro". (integration verified)
+3. **Delete category with children / brand-in-use** — FK `23503` → "reasigna o elimina las subcategorías primero"; brand/style delete succeeds (set null). (integration verified)
+4. **Image failures** — client + server MIME/size validation; DB-insert failure best-effort removes the just-uploaded object; storage-delete failure still removes the row + logs.
+5. **CSV chaos** — RFC-4180 parser (BOM/CRLF/quotes/`""`); per-row errors for bad money (thousand sep), unknown slug, in-file dup SKU, bad status/slug; row cap + empty + non-UTF-8 + bad-header rejected with zero writes; resilient batch. (unit: `csv-parse`, `csv-product-map`)
+6. **Concurrent inventory** — atomic RPC with row-lock; ledger never diverges; negative blocked. (integration verified)
+7. **Variant-vs-product stock** — list shows "(var)" hint; adjust dialog states its target explicitly.
+8. **Session expiry** — every action `requireSession()` first (redirect, no DB touch); form `beforeunload` guard.
+9. **Unpublish cached question** — busts `product:<slug>` (verified: answer flow moved the card + set is_published).
+10. **Storage re-enable regression** — verified clean stop/start/reset twice; documented filesystem fallback behind `image-write.ts`.
 
-## Verification Results
-- `npx tsc --noEmit` → 0 errors.
-- `npx eslint` (admin lib/app/components + middleware/env/store-settings) → clean.
-- `npx next build` (NEXT_QA_DIST_DIR=.next-t10-build) → exit 0; admin routes dynamic, storefront routes unchanged, middleware compiled (Edge Web-Crypto OK). Build dir removed; `tsconfig.json` restored clean.
-- Unit: full suite **1342/1342 (75 files)** — baseline 1281 + 61 new admin tests. (One run showed a single pre-existing flake in `payment-panel.test.tsx` re: `window.location.assign`; passes 17/17 in isolation and the immediate re-run was 1342/1342 — unrelated to T10, which touches no payment/window code.)
-- Integration: not run — T10 adds no migration and no new DB RPC; the only DB touch is the existing `store_settings` singleton via the admin client. `AC-14: NO migration needed` (row + CHECKs + singleton index + `updated_at` trigger already exist, migrations 0003/0006; writes are pure UPDATE/INSERT). Migrations remain 0001..0010.
-- Storefront regression (R2): `/` and `/en` return 200 with the middleware change live; admin branch returns before next-intl.
-- DB left pristine (no seed/reset run). No stray servers started (used the existing session's dev server for read-only curl checks; the prod build used a temp dist dir, now deleted).
+## Data-Testids (representative)
 
-## Seams for T11/T12
-- **Nav**: flip `ADMIN_NAV_ITEMS[products|orders].status` to `"live"` + set `href` in `src/lib/admin/constants.ts` — no JSX change. `AdminShell` auto-resolves the active section from the path.
-- **New sections**: add `src/app/admin/(app)/products/page.tsx` (and `/orders`) — they inherit the guard + shell automatically.
-- **Dashboard**: replace the `redirect` in `admin/(app)/page.tsx` with an `AdminPage` overview.
-- **Settings write path**: `updateStoreSettings` in `store-settings.ts` is the template for future admin writes (admin client + `updateTag`).
-- **Session/guard**: `hasValidAdminSession()` (server components) + `requireSession()` pattern (in `actions.ts`) are reused verbatim by every future admin page/mutation. T12 refund/email wiring re-verifies the session the same way before calling the server-only refund/email modules.
+`admin-products-table`, `admin-products-search`, `admin-products-filter-{brand,category,status,stock}`, `admin-products-new`, `admin-product-row-{id}`, `admin-product-actions-{id}` (+ edit/duplicate/adjust/archive), `admin-page-{n}`; `admin-product-form`, `admin-product-{name,slug,sku,price,status,…}`, `admin-product-submit`, `admin-product-error-summary`, `admin-product-created-banner`; `admin-image-{dropzone,input,card-{id},cover-{id},up-{id},down-{id},delete-{id},delete-confirm}`; `admin-variant-{add,save,color,hex,sku,price,stock,delete,rows}`; `inventory-adjust-{dialog,amount,reason,preview,submit,negative}`; `taxonomy-tab-{brand,category,style,tag}`, `taxonomy-{new,save,name,slug}`, `taxonomy-row-{id}`, `category-tree`, `category-node-{id}`; `qa-{list,empty,card-{id},answer-{id},publish-{id},toggle-{id},delete-{id}}`, `admin-nav-qa-badge`; `admin-csv-{export,import}`, `csv-{import-dialog,file-input,continue,confirm,close,result,import-error}`.
 
-## Known Limitations
-- Single Owner, no roles/registration/reset (Phase 2, out of scope).
-- Rate limiter + session are per-instance in-memory (best-effort, documented); fine for a single-owner low-traffic surface.
-- Full login→settings e2e (server-action POST) is left to QA (Stage 7); the auth/session/parse cores are unit-tested and the round-trip was verified at the Node level against the real `.env.local`.
+## Seams for T12
+
+- Admin-list read convention (`list-query.ts`: base table + admin client + no cache + `pagination.ts` math + batch-stitch) is the template for the T12 order list.
+- Paired `*-input.ts` (pure) + `*-write.ts` (DB) modules + serializable action results is the reusable write pattern.
+- `requireSession()` extracted to `src/lib/admin/require-session.ts` — reuse in all T12 actions.
+- `bustCatalogTags` shared helper is the single cache-invalidation point.
+- Shared form primitives in `components/admin/form/fields.tsx` (TextField/MoneyField/SelectField/TextareaField/SwitchField/NumberUnitField/Banner/FieldError) ready for order forms.
+- **T12 GATE unchanged**: stateless sessions still have no server-side revocation (SEC-M-1) — must land the session-version check or shorter max-age before refund-capable T12 sessions (this task did not regress it; the reserved payload `v` field is untouched).
 
 ## Dependencies Added
-- None. `node:crypto` (scrypt/HMAC/timingSafeEqual) + Web Crypto (`crypto.subtle`) are built-in; shadcn `Button`/`Badge` + Radix `Dialog`/`FocusScope` already vendored.
 
-## Review fixes (Stage 6)
+**None.** shadcn `table`, `textarea`, `dialog`, `tabs`, `alert-dialog`, `progress` vendored as source via the CLI (dev-time, not runtime deps). CSV + drag + tree + stepper are hand-rolled.
 
-All findings from `tasks/review-findings.md` resolved. 0 CRITICAL, 4 MAJOR, 7 MINOR, 4 NIT.
+## Migration / Storage Notes
 
-### Issue Tracker
-| ID | Sev | Title | Status | File | Notes |
-|----|-----|-------|--------|------|-------|
-| M-1 | MAJOR | Node/Edge verifier equivalence untested | FIXED | `session-parity.test.ts` (new), `session-test-fixture.ts` (new) | 8-case cross-runtime fence from ONE shared fixture; killed both copy-pasted per-suite cookie helpers |
-| M-2 | MAJOR | Node throws vs Edge false — unpinned | FIXED | `session.test.ts`, `session-guard.test.ts` (new), `session.ts` | Asserts `isSessionValid` THROWS on unset/blank secret; guard maps throw→`false`; asymmetry documented inline |
-| M-3 | MAJOR | scrypt-on-mismatch not proven | FIXED | `auth.test.ts` | node:crypto mock didn't intercept SUT binding → used sanctioned timing approach: per-path floor + parity (stable ×3) |
-| M-4 | MAJOR | Rate-limit cap/release/escape untested | FIXED | `login-rate-limit.test.ts` | Cardinality cap, sliding release, strict `=== "1"` escape hatch |
-| m-1 | MINOR | Client-import check alias-only | FIXED | `secret-exposure.test.ts` | Matches alias + relative specifiers ending `admin/(auth\|session\|session-guard)` |
-| m-2 | MINOR | `!Number.isFinite(iat)` unexercised | FIXED | `session-payload.test.ts` | Hand-built `1e400`/`-1e400` iat → `null` |
-| m-3 | MINOR | Edge env override readability | SKIPPED | — | UX-only, platform-dependent, Node authoritative — non-hole; deploy-config concern |
-| m-4 | MINOR | Email `===` not constant-time | FIXED (doc) | `auth.ts` | Behavior correct; rationale noted inline (username, not secret) |
-| m-5 | MINOR | Non-atomic missing-row save | SKIPPED | — | Within spec (edge 8 allows recoverable error); single-owner; fails safely |
-| m-6 | MINOR | `as` casts in success branch | FIXED | `settings-input.ts` | Guard-narrowed re-check → zero casts |
-| m-7 | MINOR | Parser boundary cases untested | FIXED | `settings-input.test.ts` | `.5`, `$ 500`, `$$500`, exact-length name |
-| N-1 | NIT | Awkward CENTS_PER_PESO comment | FIXED | `settings-input.ts` | Removed in m-6 rewrite |
-| N-2 | NIT | `typeof Alert02Icon` imprecise | FIXED | `store-settings-form.tsx` | Now `IconSvgElement` |
-| N-3 | NIT | DUMMY_HASH cold-start cost | FIXED (doc) | `auth.ts` | Comment added |
-| N-4 | NIT | Duplicate ISO timestamp in logs | SKIPPED | — | Intentional/portable (bare `console` doesn't timestamp) |
-
-### Summary
-- Critical: 0/0
-- Major: 4/4 FIXED
-- Minor: 5/7 FIXED, 2 SKIPPED (m-3, m-5 — justified)
-- Nit: 3/4 FIXED, 1 SKIPPED (N-4 — justified)
-
-### Production code changed (behavior-preserving)
-- `settings-input.ts` — no-cast guard narrowing (identical output) + docstring; `session.ts` — M-2 inline doc; `auth.ts` — m-4/N-3 inline docs; `store-settings-form.tsx` — N-2 icon type. Everything else is test-only.
-
-### New / changed test files
-- NEW: `session-parity.test.ts` (8), `session-guard.test.ts` (3), `session-test-fixture.ts` (shared signer, not a spec).
-- EXTENDED: `session.test.ts` (+2 M-2), `auth.test.ts` (+2 M-3 timing), `login-rate-limit.test.ts` (+4 M-4), `session-payload.test.ts` (+1 m-2), `settings-input.test.ts` (+4 m-7), `session-edge.test.ts` (helper → shared fixture).
-
-### Test Results After Fixes
-- Total: **1366 | Passed: 1366 | Failed: 0 | Skipped: 0** (77 files; baseline 1342/75 + 24 net new tests).
-- `npx tsc --noEmit`: 0 source errors (the two `.next/dev/types/validator.ts` route-type errors are stale generated artifacts from a running dev server — pre-existing, unrelated to Stage 6, no routes/config touched).
-- ESLint: clean on all touched files.
-- payment-panel flake: did not recur in the full run; 17/17 in isolation.
+- `0011_admin_inventory_and_storage.sql` — LOCAL only (`supabase db reset`); remote is empty/unlinked. Idempotent + re-runnable.
+- `config.toml` `[storage] enabled = true` (analytics + edge_runtime remain OFF — they, not storage, caused the original boot regression). If storage ever regresses local boot, the fallback is a filesystem/`public/` dev shim behind the `image-write.ts` interface (documented in that module).
+- Bucket `product-images` created via the migration's guarded `storage.buckets` insert (no seed step needed).

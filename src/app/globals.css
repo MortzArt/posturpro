@@ -774,3 +774,51 @@
     transition: none;
   }
 }
+
+/* T11 admin — dialog/alert-dialog content Pop-in (scale .96→1 + fade), origin
+ * center so modals stay centered. Enter 180ms / exit 140ms, --ease-out.
+ * Reduced motion: opacity only, no scale. */
+.dialog-content-motion {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+.dialog-content-motion[data-state="closed"] {
+  opacity: 0;
+  transform: scale(0.96);
+  transition-duration: 140ms;
+}
+.dialog-content-motion[data-state="open"] {
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dialog-content-motion,
+  .dialog-content-motion[data-state="open"],
+  .dialog-content-motion[data-state="closed"] {
+    transform: none;
+    transition: opacity 140ms ease;
+  }
+  .dialog-content-motion[data-state="open"] {
+    @starting-style {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* T11 admin — image/variant reorder shift (items slide to make room during a
+ * drag). transform only (compositor-friendly). Reduced motion: snap. The
+ * dragged card's lift is applied inline (JS-driven), not via this class. */
+.reorder-item {
+  transition: transform 200ms var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .reorder-item {
+    transition: none;
+  }
+}

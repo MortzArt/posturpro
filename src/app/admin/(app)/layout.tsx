@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { hasValidAdminSession } from "@/lib/admin/session-guard";
 import { getStoreSettings } from "@/lib/store-settings";
+import { countUnansweredQuestions } from "@/lib/admin/qa/qa-read";
 import { ADMIN_LOGIN_PATH } from "@/lib/admin/constants";
 import { SEED_STORE_NAME } from "@/lib/config";
 
@@ -23,10 +24,17 @@ export default async function AdminAppLayout({
     redirect(ADMIN_LOGIN_PATH);
   }
 
-  const settings = await getStoreSettings();
+  const [settings, unansweredCount] = await Promise.all([
+    getStoreSettings(),
+    countUnansweredQuestions(),
+  ]);
   const storeName = settings?.store_name ?? SEED_STORE_NAME;
 
   // The shell resolves the active nav section from the current pathname, so
   // T11/T12 add sections without threading a prop through every page.
-  return <AdminShell storeName={storeName}>{children}</AdminShell>;
+  return (
+    <AdminShell storeName={storeName} unansweredCount={unansweredCount}>
+      {children}
+    </AdminShell>
+  );
 }

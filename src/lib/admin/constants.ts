@@ -13,6 +13,8 @@ import {
   Settings01Icon,
   Package01Icon,
   ShoppingCart01Icon,
+  FolderLibraryIcon,
+  Message01Icon,
 } from "@hugeicons/core-free-icons";
 
 /**
@@ -74,7 +76,21 @@ export const ADMIN_LOGIN_RATE_LIMIT_MAX_KEYS = 10_000;
 export const ADMIN_SESSION_VERSION = 1 as const;
 
 /** The admin sections; drives nav + active-state resolution. */
-export type AdminSectionId = "settings" | "products" | "orders";
+export type AdminSectionId =
+  | "settings"
+  | "products"
+  | "taxonomy"
+  | "qa"
+  | "orders";
+
+/** Route for the taxonomy manager (brands/categories/styles/tags, tabbed). */
+export const ADMIN_TAXONOMY_PATH = "/admin/taxonomy" as const;
+
+/** Route for the Q&A inbox. */
+export const ADMIN_QA_PATH = "/admin/qa" as const;
+
+/** Route for the product list (T11 landing surface). */
+export const ADMIN_PRODUCTS_PATH = "/admin/products" as const;
 
 /** A single admin nav entry (data-driven so T11/T12 flip `status` without JSX edits). */
 export interface AdminNavItem {
@@ -87,7 +103,15 @@ export interface AdminNavItem {
   icon: IconSvgElement;
   /** `live` → link + active state; `soon` → disabled + "próximamente" badge. */
   status: "live" | "soon";
+  /**
+   * Optional group label rendered ABOVE the first item carrying it (T11
+   * "CATÁLOGO" grouping). Consecutive items sharing a group render one header.
+   */
+  group?: string;
 }
+
+/** The "Catálogo" nav group label (T11 §3.2). */
+export const ADMIN_NAV_GROUP_CATALOG = "Catálogo" as const;
 
 /**
  * The admin nav definition (AC-11). Settings is live; Products/Orders are
@@ -105,9 +129,26 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   {
     id: "products",
     label: "Productos",
-    href: "/admin/products",
+    href: ADMIN_PRODUCTS_PATH,
     icon: Package01Icon,
-    status: "soon",
+    status: "live",
+    group: ADMIN_NAV_GROUP_CATALOG,
+  },
+  {
+    id: "taxonomy",
+    label: "Taxonomía",
+    href: ADMIN_TAXONOMY_PATH,
+    icon: FolderLibraryIcon,
+    status: "live",
+    group: ADMIN_NAV_GROUP_CATALOG,
+  },
+  {
+    id: "qa",
+    label: "Preguntas",
+    href: ADMIN_QA_PATH,
+    icon: Message01Icon,
+    status: "live",
+    group: ADMIN_NAV_GROUP_CATALOG,
   },
   {
     id: "orders",

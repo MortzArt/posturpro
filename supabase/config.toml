@@ -34,13 +34,18 @@ enabled = false
 [analytics]
 enabled = false
 
-# Storage is unused (product images are external placeholder URLs; no buckets,
-# no uploads anywhere in the app). Its container runs ~30s of vector_store
-# migrations before binding port 5000, which under Docker load exceeds the
-# CLI's health-check window and aborts the whole `supabase start`/`db reset`
-# (observed 2026-07-14). Re-enable only when a feature actually needs buckets.
+# Storage is ENABLED for T11 admin product-image uploads (the `product-images`
+# public bucket is created in migration 0011). It was disabled on 2026-07-14
+# because its container ran ~30s of vector_store migrations before binding port
+# 5000 and, under Docker load, exceeded the CLI health-check window — aborting
+# `supabase start`/`db reset`. Root cause was the analytics/vector coupling, NOT
+# storage itself: with [analytics] kept OFF (below), the storage container binds
+# within the window for a plain buckets+objects workload. Verified with a clean
+# `supabase stop && supabase start && supabase db reset` before ship (T11 AC-2 /
+# edge 10). If this regresses, the documented fallback is a filesystem/`public/`
+# dev shim behind the same `src/lib/admin/products/image-write.ts` interface.
 [storage]
-enabled = false
+enabled = true
 
 # No edge functions exist (no supabase/functions/). The runtime container had
 # been dead for a day with every suite green before this was turned off.

@@ -27,6 +27,7 @@
 
 export * from "./config/shared";
 export * from "./config/catalog";
+export * from "./config/admin-products";
 export * from "./config/product-detail";
 export * from "./config/cart";
 export * from "./config/checkout";

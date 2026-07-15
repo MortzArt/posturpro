@@ -1,13 +1,13 @@
 "use client";
 
-import { useActionState, useEffect, useId, useRef } from "react";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { useActionState, useEffect, useRef } from "react";
 import {
   Alert02Icon,
   CheckmarkCircle02Icon,
   InformationCircleIcon,
 } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
+import { Banner, MoneyField, TextField } from "@/components/admin/form/fields";
 import { saveStoreSettings } from "@/app/admin/actions";
 import {
   initialAdminSettingsState,
@@ -19,7 +19,6 @@ import {
   type AdminSettingsField,
   type AdminSettingsFieldError,
 } from "@/lib/admin/settings-input";
-import { cn } from "@/lib/utils";
 
 /**
  * StoreSettingsForm (T10 AC-8, AC-9, AC-10, edges 6/7/8) — the core admin surface.
@@ -36,9 +35,6 @@ interface StoreSettingsFormProps {
   /** True when the store_settings row was absent → info banner + seeded defaults. */
   rowMissing: boolean;
 }
-
-const fieldClasses =
-  "w-full min-h-11 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 disabled:opacity-60";
 
 /** Spanish copy for every field-error key (AC-10). */
 const FIELD_ERROR_MESSAGES: Record<AdminSettingsFieldError, string> = {
@@ -195,150 +191,3 @@ function focusFirstInvalid(
   }
 }
 
-interface TextFieldProps {
-  ref: React.Ref<HTMLInputElement>;
-  name: string;
-  label: string;
-  type: "text" | "email";
-  defaultValue: string;
-  error: string | null;
-  disabled: boolean;
-  testid: string;
-  maxLength?: number;
-}
-
-function TextField({
-  ref,
-  name,
-  label,
-  type,
-  defaultValue,
-  error,
-  disabled,
-  testid,
-  maxLength,
-}: TextFieldProps) {
-  const id = useId();
-  const errorId = useId();
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium">
-        {label}
-      </label>
-      <input
-        ref={ref}
-        id={id}
-        name={name}
-        type={type}
-        maxLength={maxLength}
-        defaultValue={defaultValue}
-        disabled={disabled}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-        data-testid={testid}
-        className={fieldClasses}
-      />
-      {error ? <FieldError id={errorId} message={error} testid={`${testid}-error`} /> : null}
-    </div>
-  );
-}
-
-interface MoneyFieldProps {
-  ref: React.Ref<HTMLInputElement>;
-  name: string;
-  label: string;
-  helper: string;
-  defaultValue: string;
-  error: string | null;
-  disabled: boolean;
-  testid: string;
-}
-
-function MoneyField({
-  ref,
-  name,
-  label,
-  helper,
-  defaultValue,
-  error,
-  disabled,
-  testid,
-}: MoneyFieldProps) {
-  const id = useId();
-  const errorId = useId();
-  const helperId = useId();
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium">
-        {label}
-      </label>
-      <div
-        className={cn(
-          "flex min-h-11 items-stretch rounded-md border border-border bg-background focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30",
-          error && "border-destructive ring-2 ring-destructive/20",
-          disabled && "opacity-60",
-        )}
-      >
-        <span className="flex items-center border-r border-border px-3 text-sm text-muted-foreground" aria-hidden>
-          $
-        </span>
-        <input
-          ref={ref}
-          id={id}
-          name={name}
-          type="text"
-          inputMode="decimal"
-          defaultValue={defaultValue}
-          disabled={disabled}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={cn(helperId, error ? errorId : undefined)}
-          data-testid={testid}
-          className="w-full bg-transparent px-3 py-2 text-sm tabular-nums text-foreground outline-none"
-        />
-      </div>
-      <p id={helperId} className="text-xs text-muted-foreground">
-        {helper}
-      </p>
-      {error ? <FieldError id={errorId} message={error} testid={`${testid}-error`} /> : null}
-    </div>
-  );
-}
-
-function FieldError({ id, message, testid }: { id: string; message: string; testid: string }) {
-  return (
-    <p id={id} role="alert" data-testid={testid} className="enter-fade flex items-center gap-1 text-xs text-destructive">
-      <HugeiconsIcon icon={Alert02Icon} size={13} strokeWidth={2} aria-hidden />
-      {message}
-    </p>
-  );
-}
-
-interface BannerProps {
-  ref?: React.Ref<HTMLDivElement>;
-  role: "status" | "alert";
-  tone: "info" | "error";
-  icon: IconSvgElement;
-  message: string;
-  testid: string;
-}
-
-function Banner({ ref, role, tone, icon, message, testid }: BannerProps) {
-  return (
-    <div
-      ref={ref}
-      role={role}
-      aria-live={role === "alert" ? "assertive" : "polite"}
-      tabIndex={ref ? -1 : undefined}
-      data-testid={testid}
-      className={cn(
-        "enter-fade flex items-start gap-2 rounded-md p-3 text-sm outline-none",
-        tone === "error"
-          ? "border border-destructive/30 bg-destructive/5 text-destructive"
-          : "bg-muted/50 text-foreground",
-      )}
-    >
-      <HugeiconsIcon icon={icon} size={16} strokeWidth={2} aria-hidden className="mt-0.5 shrink-0" />
-      <span>{message}</span>
-    </div>
-  );
-}

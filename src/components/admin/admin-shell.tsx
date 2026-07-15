@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils";
  */
 interface AdminShellProps {
   storeName: string;
+  /** Unanswered Q&A count for the "Preguntas" nav badge (T11). */
+  unansweredCount?: number;
   children: React.ReactNode;
 }
 
@@ -38,7 +40,7 @@ function useActiveSection(): AdminSectionId {
   return match?.id ?? "settings";
 }
 
-export function AdminShell({ storeName, children }: AdminShellProps) {
+export function AdminShell({ storeName, unansweredCount = 0, children }: AdminShellProps) {
   const activeSection = useActiveSection();
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
@@ -49,11 +51,19 @@ export function AdminShell({ storeName, children }: AdminShellProps) {
         Saltar al contenido
       </a>
 
-      <DesktopSidebar storeName={storeName} activeSection={activeSection} />
-      <MobileTopBar storeName={storeName} activeSection={activeSection} />
+      <DesktopSidebar
+        storeName={storeName}
+        activeSection={activeSection}
+        unansweredCount={unansweredCount}
+      />
+      <MobileTopBar
+        storeName={storeName}
+        activeSection={activeSection}
+        unansweredCount={unansweredCount}
+      />
 
       <main id="admin-content" className="flex-1">
-        <div className="mx-auto w-full max-w-2xl px-4 py-6 md:px-6 md:py-8">
+        <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6 md:py-8">
           {children}
         </div>
       </main>
@@ -65,9 +75,11 @@ export function AdminShell({ storeName, children }: AdminShellProps) {
 function DesktopSidebar({
   storeName,
   activeSection,
+  unansweredCount,
 }: {
   storeName: string;
   activeSection: AdminSectionId;
+  unansweredCount: number;
 }) {
   return (
     <aside className="sticky top-0 hidden h-dvh w-56 shrink-0 flex-col border-r border-border bg-card md:flex lg:w-60">
@@ -77,7 +89,7 @@ function DesktopSidebar({
         </p>
         <p className="text-xs text-muted-foreground">Administración</p>
       </div>
-      <AdminNav activeSection={activeSection} />
+      <AdminNav activeSection={activeSection} unansweredCount={unansweredCount} />
     </aside>
   );
 }
@@ -86,9 +98,11 @@ function DesktopSidebar({
 function MobileTopBar({
   storeName,
   activeSection,
+  unansweredCount,
 }: {
   storeName: string;
   activeSection: AdminSectionId;
+  unansweredCount: number;
 }) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -191,7 +205,10 @@ function MobileTopBar({
                       </button>
                     </Dialog.Close>
                   </div>
-                  <AdminNav activeSection={activeSection} />
+                  <AdminNav
+                    activeSection={activeSection}
+                    unansweredCount={unansweredCount}
+                  />
                 </div>
               </FocusScope>
             ) : null}

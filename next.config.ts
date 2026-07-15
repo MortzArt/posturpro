@@ -14,7 +14,12 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
  * seed placeholder image host (picsum.photos) used before real photography lands.
  */
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseHost = supabaseUrl ? new URL(supabaseUrl).hostname : undefined;
+const supabaseParsed = supabaseUrl ? new URL(supabaseUrl) : undefined;
+const supabaseHost = supabaseParsed?.hostname;
+// Derive the protocol from the URL so the LOCAL Supabase host (http://127.0.0.1)
+// is allow-listed for dev/e2e too — prod is https, local is http (T11 fix).
+const supabaseProtocol: "http" | "https" =
+  supabaseParsed?.protocol === "http:" ? "http" : "https";
 
 const nextConfig: NextConfig = {
   // Test-infra escape hatch: allow an isolated build/start output dir so the e2e
@@ -27,13 +32,13 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       ...(supabaseHost
-        ? ([
+        ? [
             {
-              protocol: "https" as const,
+              protocol: supabaseProtocol,
               hostname: supabaseHost,
               pathname: "/storage/v1/object/public/**",
             },
-          ] as const)
+          ]
         : []),
       {
         protocol: "https" as const,
