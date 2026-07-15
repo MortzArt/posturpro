@@ -330,3 +330,4 @@ Actions (executing now):
 Deferred (rated OK/justified — intentionally NOT actioned): >50-line money-path
 functions; payment-panel split; rate-limiter file duplication (intentional seams,
 both delegate to shared sliding-window.ts).
+- [ ] **E2E-HARNESS: `gotoPDP` strict-mode violation on mobile project** — helper asserts `getByTestId("product-gallery").toBeVisible()` unscoped while PDP renders two galleries (desktop + mobile, one hidden) → ~8 pre-existing Pixel-7 failures in T11-untouched specs (both dev & prod builds). Scope the locator to the visible instance. Found by T11 QA 2026-07-15; not a product bug.

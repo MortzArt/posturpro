@@ -147,7 +147,7 @@ test.describe("login success + session (AC-2, AC-7, AC-13)", () => {
 });
 
 test.describe("nav shell (AC-11)", () => {
-  test("Settings is the live+active section; Products/Orders are disabled placeholders", async ({
+  test("Settings is active; Products is now LIVE (T11); Orders remains a disabled placeholder", async ({
     page,
   }) => {
     await loginAndReachSettings(page);
@@ -162,10 +162,12 @@ test.describe("nav shell (AC-11)", () => {
     }
     const visibleSettings = page.getByTestId("admin-nav-settings").filter({ visible: true });
     await expect(visibleSettings).toHaveAttribute("aria-current", "page");
-    // Future sections are present but non-interactive (aria-disabled span, no href).
-    await expect(
-      page.getByTestId("admin-nav-products").filter({ visible: true }),
-    ).toHaveAttribute("aria-disabled", "true");
+    // T11 flipped Products to LIVE (AC-3): it is now a real navigable link, not a
+    // disabled placeholder (an href, no aria-disabled).
+    const products = page.getByTestId("admin-nav-products").filter({ visible: true });
+    await expect(products).not.toHaveAttribute("aria-disabled", "true");
+    await expect(products).toHaveAttribute("href", /\/admin\/products/);
+    // Orders is still a future (Phase-2) disabled placeholder.
     await expect(
       page.getByTestId("admin-nav-orders").filter({ visible: true }),
     ).toHaveAttribute("aria-disabled", "true");
