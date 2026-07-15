@@ -1,138 +1,69 @@
-# Ship Decision: T8 — Mercado Pago Integration (sandbox)
+# Ship Decision: T10 — Admin foundation
 
-> ⚠️ **THIS SHIP VERDICT IS ADVISORY ONLY — DO NOT MERGE, DO NOT CHECK `[x] T8`.**
-> T8 is PAYMENT code. Per BUILD_PLAN rule 3 and the standing HUMAN-REVIEW GATE, a
-> SHIP verdict does NOT authorize merge. A human MUST sign off on the payment
-> trust-boundary code before T8 is checked off. See "Standing Gates" below.
->
-> ⚠️ **LIVE-SANDBOX VALIDATION IS A DOCUMENTED RESIDUAL (BLOCKED-ON-USER).** No
-> working MP credentials exist; `.env.local` holds placeholders; every test in this
-> pipeline mocks the MP API. Nothing here has ever touched a real Mercado Pago
-> endpoint. The exact confirm-list is carved out below.
+## Verdict: SHIP
 
-## Verdict: SHIP (advisory — see gates; do not auto-merge)
-
-## Confidence: HIGH (for the pipeline's mocked scope; live-sandbox residual is explicitly open)
+## Confidence: HIGH
 
 ## Quality Score: 9/10
 
----
-
-## Test Results (personally run by Verify — not trusted from prior reports)
-
-| Suite | Total | Passed | Failed | Skipped |
-|-------|-------|--------|--------|---------|
-| Unit / Component (Vitest, 60 files) | 1206 | 1206 | 0 | 0 |
-| Integration (Vitest, live local Docker Supabase, 12 files) | 158 | 158 | 0 | 0 |
-| E2E — T8 payment (prod build, chromium+mobile) | 8 | 8 | 0 | 0 |
-| E2E — checkout (prod build, regression baseline) | 24 | 24 | 0 | 0 |
-| E2E — cart (prod build, regression baseline) | 46 | 46 | 0 | 0 |
-| **Total** | **1442** | **1442** | **0** | **0** |
-
-Plus: `npx eslint src/` → clean (exit 0). `npx tsc --noEmit` → 0 errors.
-`NEXT_QA_DIST_DIR=.next-t8-verify next build` → compiled successfully both locales;
-`ƒ /api/webhooks/mercadopago` emitted (dynamic function), `ƒ /[locale]/checkout/confirmacion/[token]`
-dynamic, checkout routes present. Integration run applied migrations 0001..0009
-clean via `supabase db reset` (0009 idempotent). E2e ran against a PRODUCTION build
-(`next start` on `.next-t8-verify`, `CHECKOUT_RATE_LIMIT_DISABLED=1`); DB reseeded
-between order-placing suites (documented stock-depletion rule).
-
-### Cleanup completed at end of verification
-- Prod server killed; `.next-t8-verify` removed; `git checkout -- tsconfig.json`
-  (no dist-dir globs remain — tsconfig has only the standard `.next/types` includes).
-- Also swept two pre-existing leaked dist dirs (`.next-t5-ux`, `.next-t8-hacker` —
-  both correctly gitignored by the `.next-*/` glob, never tracked) and a stray
-  untracked `playwright.hacker.config.ts` (Stage-11 leftover).
-- DB left pristine-seeded (0 orders, 70 variants, 5 discount codes). No stray servers.
-- `git status --porcelain` → EMPTY. `git ls-files | grep .next` → only `next-env.d.ts`
-  (the required Next.js env file; zero build-dir/dist cruft tracked).
+Stage 11 (Hacker) was **SKIPPED** — task classified `medium` complexity, per the
+full-cycle auto-classification rule (medium → skip hacker; Security + Arch run at
+full depth because this is the app's top trust boundary). This is noted and does
+not affect the verdict: the auth surface received full-depth adversarial Security
+(Stage 9) and Architecture (Stage 10) review in lieu of chaos testing.
 
 ---
 
-## Acceptance Criteria Final Check (23/23 verified in code + test)
+## Verification Matrix (every check run by the gatekeeper, not trusted from reports)
 
-| # | Criterion | Code | Test | Verdict |
-|---|-----------|------|------|---------|
-| AC-1 | `getMercadoPagoEnv()` typed, throws MissingEnvVarError | `env.ts` | `env.test.ts`, `route.ts` fail-closed | ✅ |
-| AC-2 | No `NEXT_PUBLIC_` secret; `import "server-only"` | grep: 0 NEXT_PUBLIC secret; 7 server-only modules | `secret-exposure.test.ts` | ✅ |
-| AC-3 | Non-secret MP tunables centralized | `payments/config.ts` | `config.test.ts` | ✅ |
-| AC-4 | Preference: exact cents→decimal, ext_ref=token, urls | `preference.ts`, `money-boundary.ts`, `urls.ts` | `money-boundary.test.ts` | ✅ |
-| AC-5 | Pay-now CTA on pending order | `payment-panel.tsx` | `payment-panel.test.tsx`, `payment.spec.ts` | ✅ |
-| AC-6 | All 4 methods available (none excluded) | `preference.ts` / `config.ts` | `config.test.ts` | ✅ |
-| AC-7 | POST webhook route (first route.ts) | `route.ts` | `route.test.ts` | ✅ |
-| AC-8 | x-signature verified (constant-time) before side effect → 401 | `webhook.ts` (timingSafeEqual), `route.ts` (verify before process) | `webhook.test.ts`, `route.test.ts` (incl. C-1 seam) | ✅ |
-| AC-9 | Authoritative Payment.get; body never trusted | `process-payment.ts:75-98` | `process-payment.test.ts` | ✅ |
-| AC-10 | Idempotent dedupe (finalized replay → duplicate) | `process-payment.ts` claim-then-finalize | integration `record_payment_event` | ✅ |
-| AC-11 | Match by ext_ref/token; unknown → 200 no mutation | `process-payment.ts` matchOrder | `process-payment.test.ts` | ✅ |
-| AC-12 | Amount reconciliation zero-tolerance gates paid | `process-payment.ts:142-152` | `process-payment.test.ts` amount-mismatch | ✅ |
-| AC-13 | advance_order_status sole path; atomic history | `0009` RPC; only status write path | integration advance+history | ✅ |
-| AC-14 | MP status mapping (all + flag + unknown) | `payments-status.ts` | `payments-status.test.ts` | ✅ |
-| AC-15 | RPC-level idempotency (same-status no-op) | `0009` advance_order_status | integration idempotent | ✅ |
-| AC-16 | Card-decline retry, same order/token | `payment-panel.tsx` retry | `payment-panel.test.tsx` | ✅ |
-| AC-17 | OXXO/SPEI voucher instructions | `oxxo-spei-instructions.tsx` | `oxxo-spei-instructions.test.tsx` | ✅ |
-| AC-18 | OXXO/SPEI pending→approved advances to paid | `process-payment.ts` progression | integration progression | ✅ |
-| AC-19 | Refund full/partial + idempotency key + ledger | `refund.ts` (per-attempt UUID key) | `refund.test.ts`, integration record_refund | ✅ |
-| AC-20 | Refund refuses non-approved; typed; no raw echo; server-only | `refund.ts` | `refund.test.ts` | ✅ |
-| AC-21 | Both locales; keys-used test | `es-MX.json`+`en.json` | `keys-used.test.ts`, `payment.spec.ts` EN | ✅ |
-| AC-22 | Unit+integration+e2e pass; MP mocked | — | all suites green (verified above) | ✅ |
-| AC-23 | Strict TS, clean code, baselines held | tsc 0, eslint clean | baselines: checkout 24 + cart 46 held | ✅ |
-
-12/12 edge cases covered (per QA matrix, spot-confirmed in code: replay, out-of-order
-regression guard, unknown→200, decline-retry, voucher-expiry honest copy, webhook-
-before-redirect truth-from-DB, amount-mismatch, refund-pending, over-refund race-safe,
-refund-failure state-unchanged, missing-creds friendly, malformed-body tolerated).
+| # | Check | Result | Evidence |
+|---|-------|--------|----------|
+| 1 | `tsc --noEmit` | ✅ 0 errors | Ran clean; ZERO source and ZERO `.next/dev/types` errors (port 3000 was clear, no stale validator artifacts) |
+| 2 | ESLint (whole project) | ✅ clean | `npx eslint .` exit 0, no output |
+| 3 | Unit suite | ✅ **1376/1376 (78 files)** | `npx vitest run` — matches expected exactly, 0 failed / 0 skipped |
+| 4 | Integration suite | ✅ **188/188 (14 files)** | `bash scripts/run-integration.sh` (resets + seeds local Supabase first) |
+| 5 | Prod build | ✅ exit 0 | `NEXT_QA_DIST_DIR=.next-qa-t10-verify next build` — admin routes dynamic (`ƒ`), storefront SSG/dynamic unchanged, middleware compiled (Edge Web-Crypto OK). Rebuilt after each reseed per SEQUENCING RULE; `git checkout -- tsconfig.json` after each build |
+| 6 | Live prod smoke (unauth) | ✅ all correct | `/`=200, `/en`=200, `/admin`=307→login, `/admin/login`=200, `/admin/settings`(unauth)=307→login, `/admin/`=308→`/admin`; **0 admin-markup matches** in unauth `/admin` body |
+| 7 | E2E storefront regression (PROD build, R2) | ✅ **78/78** | chromium 39/39 + mobile 39/39 (payment 8 + checkout 24 + cart 46 across both projects), reseed + rebuild between projects. Middleware `/admin` branch does NOT regress storefront |
+| 8 | E2E admin unauth-guard (PROD build) | ✅ **6/6** | `admin.spec.ts -g "unauthenticated route protection"` (3 tests × chromium+mobile) on the authoritative prod server |
+| 9 | E2E admin authed (DEV server, serial) | ✅ **30/30** | Full `admin.spec.ts --workers=1` on a fresh dev server (Secure cookie can't ride plain HTTP on `next start` — documented product behavior). All 15 tests × chromium+mobile pass |
+| 10 | Migrations | ✅ 0001..0010 (no 0011) | `ls supabase/migrations/` — T10 added none (AC-14). `supabase db reset` applied all 10 clean; seed produced the full fixture (30 products, 70 variants, singleton store_settings) |
+| 11 | Secret: `.env.local` not tracked | ✅ | `git check-ignore .env.local` matches; `git ls-files .env.local` = 0 (never committed) |
+| 12 | Secret: no `NEXT_PUBLIC_ADMIN_*` | ✅ | Only `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are public; the 3 admin vars (`ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH`/`ADMIN_SESSION_SECRET`) carry no public prefix |
+| 13 | Secret: hash `$`-escaped in `.env.local` | ✅ | 5 backslash-escaped `$` present (the QA P1 fix — `scrypt\$N\$r\$p\$salt\$hash`); prevents dotenv `$`-expansion collapse |
+| 14 | Middleware: `/admin` branch before next-intl | ✅ | `src/middleware.ts:45-46` `isAdminPath()` returns via `handleAdmin()` BEFORE `intlMiddleware(request)` at :50 — read the file directly |
+| 15 | Cookie flags (AC-2/6/13) | ✅ | `actions.ts:82-87` set: `httpOnly:true`, `sameSite:"lax"`, `secure:IS_PRODUCTION`, `path:/admin`, `maxAge:getSessionMaxAgeSeconds()`; logout `maxAge:0` (:98-103) |
+| 16 | HMAC-SHA256 + timingSafeEqual (AC-4) | ✅ | `session.ts:16,31,48` — `createHmac("sha256",...)` + `timingSafeEqual`, never `===` |
+| 17 | Session max-age default 8h (AC-5) | ✅ | `constants.ts:47` `DEFAULT_SESSION_MAX_AGE_SECONDS = 8*60*60`, env-overridable |
+| 18 | DB left pristine | ✅ | Final reseed: store_settings @ seed ($500 flat / $10000 threshold / MXN), 0 orders, 70 variants, MILANO stock 8/11 |
 
 ---
 
-## High-Risk AC Spot-Check (read the code myself, not the summaries)
+## Acceptance Criteria Final Check
 
-- **Webhook fail-closed on unset secret** — VERIFIED. `route.ts` `readWebhookSecret()`
-  returns `null` on `MissingEnvVarError` → immediate 401 (never process blind); AND
-  `verifyWebhookSignature` independently returns `{ok:false,"missing_secret"}` for a
-  blank secret. Two independent gates. `requireEnv` treats whitespace as blank.
-- **Authoritative Payment.get (body status never trusted)** — VERIFIED.
-  `process-payment.ts` calls `paymentClient().get({id})` and reads status/amount from
-  the MP-authoritative response; the notification body's `data.id` is used only to
-  fetch, never for state.
-- **Signature manifest uses QUERY id only (C-1 fix)** — VERIFIED. `route.ts:91` feeds
-  `signatureDataId` (query only) to the verifier; body id is fetch-only. Route-seam
-  regression test rejects a body-id-valid signature.
-- **Amount reconciliation** — VERIFIED. Zero-tolerance (`AMOUNT_RECONCILIATION_TOLERANCE_CENTS=0`);
-  gates ONLY the `paid` transition; mismatch → `amount-mismatch`, NOT paid, logged.
-- **advance_order_status is the ONLY status path** — VERIFIED. `refund.ts` and
-  `process-payment.ts` both transition exclusively via `advanceOrderStatus` → RPC;
-  no `.update({status})` in payment code (Arch grep-confirmed; re-confirmed here).
-- **mp_payment_events (id,status) dedupe + claim-then-finalize** — VERIFIED.
-  `record_payment_event` claims with `processed_at=NULL`; `finalize_payment_event`
-  sets it only after a successful advance; a transient advance failure leaves the
-  claim unfinalized → 500 → MP retries → converges (advance is idempotent).
-- **Over-refund guard race-safety** — VERIFIED. Local pre-check + `record_refund`
-  RPC locks the order row (`for update`), sums the `payment_refunds` ledger, and
-  refuses cumulative > total under the lock; MP is a third backstop.
-- **Refund server-only + unreachable by clients** — VERIFIED. `import "server-only"`;
-  H-1 fix present (per-attempt `randomUUID()` idempotency key at `refund.ts:116`,
-  threaded to MP at 181-187) so two distinct same-amount partial refunds never
-  collide at MP.
-- **No secret in client bundle / no NEXT_PUBLIC_ secret** — VERIFIED. grep for
-  `NEXT_PUBLIC_*(SECRET|TOKEN|ACCESS)` → none; access token/webhook secret referenced
-  only in server-only/env/test modules; clean `next build` is the runtime backstop.
-- **Migration 0009 local-only, RPC hygiene** — VERIFIED. All 6 functions
-  `security definer` + `set search_path = ''` + `revoke all from public` +
-  `grant execute to service_role`; tables `grant all to service_role` (RLS enabled,
-  no policies). Highest-numbered migration; applied clean on `db reset` (idempotent).
+| # | Criterion | Code | Test / Live Evidence | Verdict |
+|---|-----------|------|----------------------|---------|
+| AC-1 | Unauth `/admin/*` (except login) → redirect, no markup | `middleware.ts:69-71`, `(app)/layout.tsx` guard | e2e unauth 6/6 + live curl: `/admin`,`/admin/settings`=307→login, 0 admin-markup in body | ✅ |
+| AC-2 | Correct creds → HttpOnly/Lax/Secure(prod)/Path=/admin cookie → /admin; case-insensitive email; constant-time pw | `actions.ts:82-89`, `auth.ts` (case-insensitive email, `timingSafeEqual`) | e2e "correct creds land…scoped HttpOnly cookie" (30/30 serial); unit `auth.test.ts`/`session.test.ts` | ✅ |
+| AC-3 | Wrong email OR pw → single generic error, no enumeration, timing parity | `actions.ts` generic error, `auth.ts` dummy-hash | e2e "wrong password"/"unknown email…SAME error"; unit `auth.test.ts` timing-floor + parity | ✅ |
+| AC-4 | Tamper-evident HMAC-SHA256; forged/truncated fails `timingSafeEqual` | `session.ts:16,31,48`; `session-edge.ts` | unit `session.test.ts`, `session-parity.test.ts` (Node↔Edge identical), `session-edge.test.ts` | ✅ |
+| AC-5 | Bounded lifetime 8h; expired-but-signed rejected server-side | `constants.ts:47`; `session-payload.ts` `isWithinMaxAge` | unit `session.test.ts` "expired-but-signed", `session-payload.test.ts` | ✅ |
+| AC-6 | Logout clears cookie (maxAge=0) → login; AC-1 holds after | `actions.ts:98-103` | e2e "after logout, /admin redirects to login again" | ✅ |
+| AC-7 | Authed `/admin/login` → /admin | `middleware.ts:61-64` + `login/page.tsx` | e2e "while authed, /admin/login redirects to /admin" | ✅ |
+| AC-8 | Settings renders 4 fields prefilled, money in pesos | `settings/page.tsx` (`centsToPesos().toFixed(2)`) | e2e "settings form is pre-populated" (flat=500.00) — passes serially (see anomaly note) | ✅ |
+| AC-9 | Save → admin-client write → cache bust → success; storefront reflects | `store-settings.ts:updateStoreSettings` (`updateTag`); `actions.ts` | e2e round-trip: change flat→save→success→reload persists→cart shipping shows 742.00→restore (serial); integration UPDATE+updated_at; unit `actions.test.ts` | ✅ |
+| AC-10 | Reject blank/long name, bad email, negative/non-numeric/>2dp/overflow money; field errors; form stays filled | `settings-input.ts` strict parser | e2e "thousand-separator rejected", "blank name rejected"; unit `settings-input.test.ts`; integration DB CHECKs | ✅ |
+| AC-11 | Nav shell: store name, Settings live+active, Products/Orders disabled placeholders, logout | `admin-shell.tsx`, `admin-nav.tsx`, `constants.ts` `ADMIN_NAV_ITEMS` | e2e "Settings live+active; Products/Orders disabled" (aria-current/aria-disabled) | ✅ |
+| AC-12 | Secrets only via env.ts, server-only, never NEXT_PUBLIC_, absent from client bundle | `env.ts` `getAdminEnv()` | unit `secret-exposure.test.ts`; live: no `NEXT_PUBLIC_ADMIN_*`; Security stage confirmed 0 admin symbols in client chunks | ✅ |
+| AC-13 | Distinct cookie name (`posturpro_admin_session`), Path=/admin, storefront byte-unchanged | `constants.ts`, `middleware.ts` | e2e cookie-name assertion; storefront regression 78/78; `/`&`/en`=200 throughout | ✅ |
+| AC-14 | No migration (row+CHECKs+trigger already exist) | — | `ls migrations/` = 0001..0010 only; integration confirms singleton+CHECKs live | ✅ |
+| AC-15 | Login rate-limited per IP; generic error; env-flag escape hatch | `login-rate-limit.ts` (shared sliding-window) | unit `login-rate-limit.test.ts` (cap/release/strict `==="1"` hatch) | ✅ |
+| AC-16 | tsc strict, ESLint max-lines, no `any`/`!`, session fns ≤30 lines | all admin files <400 lines | `tsc --noEmit` 0 errors; `eslint .` clean; largest admin file 344 lines | ✅ |
 
-## 4 Hacker (Stage 11) Fixes — all present + regression-locked
-
-1. **not-payable → StaleCard** — `payment-panel.tsx:119,308` (`payment-panel-stale`,
-   role=status, Reload reveals authoritative state). ✅
-2. **rate-limited honest copy** — parameterized `UnavailableCard` with amber
-   `rateLimitedBody`/`rateLimitedRetry`, `payment-panel.tsx:109-112,175-178`. ✅
-3. **refund per-attempt idempotency key** — `refund.ts:116` fresh UUID per invocation. ✅
-4. **refunded-on-never-paid neutral copy** — `panel-state.ts:58-61` falls through to
-   neutral unpaid/pending copy when `refunded` on an order still `pending_payment`. ✅
-   Regression tests present in `payment-panel.test.tsx`, `panel-state.test.ts`,
-   `refund.test.ts`; i18n `stale.*`/`rateLimited.*` symmetric in both locales.
-   All green in the 1206-test unit run.
+**16/16 acceptance criteria met with concrete evidence.** All 10 documented edge cases
+are covered (verified in QA + Security reports and cross-checked against code:
+forged/expired/rotated cookie, missing env, concurrent save, money 0/locale-formatted,
+missing row, direct-POST-without-session, `/admin/` slash/case variants).
 
 ---
 
@@ -140,129 +71,112 @@ refund-failure state-unchanged, missing-creds friendly, malformed-body tolerated
 
 | Report | Score | Key Finding |
 |--------|-------|-------------|
-| Code Review | 6.5/10 → fixed | 2 CRITICAL (C-1 signature id source, C-2 refunded regression) + 8 MAJOR; all fixed in Stage 6, verified structurally resolved. |
-| QA | HIGH / SHIP (advisory) | 23/23 AC + 12/12 edge cases; every Stage-6 C/M locked by a discriminating test. |
-| UX | 9/10 / SHIP (advisory) | Paid-method label bug + expired-voucher honest copy fixed; a11y/keyboard/responsive verified. |
-| Security | SECURE (advisory) | 0 critical, 1 HIGH fixed (SEC-H-1 preference rate limit); 0 secrets; leaked-secret blast radius bounded by authoritative fetch + amount reconciliation. |
-| Architecture | 9/10 (A) / APPROVE | One money boundary, one write path, fail-closed trust boundary, claim-then-finalize durability; TD-1/TD-2/TD-3 flagged for T9/T12. |
-| Hacker | 3/10 chaos (PASS) | Trust boundary + money math held under adversarial webhook chaos; 4 client recovery-UX bugs fixed + regression-locked. |
+| Code Review (S5) | 8.5/10 APPROVE-WITH-FIXES | 0 critical; 4 MAJOR = test-coverage gaps around already-correct auth invariants; all closed in S6 |
+| Fix (S6) | — | 4/4 MAJOR + 5/7 MINOR + 3/4 NIT fixed; 4 items SKIPPED with justification (within-spec / platform / portable) |
+| QA (S7) | PASS / HIGH | AC 16/16, edges 10/10; caught + fixed a real **P1** (`$`-mangled password hash → login 100% broken), regression-locked by e2e |
+| UX (S8) | 9.5/10 | Every spec'd state renders/reachable; 2 className-only fixes (double-dim, disabled-label contrast); 0 a11y holes |
+| Security (S9) | SECURE | 0 critical / 0 high; 3 medium + 3 low accepted residuals; 0 secrets leaked; implemented dev-only fail-fast for the mangled-hash P1 |
+| Architecture (S10) | 9/10 APPROVE | Clean layering + acyclic admin graph; T11/T12 seams real; 2 items gated for **T12** (revocation, `/api` matcher) |
+| Hacker (S11) | SKIPPED | medium complexity — Security + Arch at full depth substitute for chaos testing on this trust boundary |
 
 ---
 
-## Discrepancies vs Prior Reports (found during verification — none block SHIP)
+## E2E Anomaly Investigated (why the verdict is still SHIP)
 
-1. **`tasks/hacker-report.md` on disk is the T7 report, not T8.** The file was never
-   overwritten for T8 (last touched by commit 0708911, title "T7 — Checkout & Order
-   Creation"). The actual T8 Stage-11 work IS committed (4474f8b, 13 files) and its
-   4 fixes + regression tests are present and passing (verified above). This is a
-   DOCUMENTATION gap, not a code gap — the chaos findings live in `pipeline-state.md`
-   Stage-11 notes, which are accurate. **Recommend regenerating hacker-report.md for
-   T8 before archiving the task.** Does not affect the code verdict.
-2. **Task prompt referenced commit `d23eff0`; that hash is NOT in history.** The real
-   Stage-11 T8 commit is `4474f8b`. The described work (`.next-*/` .gitignore
-   hardening, StaleCard, panel-state neutral copy, refund key, +regression tests) all
-   matches 4474f8b's diff. No integrity concern.
-3. **Suite counts slightly higher than prior stages** (unit 1206 vs QA's 1177 —
-   Security +6, Hacker +14 = 1206; integration 158 vs 154 — Hacker +4). Consistent
-   with the documented deltas across Stages 9/11. My numbers are the authoritative
-   current-tree counts.
+During the authoritative run I hit two DIFFERENT intermittent admin-e2e failures.
+I root-caused BOTH to **test-harness issues, not T10 product defects**, and proved
+the fix:
 
----
+1. **First run (mobile only, 29/30):** the AC-9 round-trip test's `add-to-cart`
+   button rendered `disabled` with label "Agotado". Diagnosis: the running **dev
+   server held a stale route/data cache** of the product page (MILANO stock depleted
+   by earlier storefront order-placing e2e in the same session) even after I reseeded
+   the DB — the exact cache-staleness class the SEQUENCING RULE warns about, here on
+   the dev server. Direct DB query confirmed MILANO stock was actually 8/11 (fresh);
+   only the server's cache was stale.
 
-## Remaining Concerns (residual — none are ship blockers within mocked scope)
+2. **Second run (both projects, 28/30):** a *different* test failed — AC-8
+   pre-population read flat rate `742.00` instead of the seed `500.00`. Diagnosis:
+   **parallel-worker race on the shared `store_settings` singleton** — Playwright's
+   `fullyParallel: true` (chromium + mobile + workers) let the AC-9 round-trip test
+   (which mutates the flat rate to 742.00 then restores it) run concurrently with the
+   AC-8 read test. Direct DB query confirmed the row was restored to 500.00.
 
-- **Live-sandbox validation (BLOCKED-ON-USER)**: MEDIUM residual — see confirm-list below.
-- **No durable "needs-review" surface (Arch TD-1)**: MED — chargeback/mediation/
-  unknown-status/amount-mismatch are `console.error`+200 only. Fix before T12.
-- **order_status_history has no structured transition_kind (Arch TD-2)**: MED — fix
-  before T9 hardcodes note string-matching.
-- **SEC-L-1** (attacker-influenced payment id logged plaintext, post-HMAC-gate): LOW,
-  accepted. **SEC-M-1** (clientIp trust model duplicated in two T7 files): LOW, accepted.
-- **2 pre-existing dev-only npm-audit moderates** (postcss via next build toolchain):
-  not a runtime path; accepted.
+3. **Proof:** on a **fresh dev server + fresh seed + `--workers=1` (serial)**, the
+   full `admin.spec.ts` passed **30/30** (both chromium + mobile). This matches QA's
+   documented 30/30 and confirms the auth/settings/cache-bust/storefront-reflection
+   product logic is correct. The failures were shared-mutable-state test isolation +
+   dev-server cache staleness, reproducible only under parallel/stale-cache execution.
 
----
-
-## BLOCKED-ON-USER — Live-Sandbox Residual (exact confirm-list)
-
-The following can be confirmed ONLY against a real Mercado Pago sandbox and are NOT
-covered by any test in this pipeline (all mock MP). Run the dev-done "How to Test"
-checklist against a real sandbox before launch:
-
-1. **OXXO/SPEI voucher field paths** — `transaction_details.external_resource_url` /
-   reference / expiry vs the `point_of_interaction.*` fallback. Read defensively today;
-   confirm the actual shape from a real OXXO/SPEI payment response.
-2. **Real x-signature format end-to-end** — a genuine MP-signed webhook against the
-   real secret (manifest id/request-id/ts composition, ts seconds-vs-ms).
-3. **Real payment-type → method mapping** — actual `payment_type_id`/`payment_method_id`
-   values MP returns for card/OXXO/SPEI/wallet vs `resolvePaymentMethod`.
-4. **Actual redirect round-trip** — `init_point` redirect → back_urls return →
-   webhook-before-redirect race resolving to the correct DB truth.
-
-**Env vars the user must set (never `NEXT_PUBLIC_` for the secrets):**
-- `MERCADOPAGO_ACCESS_TOKEN` (server-only SECRET — MP dashboard → Test credentials → Access Token)
-- `MERCADOPAGO_WEBHOOK_SECRET` (server-only SECRET — MP dashboard → Webhooks → Configure notifications → signing secret)
-- `MERCADOPAGO_PUBLIC_KEY` (only if a client Wallet Brick is later added; then `NEXT_PUBLIC_MERCADOPAGO_PUBLIC_KEY`; unused by the redirect surface)
-- `NEXT_PUBLIC_SITE_URL` (optional — only behind an opaque proxy)
+This is a genuine **test-quality** finding (logged below as a residual), but it does
+not gate the release: the feature is correct, and the suite is green under the
+correct, documented execution discipline (fresh server, serial, reseed-between).
 
 ---
 
-## Standing Gates (BOTH remain OPEN regardless of this SHIP verdict)
+## Residual Risks Accepted
 
-### (a) HUMAN-REVIEW GATE — BUILD_PLAN rule 3
-Payment code requires human sign-off before merge. **Do NOT check `[x] T8` in
-BUILD_PLAN.md.** This advisory SHIP does not authorize merge. (Same gate is still
-open for T7.)
+All previously documented; none blocking. Verified they are documented and did not
+re-block on them:
 
-### (b) Human-Reviewer Focus List
-The human reviewer must independently review:
-- **Webhook trust boundary** — `src/app/api/webhooks/mercadopago/route.ts` +
-  `src/lib/payments/webhook.ts` (signature-before-side-effect, fail-closed, C-1
-  query-id-only manifest, replay window, body cap).
-- **Amount reconciliation** — `src/lib/payments/process-payment.ts` (authoritative
-  Payment.get, zero-tolerance amount gate, claim-then-finalize dedupe).
-- **Refund execution** — `src/lib/payments/refund.ts` (server-only, over-refund
-  race-safety, per-attempt idempotency key, no raw-error echo).
-- **Order-state RPCs** — `supabase/migrations/0009_payments.sql` (SECURITY DEFINER,
-  empty search_path, service_role-only, regression guard, payment-only mode).
-- **Secret handling** — `src/lib/env.ts`, `src/lib/payments/mp-client.ts`
-  (server-only, no NEXT_PUBLIC secret).
-- **Preference-creation rate limit** — `src/app/[locale]/checkout/pay-actions.ts` +
-  `src/lib/payments/preference-rate-limit.ts` (SEC-H-1 fix).
+- **SEC-M-1** — Stateless session, no server-side revocation. Stolen cookie valid
+  ≤8h. In-spec (Phase-1). Mitigated by HttpOnly + Secure-in-prod + 8h max-age +
+  secret-rotation lever. **Arch flags this as a T12 GATE** (refund-capable session
+  must become revocable) — carry forward to T12 planning.
+- **SEC-M-2** — Per-IP best-effort limiter; IP-rotation/XFF-spoof bypass. In-spec;
+  real defense is scrypt cost + password entropy; `maxKeys=10,000` bounds memory-DoS.
+- **SEC-M-3** — `ADMIN_SESSION_MAX_AGE_SECONDS` Edge/Node override drift. Fail-safe
+  (Node authoritative; an Edge-default gate only ever forces a re-login, never grants).
+- **SEC-L-1** — dev fixture password in `e2e/admin.spec.ts` (ensure deploy pw ≠ fixture).
+- **SEC-L-2** — client-bundle secret scan should gate on a PROD build in CI (dev scan
+  clean; prod scan is the definitive gate).
+- **SEC-L-3** — case-sensitive `/admin` matcher (`/Admin`→404, documented non-bypass).
+- **Test isolation (NEW, this stage)** — `admin.spec.ts` AC-8 and AC-9 tests share
+  the mutable `store_settings` singleton; under `fullyParallel` they race. Run admin
+  e2e serially (`--workers=1`) or `test.describe.serial`, and restart the dev server /
+  reseed before it. LOW risk; test-only; does not affect product behavior.
+- **Pre-existing** — cross-project mobile stock-depletion e2e race (reseed-between);
+  2 moderate transitive `postcss` advisories (via `next`, build-time, not T10);
+  payment-panel unit flake (passed here in the full 1376/1376 run).
+- **Env-gated blocked-on-user** (unchanged by T10) — live MP/email side effects use
+  placeholder creds; authed prod-build e2e over HTTPS not run (Secure-cookie
+  constraint is intentional).
 
-### (c) T9 / T12 Design Inputs (from Arch, carry forward)
-- **Before T9:** add a structured `transition_kind`/`event_type` to the transition
-  record (Arch TD-2, effort S) so email routing doesn't string-match free-text
-  `note`. Payment-only refund rows have `from==to` — ambiguous without it.
-- **Before T12:** (1) add a durable "needs-review" surface (Arch TD-1) — a
-  `payment_review_queue` table or `orders.needs_review` flag written by the
-  flag/mismatch paths (currently console-only). (2) design cancel-with-stock-restore
-  as ONE atomic `cancel_order_with_restock` RPC (Arch TD-3) — two sequential app
-  calls risk partial-failure stock corruption; expired-voucher orders leak stock
-  until this exists. Also: `refundOrderPayment` trusts its caller for auth — T12
-  MUST gate it behind admin authorization.
+---
+
+## SHIP Criteria Checklist
+
+- [x] All tests pass — unit 1376/1376, integration 188/188, storefront e2e 78/78,
+      admin unauth 6/6, admin authed 30/30 (serial). Zero product-code failures.
+- [x] All acceptance criteria verified in code — 16/16 with concrete evidence.
+- [x] Quality score ≥ 8/10 — 9/10.
+- [x] No critical security vulnerabilities — 0 critical / 0 high (Security: SECURE).
+- [x] No critical bugs remaining — the P1 (`$`-mangled hash) was found + fixed + regression-locked.
+- [x] UX states complete — loading/empty/error/success all present (UX 9.5/10, 0 holes).
+- [x] Mobile responsive verified — no h-scroll 320–1440px; admin e2e green on Pixel 7.
+- [x] Auth enforced and data scoped — defense-in-depth (Edge → Node layout → per-action re-verify); single-owner singleton, no IDOR; secrets server-only, absent from client bundle.
+
+No NO-SHIP condition is present.
 
 ---
 
 ## What Was Built
 
-Mercado Pago Checkout Pro (redirect/preference) payment capture for the store: a
-pay-now flow on the token-addressed confirmation page (card/OXXO/SPEI/wallet), the
-repo's first webhook route with fail-closed HMAC signature verification and
-authoritative payment re-fetch, an idempotent claim-then-finalize event spine, a
-zero-tolerance amount-reconciliation guard, a single regression-guarded
-`advance_order_status` RPC as the only order-state write path, and a server-only
-refund execution API (full/partial, race-safe over-refund guard, durable ledger)
-for T12's admin. All money crosses one exact cents↔decimal boundary; no secret ever
-reaches the client bundle.
+A self-managed, HMAC-SHA256-signed, HttpOnly session-cookie admin authentication
+system (deliberately NOT Supabase Auth) fronting a locale-free `/admin` shell with a
+Store Settings editor. Defense-in-depth route protection (Edge Web-Crypto middleware
+gate → Node `node:crypto` layout guard → per-action re-verification), a single-owner
+scrypt credential check with dummy-hash timing parity and anti-enumeration, a per-IP
+rate limiter, and a strict pesos↔cents money parser. Store settings write through the
+RLS-bypass admin client and bust the storefront cache tag so the footer/checkout
+reflect changes on next render. Zero new dependencies, no schema migration.
+
+---
 
 ## Summary
 
-Every suite I ran myself is green (1442 total: unit 1206, integration 158, e2e
-8+24+46), tsc/eslint clean, the production build emits the webhook function, and the
-highest-risk trust-boundary code holds up to line-by-line reading and adversarial
-tests. T8 is technically ship-ready within the pipeline's mocked scope, but it is
-PAYMENT code: the HUMAN-REVIEW GATE and the BLOCKED-ON-USER live-sandbox validation
-both remain OPEN — do not merge or check off T8 until a human reviews the trust
-boundary and a real MP sandbox round-trip confirms the four residual field-path/
-signature/mapping/redirect items.
+T10 is a correct, security-literate, well-architected implementation of the app's top
+trust boundary that passes every gate under the documented execution discipline; the
+only anomalies encountered were test-harness isolation/caching artifacts (proven, not
+product defects) and pre-accepted residuals correctly deferred to Phase 2 / T12.
+**SHIP.**
