@@ -68,16 +68,24 @@ function LiveRow({ item, active }: { item: AdminNavItem; active: boolean }) {
 }
 
 function SoonRow({ item }: { item: AdminNavItem }) {
+  // Disabled placeholders are WCAG-exempt, but the label must still be readable
+  // so the operator can understand the roadmap. Keep the label at full
+  // `text-muted-foreground` (≈4.7:1) and let the dimmer icon + "próximamente"
+  // badge + `cursor-not-allowed` carry the "not yet available" signal instead of
+  // fading the text to near-invisibility.
   return (
     <span
       aria-disabled="true"
       data-testid={`admin-nav-${item.id}`}
-      className={cn(
-        rowClasses,
-        "cursor-not-allowed text-muted-foreground/60",
-      )}
+      className={cn(rowClasses, "cursor-not-allowed text-muted-foreground")}
     >
-      <HugeiconsIcon icon={item.icon} size={16} strokeWidth={2} aria-hidden />
+      <HugeiconsIcon
+        icon={item.icon}
+        size={16}
+        strokeWidth={2}
+        aria-hidden
+        className="text-muted-foreground/60"
+      />
       <span>{item.label}</span>
       <Badge variant="secondary" className="ml-auto text-[0.625rem] font-medium">
         próximamente

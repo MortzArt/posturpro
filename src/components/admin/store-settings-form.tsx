@@ -293,7 +293,7 @@ function MoneyField({
           aria-invalid={error ? true : undefined}
           aria-describedby={cn(helperId, error ? errorId : undefined)}
           data-testid={testid}
-          className="w-full bg-transparent px-3 py-2 text-sm tabular-nums text-foreground outline-none disabled:opacity-60"
+          className="w-full bg-transparent px-3 py-2 text-sm tabular-nums text-foreground outline-none"
         />
       </div>
       <p id={helperId} className="text-xs text-muted-foreground">
