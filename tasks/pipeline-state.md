@@ -3,8 +3,8 @@ Task: T11 — Admin: product management
 Tier: full-cycle (high)
 Stage: COMPLETE — T11 checked off in BUILD_PLAN.md (SHIP 9/10, 2026-07-15)
 Agent: none (pipeline done)
-Last Updated: 2026-07-15
-Notes: T10 and T11 both SHIPPED today (user-requested overnight run). Next unchecked buildable task: T12 — Admin: order management (blocked by T8, T9, T10 — all built; T8 held only by human-review gate). T13 (static pages, blocked by T2) is also unblocked and independent.
+Last Updated: 2026-07-23
+Notes: T10 and T11 SHIPPED 2026-07-15. 2026-07-23: owner human review passed Phases 1–4 → T7 CHECKED OFF; T8 held only by the live MP sandbox test (Phase 5, needs owner's MERCADOPAGO_* test keys). Next unchecked buildable task: T13 (static pages, unblocked, independent). T12 (blocked by T8) stays blocked until T8's Phase 5 runs or the owner defers it per Phase 7. Also shipped 2026-07-23 (outside pipeline, ad-hoc fixes): cart locale-switch wipe fix, post-order catalog cache bust, cart sold-out badges, discount Apply pre-check (commits 4867a0e..a61d9f5).
 
 === T11 COMPLETE — SHIP (Stage 12, quality 9/10, confidence HIGH, 2026-07-15) ===
 - Pipeline: full-cycle HIGH, all 12 stages. S5 review 8/10 → S6 all 9 majors fixed+locked; S7 QA PASS HIGH (AC 35/35); S8 UX 9/10 (critical keyboard-tree fix); S9 SECURE (0 crit/high); S10 arch APPROVE 9/10; S11 hacker found+fixed int4-overflow (CRITICAL-class), variant double-submit, CSV blank-row bug — chaos score 2/10.
@@ -28,10 +28,9 @@ Notes: T10 and T11 both SHIPPED today (user-requested overnight run). Next unche
 - 5 product-improvement suggestions in tasks/hacker-report.md (feed future tickets).
 
 === STANDING GATES (carry forward — do not drop) ===
-- HUMAN-REVIEW GATE (BUILD_PLAN rule 3): T7 and T8 have advisory SHIP verdicts but remain UNCHECKED until the user manually reviews. Do not check them off.
-- T7 focus: 0008_checkout.sql create_order SECURITY DEFINER; checkout action trust boundary; rate-limit best-effort caveat (CHECKOUT_RATE_LIMIT_DISABLED unset in real deploys); money math.
-- T8 focus: webhook signature verification, amount reconciliation, refund execution, RPC transition/idempotency, secret handling. T8 LIVE-SANDBOX blocked-on-user (placeholder MERCADOPAGO_* keys).
-- Include in same review pass: T9 checkout/payment diffs (bdd37bc, 6c19265) + clean-code A4 commit (form-parsing extraction, client-ip canonicalization).
+- HUMAN-REVIEW GATE UPDATE (2026-07-23): owner completed action-plan Phases 1–4 (setup, happy-path purchase, cheat spot-checks: oversell, discount abuse, discount math, token tampering, double-submit) — ALL PASSED. T7 gate CLOSED → T7 checked off in BUILD_PLAN. T8 stays UNCHECKED: sole remaining gate is the live MP sandbox test (action-plan Phase 5), blocked-on-user (placeholder MERCADOPAGO_* keys in .env.local). Owner may alternatively declare Phase 5 "consciously scheduled before go-live" (Phase 7 wording) to close T8 early — their call, do not assume.
+- T8 remaining focus when keys arrive: 4 live flows (approved card, OXXO/SPEI pending→paid, declined card, refund [defer to T12 button]) + replayed-webhook rejection.
+- T9 checkout/payment diffs (bdd37bc, 6c19265) + clean-code A4 commit were included in the reviewed scope.
 - T9 LIVE-SEND blocked-on-user: no EMAIL_* vars in .env.local (EMAIL_API_KEY/Resend, EMAIL_FROM_ADDRESS, EMAIL_OWNER_ADDRESS, NEXT_PUBLIC_SITE_ORIGIN; dev EMAIL_DEV_PREVIEW=1).
 - ADVISORY: user may want to eyeball the admin auth core (src/lib/admin/{session,session-edge,auth}.ts + middleware /admin branch) — 0 crit/high across two dedicated security stages, but it IS the trust boundary.
 - T13 seam (from T9): contact_relay template + send function exist, NOT live-wired — wire from contact form.

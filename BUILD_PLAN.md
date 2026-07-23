@@ -24,10 +24,10 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 - [x] **T6 — Cart** (tier: standard)
   Persistent cart for guests (survives refresh/return), cart page with quantity edit/remove/line totals, free-shipping progress toward threshold. `blocked by: T4`
 
-- [ ] **T7 — Checkout & order creation** (tier: full-cycle)
+- [x] **T7 — Checkout & order creation** (tier: full-cycle; SHIP 9/10; owner human review passed 2026-07-23 — action-plan Phases 2–4)
   Guest checkout flow: contact info, shipping address with Mexican postal-code/state validation, delivery notes, order summary step, discount-code field (validates against codes table), flat-rate/free-threshold shipping calculation from store settings, stock reservation against overselling, order record creation, confirmation page. No payment capture yet (T8). `blocked by: T6`
 
-- [ ] **T8 — Mercado Pago integration (sandbox)** (tier: full-cycle)
+- [ ] **T8 — Mercado Pago integration (sandbox)** (tier: full-cycle; SHIP advisory 9/10; owner review Phases 1–4 passed 2026-07-23 — remaining gate: live-sandbox test (action-plan Phase 5), needs real MERCADOPAGO_* test keys)
   Card, OXXO, SPEI, MP wallet via sandbox credentials from env vars. Pending-payment state for OXXO/SPEI with instructions; webhook endpoint with signature verification and idempotent handling to confirm payments and advance orders; card-decline retry flow; refund execution API used by admin (T12). CRITICAL: payment code requires human review before merge — flag for the user. `blocked by: T7`
 
 - [x] **T9 — Transactional emails** (tier: standard)

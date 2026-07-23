@@ -30,31 +30,31 @@ No actions here, just read so you know what you're signing off on.
 - A fake or replayed payment message is rejected. A repeated message never double-processes an order or double-refunds.
 - Automated review rated the payment code the strongest part of the whole codebase (9/10). **But every test used a fake Mercado Pago — nothing was tried against the real sandbox. That's your job in Phase 4.**
 
-- [ ] I've read the summary above and understand what I'm confirming.
+- [x] I've read the summary above and understand what I'm confirming.
 
 ---
 
 ## Phase 2 — Setup (5 minutes)
 
-- [ ] **Do:** Make sure the local database is running. In a terminal, from the project folder, run:
+- [x] **Do:** Make sure the local database is running. In a terminal, from the project folder, run:
   ```bash
   npx supabase status
   ```
   **✓ Passed if:** you see a list of running services with URLs (API, Studio, etc.). If it says it's not running, run `npx supabase start` first.
 
-- [ ] **Do:** Reset to clean sample data so your tests start fresh:
+- [x] **Do:** Reset to clean sample data so your tests start fresh:
   ```bash
   npm run db:reset && npm run db:seed
   ```
   **✓ Passed if:** it finishes without errors and prints seed summary lines.
 
-- [ ] **Do:** Start the store (leave this running in its own terminal):
+- [x] **Do:** Start the store (leave this running in its own terminal):
   ```bash
   npm run dev
   ```
   **✓ Passed if:** it prints `Local: http://localhost:3000` and the page opens in your browser showing chairs.
 
-- [ ] **Do:** Open **http://127.0.0.1:54323** (Supabase Studio) in another tab, click **Table Editor**.
+- [x] **Do:** Open **http://127.0.0.1:54323** (Supabase Studio) in another tab, click **Table Editor**.
   **✓ Passed if:** you can see tables including `orders`, `products`, and `discount_codes`.
 
 ---
@@ -63,16 +63,16 @@ No actions here, just read so you know what you're signing off on.
 
 Do a normal, honest purchase first so you know the happy path works.
 
-- [ ] **Do:** Go to http://localhost:3000, open a product (e.g. **Silla de Oficina Nova**, MX$2,499), pick a color, click **"Agregar al carrito."**
+- [x] **Do:** Go to http://localhost:3000, open a product (e.g. **Silla de Oficina Nova**, MX$2,499), pick a color, click **"Agregar al carrito."**
   **✓ Passed if:** a cart badge/count appears and the chair is in your cart.
 
-- [ ] **Do:** Open the cart (**carrito**), review it, and proceed to checkout (**"Proceder al pago"**).
+- [x] **Do:** Open the cart (**carrito**), review it, and proceed to checkout (**"Proceder al pago"**).
   **✓ Passed if:** you land on the "Finalizar compra" page with an order summary on the side.
 
-- [ ] **Do:** Fill in contact info + a Mexican shipping address, then click **"Realizar pedido."**
+- [x] **Do:** Fill in contact info + a Mexican shipping address, then click **"Realizar pedido."**
   **✓ Passed if:** the button shows "Procesando…" then you're taken to a **"Pedido confirmado"** confirmation page with an order number like **PP-000001**.
 
-- [ ] **Do:** In Studio → Table Editor → **orders**, find your new row (newest `created_at`).
+- [x] **Do:** In Studio → Table Editor → **orders**, find your new row (newest `created_at`).
   **✓ Passed if:** the `total_cents` equals the price you saw (e.g. `249900` for one Nova = MX$2,499), the shipping address matches what you typed, and `status` = `pending_payment`.
 
 ---
@@ -81,19 +81,19 @@ Do a normal, honest purchase first so you know the happy path works.
 
 These replace "reading the security code." Each is a real thing you do; the app should stop you.
 
-- [ ] **Do (buy more than exists):** Find **Silla Ergonómica Junior** and choose its **Blanco** (white) variant — that one is deliberately stocked at 0. Try to add it and check out. Also try setting a huge quantity (like 999) on any product and checking out.
+- [x] **Do (buy more than exists):** Find **Silla Ergonómica Junior** and choose its **Blanco** (white) variant — that one is deliberately stocked at 0. Try to add it and check out. Also try setting a huge quantity (like 999) on any product and checking out.
   **✓ Passed if:** you get an out-of-stock / "un artículo se agotó" style message and **no** order is created (check `orders` in Studio — no new row).
 
-- [ ] **Do (reuse / abuse a discount):** At checkout, type the discount code **`AHORRA10`** (10% off) — it should apply. Then try these in separate attempts: **`EXPIRADO`** (expired), **`MINIMO5000`** (only valid on carts over MX$5,000), and a made-up code like **`NOEXISTE`**.
+- [x] **Do (reuse / abuse a discount):** At checkout, type the discount code **`AHORRA10`** (10% off) — it should apply. Then try these in separate attempts: **`EXPIRADO`** (expired), **`MINIMO5000`** (only valid on carts over MX$5,000), and a made-up code like **`NOEXISTE`**.
   **✓ Passed if:** `AHORRA10` reduces the total by 10%; the expired/too-small/fake codes are politely rejected and checkout still lets you buy at full price (a bad code never blocks the sale).
 
-- [ ] **Do (check the discount is real, not just visual):** Place an order with `AHORRA10` applied. In Studio → **orders**, look at your new row.
+- [x] **Do (check the discount is real, not just visual):** Place an order with `AHORRA10` applied. In Studio → **orders**, look at your new row.
   **✓ Passed if:** `discount_cents` is exactly 10% of the subtotal and `total_cents` = subtotal + shipping − discount. The math adds up to the cent.
 
-- [ ] **Do (peek at someone else's order):** After a confirmation page loads, look at its web address — it ends in a long random code (the confirmation token). Change a few characters of that code in the address bar and press Enter.
+- [x] **Do (peek at someone else's order):** After a confirmation page loads, look at its web address — it ends in a long random code (the confirmation token). Change a few characters of that code in the address bar and press Enter.
   **✓ Passed if:** you get a "not found" page, not someone else's order. (Order numbers like PP-000001 are guessable; the confirmation link is not — this proves people can't snoop on other orders by guessing.)
 
-- [ ] **Do (double-click / double-submit):** On the checkout page, click **"Realizar pedido"** and immediately try to click it again, or refresh-and-resubmit fast.
+- [x] **Do (double-click / double-submit):** On the checkout page, click **"Realizar pedido"** and immediately try to click it again, or refresh-and-resubmit fast.
   **✓ Passed if:** only **one** order appears in the `orders` table, not two. Stock in the `products` table dropped by the right amount only once.
 
 ---
@@ -153,7 +153,7 @@ Confirmation and payment emails are a later task (T9) but you can preview them n
 
 ## Phase 7 — Sign-off
 
-- [ ] I completed Phases 2–4 (checkout + cheat spot-checks) and everything passed.
+- [x] I completed Phases 2–4 (checkout + cheat spot-checks) and everything passed. *(owner, 2026-07-23)*
 - [ ] I completed Phase 5 (live Mercado Pago sandbox) — or I've consciously scheduled it before going live.
 - [ ] (Optional) I previewed the emails in Phase 6.
 
