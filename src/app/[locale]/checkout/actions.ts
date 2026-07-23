@@ -24,6 +24,7 @@
  * All commerce writes go through the admin client (RLS denies anon, AC-12).
  */
 import { getLocale } from "next-intl/server";
+import { bustCatalogTags } from "@/lib/admin/products/cache-tags";
 import { getStoreSettingsStatic } from "@/lib/store-settings";
 import {
   sendOrderConfirmation,
@@ -175,6 +176,13 @@ async function runCheckout(
   //    reuse) triggers the sends; a reused order already sent them (the
   //    email_sends ledger also guards, but skipping avoids the wasted work).
   if (!created.reused) {
+    // The RPC just decremented stock and bumped sales_count — bust the
+    // storefront catalog cache (listings, facets, and every PDP carry the
+    // broad `catalog` tag) so a sold-out variant shows "Agotado" immediately
+    // instead of after the revalidate window lapses. Runs only for a
+    // genuinely new order (post rate-limit, so it cannot be spammed into a
+    // cache-bust DoS); an idempotent replay changed no stock.
+    bustCatalogTags();
     await triggerOrderEmails(created.orderId);
   }
 
