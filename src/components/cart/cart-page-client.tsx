@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import { checkCartStock } from "@/app/[locale]/carrito/actions";
 import { useCart } from "@/components/cart/cart-provider";
 import { CartLineRow } from "@/components/cart/cart-line-row";
 import { OrderSummary } from "@/components/cart/order-summary";
@@ -9,11 +10,13 @@ import { FreeShippingProgress } from "@/components/cart/free-shipping-progress";
 import { CartEmptyState } from "@/components/cart/cart-empty-state";
 import { interpolate } from "@/lib/interpolate";
 import {
+  CART_STOCK_CHECK_DEBOUNCE_MS,
   CATALOG_PATH,
   CHECKOUT_PATH,
   MAX_CART_ITEM_QUANTITY,
 } from "@/lib/config";
 import {
+  cartLineKey,
   lineKey,
   subtotalCents,
   totalItemCount,
@@ -57,6 +60,7 @@ export function CartPageClient({
   const t = useTranslations("cart");
   const { lines, hydrated, setQuantity, removeItem } = useCart();
   const [announcement, setAnnouncement] = useState("");
+  const soldOutKeys = useLiveStockCheck(hydrated, lines);
 
   const handleQuantityChange = useCallback(
     (line: CartLine, next: number) => {
@@ -98,6 +102,7 @@ export function CartPageClient({
       ) : (
         <PopulatedCart
           lines={lines}
+          soldOutKeys={soldOutKeys}
           flatRateCents={flatRateCents}
           freeThresholdCents={freeThresholdCents}
           onQuantityChange={handleQuantityChange}
@@ -109,8 +114,69 @@ export function CartPageClient({
   );
 }
 
+/** Shared immutable empty set (stable identity for the no-issues state). */
+const NO_SOLD_OUT_KEYS: ReadonlySet<string> = new Set();
+
+/**
+ * Live stock check for the rendered cart lines (best-effort, read-only). The
+ * cart is a localStorage snapshot, so a line added before its variant sold out
+ * still renders as buyable — this re-checks the lines server-side (the same
+ * re-read checkout performs at submit) and returns the line keys that are no
+ * longer purchasable so the rows can badge "Agotado" proactively.
+ *
+ * Debounced so a burst of stepper clicks coalesces into one round-trip; a
+ * stale response (an older in-flight check finishing after a newer one fired)
+ * is dropped via the sequence guard. A failed check keeps the last known
+ * state — this is a progressive enhancement; checkout remains the gate.
+ */
+function useLiveStockCheck(
+  hydrated: boolean,
+  lines: CartLine[],
+): ReadonlySet<string> {
+  const [soldOutKeys, setSoldOutKeys] = useState<ReadonlySet<string>>(NO_SOLD_OUT_KEYS);
+  const requestSeq = useRef(0);
+
+  useEffect(() => {
+    if (!hydrated || lines.length === 0) {
+      return;
+    }
+    const seq = ++requestSeq.current;
+    const payload = lines.map(({ productId, variantId, quantity }) => ({
+      productId,
+      variantId,
+      quantity,
+    }));
+    const timer = setTimeout(() => {
+      checkCartStock(payload)
+        .then((result) => {
+          if (seq !== requestSeq.current || result.status !== "ok") {
+            return;
+          }
+          setSoldOutKeys(
+            result.issues.length === 0
+              ? NO_SOLD_OUT_KEYS
+              : new Set(
+                  result.issues.map((issue) =>
+                    cartLineKey(issue.productId, issue.variantId),
+                  ),
+                ),
+          );
+        })
+        .catch((caught: unknown) => {
+          const message = caught instanceof Error ? caught.message : "unknown";
+          console.warn(`[cart] stock check request failed: ${message}`);
+        });
+    }, CART_STOCK_CHECK_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [hydrated, lines]);
+
+  return soldOutKeys;
+}
+
 interface PopulatedCartProps {
   lines: CartLine[];
+  /** Line keys whose product/variant is no longer purchasable (live check). */
+  soldOutKeys: ReadonlySet<string>;
   flatRateCents: number | null;
   freeThresholdCents: number | null;
   onQuantityChange: (line: CartLine, next: number) => void;
@@ -120,6 +186,7 @@ interface PopulatedCartProps {
 
 function PopulatedCart({
   lines,
+  soldOutKeys,
   flatRateCents,
   freeThresholdCents,
   onQuantityChange,
@@ -155,6 +222,7 @@ function PopulatedCart({
             <CartLineRow
               key={lineKey(line)}
               line={line}
+              outOfStock={soldOutKeys.has(lineKey(line))}
               onQuantityChange={(next) => onQuantityChange(line, next)}
               onRemove={() => onRemove(line)}
               maxQuantity={MAX_CART_ITEM_QUANTITY}

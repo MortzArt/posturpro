@@ -47,3 +47,32 @@ export const CHECKOUT_PATH = "/checkout" as const;
  * window re-adds and resets this timer (interruptible).
  */
 export const ADD_TO_CART_CONFIRM_MS = 1_500;
+
+/**
+ * Debounce (ms) before the cart page's live stock check fires after the lines
+ * change (mount, quantity edit, remove). Long enough to coalesce a burst of
+ * stepper clicks into one round-trip, short enough to feel immediate.
+ */
+export const CART_STOCK_CHECK_DEBOUNCE_MS = 400;
+
+/**
+ * Ceiling on how many cart lines the public stock-check action will accept in
+ * one call. The client sends the real cart (naturally small); the cap bounds a
+ * hand-crafted request so it can never fan out an unbounded `.in()` query.
+ */
+export const CART_STOCK_CHECK_MAX_LINES = 60;
+
+/**
+ * Per-IP sliding-window limit for the public cart stock-check action (read-only
+ * but uncached — each call is a live DB read, so it must not be free to spam).
+ * Generous: a real shopper triggers at most a few checks per minute (debounced
+ * per lines-change); 30/min never throttles legitimate use.
+ */
+export const CART_STOCK_CHECK_MAX_PER_WINDOW = 30;
+export const CART_STOCK_CHECK_WINDOW_MS = 60_000;
+
+/**
+ * Ceiling on distinct IP keys the stock-check limiter tracks (memory bound,
+ * mirrors the checkout limiter's discipline).
+ */
+export const CART_STOCK_CHECK_MAX_KEYS = 10_000;
