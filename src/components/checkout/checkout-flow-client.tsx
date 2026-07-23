@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert02Icon, ArrowLeft01Icon, Refresh01Icon } from "@hugeicons/core-free-icons";
 import { useTranslations } from "next-intl";
@@ -12,10 +12,11 @@ import { CheckoutFields } from "@/components/checkout/checkout-fields";
 import { CheckoutSummary } from "@/components/checkout/checkout-summary";
 import { CheckoutSkeleton } from "@/components/checkout/checkout-skeleton";
 import { StickyCheckoutBar } from "@/components/checkout/sticky-checkout-bar";
-import { placeOrder } from "@/app/[locale]/checkout/actions";
+import { checkDiscountCode, placeOrder } from "@/app/[locale]/checkout/actions";
 import {
   initialCheckoutFormState,
   type CheckoutFormState,
+  type DiscountResult,
 } from "@/app/[locale]/checkout/checkout-form-state";
 import type { AddressField } from "@/lib/checkout/address";
 import { CART_PATH, CATALOG_PATH, confirmationPath } from "@/lib/config";
@@ -118,6 +119,7 @@ function CheckoutBody({ flatRateCents, freeThresholdCents, state, formAction, pe
   const labels = useCheckoutLabels();
   const firstInvalidRef = useRef<FocusableFieldElement>(null);
   const [discountCode, setDiscountCode] = useState(state.values?.discountCode ?? "");
+  const discountPreCheck = useDiscountPreCheck(state.submissionId);
   const idempotencyKey = useIdempotencyKey(state.submissionId);
   const firstInvalidField =
     state.status === "invalid" ? firstInvalidFieldInDomOrder(state.fieldErrors) : null;
@@ -147,11 +149,18 @@ function CheckoutBody({ flatRateCents, freeThresholdCents, state, formAction, pe
       ? applyLivePrices(snapshotLines, state.liveUnitPrices)
       : { lines: snapshotLines, subtotalCents: subtotalCents(lines) };
   const shipping = computeShipping(subtotal, { flatRateCents, freeThresholdCents });
-  const discountCents = state.discount?.kind === "applied" ? state.discount.discountCents : 0;
+  // The submit result is authoritative once present for the current attempt;
+  // between submits, the Apply-button pre-check previews the same server
+  // decision (`useDiscountPreCheck` drops the preview when a submit resolves).
+  const discountResult: DiscountResult =
+    discountPreCheck.preview.kind !== "none"
+      ? discountPreCheck.preview
+      : (state.discount ?? { kind: "none" });
+  const discountCents = discountResult.kind === "applied" ? discountResult.discountCents : 0;
   const total = Math.max(0, totalCents(subtotal, shipping) - discountCents);
   const submitDisabled = pending || shipping.kind === "unavailable";
   const banner = resolveBanner(state, labels.banner);
-  const liveMessage = resolveLiveMessage(state, pending, t);
+  const liveMessage = resolveLiveMessage(state, discountResult, pending, t);
 
   return (
     <>
@@ -195,9 +204,16 @@ function CheckoutBody({ flatRateCents, freeThresholdCents, state, formAction, pe
               totalCents={total}
               submitDisabled={submitDisabled}
               pending={pending}
-              discount={state.discount ?? { kind: "none" }}
+              discount={discountResult}
               discountCodeValue={discountCode}
-              onDiscountCodeChange={setDiscountCode}
+              onDiscountCodeChange={(value) => {
+                // Editing the code invalidates any pre-check result for the
+                // previous string (and cancels an in-flight check).
+                setDiscountCode(value);
+                discountPreCheck.clear();
+              }}
+              onDiscountApply={() => discountPreCheck.apply(discountCode, subtotal)}
+              discountChecking={discountPreCheck.checking}
               lineIssues={state.lineErrors}
               liveUnitPrices={state.liveUnitPrices}
               labels={labels.summary}
@@ -235,6 +251,75 @@ function SerializedCartInputs({
       <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
     </>
   );
+}
+
+/**
+ * The discount pre-check (the field's Apply button). Calls the read-only
+ * `checkDiscountCode` action and holds the DISPLAY-ONLY preview result; the
+ * submit path re-validates from scratch, so a stale preview can never change
+ * what is charged. A sequence guard drops out-of-date responses (rapid clicks /
+ * an edit racing an in-flight check), and a resolved submit clears the preview
+ * so the two server results can never disagree on screen. A thrown call (the
+ * action itself never throws — this covers the network) degrades to the same
+ * "couldn't verify" note the submit path uses (AC-7).
+ */
+const NO_PREVIEW: DiscountResult = { kind: "none" };
+
+function useDiscountPreCheck(submissionId: number): {
+  preview: DiscountResult;
+  checking: boolean;
+  apply: (code: string, subtotalCents: number) => void;
+  clear: () => void;
+} {
+  // The result is STAMPED with the submissionId it was fetched under and only
+  // honored while that attempt is still current — a resolved submit (which
+  // increments submissionId and carries its own authoritative discount result)
+  // silently retires the preview with no state reset needed.
+  const [preview, setPreview] = useState<{
+    result: DiscountResult;
+    forSubmission: number;
+  } | null>(null);
+  const [checking, setChecking] = useState(false);
+  const seqRef = useRef(0);
+
+  const clear = useCallback(() => {
+    seqRef.current += 1;
+    setPreview(null);
+    setChecking(false);
+  }, []);
+
+  const apply = useCallback(
+    (code: string, subtotalCents: number) => {
+      const seq = ++seqRef.current;
+      setChecking(true);
+      checkDiscountCode(code, subtotalCents)
+        .then((result) => {
+          if (seq === seqRef.current) {
+            setPreview({ result, forSubmission: submissionId });
+            setChecking(false);
+          }
+        })
+        .catch((caught: unknown) => {
+          const message = caught instanceof Error ? caught.message : "unknown";
+          console.warn(`[checkout] discount pre-check request failed: ${message}`);
+          if (seq === seqRef.current) {
+            setPreview({ result: { kind: "degraded" }, forSubmission: submissionId });
+            setChecking(false);
+          }
+        });
+    },
+    [submissionId],
+  );
+
+  return {
+    preview:
+      preview !== null && preview.forSubmission === submissionId
+        ? preview.result
+        : NO_PREVIEW,
+    checking,
+    apply,
+    clear,
+  };
 }
 
 /** A stable idempotency key per submission attempt (AC-14, edge 7). */
@@ -378,6 +463,7 @@ function resolveBanner(
 /** The aria-live announcement for the current state. */
 function resolveLiveMessage(
   state: CheckoutFormState,
+  discount: DiscountResult,
   pending: boolean,
   t: ReturnType<typeof useTranslations>,
 ): string {
@@ -387,12 +473,12 @@ function resolveLiveMessage(
   if (state.status === "success") {
     return t("liveRegion.orderReceived");
   }
-  if (state.discount?.kind === "applied") {
+  if (discount.kind === "applied") {
     return interpolate(t.raw("liveRegion.discountApplied"), {
-      amount: formatMXN(state.discount.discountCents),
+      amount: formatMXN(discount.discountCents),
     });
   }
-  if (state.discount?.kind === "invalid") {
+  if (discount.kind === "invalid") {
     return t("liveRegion.discountInvalid");
   }
   return "";

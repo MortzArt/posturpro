@@ -60,6 +60,8 @@ interface CheckoutSummaryProps {
   discount: DiscountResult;
   discountCodeValue: string;
   onDiscountCodeChange: (value: string) => void;
+  onDiscountApply: () => void;
+  discountChecking: boolean;
   lineIssues?: Record<string, CheckoutLineIssue>;
   liveUnitPrices?: Record<string, number>;
   labels: CheckoutSummaryLabels;
@@ -78,6 +80,8 @@ export function CheckoutSummary({
   discount,
   discountCodeValue,
   onDiscountCodeChange,
+  onDiscountApply,
+  discountChecking,
   lineIssues,
   liveUnitPrices,
   labels,
@@ -108,6 +112,8 @@ export function CheckoutSummary({
         <DiscountCodeField
           value={discountCodeValue}
           onChange={onDiscountCodeChange}
+          onApply={onDiscountApply}
+          checking={discountChecking}
           result={discount}
           disabled={pending}
           labels={labels.discountLabels}

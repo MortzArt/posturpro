@@ -13,6 +13,8 @@ import type { DiscountResult } from "@/app/[locale]/checkout/checkout-form-state
 const labels: DiscountFieldLabels = {
   label: "Código de descuento",
   placeholder: "Código",
+  apply: "Aplicar",
+  checking: "Verificando…",
   appliedLabel: "Código {code} aplicado",
   savings: "Ahorras {amount}",
   remove: "Quitar",
@@ -30,17 +32,20 @@ function renderField(
   overrides: Partial<React.ComponentProps<typeof DiscountCodeField>> = {},
 ) {
   const onChange = vi.fn();
+  const onApply = vi.fn();
   render(
     <DiscountCodeField
       value=""
       onChange={onChange}
+      onApply={onApply}
+      checking={false}
       result={{ kind: "none" }}
       disabled={false}
       labels={labels}
       {...overrides}
     />,
   );
-  return { onChange };
+  return { onChange, onApply };
 }
 
 describe("DiscountCodeField", () => {
@@ -107,6 +112,30 @@ describe("DiscountCodeField", () => {
     expect(screen.getByTestId("checkout-discount-remove")).toBeDisabled();
   });
 
+  it("Apply button pre-checks the code (click and Enter), never submits", () => {
+    const { onApply } = renderField({ value: "AHORRA10" });
+    const apply = screen.getByTestId("checkout-discount-apply");
+    // type="button" — clicking or pressing Enter must never submit the form.
+    expect(apply).toHaveAttribute("type", "button");
+    fireEvent.click(apply);
+    expect(onApply).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(screen.getByTestId("checkout-discount-input"), { key: "Enter" });
+    expect(onApply).toHaveBeenCalledTimes(2);
+  });
+
+  it("disables Apply for an empty code and while a check is in flight", () => {
+    const { onApply } = renderField({ value: "   " });
+    expect(screen.getByTestId("checkout-discount-apply")).toBeDisabled();
+    fireEvent.keyDown(screen.getByTestId("checkout-discount-input"), { key: "Enter" });
+    expect(onApply).not.toHaveBeenCalled();
+
+    cleanup();
+    renderField({ value: "AHORRA10", checking: true });
+    const apply = screen.getByTestId("checkout-discount-apply");
+    expect(apply).toBeDisabled();
+    expect(apply).toHaveTextContent("Verificando…");
+  });
+
   it("never renders a submit-blocking control (only inline feedback)", () => {
     renderField({ result: { kind: "invalid", reason: "unknown" } });
     // The field contains no button of type submit — a bad code never blocks (AC-7).
@@ -125,6 +154,8 @@ describe("DiscountCodeField none/idle result", () => {
       <DiscountCodeField
         value=""
         onChange={() => {}}
+        onApply={() => {}}
+        checking={false}
         result={{ kind: "none" } satisfies DiscountResult}
         disabled={false}
         labels={labels}

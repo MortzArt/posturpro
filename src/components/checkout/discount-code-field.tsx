@@ -10,11 +10,14 @@ import { cn } from "@/lib/utils";
 
 /**
  * DiscountCodeField (T7 AC-6, AC-7) — a controlled code input carried into the
- * single `placeOrder` submit; the outcome (applied / invalid / degraded) is
- * rendered from the returned `CheckoutFormState.discount`, never claimed by the
- * client. A bad code NEVER blocks submit (AC-7) — the input just shows an inline
- * note and the order proceeds at full price. Validation is server-side; this is
- * purely display + a bound `<input>`.
+ * single `placeOrder` submit, plus an "Apply" button that pre-checks the code
+ * via the read-only `checkDiscountCode` action so the shopper learns whether it
+ * works BEFORE placing the order. The rendered outcome (applied / invalid /
+ * degraded) always comes from a server result — pre-check or submit — never
+ * claimed by the client. A bad code NEVER blocks submit (AC-7) — the input just
+ * shows an inline note and the order proceeds at full price. Enter inside the
+ * input triggers the pre-check, not the whole-form submit (a shopper pressing
+ * Enter on a code expects validation, not an order).
  */
 
 const fieldClasses =
@@ -23,6 +26,8 @@ const fieldClasses =
 export interface DiscountFieldLabels {
   label: string;
   placeholder: string;
+  apply: string;
+  checking: string;
   appliedLabel: string;
   savings: string;
   remove: string;
@@ -33,6 +38,10 @@ export interface DiscountFieldLabels {
 interface DiscountCodeFieldProps {
   value: string;
   onChange: (value: string) => void;
+  /** Pre-check the current code (the Apply button / Enter in the input). */
+  onApply: () => void;
+  /** `true` while a pre-check round-trip is in flight. */
+  checking: boolean;
   result: DiscountResult;
   disabled: boolean;
   labels: DiscountFieldLabels;
@@ -41,12 +50,15 @@ interface DiscountCodeFieldProps {
 export function DiscountCodeField({
   value,
   onChange,
+  onApply,
+  checking,
   result,
   disabled,
   labels,
 }: DiscountCodeFieldProps) {
   const note = resolveNote(result, labels);
   const applied = result.kind === "applied";
+  const applyDisabled = disabled || checking || value.trim().length === 0;
 
   return (
     <div className="flex flex-col gap-1.5" data-testid="checkout-discount-field">
@@ -64,20 +76,40 @@ export function DiscountCodeField({
           labels={labels}
         />
       ) : null}
-      <input
-        id="checkout-discount-code"
-        name="discountCode"
-        type="text"
-        autoCapitalize="characters"
-        autoComplete="off"
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={labels.placeholder}
-        aria-invalid={note?.tone === "error" ? true : undefined}
-        data-testid="checkout-discount-input"
-        className={cn(fieldClasses, "uppercase disabled:opacity-60")}
-      />
+      <div className="flex gap-2">
+        <input
+          id="checkout-discount-code"
+          name="discountCode"
+          type="text"
+          autoCapitalize="characters"
+          autoComplete="off"
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter validates the code instead of submitting the whole form.
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (!applyDisabled) {
+                onApply();
+              }
+            }
+          }}
+          placeholder={labels.placeholder}
+          aria-invalid={note?.tone === "error" ? true : undefined}
+          data-testid="checkout-discount-input"
+          className={cn(fieldClasses, "min-w-0 flex-1 uppercase disabled:opacity-60")}
+        />
+        <button
+          type="button"
+          onClick={onApply}
+          disabled={applyDisabled}
+          data-testid="checkout-discount-apply"
+          className="cart-step-press inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-border bg-background px-4 text-sm font-medium text-foreground outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-60"
+        >
+          {checking ? labels.checking : labels.apply}
+        </button>
+      </div>
       {note ? (
         <p
           role="alert"

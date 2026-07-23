@@ -35,6 +35,8 @@ export function useCheckoutLabels(): CheckoutLabels {
   const discountLabels: DiscountFieldLabels = {
     label: t("discount.label"),
     placeholder: t("discount.placeholder"),
+    apply: t("discount.apply"),
+    checking: t("discount.checking"),
     appliedLabel: t.raw("discount.appliedLabel"),
     savings: t.raw("discount.savings"),
     remove: t("discount.remove"),

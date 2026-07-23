@@ -236,3 +236,33 @@ export const PREFERENCE_MAX_PER_WINDOW = 10;
 
 /** Cardinality-DoS ceiling for the preference limiter map (T8), keyed by IP. */
 export const PREFERENCE_RATE_LIMIT_MAX_KEYS = 10_000;
+
+/* -------------------------------------------------------------------------
+ * Discount pre-check rate limit
+ *
+ * `checkDiscountCode` is an UNAUTHENTICATED read-only `"use server"` action
+ * (one `discount_codes` lookup per call) that lets the shopper validate a code
+ * BEFORE submitting the order. Cheap, but uncached and DB-backed — and a free
+ * oracle for brute-forcing code strings — so it gets its own generous per-IP
+ * sliding window. A tripped limit degrades to the existing "couldn't verify"
+ * result; the submit path stays authoritative and unaffected.
+ * ------------------------------------------------------------------------- */
+
+/** Sliding-window length for the discount pre-check rate limiter. */
+export const DISCOUNT_CHECK_WINDOW_MS = 60_000;
+
+/**
+ * Max discount pre-checks per IP within {@link DISCOUNT_CHECK_WINDOW_MS}. A
+ * real shopper tries a handful of codes; 15/min never throttles them while
+ * making enumeration of the code space impractical.
+ */
+export const DISCOUNT_CHECK_MAX_PER_WINDOW = 15;
+
+/** Cardinality-DoS ceiling for the discount pre-check limiter map, keyed by IP. */
+export const DISCOUNT_CHECK_RATE_LIMIT_MAX_KEYS = 10_000;
+
+/**
+ * Ceiling on the raw code string accepted by the discount pre-check (bounds
+ * the normalized `.eq` lookup input; real codes are far shorter).
+ */
+export const DISCOUNT_CODE_MAX_LENGTH = 64;

@@ -37,6 +37,8 @@ const labels: CheckoutSummaryLabels = {
   discountLabels: {
     label: "Código de descuento",
     placeholder: "Código",
+    apply: "Aplicar",
+    checking: "Verificando…",
     appliedLabel: "Código {code} aplicado",
     savings: "Ahorras {amount}",
     remove: "Quitar",
@@ -76,6 +78,8 @@ function renderSummary(overrides: Partial<React.ComponentProps<typeof CheckoutSu
         discount={{ kind: "none" }}
         discountCodeValue=""
         onDiscountCodeChange={() => {}}
+        onDiscountApply={() => {}}
+        discountChecking={false}
         labels={labels}
         showSubmit
         {...overrides}

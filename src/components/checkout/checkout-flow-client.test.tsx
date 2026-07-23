@@ -12,7 +12,7 @@
  *     (their `lg:` visibility classes make exactly one live per breakpoint).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { type ReactNode } from "react";
 import { CART_STORAGE_KEY } from "@/lib/config";
 import type { CartLine } from "@/lib/cart/cart-line";
@@ -45,10 +45,14 @@ vi.mock("@/i18n/navigation", () => ({
   useRouter: () => ({ replace: replaceMock }),
 }));
 
-// The server action is never actually called in these render tests; stub it so
-// the client module imports cleanly under jsdom (no "use server" boundary).
+// The server actions are stubbed so the client module imports cleanly under
+// jsdom (no "use server" boundary). `checkDiscountCode` is controllable per
+// test (the Apply-button pre-check).
+const checkDiscountCodeMock = vi.fn(async () => ({ kind: "none" }) as const);
 vi.mock("@/app/[locale]/checkout/actions", () => ({
   placeOrder: vi.fn(async () => ({ status: "idle", submissionId: 1 })),
+  checkDiscountCode: (...args: unknown[]) =>
+    (checkDiscountCodeMock as (...a: unknown[]) => unknown)(...args),
 }));
 
 import { CheckoutFlowClient, GlobalBanner } from "./checkout-flow-client";
@@ -101,6 +105,57 @@ describe("CheckoutFlowClient — empty cart (AC-2, edge 3)", () => {
     // No form / submit when empty — a zero-line order can never be placed.
     expect(screen.queryByTestId("checkout-form")).toBeNull();
     expect(screen.queryByTestId("checkout-submit")).toBeNull();
+  });
+});
+
+describe("CheckoutFlowClient — discount pre-check (Apply button)", () => {
+  beforeEach(() => {
+    seedCart([storedLine()]);
+    checkDiscountCodeMock.mockReset();
+  });
+
+  it("applies a valid code before submit: pill, discount row, adjusted total", async () => {
+    checkDiscountCodeMock.mockResolvedValue({
+      kind: "applied",
+      code: "AHORRA10",
+      discountCents: 30_000,
+    } as never);
+    renderFlow(SETTINGS);
+    await waitFor(() => expect(screen.getByTestId("checkout-form")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByTestId("checkout-discount-input"), {
+      target: { value: "ahorra10" },
+    });
+    fireEvent.click(screen.getByTestId("checkout-discount-apply"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("checkout-discount-applied")).toBeInTheDocument(),
+    );
+    // Pre-check receives the typed code + the live subtotal (2 × 150_000).
+    expect(checkDiscountCodeMock).toHaveBeenCalledWith("ahorra10", 300_000);
+    // The summary previews the discount row and the adjusted total.
+    expect(screen.getByTestId("checkout-discount").textContent).toContain("$300.00");
+    expect(screen.getByTestId("checkout-total").textContent).toContain("$3,200.00");
+  });
+
+  it("shows the invalid note for a rejected code; editing the code clears it", async () => {
+    checkDiscountCodeMock.mockResolvedValue({ kind: "invalid", reason: "unknown" } as never);
+    renderFlow(SETTINGS);
+    await waitFor(() => expect(screen.getByTestId("checkout-form")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByTestId("checkout-discount-input"), {
+      target: { value: "NOPE" },
+    });
+    fireEvent.click(screen.getByTestId("checkout-discount-apply"));
+    await waitFor(() =>
+      expect(screen.getByTestId("checkout-discount-note")).toBeInTheDocument(),
+    );
+
+    // A stale verdict must not linger on a different code string.
+    fireEvent.change(screen.getByTestId("checkout-discount-input"), {
+      target: { value: "NOPE2" },
+    });
+    expect(screen.queryByTestId("checkout-discount-note")).toBeNull();
   });
 });
 

@@ -25,6 +25,14 @@
  */
 import { getLocale } from "next-intl/server";
 import { bustCatalogTags } from "@/lib/admin/products/cache-tags";
+import {
+  DISCOUNT_CHECK_MAX_PER_WINDOW,
+  DISCOUNT_CHECK_RATE_LIMIT_MAX_KEYS,
+  DISCOUNT_CHECK_WINDOW_MS,
+  DISCOUNT_CODE_MAX_LENGTH,
+  INT4_MAX,
+} from "@/lib/config";
+import { createSlidingWindowLimiter } from "@/lib/rate-limit/sliding-window";
 import { getStoreSettingsStatic } from "@/lib/store-settings";
 import {
   sendOrderConfirmation,
@@ -59,6 +67,60 @@ import type {
   DiscountResult,
 } from "./checkout-form-state";
 import type { CreateOrderPayload } from "@/lib/supabase/database.types";
+
+const discountCheckLimiter = createSlidingWindowLimiter({
+  windowMs: DISCOUNT_CHECK_WINDOW_MS,
+  maxPerWindow: DISCOUNT_CHECK_MAX_PER_WINDOW,
+  maxKeys: DISCOUNT_CHECK_RATE_LIMIT_MAX_KEYS,
+});
+
+/** Clamp an untrusted client subtotal to a sane non-negative integer (cents). */
+function sanitizePreviewSubtotal(value: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(Math.max(0, Math.trunc(value)), INT4_MAX);
+}
+
+/**
+ * Pre-check a discount code BEFORE submit (the field's "Apply" button), so the
+ * shopper learns whether a code works without placing the order. Read-only and
+ * DISPLAY-ONLY: the result mirrors what `placeOrder` would decide for the same
+ * code+subtotal, but the submit path re-validates from scratch and stays the
+ * single authority — a stale/forged preview can never change what is charged.
+ *
+ * The payload is attacker-controlled: the code is normalized + length-capped,
+ * the subtotal (only used for min-subtotal/percentage math on the preview) is
+ * clamped, and calls are per-IP rate-limited (this is otherwise a free oracle
+ * for enumerating the code space). NEVER throws: any failure — including a
+ * tripped limit — degrades to `{ kind: "degraded" }`, the existing "couldn't
+ * verify the code, you can continue without it" UI state (AC-7).
+ */
+export async function checkDiscountCode(
+  rawCode: string,
+  rawSubtotalCents: number,
+): Promise<DiscountResult> {
+  try {
+    const code = normalizeDiscountCode(String(rawCode)).slice(0, DISCOUNT_CODE_MAX_LENGTH);
+    if (code.length === 0) {
+      return { kind: "none" };
+    }
+    const ip = await clientIp();
+    if (!discountCheckLimiter.check(ip)) {
+      return { kind: "degraded" };
+    }
+    const lookup = await fetchDiscountCode(code);
+    if (lookup.status === "error") {
+      return { kind: "degraded" };
+    }
+    const subtotalCents = sanitizePreviewSubtotal(rawSubtotalCents);
+    return toDiscountResult(applyDiscount(lookup.row, subtotalCents), false);
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : "unknown";
+    console.error(`[checkout] discount pre-check failed: ${message}`);
+    return { kind: "degraded" };
+  }
+}
 
 /**
  * Place the order. `prevState`/`formData` follow the `useActionState` contract.

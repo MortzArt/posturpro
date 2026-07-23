@@ -336,6 +336,8 @@
     "discount": {
       "label": "Código de descuento",
       "placeholder": "Código de descuento",
+      "apply": "Aplicar",
+      "checking": "Verificando…",
       "remove": "Quitar código",
       "appliedLabel": "Código {code} aplicado",
       "savings": "Ahorras {amount}",
