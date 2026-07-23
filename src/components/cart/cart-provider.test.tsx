@@ -16,7 +16,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, renderHook, waitFor } from "@testing-library/react";
-import { type ReactNode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { CartProvider, useCart } from "./cart-provider";
 import { readCart } from "@/lib/cart/cart-storage";
 import { CART_STORAGE_KEY, MAX_CART_ITEM_QUANTITY } from "@/lib/config";
@@ -75,6 +75,39 @@ describe("CartProvider — hydration (AC-3, edge 8)", () => {
       expect(readCart()).toHaveLength(1);
       expect(readCart()[0]?.quantity).toBe(2);
     });
+  });
+
+  it("survives a StrictMode double-mount without wiping storage (locale-switch regression)", async () => {
+    // A language switch remounts the `[locale]` layout — and StrictMode (dev)
+    // runs mount effects twice. The old bug: the persist effect's mount run saw
+    // a ref already flipped `true` by the hydrate effect in the same flush and
+    // wrote the pre-hydration `[]` over the stored cart; the second hydrate
+    // pass then re-read the wiped storage and the cart was lost for real.
+    const stored = [makeStoredLine({ quantity: 3 })];
+    window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(stored));
+    const strictWrapper = ({ children }: { children: ReactNode }) => (
+      <StrictMode>
+        <CartProvider>{children}</CartProvider>
+      </StrictMode>
+    );
+    const { result } = renderHook(() => useCart(), { wrapper: strictWrapper });
+    await waitFor(() => expect(result.current.hydrated).toBe(true));
+    expect(result.current.itemCount).toBe(3);
+    expect(readCart()).toHaveLength(1);
+    expect(readCart()[0]?.quantity).toBe(3);
+  });
+
+  it("keeps the cart across a provider unmount + remount (locale-switch layout remount)", async () => {
+    const first = renderHook(() => useCart(), { wrapper });
+    await waitFor(() => expect(first.result.current.hydrated).toBe(true));
+    act(() => first.result.current.addItem(makeInput()));
+    await waitFor(() => expect(readCart()).toHaveLength(1));
+    first.unmount();
+
+    const second = renderHook(() => useCart(), { wrapper });
+    await waitFor(() => expect(second.result.current.hydrated).toBe(true));
+    expect(second.result.current.itemCount).toBe(1);
+    expect(readCart()).toHaveLength(1);
   });
 
   it("exposes an empty cart with hydrated=true when storage is empty", async () => {

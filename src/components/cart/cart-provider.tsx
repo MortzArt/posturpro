@@ -80,14 +80,11 @@ interface CartProviderProps {
 
 export function CartProvider({ children }: CartProviderProps) {
   const [lines, dispatch] = useReducer(cartReducer, []);
-  const hydratedRef = useRef(false);
   // The last cart payload this tab has reconciled with localStorage — either
   // what it wrote or what it read from a cross-tab `storage` event. Used to skip
   // no-op writes so a cross-tab sync cannot ping-pong into an infinite
   // write→storage-event→re-read→write loop between two tabs (edge 5).
   const lastPersistedRef = useRef<string | null>(null);
-  // Re-render gate for `hydrated`: a ref alone would not re-render consumers, so
-  // we mirror it into a reducer-driven counter via a one-shot effect below.
   const [hydrated, markHydrated] = useReducer(() => true, false);
 
   // Hydrate from storage once on mount (SSR has no storage). This is a genuine
@@ -97,18 +94,24 @@ export function CartProvider({ children }: CartProviderProps) {
     const initial = readCart();
     lastPersistedRef.current = JSON.stringify(initial);
     dispatch({ type: "hydrate", lines: initial });
-    hydratedRef.current = true;
     markHydrated();
   }, []);
 
   // Persist on every change AFTER hydration. Skipping the pre-hydration state
   // (an empty array) prevents clobbering stored lines with `[]` before the read
-  // effect runs on mount. Content-identical states are NOT re-written: a
-  // cross-tab `storage` re-read produces a new array reference with the same
-  // payload, and re-writing it would fire a `storage` event in the peer tab and
-  // loop forever — so we compare the serialized payload and bail on a match.
+  // effect runs on mount. The gate MUST be the `hydrated` render-time state, not
+  // a ref: a ref flipped inside the hydrate effect is already `true` when this
+  // effect's mount run executes in the same flush — with `lines` still the
+  // pre-hydration `[]` — so it would write `[]` over the stored cart. StrictMode
+  // (and the `[locale]` layout remount on a language switch) then re-reads the
+  // wiped storage and the cart is lost for real. The state value is captured at
+  // render time, so the mount run always sees `false` and skips.
+  // Content-identical states are NOT re-written: a cross-tab `storage` re-read
+  // produces a new array reference with the same payload, and re-writing it
+  // would fire a `storage` event in the peer tab and loop forever — so we
+  // compare the serialized payload and bail on a match.
   useEffect(() => {
-    if (!hydratedRef.current) {
+    if (!hydrated) {
       return;
     }
     const serialized = JSON.stringify(lines);
@@ -117,7 +120,7 @@ export function CartProvider({ children }: CartProviderProps) {
     }
     lastPersistedRef.current = serialized;
     writeCart(lines);
-  }, [lines]);
+  }, [lines, hydrated]);
 
   // Cross-tab sync: another tab's write fires a `storage` event here (never in
   // the writing tab). Re-read into state; last write wins, no crash (edge 5).
