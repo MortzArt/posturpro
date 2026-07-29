@@ -103,11 +103,11 @@ These replace "reading the security code." Each is a real thing you do; the app 
 **This is the one thing the automated testing could not do, because it needs your real sandbox credentials.** Everything else was tested with a fake Mercado Pago; this proves it works against the real thing.
 
 **Get test credentials:**
-- [ ] **Do:** Log in at **https://www.mercadopago.com.mx/developers** → your application → **Credentials** → the **Test / Sandbox** (pruebas) section. Copy the **Access Token** and the **Webhook secret** (from the Webhooks/Notifications config). You'll also want a **Public Key**.
-  **✓ Passed if:** you have a test access token, a test public key, and a webhook signing secret in hand.
+- [x] **Do:** Log in at **https://www.mercadopago.com.mx/developers** → your application → **Credentials** → the **Test / Sandbox** (pruebas) section. Copy the **Access Token** and the **Webhook secret** (from the Webhooks/Notifications config). You'll also want a **Public Key**.
+  **✓ Passed if:** you have a test access token, a test public key, and a webhook signing secret in hand. *(2026-07-28: keys received from client — verified via API to be a test-user account, `TESTUSER7476…`, so no real money can move.)*
 
 **Put them in the app:**
-- [ ] **Do:** Open the file `.env.local` in the project folder and fill in these three (they already exist as empty placeholders — just add the values after the `=`):
+- [x] **Do:** Open the file `.env.local` in the project folder and fill in these three (they already exist as empty placeholders — just add the values after the `=`):
   ```
   MERCADOPAGO_ACCESS_TOKEN=   (your test access token)
   MERCADOPAGO_PUBLIC_KEY=     (your test public key)
@@ -116,10 +116,12 @@ These replace "reading the security code." Each is a real thing you do; the app 
   Optionally set `NEXT_PUBLIC_SITE_URL` to the address Mercado Pago can reach your machine at (e.g. an ngrok tunnel URL) so its "payment happened" messages can arrive.
   **✓ Passed if:** the three values are filled and the file is saved. (This file is private and never committed to git.)
 
-- [ ] **Do:** Stop the dev server (Ctrl-C in its terminal) and run `npm run dev` again so it picks up the new keys.
-  **✓ Passed if:** it starts cleanly with no "missing MERCADOPAGO_..." errors.
+- [x] **Do:** Stop the dev server (Ctrl-C in its terminal) and run `npm run dev` again so it picks up the new keys.
+  **✓ Passed if:** it starts cleanly with no "missing MERCADOPAGO_..." errors. *(2026-07-28: clean start, all three vars loaded.)*
 
 Now run the four payment flows. Place an order, then on the confirmation page click **"Pagar ahora"** to go to Mercado Pago.
+
+> **Progress note (2026-07-28):** Flow 1's payment side already works — a test-card payment was **approved by the real MP sandbox** (payment `170075054641`, order PP-000003). Two learnings for whoever continues: (1) paying requires being **logged in as a test-buyer user** (guest checkout against a test seller fails with a generic error); a test buyer was created via API: `test_user_3063848151201463939@testuser.com` / password `l7hgV0M9QP`, email-code = last 6 digits of its user id (`598974`). (2) Signed webhooks only go to the URL configured in the **MP panel → Webhooks (test mode)** — it must point at the active ngrok tunnel (`https://<tunnel>/api/webhooks/mercadopago`), not `posturpro.mx`. `NEXT_PUBLIC_SITE_URL` in `.env.local` must match the tunnel. Flow 1 is NOT checked off until the webhook lands and the order flips to `paid` in the DB.
 
 - [ ] **Flow 1 — Successful card.** Use Mercado Pago's well-known test card **Mastercard 5031 7557 3453 0604**, any future expiry (e.g. 11/30), CVV **123**, and cardholder name **APRO** (APRO = approve).
   **✓ Passed if:** you're sent back to the store as paid, and in Studio → **orders** your order's `payment_status` becomes `paid` and `status` becomes `paid`. In the **order_status_history** table there's a new row recording the change. In **mp_payment_events** there's a row for this payment.

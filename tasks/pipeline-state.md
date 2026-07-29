@@ -3,7 +3,7 @@ Task: T11 — Admin: product management
 Tier: full-cycle (high)
 Stage: COMPLETE — T11 checked off in BUILD_PLAN.md (SHIP 9/10, 2026-07-15)
 Agent: none (pipeline done)
-Last Updated: 2026-07-23
+Last Updated: 2026-07-29
 Notes: T10 and T11 SHIPPED 2026-07-15. 2026-07-23: owner human review passed Phases 1–4 → T7 CHECKED OFF; T8 held only by the live MP sandbox test (Phase 5, needs owner's MERCADOPAGO_* test keys). Next unchecked buildable task: T13 (static pages, unblocked, independent). T12 (blocked by T8) stays blocked until T8's Phase 5 runs or the owner defers it per Phase 7. Also shipped 2026-07-23 (outside pipeline, ad-hoc fixes): cart locale-switch wipe fix, post-order catalog cache bust, cart sold-out badges, discount Apply pre-check (commits 4867a0e..a61d9f5).
 
 === T11 COMPLETE — SHIP (Stage 12, quality 9/10, confidence HIGH, 2026-07-15) ===
@@ -30,6 +30,7 @@ Notes: T10 and T11 SHIPPED 2026-07-15. 2026-07-23: owner human review passed Pha
 === STANDING GATES (carry forward — do not drop) ===
 - HUMAN-REVIEW GATE UPDATE (2026-07-23): owner completed action-plan Phases 1–4 (setup, happy-path purchase, cheat spot-checks: oversell, discount abuse, discount math, token tampering, double-submit) — ALL PASSED. T7 gate CLOSED → T7 checked off in BUILD_PLAN. T8 stays UNCHECKED: sole remaining gate is the live MP sandbox test (action-plan Phase 5), blocked-on-user (placeholder MERCADOPAGO_* keys in .env.local). Owner may alternatively declare Phase 5 "consciously scheduled before go-live" (Phase 7 wording) to close T8 early — their call, do not assume.
 - T8 remaining focus when keys arrive: 4 live flows (approved card, OXXO/SPEI pending→paid, declined card, refund [defer to T12 button]) + replayed-webhook rejection.
+- T8 PHASE 5 IN PROGRESS (2026-07-28): MERCADOPAGO_* keys received + in .env.local (verified test-user account via /users/me — no live-money risk). Flow 1 payment APPROVED by real sandbox (payment 170075054641, order PP-000003) but order still pending_payment: signed webhooks deliver ONLY to the MP-panel Webhooks URL (test mode), which pointed at posturpro.mx — owner asked to repoint it at the ngrok tunnel. Setup facts in tasks/review-action-plan-T7-T8.md progress note (test-buyer login trick, tunnel + NEXT_PUBLIC_SITE_URL pairing). Ngrok URL is EPHEMERAL — new session = new tunnel = update panel URL + NEXT_PUBLIC_SITE_URL. Remaining: webhook lands (Flow 1 done) → Flows 2, 3, replay check; Flow 4 refund deferred to T12 per plan.
 - T9 checkout/payment diffs (bdd37bc, 6c19265) + clean-code A4 commit were included in the reviewed scope.
 - T9 LIVE-SEND blocked-on-user: no EMAIL_* vars in .env.local (EMAIL_API_KEY/Resend, EMAIL_FROM_ADDRESS, EMAIL_OWNER_ADDRESS, NEXT_PUBLIC_SITE_ORIGIN; dev EMAIL_DEV_PREVIEW=1).
 - ADVISORY: user may want to eyeball the admin auth core (src/lib/admin/{session,session-edge,auth}.ts + middleware /admin branch) — 0 crit/high across two dedicated security stages, but it IS the trust boundary.
