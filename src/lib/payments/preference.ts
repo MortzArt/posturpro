@@ -45,8 +45,10 @@ export type PreferenceResult =
 /** The order fields the preference builder needs. */
 interface PayableOrder {
   id: string;
+  orderNumber: string;
   confirmationToken: string;
   totalCents: number;
+  shippingCents: number;
   items: Array<{
     productId: string;
     productName: string;
@@ -105,7 +107,9 @@ async function readPayableOrder(token: string): Promise<PayableOrder | null> {
     const db = createAdminClient();
     const { data: order, error } = await db
       .from("orders")
-      .select("id, confirmation_token, total_cents, status, payment_status")
+      .select(
+        "id, order_number, confirmation_token, total_cents, shipping_cents, status, payment_status",
+      )
       .eq("confirmation_token", token)
       .maybeSingle();
     if (error) {
@@ -132,8 +136,10 @@ async function readPayableOrder(token: string): Promise<PayableOrder | null> {
 
     return {
       id: order.id,
+      orderNumber: order.order_number,
       confirmationToken: order.confirmation_token,
       totalCents: order.total_cents,
+      shippingCents: order.shipping_cents,
       items: itemRows.map((row) => ({
         productId: row.product_id ?? order.id,
         productName: row.product_name,
@@ -160,15 +166,7 @@ function buildPreferenceBody(
   ).toISOString();
 
   return {
-    items: order.items.map((item, index) => ({
-      id: `${order.id}-${index}`,
-      title: item.variantLabel
-        ? `${item.productName} · ${item.variantLabel}`
-        : item.productName,
-      quantity: item.quantity,
-      unit_price: centsToMpAmount(item.unitPriceCents),
-      currency_id: MP_CURRENCY_ID,
-    })),
+    items: buildPreferenceItems(order, locale),
     external_reference: order.confirmationToken,
     notification_url: webhookUrl(origin),
     back_urls: buildBackUrls(origin, locale, order.confirmationToken),
@@ -177,6 +175,57 @@ function buildPreferenceBody(
     statement_descriptor: MP_STATEMENT_DESCRIPTOR,
     date_of_expiration: expiration,
   };
+}
+
+/**
+ * Build the charged line items. MP charges exactly the sum of the items, and the
+ * webhook reconciles `transaction_amount` against `total_cents` with ZERO
+ * tolerance — so the lines MUST sum to the order total. Shipping is charged as a
+ * regular line (MP's `shipments.cost` is not reliably included in
+ * `transaction_amount`). If the lines still don't sum to the total (e.g. a
+ * discount was applied — MP has no order-level discount field), everything
+ * collapses into a single order-level line: exact reconciliation beats itemized
+ * display.
+ */
+function buildPreferenceItems(order: PayableOrder, locale: string) {
+  const chargedCents = order.items.reduce(
+    (sum, item) => sum + item.unitPriceCents * item.quantity,
+    order.shippingCents,
+  );
+  if (chargedCents !== order.totalCents) {
+    return [
+      {
+        id: order.id,
+        title:
+          locale === "en"
+            ? `Order ${order.orderNumber}`
+            : `Pedido ${order.orderNumber}`,
+        quantity: 1,
+        unit_price: centsToMpAmount(order.totalCents),
+        currency_id: MP_CURRENCY_ID,
+      },
+    ];
+  }
+
+  const lines = order.items.map((item, index) => ({
+    id: `${order.id}-${index}`,
+    title: item.variantLabel
+      ? `${item.productName} · ${item.variantLabel}`
+      : item.productName,
+    quantity: item.quantity,
+    unit_price: centsToMpAmount(item.unitPriceCents),
+    currency_id: MP_CURRENCY_ID,
+  }));
+  if (order.shippingCents > 0) {
+    lines.push({
+      id: `${order.id}-shipping`,
+      title: locale === "en" ? "Shipping" : "Envío",
+      quantity: 1,
+      unit_price: centsToMpAmount(order.shippingCents),
+      currency_id: MP_CURRENCY_ID,
+    });
+  }
+  return lines;
 }
 
 /**
