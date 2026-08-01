@@ -1,10 +1,10 @@
 # Pipeline State
 Task: T12 — Admin: order management
 Tier: full-cycle
-Stage: 1
-Agent: ultraplanner-research
-Last Updated: 2026-08-01 23:09
-Notes: Starting full cycle for T12 (owner deferred T8 Phase 5 live-sandbox sign-off; T8 code complete). T12 refund UI should use the duplicate sandbox payments on PP-000005 / underpaid PP-000004 as live test data when Phase 5 resumes.
+Stage: 3
+Agent: ultradesign
+Last Updated: 2026-08-01 23:20
+Notes: Stage 1+2 (PlanResearch) COMPLETE. Complexity=high (auto-classify -> all 12 stages). Feature Type=full-feature / full-stack. Artifacts: tasks/next-ticket.md + tasks/research-report.md. Next: Stage 3 UI Design (ultradesign) — order list, detail+history log, refund modal (full/partial), packing slip, customer list, dashboard new-order indicator. Load emil-design-eng + apple-design before designing. Binding gates folded into ticket: AC-27/28 session-revocation (payload v), AC-29/30 /api/admin self-guard; cancel_order transactional RPC (0012); advance_order_status is only transition path; emails branch on transition_kind; refund.ts first-caller via MP (PP-000005 3 dup $6,999 / PP-000004 underpaid $2,499 = live refund fodder). T12 refund UI should use the duplicate sandbox payments on PP-000005 / underpaid PP-000004 as live test data when T8 Phase 5 resumes.
 
 === T11 COMPLETE — SHIP (Stage 12, quality 9/10, confidence HIGH, 2026-07-15) ===
 - Pipeline: full-cycle HIGH, all 12 stages. S5 review 8/10 → S6 all 9 majors fixed+locked; S7 QA PASS HIGH (AC 35/35); S8 UX 9/10 (critical keyboard-tree fix); S9 SECURE (0 crit/high); S10 arch APPROVE 9/10; S11 hacker found+fixed int4-overflow (CRITICAL-class), variant double-submit, CSV blank-row bug — chaos score 2/10.
