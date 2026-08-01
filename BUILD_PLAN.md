@@ -39,7 +39,7 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 - [x] **T11 — Admin: product management** (tier: full-cycle; ran high — all 12 stages, SHIP 9/10, 2026-07-15)
   Product list with search/filter (brand, category, status, stock); add/edit form for the full product model; multi-image upload with drag ordering + cover image; variant management; category/brand/style/tag management (categories nestable); manual inventory adjustment with reason; CSV import + export; duplicate product; Q&A answering. `blocked by: T10`
 
-- [ ] **T12 — Admin: order management** (tier: full-cycle)
+- [x] **T12 — Admin: order management** (tier: full-cycle; ran high — all 12 stages, SHIP 9/10, 2026-08-02)
   Order list with search/filter; order detail with history log; status pipeline (Pending payment → Paid → Preparing → Shipped → Delivered / Cancelled); manual status updates triggering customer emails; tracking number entry + email; cancel with automatic stock restore; full/partial refunds via Mercado Pago; internal notes; printable packing slip; customer list; new-order dashboard indicator + owner email. `blocked by: T8, T9, T10`
 
 - [ ] **T13 — Static pages & homepage** (tier: standard)
