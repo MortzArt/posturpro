@@ -1,178 +1,148 @@
-# Research Report: T12 — Admin: Order Management
+# Research Report: T13 — Static Pages & Homepage
 
 ## Codebase Analysis
 
 ### Existing Patterns
 
-- **Admin list read (count → clamp → range → stitch)** — `src/lib/admin/products/list-query.ts:77` (`listAdminProducts`). Two-phase: `countProducts` (head query) → `lastPageFor`/`parsePageParam`/`rangeFor` from `src/lib/catalog/pagination.ts` → ranged data read → batch-stitch derived fields (no N+1). **Reuse:** clone verbatim as `order-list-query.ts`; the "stitch" step becomes customer-name (already snapshotted on `orders.shipping_full_name`, so likely no stitch needed) and item-count. Search meta-char stripping (`list-query.ts:60`) is a security pattern to copy for the order search.
-- **Pure, bounded filter parse** — `src/lib/admin/products/list-filters.ts:58` (`parseListFilters`). Length-caps search (`ADMIN_SEARCH_MAX_LENGTH = 120`), constrains enums, carries raw `page`. **Reuse:** clone as `order-list-filters.ts` with `status`/`payment` enums.
-- **Paired `*-input.ts` / `*-write.ts`** — `product-input.ts` (pure parse/validate → typed `ProductParsed`) + `product-write.ts:37` (RLS-bypass admin client, maps raw PG error to a friendly enum, busts cache tags). **Reuse:** the input/write split for tracking, notes, refund, cancel. NOTE the ticket's directive: the order-form CONTRACT (types) goes in `src/lib/admin/orders/`, not the app dir — T11 inverted this (`products-form-state.ts` lives in the app dir) and T12 should not.
-- **Server action posture** — `src/app/admin/(app)/products/actions.ts:82`. Every action: `"use server"`, `requireSession()` FIRST (`actions.ts:89`), pure-parse, write via admin client, map error to form state, redirect/return. Only async fns exported (state types live in `products-form-state.ts`). **Reuse:** `orders/actions.ts` follows this exactly.
-- **Self-guarded route handler** — `src/app/admin/(app)/products/export/route.ts:13`. `export const dynamic = "force-dynamic"`; `if (!(await hasValidAdminSession())) return new Response("No autorizado", { status: 401 })`; try/catch → 500 with a friendly body, raw error logged not echoed. **Reuse:** the packing-slip route handler is a near-copy (returns `text/html` instead of CSV).
-- **The ONE status-transition path** — `src/lib/payments/advance-order.ts:23` (`advanceOrderStatus`) wrapping the `advance_order_status` RPC (0009/0010). Typed outcome, never throws. **Reuse:** `order-status-write.ts` calls THIS, then branches email on the returned `transition_kind` — never a raw `.update({status})`.
-- **Transactional stock RPC to mirror** — `record_inventory_adjustment` (0011, migration lines 71–143) and `create_order` (0010 lines 383–539). Both: lock the target row `FOR UPDATE`, mutate stock atomically with a ledger/history insert, `SECURITY DEFINER` + empty `search_path` + `service_role`-only execute. **Reuse:** `cancel_order` mirrors `create_order`'s guarded stock loop IN REVERSE (add quantity back).
-- **Email dispatch (claim → render → send → finalize, failure-isolated)** — `src/lib/email/dispatch.ts:59` (`dispatchEmail`). Exactly-once via `claimEmailSend` (`email_sends` ledger, 0010). The T12 seams are `sendShipped` (`dispatch.ts:232`), `sendCancelled` (`:249`), `sendRefundIssued` (`:266`) — all built, unit-tested, NOT wired. **Reuse:** call these from the write layer; branch on `transition_kind`.
-- **Auth core** — `hasValidAdminSession()` (`session-guard.ts:19`), `requireSession()` (`require-session.ts:15`), the crypto-free codec `session-payload.ts` (`{v, iat}` payload, `decodePayload` at `:68` checks `candidate.v !== ADMIN_SESSION_VERSION`), authoritative verify `session.ts:80` (`isSessionValid`). **Reuse + EXTEND:** AC-27 revocation.
-- **Refund execution** — `src/lib/payments/refund.ts:68` (`refundOrderPayment(orderId, amountCents|null, idempotencyKey?)`). Full/partial, cumulative guard, ledger, state advance, typed `RefundResult`. **Reuse:** the refund action is its FIRST caller.
+- **Storefront page grammar** — `src/app/[locale]/marcas/page.tsx:24-92` (also `categorias`, `estilos`): async server component, `params: Promise<{ locale }>`, `setRequestLocale(locale)` first, `getTranslations(namespace)`, `generateMetadata` that validates locale via `hasLocale(routing.locales, locale)` and falls back to `routing.defaultLocale`, `<section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">`, `Breadcrumbs` → `header` (h1 + subtitle) → grid/`EmptyState`. **Reuse strategy**: copy verbatim for every static page and the homepage sections; content body uses `max-w-prose`.
+- **Server-action form (Q&A)** — `src/app/[locale]/producto/[slug]/actions.ts` + `qa-form-state.ts` + `src/components/product/qa-form.tsx`: React 19 `useActionState`, `(slug, prevState, formData) => Promise<FormState>`, serializable state `{ status, fieldErrors?, values?, submissionId }`, honeypot → fake success, trim + custom validation, rate-limit, RLS-anon insert. **Reuse strategy**: this is the exact skeleton for the Contact form/action/state; swap the DB insert for `sendContactRelay`.
+- **Graceful settings read** — `src/lib/store-settings.ts:40-137`: `getStoreSettings` (React `cache`) and `getStoreSettingsStatic` (`unstable_cache` tag `store-settings`, cookie-free, revalidate `CATALOG_REVALIDATE_SECONDS`) both return `null` on absent-row / RLS / network error, never throw; logged with context. **Reuse strategy**: `getStaticPageBySlug` copies this degrade-to-null + `unstable_cache` shape (new tag `static-pages`).
+- **Rate limiter** — `src/lib/rate-limit/sliding-window.ts` `createSlidingWindowLimiter({ windowMs, maxPerWindow, maxKeys }) → { check(key, now?), reset(), keyCount() }`; wrapped `src/lib/checkout/rate-limit.ts` `checkCheckoutRateLimit(ip)` + `CHECKOUT_RATE_LIMIT_DISABLED=1` env bypass; keyed by `clientIp()` (`src/lib/request/client-ip.ts`). In-memory, per-instance, oldest-key eviction at ceiling. **Reuse strategy**: new `src/lib/contact/rate-limit.ts` with its own instance + `CONTACT_RATE_LIMIT_*` constants + `CONTACT_RATE_LIMIT_DISABLED`.
+- **Input hygiene** — trim-then-validate everywhere; `EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/` (`src/lib/config/checkout.ts:132`); `escapeHtml` (`src/lib/email/render.ts:33-40`); honeypot + `isValidProductId` (`src/lib/qa/submit-guard.ts`). **Reuse strategy**: `validateContactSubmission` mirrors `validateQaSubmission`.
+- **Locale-agnostic paths + `Link`** — `src/i18n/routing.ts` (`locales: ["es-MX","en"]`, `defaultLocale: "es-MX"`, `localePrefix: "as-needed"`, `localeDetection: false`); `src/i18n/navigation.ts` exports the locale-aware `Link`. Paths are Spanish-only slugs; `/en` prefix is added by `Link`. **No localized pathnames** (no `/en/about`). **Reuse strategy**: static-page slugs are single Spanish slugs; English is content-only via `translations`, not a separate URL.
+- **In-shell 404 catch-all** — `src/app/[locale]/[...rest]/page.tsx` calls `notFound()` → localized `not-found.tsx` inside header+footer. Real routes at a path take precedence as they are added. **Reuse strategy**: the new static-page route supersedes the catch-all for its slugs; missing/unpublished rows still `notFound()`.
 
 ### Relevant Files
 
-| File                                                        | Purpose                                             | Relevance                                  | Action    |
-| ----------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------ | --------- |
-| `supabase/migrations/0012_admin_orders.sql`                 | tracking cols, notes table, `cancel_order`, session-ver | NEW schema + RPC                        | Create    |
-| `src/lib/admin/orders/order-list-filters.ts`                | pure filter parse (mirror products)                 | list search/filter                         | Create    |
-| `src/lib/admin/orders/order-list-query.ts`                  | paginated order read                                 | list                                       | Create    |
-| `src/lib/admin/orders/order-read.ts`                        | full order + items + history + notes                | detail                                     | Create    |
-| `src/lib/admin/orders/order-status-write.ts`                | advance + email branch on transition_kind           | status pipeline                            | Create    |
-| `src/lib/admin/orders/order-cancel-write.ts`                | `cancel_order` RPC + sendCancelled                  | cancel + restore                           | Create    |
-| `src/lib/admin/orders/order-refund-write.ts`                | `refundOrderPayment` + sendRefundIssued             | refund                                     | Create    |
-| `src/lib/admin/orders/order-tracking-{input,write}.ts`      | validate + persist tracking                          | tracking + shipped email                   | Create    |
-| `src/lib/admin/orders/order-notes-write.ts`                 | internal notes                                       | notes                                      | Create    |
-| `src/lib/admin/orders/customer-list-query.ts`               | customer list + order counts                         | customer list                              | Create    |
-| `src/lib/admin/orders/packing-slip.ts`                      | print-HTML builder                                   | packing slip                               | Create    |
-| `src/lib/admin/orders/order-status-meta.ts`                 | es-MX labels, badges, allowed transitions            | UI + validation                            | Create    |
-| `src/app/admin/(app)/orders/{page,actions}.tsx/.ts`         | list + server actions                                | list + all writes                          | Create    |
-| `src/app/admin/(app)/orders/[id]/page.tsx`                  | detail                                               | detail                                     | Create    |
-| `src/app/admin/(app)/orders/[id]/packing-slip/route.ts`     | self-guarded print route                             | packing slip                               | Create    |
-| `src/app/admin/(app)/orders/customers/page.tsx`             | customer list page                                   | customer list                              | Create    |
-| `src/components/admin/orders/*`                              | table, filters, badges, stepper, modal, notes, slip  | all UI                                     | Create    |
-| `src/lib/admin/constants.ts`                                | flip Orders nav to `live`; add paths/version const  | nav + revocation                           | Modify    |
-| `src/lib/admin/session-payload.ts` / `session.ts` / `session-edge.ts` | revocation version check                   | AC-27 gate                                 | Modify    |
-| `src/app/admin/(app)/page.tsx`                              | dashboard w/ new-order indicator (was a redirect stub) | AC-25                                    | Modify    |
-| `src/lib/checkout/order-read.ts`                            | (optional) tracking fields for shipped email        | tracking → email                           | Modify?   |
-| `src/lib/supabase/types/tables-commerce.ts`                 | order/customer/notes row types                       | typed boundaries                           | Modify    |
-| `src/lib/supabase/types/rpc.ts`                             | `cancel_order` Args/Result (`type` aliases)         | typed RPC                                  | Modify    |
-| `src/lib/payments/refund.ts`                                | refund fn (unchanged; now called)                   | refund                                     | Reference |
-| `src/lib/payments/advance-order.ts`                         | status wrapper (unchanged; now called by admin)     | status                                     | Reference |
-| `src/lib/email/dispatch.ts`                                 | send seams (unchanged; now called)                  | emails                                     | Reference |
-| `src/app/admin/(app)/products/export/route.ts`              | self-guard template                                 | packing-slip route                         | Reference |
-| `src/lib/admin/products/list-query.ts` / `list-filters.ts`  | list template                                       | list                                       | Reference |
+| File | Purpose | Relevance | Action |
+| --- | --- | --- | --- |
+| `src/app/[locale]/page.tsx` | Homepage (T2 placeholder) | Rebuild into hero + featured chairs + featured brands | **Modify** |
+| `src/app/[locale]/marcas/page.tsx` | Brand index page | Canonical storefront-page template | Reference |
+| `src/app/[locale]/producto/[slug]/actions.ts` + `qa-form-state.ts` | Q&A server action + state | Contact form/action/state template | Reference |
+| `src/components/product/qa-form.tsx` | Q&A client form | Contact form UI template (a11y, honeypot, useActionState) | Reference |
+| `src/lib/store-settings.ts` | Settings read/write + graceful null | `getStaticPageBySlug` degrade pattern | Reference |
+| `src/lib/email/dispatch.ts` (`sendContactRelay`) | Contact relay send (untested-wired) | The seam this task wires | Reference (call it) |
+| `src/lib/email/templates/contact-relay.ts` | Contact relay template (escapes body) | Confirms escaping is template-side | Reference |
+| `src/lib/rate-limit/sliding-window.ts` | Generic limiter | Contact rate limiter core | Reference |
+| `src/lib/checkout/rate-limit.ts` | Checkout limiter wrapper | Contact wrapper template | Reference |
+| `src/lib/request/client-ip.ts` | Client IP extraction | Rate-limit key | Reference |
+| `src/lib/catalog/queries.ts` | `listProducts`, `listBrands`, ... | Featured content source | Reference |
+| `src/components/catalog/{product-card,product-grid,index-tile,brand-logo,breadcrumbs,empty-state}.tsx` | Reusable cards/tiles/chrome | Homepage + page composition | Reference |
+| `src/components/layout/site-footer.tsx` | Footer w/ dead links | Reconcile link slugs | **Modify** |
+| `src/components/layout/nav-items.ts` | Nav (has `/contacto`) | Verify link now live | Modify (verify) |
+| `scripts/seed-data/content.ts` | `STATIC_PAGES` (4 pages) | Expand to 9 + English fixtures | **Modify** |
+| `scripts/seed.ts:254-275` | Seeds `static_pages` + `store_settings` | Add `translations` seeding | **Modify** |
+| `src/messages/{es-MX,en}.json` | i18n chrome | Add `staticPages`/`contact`/`home.featured`/`showroom` namespaces | **Modify** |
+| `supabase/migrations/0004_content_qa.sql` | `static_pages` + `translations` DDL | Schema reference (no DDL change) | Reference |
+| `supabase/migrations/0005_rls_policies.sql:208-227` | Anon read policies | Confirms public read gating | Reference |
+| `src/lib/config/{catalog,shared}.ts` | Paths, `SEED_STORE_*`, `WHATSAPP_*` | Slug/path + config fallbacks | Reference/extend |
+| `src/lib/content/static-pages.ts` | *(new)* static-page read wrapper | Create | **Create** |
+| `src/lib/config/static-pages.ts` | *(new)* slug set + reserved guard | Create | **Create** |
+| `src/app/[locale]/[pageSlug]/page.tsx` | *(new)* generic static-page route | Create | **Create** |
+| `src/app/[locale]/contacto/` + `showroom/` | *(new)* bespoke pages | Create | **Create** |
+| `src/lib/contact/{submit-guard,rate-limit}.ts` | *(new)* validation + limiter | Create | **Create** |
+| `src/components/home/{hero,featured-products,featured-brands}.tsx` | *(new)* homepage sections | Create | **Create** |
 
 ### Data Flow
 
-**Status-update → email (e.g. mark Shipped):**
-`OrderDetailActions` (client) → `advanceStatus(orderId, "shipped")` server action → `requireSession()` → `order-status-write.ts` → `advanceOrderStatus({ p_order_id, p_order_status: "shipped", p_payment_status: <current>, p_note })` → RPC (0010) locks row, writes `orders.status`, inserts `order_status_history` with `transition_kind='shipped'`, returns `{applied:true, transition_kind:'shipped'}` → write layer reads `transition_kind`, calls `sendShipped(orderId, {trackingNumber, carrier, trackingUrl})` → `dispatch.ts` claims `email_sends` (kind `shipped`, dedupe `''`), renders `renderShipped`, sends, finalizes → action returns `{ok:true}` → `revalidatePath`/router refresh → detail shows new status + history entry. Email failure is caught in dispatch and does NOT fail the action (edge 7).
+**Static page render**: request `/en/terminos` → App Router matches `[locale]/[pageSlug]` (or explicit `contacto`/`showroom` folder) → `setRequestLocale('en')` → `getStaticPageBySlug('terminos','en')` → `createPublicClient()` selects `static_pages` where `slug='terminos' and is_published=true` (RLS-enforced) + overlays `translations` (`locale='en', entity_type='static_page', entity_id, field in title/body`) → returns `{ title, body }` (es-MX base if no `en` row) or `null` → `null` → `notFound()`; else render breadcrumb + `<h1>{title}</h1>` + `max-w-prose` body. `unstable_cache` (tag `static-pages`, revalidate `CATALOG_REVALIDATE_SECONDS`).
 
-**Refund → MP → ledger → email:**
-`RefundModal` (client) → `refundOrder(orderId, {mode, amountMxn})` server action → `requireSession()` → `order-refund-write.ts` converts MXN→cents, mints/threads a STABLE per-action idempotency key → `refundOrderPayment(orderId, amountCents|null, key)` (`refund.ts:68`) → validates UUID/amount → `readRefundableOrder` (must be `payment_status==='paid'` + `mp_payment_id`) → `readRefundedTotal` (RPC `refunded_total`) local pre-check → `refundClient().create({ payment_id, body: full? undefined : {amount}, requestOptions:{idempotencyKey} })` → `record_refund` RPC (order-locked cumulative guard, ledger insert keyed by MP refund id) → if full: `advanceOrderStatus({p_order_status:null, p_payment_status:'refunded'})` (payment-only, writes `transition_kind='refunded'` history row); if partial: stays `paid` → returns `RefundResult` → write layer, on `{status:'refunded'}`, calls `sendRefundIssued(orderId, mpRefundId, refundedAmountCents)` (deduped on MP refund id) → action returns typed result → modal closes / shows error. On `mp-error`/`over-refund`/`error`, NO state change (or logged reconcile-by-hand) and NO email.
+**Homepage**: `/` → `setRequestLocale` → parallel `listProducts({ pageSize: N })` + `listBrands()` (cached catalog queries, RLS public client) → render hero (always) + featured-chairs section (omit if 0) + featured-brands section (omit if 0), reusing `ProductGrid`/`IndexTile`.
 
-**Cancel → stock restore:**
-`cancelOrder(orderId, reason)` → `requireSession()` → `order-cancel-write.ts` → `cancel_order` RPC (0012): lock order `FOR UPDATE`; if already `cancelled` → no-op; else loop `order_items`, for each non-null `product_id`/`variant_id` add `quantity` back to stock; advance to `cancelled` writing history (`transition_kind='cancelled'`); commit → write layer calls `sendCancelled(orderId, reason)` → action returns `{ok:true}`.
+**Contact submit**: user submits form → client `useActionState` → `submitContactForm(prevState, formData)` server action → read fields → honeypot check (tripped → fake success) → `validateContactSubmission` (trim, length caps, `EMAIL_PATTERN`) → invalid → `{ status:'invalid', fieldErrors, values, submissionId }` → `clientIp()` + `checkContactRateLimit(ip)` → denied → `{ status:'rate-limited', values }` → `sendContactRelay({ fromName, fromEmail, subject, message })` (template HTML-escapes body; sends to `EMAIL_OWNER_ADDRESS`; dev-preview logs + returns ok) → `ok:true` → `{ status:'success', submissionId }` (values cleared) → `ok:false` → log `reason`, `{ status:'error', values }`. Client renders state via `role="status"`/`role="alert"`.
 
 ### Similar Features (Reference Implementations)
 
-- **T11 product list** (`products/page.tsx` + `list-query.ts` + `list-filters.ts` + `pagination.ts`) — the exact template for the order list AND customer list: server component parses filters, `Promise.all` the reads, renders table or empty state. Key patterns: two-phase count/read, meta-char-stripped search, bounded filter parse.
-- **T11 product form/write** (`actions.ts` + `product-input.ts` + `product-write.ts`) — the template for every T12 write action: session-first, pure parse, admin-client write, friendly-error mapping.
-- **T11 CSV export route** (`products/export/route.ts`) — the template for the packing-slip route handler (self-guard, `force-dynamic`, friendly 500).
-- **T8 create_order / T11 record_inventory_adjustment RPCs** — the template for `cancel_order` (atomic stock + history, `SECURITY DEFINER`, `service_role`-only).
-- **T8 webhook refund path** (`refund.ts` + `advance-order.ts`) — the exact refund contract the admin action wraps.
+- **Q&A submission** (`producto/[slug]/actions.ts`, `qa-form.tsx`, `lib/qa/submit-guard.ts`) — closest analog to the Contact form: honeypot, trim/validate, sliding-window rate limit keyed by IP(+id), serializable `useActionState` result, a11y error/status announcing. Contact reuses this end-to-end, replacing the anon insert with `sendContactRelay`.
+- **Brand/Category/Style index pages** (`marcas`, `categorias`, `estilos`) — reference for the static-page and homepage-section layout (server component, metadata, breadcrumb, grid, empty state, stagger animation constants `STAGGER_STEP_MS`/`STAGGER_MAX_STEPS`).
+- **`SiteFooter`** (`site-footer.tsx`) — reference for reading `getStoreSettingsStatic` and degrading to config fallbacks; also the file whose dead slugs this task makes live.
 
 ## Dependency Analysis
 
 ### Existing Dependencies to Leverage
 
-- **`mercadopago` SDK** via `src/lib/payments/mp-client.ts` (`refundClient()` → `PaymentRefund`). Already installed and server-only. Refunds go through `refund.ts`; the admin action never touches the SDK directly.
-- **`refundOrderPayment`** (`refund.ts`) — full/partial, idempotent, cumulative-guarded, ledger-recording, state-advancing. Version: current repo T8 code.
-- **`advanceOrderStatus`** (`advance-order.ts`) → `advance_order_status` RPC. The status authority.
-- **`record_refund` / `payment_refunds` / `refunded_total`** (0009) — the refund ledger + guard.
-- **Email seams** `sendShipped` / `sendCancelled` / `sendRefundIssued` (`dispatch.ts`) + `email_sends` ledger + `claim_email_send`/`finalize_email_send` (0010).
-- **List/pagination** `list-query.ts` / `list-filters.ts` / `pagination.ts`.
-- **UI** `shadcn/ui` (Dialog, Badge, Button, Table), `@hugeicons/react` + `@hugeicons/core-free-icons` (`ShoppingCart01Icon` already imported in `constants.ts`), `cn()`, `AdminPage`/`AdminShell` chrome.
+- `next-intl` — `getTranslations`/`setRequestLocale`/`useTranslations`, `routing`/`Link`. Already the i18n backbone.
+- `sendContactRelay` / email module — tested; call it, don't rebuild. Handles preview mode + owner-address failure internally.
+- `createSlidingWindowLimiter` + `clientIp()` — rate-limit infra, proven in checkout + Q&A.
+- `createPublicClient` (`src/lib/supabase/public.ts`) — cookie-free RLS-enforced reads for static content (enables ISR).
+- Catalog queries + card/tile/grid components — featured content with zero new query logic (slice existing lists).
+- `@hugeicons/react` + `@hugeicons/core-free-icons` — icons (never mix sets).
 
 ### New Dependencies Needed
 
-- **None recommended.** Packing slip = print-optimized HTML + `@media print` + `window.print()`. **Rationale:** (1) no PDF lib exists in the repo today (grep for `pdf`/`packing`/`print` found only the OXXO/SPEI voucher component, unrelated); (2) a server-side PDF renderer (`@react-pdf`, `puppeteer`, `pdfkit`) adds heavy weight, a serverless cold-start/binary risk on Vercel, and a new attack surface for an es-MX single-owner tool where the browser's print-to-PDF is sufficient; (3) HTML print keeps the slip a pure function (`packing-slip.ts`) that's trivially testable. **Alternatives (if a hard requirement emerges):** `@react-pdf/renderer` (React-native PDF, no headless browser) or `pdfkit` (imperative). Both are Phase-2 justifications, not Phase-1.
+- **None.** No new npm package. Static map is a plain `<img>` / maps deep-link (no map SDK), consistent with the store's CSP/no-external-dependency posture and the "no external map SDK" scope line.
 
 ### Internal Dependencies
 
-- `order-status-write.ts` → `advance-order.ts` → `advance_order_status` RPC → `email_transition_kind` — implication: the email branch MUST read the RPC's returned `transition_kind`, not re-derive or string-match (single-sourced in SQL).
-- `order-refund-write.ts` → `refund.ts` → (`refunded_total`, `record_refund` RPCs, `advance-order.ts`, `mp-client.ts`) — implication: the action's only job is auth-gate + MXN→cents + stable idempotency key + `sendRefundIssued` on success; do NOT re-implement any guard.
-- Session verify (`session-guard.ts` → `session.ts` → `session-payload.ts` → `constants.ts` `ADMIN_SESSION_VERSION`) — implication: AC-27 revocation must thread a PERSISTED version read into the verify without breaking the codec's crypto-free/runtime-agnostic split (Node `session.ts` + Edge `session-edge.ts` share `session-payload.ts`). The persisted read is I/O, so it belongs in the `session-guard.ts` boundary (Node) — the Edge middleware can stay a fast pre-check and let the authoritative Node verify do the revocation check.
+- `getStaticPageBySlug` depends on `createPublicClient` + `translations` overlay — implication: RLS translation policy (`0005:215-227`) already gates `en` static-page translations behind `is_published=true`, so the wrapper's join is safe for anon.
+- Homepage featured sections depend on `listProducts`/`listBrands` cache tags (`CATALOG_CACHE_TAG`) — implication: admin product/brand edits already bust these, so featured content stays fresh with no new invalidation wiring.
+- Contact action depends on `EMAIL_OWNER_ADDRESS` + `EMAIL_*` — implication: blocked-on-user for live send; `EMAIL_DEV_PREVIEW=1` is the working dev path and must be the test/QA path (success is exercisable without real keys).
+- Footer slug reconciliation depends on the final slug decision — implication: pick slugs before dev so `footer.links` labels and hrefs are edited once.
 
 ## External Research
 
-### API Documentation — Mercado Pago Refunds
+### API Documentation
 
-Confirmed against MP developer docs and matching the repo's `refund.ts` contract exactly:
-
-- **Endpoint:** `POST /v1/payments/{id}/refunds` (the SDK's `PaymentRefund.create({ payment_id })`).
-- **Full vs partial:** an EMPTY body = full refund; a body with `{ "amount": <number> }` = partial. The repo does exactly this (`refund.ts:185`: `body: isFull ? undefined : { amount: centsToMpAmount(refundCents) }`). `amount` is a decimal major-unit value (pesos), so `centsToMpAmount` converts integer cents → MP's expected number.
-- **Idempotency:** the `X-Idempotency-Key` header makes a retry of the SAME request a no-op returning the first result. MP has made it MANDATORY. The repo threads it via `requestOptions: { idempotencyKey }` (`refund.ts:186`). **Gotcha (H-1, already handled):** the key must be per-LOGICAL-attempt, never per (order, amount) — two distinct same-amount partials sharing a key collapse into one at MP. The admin action MUST thread a STABLE key per user action (retry-safe) but a FRESH key per new refund.
-- **Multiple refunds on one payment:** MP allows more than one refund per payment as long as the cumulative refunded ≤ the original amount. The repo enforces this against the ORDER total via `record_refund`'s order-locked guard (not MP's per-payment sum) — the stricter, race-safe authority.
-- **PP-000005 caveat (3 duplicate payments):** `orders.mp_payment_id` stores ONE payment id, so a refund targets that single approved payment. Refunding the other two duplicate charges is NOT possible through this Phase-1 path (out of scope); the UI must not imply it.
-
-Sources:
-- [Refund partial amount — Mercado Pago](https://www.mercadopago.com.co/developers/en/docs/wallet-connect/payment-flow/refund-payment/refund-partial-amount)
-- [Create refund — Mercado Pago API Reference](https://www.mercadopago.com.ar/developers/en/reference/online-payments/checkout-api-payments/create-refund/post)
-- [Refunds and cancellations — Mercado Pago](https://www.mercadopago.com.ar/developers/en/docs/checkout-api/payment-management/cancellations-and-refunds)
-- [Idempotency key mandatory — Mercado Pago](https://www.mercadopago.com.ar/developers/en/news/2023/01/04/Idempotency-key-usage-will-be-mandatory)
+- **None required.** No external API is integrated in this task. Mercado Pago, Supabase, and the email provider are all pre-wired; T13 consumes existing internal wrappers only.
 
 ### Library Documentation
 
-- **`mercadopago` (SDK)** — `PaymentRefund` resource; `create({ payment_id, body?, requestOptions: { idempotencyKey } })`. The response `id` (numeric) is the MP refund id (`refund.ts:293` `extractRefundId` handles string/number, falls back to the idempotency key). Client is timeout-bounded (`MP_API_TIMEOUT_MS`) via `mp-client.ts`.
-- **Next.js App Router** — route handler self-guard (matcher excludes `/api`; `(app)` layout does not cover route handlers). `export const dynamic = "force-dynamic"` prevents caching an authed response.
-- **next-intl** — email templates use `getTranslations({ locale, namespace: "email" })`; admin page/nav copy is inline es-MX (T10/T11 decision), so T12 UI strings are inline, NOT catalog keys.
+- **next-intl (`as-needed` prefix)** — Spanish served at `/`, English at `/en`. Static-page slugs are single Spanish slugs; do NOT add localized pathnames (the repo deliberately avoids them). English is content-layer only via `translations`. `generateMetadata` must re-validate the locale (`hasLocale`) because the segment is user-controlled.
+- **Next.js App Router segment precedence** — an explicit folder (`contacto/`, `showroom/`) and a single dynamic segment (`[pageSlug]`) both take precedence over the `[...rest]` catch-all. Risk: `[pageSlug]` is a dynamic segment at the same level as `sillas`, `marcas`, etc.; App Router resolves **static segments before dynamic**, so existing routes win — but confirm no static-page slug duplicates an existing static segment, and use `generateStaticParams` restricted to the known slug set so unknown slugs `notFound()` rather than being pre-rendered.
 
 ## Risk Assessment
 
 ### Technical Risks
 
-| Risk                                               | Likelihood | Impact | Mitigation                                                                                                             |
-| -------------------------------------------------- | ---------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
-| **Refund double-execution** (double-click / retry) | Med        | High   | Stable per-action `X-Idempotency-Key` (MP dedupe) + `record_refund` order-locked cumulative guard + `payment_refunds` unique on MP refund id. Disable the submit button in-flight; modal non-dismissable mid-request. |
-| **Stolen-cookie + refund** (SEC-M-1)               | Med        | High   | AC-27 revocation gate (persisted session-version checked on every authoritative verify) MUST ship before the refund action. Headline security item. |
-| **Stock-restore non-atomicity** (T11 compensation trap) | Med    | High   | `cancel_order` is a single SQL RPC transaction (mirror `create_order`), NOT app-level delete/re-insert. Idempotent, skips null FKs, locks the order. |
-| **transition_kind mismatch** (email fires on wrong event / string-matching note) | Low | Med | Branch ONLY on the RPC-returned `transition_kind` (single-sourced in `email_transition_kind`). Never parse `note`. Tests assert the exact kind→send mapping. |
-| **Refund state-write partial failure** (MP moved, ledger/advance failed) | Low | High | `refund.ts` already logs "reconcile by hand" and returns `error`; the action surfaces a generic error + "revisa el panel de MP". Idempotent advance converges on retry. |
-| **Immutability trigger blocks tracking write**     | Low        | Med    | New tracking columns are NOT in the 0003 frozen set → allowed. VERIFY in the migration test (a `.update({tracking_number})` on an order must succeed). |
-| **`/api/admin` unguarded packing slip leaks order data** | Low  | High   | Self-guard `hasValidAdminSession()` → 401 at entry (mirror export route). Covered by AC-29 + a route test. |
-| **Over-refund race across concurrent partials**    | Low        | Med    | Local pre-check + race-safe `record_refund`. Second refund rejected; if MP already moved money, logged for manual reconcile. |
+| Risk | Likelihood | Impact | Mitigation |
+| --- | --- | --- | --- |
+| `[pageSlug]` dynamic segment shadows/collides with existing routes (`sillas`, `producto`, etc.) | Med | High | `generateStaticParams` limited to the 9-slug set; reserved-slug guard in `config/static-pages.ts`; App Router prefers static segments; QA asserts existing routes still resolve |
+| Shipping/returns slug reconciliation missed → footer link 404s persist | Med | Med | Single-source slug set; grep footer/nav for every href; AC-10 asserts zero dead links; e2e clicks all footer links |
+| English static content absent (no seeded `translations`) → `/en/*` shows Spanish unexpectedly | High (until seeded) | Low | Documented es-MX fallback (AC-4); seed `en` translation fixtures; QA covers fallback path |
+| Contact form spammable if rate-limit/honeypot misconfigured | Med | High | Reuse proven limiter + honeypot; dedicated instance with `maxKeys` ceiling; unit + integration coverage of over-limit and honeypot paths |
+| Live email send blocked-on-user (no `EMAIL_*` keys) masks a real send bug | Med | Med | Exercise success via `EMAIL_DEV_PREVIEW=1` (returns ok); unit-test the action's `DispatchResult` branch mapping; flag live send as owner-gated like T8 Phase 5 |
+| Showroom data has no schema home | Low | Low | Store showroom copy in the `showroom` static page body + config fallback for map link (Option A); no migration |
+| `store_settings`/content rows absent after a DB reset → homepage/footer break | Low | Med | Existing graceful-null readers; featured sections omit on empty; hero always renders |
+| `body` is plain text but placeholder "sections" tempt raw HTML injection into markup | Low | High | Render `body` as escaped text/paragraphs (split on newlines), never `dangerouslySetInnerHTML`; Aviso/Terms structure via seeded plain-text headings |
 
 ### Performance Considerations
 
-- **List read** — copy the two-phase count/range + batch-stitch to avoid N+1. `orders` already has indexes on `status`, `created_at`, `customer_id` (0003). Add a `customers` search index (name/email) in 0012 for the customer list. Order-count-per-customer should be a single grouped query, not per-row.
-- **Detail read** — one order + one items query + one history query + one notes query, `Promise.all`'d. History is bounded per order; no pagination needed.
-- **Session revocation read** — the persisted version is a single-row read on every authoritative verify (every admin page + action). Keep it a trivial indexed single-row select (or a short-lived in-process cache) so it doesn't add latency to every admin request.
+- Static pages + homepage are server-rendered and cacheable (ISR via `unstable_cache` + `CATALOG_REVALIDATE_SECONDS`), keyed cookie-free so routes stay statically optimizable (same posture as `getStoreSettingsStatic`). Featured queries are bounded slices (`pageSize: N`), not full scans.
+- Contact limiter is in-memory per instance; the `maxKeys` ceiling bounds worst-case memory. Acceptable for single-instance Phase 1; note in backlog that a multi-instance deploy would need shared-store rate limiting (same caveat as checkout/Q&A).
 
 ### Security Considerations
 
-- **Session revocation (SEC-M-1 / ADR-2) — THE headline.** Stateless sessions give a stolen cookie an ≤8h window. For a refund-capable console, add a persisted session-version compared against payload `v` on every authoritative verify; a version bump revokes all cookies. Must be live before the refund action ships (AC-27/28).
-- **`/api/admin` self-guard (AC-29).** The middleware matcher excludes `/api` and route handlers escape the `(app)` layout guard — the packing-slip route MUST self-guard or it leaks full order/customer PII. Template: `products/export/route.ts`.
-- **Action auth (AC-30).** Every write action `requireSession()` FIRST, before any DB touch — a direct POST without a valid cookie must never reach the RPC.
-- **No raw MP error to the client (AC-20).** `refund.ts` already returns typed results; the action must not widen them into raw strings.
-- **PII in the packing slip.** It carries ship-to PII; it is authed-only and `Cache-Control: no-store`.
-- **es-MX only.** Admin surfaces are es-MX; no locale negotiation to exploit.
+- **Injection**: contact message is user-controlled and emailed. Defense is template-side `escapeHtml`; the action must pass raw text and never build HTML itself (AC-17). No user input is rendered raw in any page (`body` rendered as escaped text).
+- **Abuse/DoS**: rate limit by IP + honeypot + `maxKeys` cardinality bound. Honeypot returns fake success (no oracle for bots).
+- **Data exposure**: reads use the RLS-enforced public/anon client; unpublished pages are invisible to anon (`is_published=true` policy). No secret ever reaches the client bundle; `EMAIL_*` are server-only, never `NEXT_PUBLIC_`.
+- **Error hygiene**: `sendContactRelay` `reason` and any caught exception are logged server-side only, never surfaced (AC-16). No empty `catch{}`.
 
 ## Implementation Recommendations
 
 ### Suggested Order of Implementation
 
-1. **Migration 0012 + the session-`v` revocation gate FIRST** — tracking columns, `order_internal_notes`, `cancel_order` RPC, the session-version source. The revocation gate is a security prerequisite for the refund action (AC-27) and touches shared auth code, so land it before any refund-capable surface. Add the `cancel_order` Args/Result + row types to the type files.
-2. **Read + list** — `order-list-filters.ts`, `order-list-query.ts`, `orders/page.tsx`, the table/filters/empty-state components. Flip the nav to `live`. (No writes yet — safe to ship incrementally.)
-3. **Detail + internal notes** — `order-read.ts`, `[id]/page.tsx`, history-log + stepper components, `order-notes-write.ts` + `addInternalNote` action. Read-heavy, low-risk.
-4. **Status pipeline + email** — `order-status-input/write.ts`, `advanceStatus` action, wired to `advanceOrderStatus` + `sendShipped`/`sendCancelled` branching on `transition_kind`. (`preparing`/`delivered` = no template → no email.)
-5. **Tracking + shipped email** — `order-tracking-input/write.ts`, `setTracking` action; thread tracking into the `sendShipped` call at the ship step.
-6. **Cancel + stock restore** — `order-cancel-write.ts`, `cancelOrder` action, wired to `cancel_order` RPC + `sendCancelled`. Depends on step 1's RPC.
-7. **Refund (full + partial)** — `order-refund-input/write.ts`, `refundOrder` action, `RefundModal`. FIRST caller of `refund.ts`. Gated behind step 1's revocation (money-movement; human-review gate per BUILD_PLAN rule).
-8. **Packing slip** — `packing-slip.ts`, `[id]/packing-slip/route.ts` (self-guarded), `packing-slip-view.tsx`. Independent; can run in parallel with 6/7.
-9. **Customer list** — `customer-list-query.ts`, `customers/page.tsx`, `customer-table.tsx`. Reuses the list pattern.
-10. **Dashboard new-order indicator** — replace the `/admin` redirect stub with the overview + `new-order-indicator.tsx`. Confirm `sendNewOrderOwnerAlert` stays wired at checkout (do NOT duplicate).
+1. **Slug + config module** (`config/static-pages.ts`) — decide the final 9 slugs (resolve shipping/returns split) first; everything else references it. Reconcile `site-footer.tsx` + `nav-items.ts` here so no dead links remain.
+2. **Seed expansion** (`content.ts` + `seed.ts`) — 9 pages + `en` translation fixtures + updated seed-invariant tests; `supabase db reset` clean. Depends on step 1 (slugs).
+3. **`getStaticPageBySlug` wrapper** (`lib/content/static-pages.ts`) — degrade-to-null + translation overlay. Depends on step 2 (rows to read).
+4. **Generic static-page route** (`[pageSlug]/page.tsx`) — renders the 7 text-only pages; `generateStaticParams` from the slug set. Depends on step 3.
+5. **Contact page + action + limiter + guard** — copy Q&A grammar; wire `sendContactRelay`; exercise via `EMAIL_DEV_PREVIEW=1`. Independent of steps 3–4 (own folder).
+6. **Showroom page** — address/hours from body/config + static map link. Depends on step 1 (config fallback).
+7. **Homepage rebuild** (`page.tsx` + `components/home/*`) — hero + featured sections; omit-on-empty. Depends on catalog queries (already present).
+8. **i18n namespaces** — fill `es-MX.json` + `en.json` in lockstep as each surface is built (never hardcode strings).
 
 ### Key Decisions
 
-- **PDF vs HTML print:** RECOMMEND print-optimized HTML (`@media print` + `window.print()`), NO new dependency. Justified above (no existing PDF lib, serverless weight/cold-start, single-owner es-MX tool, testable pure builder). Reopen only on a hard server-side-PDF requirement.
-- **Session revocation mechanism:** RECOMMEND a persisted single-row `admin_session_version` (a table or a `store_settings` column) compared against payload `v` at the Node authoritative verify (`session-guard.ts`/`isSessionValid` boundary), keeping the Edge pre-check unchanged. Preferred over merely shortening max-age because it gives an actual "log out everywhere / rotate on compromise" control, which a refund console warrants. Keep the read cheap (indexed single-row, optional short cache). Fallback if scope-cut: shorten `getSessionMaxAgeSeconds` for refund sessions (weaker; document the residual window).
-- **Partial refund across multiple payments:** Phase 1 refunds against `orders.mp_payment_id` (one id) and guards against the ORDER total. Multi-payment reconciliation (PP-000005's duplicates) is out of scope; the UI states the refundable balance clearly and never implies it touched other charges.
-- **Internal notes storage:** a dedicated `order_internal_notes` table (append-only, admin-only), NOT `order_status_history.note` — the history note feeds customer-facing derivation context and must not carry private admin text.
-- **Tracking → shipped email:** pass `{trackingNumber, carrier, trackingUrl}` at the `sendShipped` call site (the seam already accepts them) rather than widening `getOrderForEmail`/`OrderEmailData` — smaller blast radius on the shared email read.
+- **Static-page route shape**: recommend **one generic `[pageSlug]` route** for the 7 text-only pages + **explicit `contacto/` and `showroom/` folders** for the two interactive/structured pages — avoids 9 near-duplicate files while allowing bespoke UI where needed.
+- **Showroom data home**: recommend **Option A** (content in the `showroom` page body + map link in config) — no migration, honors placeholder-copy scope, defers editable showroom fields to Phase 2. Flag Option B (additive `store_settings` columns) as the Phase 2 path.
+- **Featured selection**: recommend **slicing existing active queries** (`listProducts({ pageSize: N })`, `listBrands().slice(0,M)`) over adding a `featured` flag — no schema change, matches "no build-ahead" rule; a dedicated `listFeaturedProducts(limit)` wrapper is optional sugar.
+- **English content**: recommend **content-layer i18n via `translations`** (not per-locale URLs), with es-MX base fallback — matches the repo's `as-needed` prefix + no-localized-pathnames convention.
 
 ### Anti-Patterns to Avoid
 
-- **Don't string-match `order_status_history.note`** to decide which email to send — branch on the RPC-returned `transition_kind`. The note is free text; the kind is the single-sourced contract (`email_transition_kind`, 0010).
-- **Don't use the T11 compensation pattern for stock restore** (`product-write.ts`'s app-level delete-then-restore-on-error). Cancel is money/inventory-critical: use the single-transaction `cancel_order` SQL RPC (mirror `create_order`).
-- **Don't add an unguarded `/api/admin` route handler.** The matcher excludes `/api`; self-guard `hasValidAdminSession()` at entry (mirror `products/export/route.ts`).
-- **Don't call `refundOrderPayment` without a stable idempotency key** — a bare call mints a fresh UUID per invocation, so a double-clicked action could double-refund. Thread ONE stable key per user action.
-- **Don't re-implement the cumulative-refund or regression guards** in the action — `record_refund` and `advance_order_status` own them race-safely.
-- **Don't do a raw `.update({ status })`** anywhere — the ONLY transition path is `advanceOrderStatus`.
-- **Don't echo raw MP errors** to the modal (AC-20) — surface the typed `RefundResult` mapped to friendly es-MX copy.
-- **Don't put the order-form type contract in the app dir** (T11's lib→app inversion) — types live in `src/lib/admin/orders/`.
+- Don't render `static_pages.body` with `dangerouslySetInnerHTML` — body is plain text; split into escaped paragraphs. (XSS surface for later editable content.)
+- Don't create 9 hand-copied page folders — a generic dynamic route + a slug constants set is DRY and reserved-slug-safe.
+- Don't rebuild rate limiting or email sending — reuse `createSlidingWindowLimiter` and `sendContactRelay`; a bespoke limiter/email path is duplicate, untested surface.
+- Don't hardcode any visible string in a component — every label/heading/error goes through the message namespaces in both locales (repo convention; storefront is es-MX+en symmetric).
+- Don't surface the raw `sendContactRelay` `reason` or any provider/PG error to the user — log with context, return a friendly enum status.
+- Don't add a "featured" DB column or homepage section model — that is Phase 2 build-ahead; use bounded slices of existing queries.
+- Don't let the contact action throw — catch, log, return `{ status: "error" }`; the client must always get a serializable state.

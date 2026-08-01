@@ -1,9 +1,24 @@
 # Pipeline State
-Task: T12 — Admin: order management
-Tier: full-cycle
-Stage: COMPLETE
-Agent: — (T12 shipped; next task per BUILD_PLAN is T13)
-Last Updated: 2026-08-02 01:45
+Task: T13 — Static pages & homepage
+Tier: standard
+Stage: 2
+Agent: ultradesign
+Complexity: medium
+Feature Type: full-stack (full-feature)
+Last Updated: 2026-08-02 02:10
+Notes: S1 (PlanResearch) COMPLETE. Ticket + research written (tasks/next-ticket.md, tasks/research-report.md). Complexity=medium (full-feature/full-stack): copies proven patterns, 1 new backend seam, NO new tables/RPCs — only data-only seed expansion (+ showroom-column decision, recommend Option A/no migration). Standard tier → next is Stage 3 UI Design (ultradesign): hero + featured-chairs + featured-brands homepage layout, 9 static-page + contact-form + showroom surfaces. Load emil-design-eng + apple-design. UI Design is load-bearing here (hero, featured grid, form states).
+
+=== S1 KEY DECISIONS (dev must honor) ===
+- STATIC PAGES: 9 total. Currently only 4 seeded (sobre-nosotros, envios-y-devoluciones, preguntas-frecuentes, contacto). Must ADD returns/warranty/aviso-de-privacidad/terminos/showroom and RECONCILE the combined envios-y-devoluciones footer slug (site-footer.tsx STORE_LINKS) vs a shipping/returns split. Single-source the final slug set in NEW src/lib/config/static-pages.ts + reserved-slug guard (must not shadow sillas/marcas/categorias/estilos/carrito/checkout/producto).
+- ROUTE SHAPE: ONE generic src/app/[locale]/[pageSlug]/page.tsx (generateStaticParams over slug set) for the 7 text-only pages; EXPLICIT contacto/ + showroom/ folders for the 2 bespoke ones. [pageSlug] is a dynamic segment sibling of static routes — App Router prefers static, but confirm no collision. Supersedes [...rest] catch-all for its slugs; missing/unpublished row → notFound().
+- static_pages: id/slug(unique)/title/body(plain text, max 100k CHECK)/is_published(default true). RLS: anon select where is_published=true (0005). i18n via generic translations table (locale/entity_type='static_page'/entity_id/field/value) — NO translation rows seeded yet. NEW getStaticPageBySlug(slug,locale) in src/lib/content/static-pages.ts: createPublicClient, overlay en translation with es-MX base FALLBACK, degrade-to-null like store-settings.ts, unstable_cache tag 'static-pages'. Render body as ESCAPED paragraphs — NEVER dangerouslySetInnerHTML.
+- SHOWROOM: store_settings has NO address/hours/map columns. RECOMMEND Option A — showroom copy in the showroom page body + map link/coords in config; NO migration. (Option B = additive store_settings cols via 0014, defer to Phase 2.)
+- CONTACT FORM (wires T9 seam): copy Q&A grammar verbatim (src/app/[locale]/producto/[slug]/actions.ts + qa-form-state.ts + components/product/qa-form.tsx). submitContactForm(prevState,formData)=>ContactFormState (useActionState). honeypot→fake success; trim+length-cap+EMAIL_PATTERN validate (src/lib/contact/submit-guard.ts); rate limit src/lib/contact/rate-limit.ts (createSlidingWindowLimiter, key=clientIp(), CONTACT_RATE_LIMIT_* consts + CONTACT_RATE_LIMIT_DISABLED env); then sendContactRelay({fromName,fromEmail,subject,message}) (src/lib/email/dispatch.ts — template HTML-escapes body, sends to EMAIL_OWNER_ADDRESS, NOT order-ledger). ok:false → log reason, return status:error (never echo raw reason). NO zod in repo — pure validators. NO /api handler — server action.
+- EMAIL ENV: EMAIL_* blocked-on-user; DEV/QA path = EMAIL_DEV_PREVIEW=1 (logs preview, returns ok). Live send is owner-gated (flag like T8 Phase 5). Success IS exercisable in preview mode.
+- HOMEPAGE: replace T2 placeholder (page.tsx). hero (always) + featured-chairs (listProducts({pageSize:N}), reuse ProductGrid/ProductCard) + featured-brands (listBrands().slice(0,M), reuse IndexTile/BrandLogo). N,M named consts. OMIT a section on empty list (no empty grid). NO 'featured' DB flag — bounded slice of existing active queries. New src/components/home/{hero,featured-products,featured-brands}.tsx.
+- i18n: storefront es-MX+en symmetric. Add staticPages/contact/home.featured/showroom namespaces to BOTH src/messages/es-MX.json + en.json (matching keys). NO hardcoded visible strings. footer.links currently: about/shipping/faq/contact.
+- SEED: expand scripts/seed-data/content.ts 4→9 pages (structured placeholder es-MX; aviso/terminos = headed sections) + seed en translations rows in scripts/seed.ts (seeds none today); update seed-invariants*.test.ts counts. Idempotent upsert on slug.
+- DEPS: none new. Static map = plain <img>/maps deep-link, no map SDK (CSP posture).
 
 === T12 COMPLETE — SHIP (Stage 12, quality 9/10, confidence HIGH, 2026-08-02) ===
 - Pipeline: full-cycle HIGH, all 12 stages. S5 review 8.5/10 REQUEST-CHANGES (0 crit, 4 major) → S6 all 4 majors + 6 minors FIXED, 3/4 nits fixed (n-1 product-intent skip); S7 QA HIGH (AC 30/30, edges 11/11, +123 tests, 0 product bugs); S8 UX 9.5/10 (mobile-overflow crit fixed); S9 SECURE (0 crit/high/med, 2 accepted LOW, 0 secrets); S10 arch APPROVE-WITH-NOTES 9/10; S11 hacker chaos 1/10 (0 dead-UI/visual/logic/missing-state; 1 robustness gap FIXED = unbounded history-note → boundStatusNote).

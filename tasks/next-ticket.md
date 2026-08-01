@@ -1,259 +1,172 @@
-# Task: T12 — Admin: Order Management
+# Task: T13 — Static Pages & Homepage
 
 ## Priority
 
-**Critical** — T12 is the last functional admin subsystem before launch prep (T14). It is refund-capable (real money movement via Mercado Pago) and is the operational surface the store Owner uses to fulfill every order: without it, no order can be advanced, shipped, cancelled, or refunded from the admin. It carries two binding security gates (session revocation, `/api/admin` self-guard) distilled from the T10/T11 audits that MUST close before refund-capable sessions ship. Blocked-by (T8/T9/T10) are all effectively done: the refund API, the status RPC, the email seams, and the auth core all exist and are tested — T12 is the wiring + UI layer that makes them live.
+**High** — This is a launch-blocker. T13 makes live the footer/nav links that have shipped as intentional dead links since T2 (`/sobre-nosotros`, `/envios-y-devoluciones`, `/preguntas-frecuentes`, `/contacto`), delivers the Contact form that wires the tested-but-dark T9 `contact_relay` email seam, and builds the real homepage (currently a T2 placeholder that explicitly defers hero/featured content to T13). T14 (SEO/launch hardening) is `blocked by: T13`, so the whole store cannot ship until this lands.
 
 ## Complexity
 
-**high** — justified against the criteria:
+**medium** — Justification against the criteria:
 
-- **New subsystem, 15+ files.** An entire `src/lib/admin/orders/` read/write/query/filter layer, a full `src/app/admin/(app)/orders/` route tree (list, detail, actions, packing-slip route), a new migration (0012), a session-payload change, dashboard wiring, and a nav flip. Easily 20+ files created/modified.
-- **New data model + new RPC.** Migration 0012 adds order columns (tracking) + an internal-notes store + a session-version source + a NEW transactional `cancel_order` RPC (stock restore + status advance in one transaction), mirroring `create_order`'s guarded decrement in reverse.
-- **New external integration wiring.** First live use of the T8 Mercado Pago refund API (`refundOrderPayment`) — full and partial refunds, cumulative-refund guard, idempotency, multi-payment complications (PP-000005 has 3 duplicate approved payments).
-- **Architectural/security change.** Adds server-side session revocation (a SEC-M-1/ADR-2 gate) to the previously stateless admin session — touches the shared session codec used by every admin route.
-- **Live-wiring three untested-in-prod email seams** branching on `transition_kind`.
+- Spans 5–15+ files but follows existing patterns almost entirely: storefront pages copy the proven `marcas`/`categorias` server-component grammar; the Contact form copies the Q&A `useActionState` + form-state + custom-validation pattern; the rate limiter reuses `createSlidingWindowLimiter`; the email send reuses `sendContactRelay` verbatim.
+- Adds new UI surfaces (9 static pages, homepage hero + featured sections, contact form) and **one** new backend seam (contact server action + rate limiter wiring), but **no new data model** — `static_pages` and `store_settings` tables already exist with RLS read policies.
+- The one genuinely new-logic slice (contact form → rate-limit → sanitize → `sendContactRelay` → serializable form state) is a well-scoped copy of two existing patterns, not a new subsystem.
 
-Unambiguously the `high` tier (new system + new model + new integration + architectural change). Per `/full-cycle` auto-classification, `high` → run all 12 stages.
+It is NOT `high`: no new migrations for tables/RPCs (only a **data-only seed expansion** of `static_pages` + an optional additive-column decision for showroom — see Data Model note), no new integration, no architectural change. It is NOT `low`: 9 new routes + homepage rebuild + a new server action with abuse controls is well beyond a pattern-copy bug fix.
 
 ## Feature Type
 
-- **Axis 1 (surface):** `full-feature` — substantial new admin UI (list, detail, history log, refund modal, packing slip) AND substantial new logic (RPC, refund wiring, email wiring, session revocation).
-- **Axis 2 (stack):** `full-stack` — new SQL migration + RPC (backend), typed lib wrappers (backend), server actions + route handler (backend), and React server/client components (frontend).
-
-All pipeline stages run at full depth. UI Design (3), UX (8), Security (9), Arch (10), Hacker (11) all apply.
+**full-stack** (`full-feature`).
+Frontend: 9 static pages, homepage hero + featured chairs + featured brands, Contact form UI, footer/nav link reconciliation. Backend: new `getStaticPageBySlug` read wrapper, new `submitContactForm` server action wiring `sendContactRelay` with rate limiting + input hygiene, seed-data expansion. Both storefront locales (es-MX default + en) apply. All pipeline stages run at full depth; UI Design (Stage 3) and UX (Stage 8) are load-bearing (hero + featured layout, form states, showroom map).
 
 ## User Story
 
-As the **store Owner**, I want to **find, inspect, and manage every order — advancing its status, shipping it with a tracking number, cancelling it with automatic stock restore, and issuing full or partial refunds — from one admin surface that keeps the customer informed by email at each step**, so that **I can fulfill and support orders end-to-end without touching the database, and never oversell, double-refund, or leave a customer uninformed.**
+As a **prospective chair buyer in Mexico**, I want **a homepage that showcases featured chairs and brands, plus clear informational pages (about, shipping, returns, warranty, FAQ, privacy, terms, showroom) and a working way to contact the store**, so that **I can trust the store, understand its policies, find the showroom, and reach the owner before or after buying**.
+
+And as the **non-technical store owner**, I want **the contact form to email me the visitor's message reliably (and safely, without spam abuse)**, so that **I never miss a customer inquiry and my inbox is not flooded by bots**.
 
 ## Background
 
-**What exists today (all backend, none wired to an admin UI):**
+What exists today:
 
-- **Schema (0003):** `orders` (immutable financial snapshot; mutable `status`, `payment_status`, `payment_method`, `mp_*`), `order_items` (immutable snapshot), `order_status_history` (with `transition_kind` from 0010), `customers` (guest records).
-- **`advance_order_status` RPC (0009/0010):** the ONLY status-transition path. Atomic status + history write; idempotent; regression-guarded (`order_status_rank`); derives + persists `transition_kind`; payment-only mode (`p_order_status = null`) for refunds. Typed wrapper: `src/lib/payments/advance-order.ts` (`advanceOrderStatus`).
-- **`record_refund` RPC + `payment_refunds` ledger + `refunded_total` (0009):** race-safe cumulative-refund guard, append-only, keyed by MP refund id.
-- **`refundOrderPayment` (T8, `src/lib/payments/refund.ts`):** server-only full/partial refund via MP, idempotent, records the ledger, advances state. Called NOWHERE until T12 auth-gates it. Sandbox test data: **PP-000005** has 3 duplicate approved $6,999 payments; **PP-000004** an underpaid approved $2,499.
-- **Email seams (T9, `src/lib/email/dispatch.ts`):** `sendShipped({trackingNumber, carrier, trackingUrl})`, `sendCancelled(reason)`, `sendRefundIssued(mpRefundId, refundedAmountCents)`, `sendNewOrderOwnerAlert` — all built + unit-tested, NOT live-wired for admin. Dedupe via `email_sends` ledger + `claimEmailSend`. Email kinds: `shipped`, `cancelled`, `refund_issued` (see `email-kinds.ts`).
-- **Auth core (T10):** `hasValidAdminSession()`, `requireSession()`, session codec `session-payload.ts` with a reserved `{v, iat}` payload. `v` is currently a FORMAT version (`ADMIN_SESSION_VERSION = 1`), compared only for equality — there is NO server-side revocation, so a stolen cookie is valid for up to `getSessionMaxAgeSeconds()` (default 8h).
-- **T11 patterns to adopt verbatim:** `src/lib/admin/products/{list-query,list-filters}.ts`, `src/lib/catalog/pagination.ts`, paired `*-input.ts`/`*-write.ts`, `src/app/admin/(app)/products/{page.tsx,actions.ts}`, and the self-guarded route handler `products/export/route.ts`.
+- **Homepage** (`src/app/[locale]/page.tsx`) is a deliberate T2 placeholder: a localized `<h1>` + intro + two CTAs (`/sillas`, `/marcas`). Its own comment says "NO featured chairs, brands, or hero imagery — that is T13."
+- **Footer** (`src/components/layout/site-footer.tsx`) already links to `/sobre-nosotros`, `/envios-y-devoluciones`, `/preguntas-frecuentes`, `/contacto` — all currently **dead links** that render the localized in-shell 404 via the `[locale]/[...rest]` catch-all (T2 AC-10). **Nav** (`nav-items.ts`) links to `/contacto` (also dead).
+- **`static_pages` table exists** (migration `0004`): `id, slug (unique), title, body, is_published (default true), created_at, updated_at`. RLS: `anon` may `select` where `is_published = true` (migration `0005`). **Body is plain text (max 100k chars, CHECK in `0006`), NOT rich text / HTML.**
+- **Seed** (`scripts/seed-data/content.ts` via `scripts/seed.ts`) currently seeds **only 4** of the 9 required pages: `sobre-nosotros`, `envios-y-devoluciones`, `preguntas-frecuentes`, `contacto`. Missing: standalone Returns, Warranty, Aviso de Privacidad, Terms, Showroom — and the combined `envios-y-devoluciones` must be reconciled if shipping/returns are split.
+- **`store_settings` table exists** (`0003`): `store_name, contact_email, shipping_flat_rate_cents, free_shipping_threshold_cents, currency`. It has **NO showroom/address/hours/map/phone columns** — showroom data has no home today.
+- **i18n**: `static_pages` localizes via the generic `translations` table (`locale, entity_type='static_page', entity_id, field, value`) — but **no translation rows are seeded**, so English static-page content does not exist yet. UI chrome localizes via `src/messages/{es-MX,en}.json` namespaces (`footer`, `nav`, `home`, `catalog`, ...); there is **no `staticPages` namespace yet**.
+- **Contact email seam**: `sendContactRelay(input: ContactRelayInput): Promise<DispatchResult>` exists and is unit-tested (`src/lib/email/dispatch.ts`), but is **called nowhere**. It sends to `EMAIL_OWNER_ADDRESS`, HTML-escapes the message, and does NOT touch the `email_sends` order ledger (caller owns rate limiting). With no `EMAIL_API_KEY` (or `EMAIL_DEV_PREVIEW=1`) it logs a console preview and returns `{ ok: true, sent: false }`-style success; if `EMAIL_OWNER_ADDRESS` is absent it returns `{ ok: false, reason: "owner address unavailable" }`. **EMAIL_\* vars are blocked-on-user; the dev path is `EMAIL_DEV_PREVIEW=1`.**
+- **Rate-limiter template**: `createSlidingWindowLimiter({ windowMs, maxPerWindow, maxKeys })` (`src/lib/rate-limit/sliding-window.ts`), wrapped for checkout as `checkCheckoutRateLimit(ip)` keyed by client IP (`src/lib/request/client-ip.ts`), disabled in tests via a `*_RATE_LIMIT_DISABLED=1` env var. Q&A uses the same limiter keyed `ip|productId` with a honeypot field.
 
-**What's missing:** every admin UI and every wire. No `/api/admin/*` handler exists yet. `orders` has no tracking/carrier columns and no internal-notes store. The admin session cannot be revoked. The Orders nav item is `status: "soon"`. The dashboard (`/admin`) is a redirect stub with a T11/T12 seam comment.
-
-**Why it matters:** this is the Owner's daily operational tool and the only refund path. It moves real money, so correctness (no double-refund, no oversell on cancel, exactly-once email) and security (no stolen-cookie refund window) are non-negotiable.
+Why this matters: this is the last content/UX task before launch hardening (T14). It converts a functionally-complete store into a presentable, contactable, policy-complete storefront.
 
 ## Acceptance Criteria
 
-Each is binary PASS/FAIL.
+Each criterion is binary — PASS or FAIL.
 
-**Order list, search, filter**
+### Static pages (data-backed)
 
-- [ ] AC-1: `/admin/orders` renders a paginated list (25/page) of orders ordered by `created_at DESC`, each row showing order number, customer name, date, total (formatted MXN), order-status badge, and payment status.
-- [ ] AC-2: A `?search=` term matches `order_number` (case-insensitive) OR `contact_email` OR `shipping_full_name`; PostgREST filter meta-chars are stripped from the term (mirrors `list-query.ts` m-3 defense).
-- [ ] AC-3: A `?status=` filter constrains to one `order_status` (`pending_payment|paid|preparing|shipped|delivered|cancelled`) or `all`; a `?payment=` filter constrains to a `payment_status` or `all`; filters compose with search + pagination and are preserved across page changes.
-- [ ] AC-4: Filters/search are parsed by a pure, bounded `parseOrderListFilters` (search length-capped, enums constrained) — a crafted `?` param can neither crash the read nor mint unbounded query shapes.
+- [ ] **AC-1**: All **9** static pages resolve at their Spanish slug in es-MX and under `/en/<slug>` in English, returning HTTP 200 with the page title as an `<h1>`: About (`/sobre-nosotros`), Contact (`/contacto`), Shipping policy (`/envios`), Returns policy (`/devoluciones`), Warranty (`/garantia`), FAQ (`/preguntas-frecuentes`), Aviso de Privacidad (`/aviso-de-privacidad`), Terms (`/terminos`), Showroom (`/showroom`). The final slug set is single-sourced in a constants module; the shipping/returns split vs. the current combined `/envios-y-devoluciones` footer slug MUST be reconciled (see AC-10).
+- [ ] **AC-2**: Each static page's `title` + `body` renders from the `static_pages` row read through a new typed wrapper `getStaticPageBySlug(slug, locale)` using the RLS-enforced public client — NOT hardcoded in the component.
+- [ ] **AC-3**: `scripts/seed-data/content.ts` seeds **all 9** pages with placeholder es-MX copy (`is_published = true`); Aviso de Privacidad and Terms are structured as real legal-document placeholders (headed sections), not a single sentence. Re-running the seed is idempotent (upsert on `slug`).
+- [ ] **AC-4**: English content for each static page renders from a seeded `translations` row (`locale='en', entity_type='static_page', field IN ('title','body')`); when an `en` translation row is absent for a page, the page falls back to the es-MX base `title`/`body` rather than 404ing or showing an empty page.
+- [ ] **AC-5**: A static page whose row is missing or has `is_published = false` returns the localized in-shell 404 (via `notFound()`), never a 500 and never a blank shell.
+- [ ] **AC-6**: Every static page exports `generateMetadata` producing a locale-correct `<title>` (validating the locale via `hasLocale`, falling back to `routing.defaultLocale`), consistent with the `marcas` page pattern.
 
-**Order detail + history log**
+### Homepage
 
-- [ ] AC-5: `/admin/orders/[id]` (id = order UUID) renders the full order: contact + shipping snapshot, line items (name/SKU/variant/qty/unit/line total), financial totals, current status + payment status, persisted tracking/carrier, and internal notes.
-- [ ] AC-6: The detail page renders `order_status_history` as a chronological log (consistent direction), each entry showing from→to status, `transition_kind`, note, and timestamp.
-- [ ] AC-7: A non-UUID or non-existent `[id]` renders `notFound()` (404), never a 500 or a partial render.
+- [ ] **AC-7**: The homepage renders a **hero** section (localized headline + subcopy + primary CTA to `/sillas`), a **Featured chairs** section showing up to N product cards (reusing `ProductCard`/`ProductGrid`), and a **Featured brands** section showing up to M brand tiles (reusing `IndexTile` + `BrandLogo`). N and M are named constants.
+- [ ] **AC-8**: Featured chairs are fetched via the catalog query layer (`listProducts({ pageSize: N })` or a dedicated `listFeaturedProducts(limit)`); featured brands via `listBrands()` sliced to M (or `listFeaturedBrands(limit)`). No new "featured" DB flag/migration is introduced — selection is a bounded slice of existing active-content queries.
+- [ ] **AC-9**: When there are zero active products or zero brands, the corresponding homepage section is **omitted** (not rendered as an empty grid) and the rest of the homepage still renders. Hero always renders.
 
-**Status pipeline + manual status → email**
+### Footer / nav reconciliation
 
-- [ ] AC-8: The detail page offers only the valid next-status transitions (per `order_status_rank` forward-only lifecycle); an invalid/regressive transition is not offered and, if forced, is rejected by `advance_order_status` (`regression_blocked`) and surfaced as a friendly error — never a 500.
-- [ ] AC-9: A manual status advance calls `advanceOrderStatus` (never a raw `.update`), and on `applied: true` fires the corresponding customer email exactly once, branching on the RETURNED `transition_kind`: `shipped` → `sendShipped`, `cancelled` → `sendCancelled`. Email NEVER string-matches note text.
-- [ ] AC-10: An email-send failure does NOT roll back or block the status transition; it is logged and the UI still shows the transition succeeded (best-effort, T9 dispatch isolation).
+- [ ] **AC-10**: Every footer and nav link that previously 404'd now resolves to a real page. If the shipping/returns split is adopted, `site-footer.tsx`'s `/envios-y-devoluciones` link + `footer.links.shipping` label are updated so no footer/nav link points at a nonexistent slug. There are **zero** dead internal links in the footer, header nav, and homepage after this task.
 
-**Tracking entry → email**
+### Contact form (wires the T9 seam)
 
-- [ ] AC-11: The Owner can enter a tracking number + carrier (+ optional tracking URL) on the detail page; it persists to the new `orders` tracking columns and, when the order is advanced to (or already at) `shipped`, `sendShipped` is called with those values.
-- [ ] AC-12: Tracking input is validated (bounded length, trimmed); an empty tracking number is allowed (ship without tracking) and the shipped email renders with `trackingNumber: null`.
+- [ ] **AC-11**: The Contact page renders a form with fields: name, email, optional subject, message — plus a hidden honeypot field (mirroring Q&A). Submitting valid input calls a new `submitContactForm` server action which calls `sendContactRelay({ fromName, fromEmail, subject, message })`.
+- [ ] **AC-12**: On a successful send (`DispatchResult.ok === true`, including dev-preview mode), the form shows a localized success state and clears the input values; `submissionId` increments per submit (idempotency-safe `useActionState` contract).
+- [ ] **AC-13**: Inputs are trimmed and length-capped before send (name, email, subject, message each have a named max constant); email is validated against the existing `EMAIL_PATTERN`; invalid input returns `status: "invalid"` with `fieldErrors` and preserved `values` — no email is sent.
+- [ ] **AC-14**: The action is rate-limited by client IP using the sliding-window limiter (dedicated `contact` limiter instance with its own window/max/maxKeys constants), disabled in tests via a `CONTACT_RATE_LIMIT_DISABLED=1`-style env flag. Over-limit returns `status: "rate-limited"` with preserved values and sends no email.
+- [ ] **AC-15**: A tripped honeypot returns a **fake success** (no email sent, no error surfaced), mirroring the Q&A anti-spam pattern.
+- [ ] **AC-16**: When `sendContactRelay` returns `{ ok: false }` (e.g. owner address unavailable, provider error), the form shows a localized error state with a retry affordance; the raw provider reason is **never** rendered to the user, only logged server-side.
+- [ ] **AC-17**: The message body reaching `sendContactRelay` is passed as-is (the template HTML-escapes it); the action must not itself inject unescaped user input into any HTML.
 
-**Cancel → stock restore (transactional)**
+### Showroom
 
-- [ ] AC-13: Cancelling calls a NEW transactional `cancel_order` RPC (migration 0012) that, in ONE transaction: restores each line item's `quantity` to the product/variant `stock` (reverse of `create_order`'s decrement), advances status to `cancelled` writing an `order_status_history` row with `transition_kind='cancelled'`, and is idempotent (cancelling an already-cancelled order restores nothing twice).
-- [ ] AC-14: On successful cancel, `sendCancelled` fires exactly once with the admin-supplied reason (nullable). Stock restore uses `order_items` snapshot quantities; a since-deleted product/variant (FK set null) is skipped without failing the cancel.
-- [ ] AC-15: Cancel is NOT built on the T11 compensation pattern (no app-level "delete then re-insert on error") — it is a single SQL RPC transaction (mirrors `create_order` / `record_inventory_adjustment`).
+- [ ] **AC-18**: The Showroom page renders a location block (address, hours, and either an embedded static map image OR a "Ver en mapas" link to Google/Apple Maps — no external map SDK). Showroom data (address, hours, map link/coords) is sourced from a single documented location (see Data Model Changes) with a config fallback, and degrades gracefully (renders address + hours text even if the map is unavailable).
 
-**Full + partial refund via MP**
+### i18n & accessibility (both locales)
 
-- [ ] AC-16: A "Refund" action opens a modal offering FULL or a PARTIAL amount (integer MXN → cents); it calls `refundOrderPayment(orderId, amountCents|null, idempotencyKey)` through a session-gated server action (the FIRST caller of `refund.ts`).
-- [ ] AC-17: A full refund sets `payment_status='refunded'` (RPC payment-only path); a partial leaves it `paid`; both write a `payment_refunds` ledger row; a partial exceeding the remaining balance is refused (`over-refund`) with a friendly message, never a 500 and never a partial money move.
-- [ ] AC-18: On a successful refund, `sendRefundIssued(mpRefundId, refundedAmountCents)` fires exactly once (deduped on the MP refund id, so repeated partials each email once).
-- [ ] AC-19: The refund action threads a STABLE per-action idempotency key so a network retry of the same action is safe at MP (no double-refund), while two DISTINCT partial refunds of the same amount do NOT collide (per `refund.ts` H-1 contract).
-- [ ] AC-20: A raw Mercado Pago error is NEVER echoed to the UI; the modal shows a friendly `mp-error` message and the order state is unchanged.
-
-**Internal notes**
-
-- [ ] AC-21: The Owner can add an internal note to an order, stored where only the admin reads it — never in `order_status_history.note` and never emailed; notes are shown newest-first with a timestamp.
-
-**Packing slip (printable)**
-
-- [ ] AC-22: A "Packing slip" action produces a printable slip (order number, ship-to, line items with qty/SKU) via a SELF-GUARDED `/admin/orders/[id]/packing-slip` route handler returning 401 when unauthenticated (mirrors `products/export/route.ts`).
-- [ ] AC-23: The packing slip is print-optimized HTML (browser print-to-PDF), NOT a new PDF dependency (unless the research report justifies one); it renders for any order and shows a prominent "CANCELADO" banner for a cancelled order.
-
-**Customer list**
-
-- [ ] AC-24: A customer list (`/admin/orders/customers` or `/admin/customers`) renders a paginated list of `customers` (email, name, phone, order count), reusing the list-query/pagination pattern; searchable by email/name.
-
-**New-order dashboard indicator + owner email**
-
-- [ ] AC-25: The admin dashboard (`/admin`, replacing the redirect stub) shows a new-order indicator (count of orders in `pending_payment`/`paid` not yet advanced, or a since-last-viewed count) linking to the filtered list.
-- [ ] AC-26: The owner new-order email (`sendNewOrderOwnerAlert`) stays wired at order creation (T9); T12 does NOT duplicate it — it only surfaces the dashboard indicator. A "last viewed" marker, if used, is persisted, not per-request.
-
-**GATE — Session revocation (SEC-M-1 / ADR-2)**
-
-- [ ] AC-27: Admin sessions gain a server-side revocation mechanism: a persisted session-version source is compared against the cookie payload's `v` on EVERY authoritative verify (`isSessionValid`/`hasValidAdminSession`), so incrementing the stored version invalidates all outstanding cookies (bounding the stolen-cookie window below the 8h max-age). If a version source is deemed out of scope, the max-age is shortened for refund-capable sessions instead — research picks one; the chosen mechanism MUST be live BEFORE the refund action ships.
-- [ ] AC-28: A revoked/old-version cookie is rejected as unauthenticated (redirect to `/admin/login` for pages; 401 for route handlers) with no DB access.
-
-**GATE — `/api/admin` self-guard**
-
-- [ ] AC-29: EVERY T12 route handler (packing slip, and any other `route.ts`) self-calls `hasValidAdminSession()` at entry and returns 401 on failure — the middleware matcher excludes `/api` and route handlers are not covered by the `(app)` layout guard (mirrors `products/export/route.ts`).
-- [ ] AC-30: Every T12 server action calls `requireSession()` FIRST, before any DB touch (mirrors `products/actions.ts`).
+- [ ] **AC-19**: All static-page UI chrome (breadcrumb labels, contact form labels/placeholders/errors/success/rate-limit/error copy, homepage section headings, showroom labels) comes from a new `staticPages` (and/or `home`, `contact`) message namespace present in **both** `es-MX.json` and `en.json` with matching key structure — no hardcoded visible strings.
+- [ ] **AC-20**: Every page is keyboard-navigable and screen-reader sane: the contact form associates labels with inputs, exposes validation errors via `aria-describedby`/`role="alert"`, and announces async success/rate-limit/error via `role="status"`/`role="alert"`, mirroring the Q&A form.
 
 ## Edge Cases
 
-At least 8 that MUST be handled:
+At least 5 that MUST be handled:
 
-1. **Refund exceeds remaining balance** — a partial amount > (order total − prior refunded) is refused locally by `refund.ts` AND race-safely by `record_refund` (`over_refund`); UI shows "El monto supera el saldo reembolsable", order state unchanged.
-2. **Partial refund of PP-000005's 3 duplicate approved $6,999 payments** — `orders.mp_payment_id` holds ONE payment id; `refundOrderPayment` refunds against that single id. The cumulative guard uses the ORDER total (not the sum of the 3 payments), so refunds cannot exceed the order total even though 3 payments landed. Reconciling the 2 extra duplicate charges is a manual MP-dashboard action (out of scope); the UI must NOT imply all 3 were refunded.
-3. **Cancel after already shipped** — `cancel_order` still restores stock and marks `cancelled` (`cancelled` rank 5 is highest, so no regression-block), but the UI warns "El pedido ya fue enviado" and requires explicit confirmation; the shipped email already sent is not un-sent.
-4. **Double status-transition race (two tabs / double-click)** — `advance_order_status` locks the row `FOR UPDATE`; the second call hits the idempotent same-status branch (`noop_same_status`, no duplicate history row, `transition_kind='noop'` → no second email).
-5. **Invalid/regressive transition via `advance_order_status`** — e.g. `delivered` → `paid` returns `regression_blocked`; the action maps it to "Transición no permitida", no history row, no email, no 500.
-6. **Refund on a cancelled order** — cancel does not change `payment_status`; a cancelled-but-`paid` order is still refundable (the refund path checks `payment_status === 'paid'`, not order status). Refunding a `pending`/`failed` payment returns `not-refundable` (`not-paid`) with a friendly message.
-7. **Email-send failure mid-transition** — the DB write commits; `sendShipped`/`sendCancelled`/`sendRefundIssued` failure is caught + logged by dispatch, returns `{ok:false}`; the transition/refund is NOT rolled back and the UI reports success with a subtle "correo no enviado" note where surfaced.
-8. **Packing slip for a cancelled order** — renders with a prominent "CANCELADO" banner so it is never mistaken for fulfillable; still self-guards (401 if unauth).
-9. **Stolen-cookie window post-refund (security headline)** — after the revocation gate ships, a version bump immediately invalidates the stolen cookie so it cannot issue a further refund; before the gate the window is up to 8h — which is why AC-27 blocks the refund action from shipping without it.
-10. **Concurrent partial refunds racing past the local pre-check** — two partials whose sum exceeds the total: the local pre-check may pass both, but `record_refund` (order-locked) rejects the second (`over_refund`); the second's MP money may have moved → `refund.ts` returns `error` and logs "reconcile by hand". UI shows a generic error and instructs the Owner to check the MP dashboard.
-11. **Cancel with a since-deleted product/variant** — `order_items.product_id`/`variant_id` are `on delete set null`; `cancel_order` must skip a null reference when restoring stock without aborting the cancel.
+1. **Missing seed row for a page** — `getStaticPageBySlug('garantia')` returns `null` (row never seeded / DB reset without seed) → page calls `notFound()` → localized in-shell 404, not a 500 or blank body. (AC-5)
+2. **Unpublished page** — a page row exists but `is_published = false` → anon RLS filters it out → wrapper returns `null` → in-shell 404. (AC-5)
+3. **Missing English translation row** — `/en/terminos` requested but no `translations` row for `en/static_page/terminos` → page renders the es-MX base `title`/`body` (documented fallback), never an empty page. (AC-4)
+4. **Contact email send failure** — `sendContactRelay` returns `{ ok: false, reason: "owner address unavailable" }` (EMAIL_OWNER_ADDRESS unset) or a provider timeout → form shows localized error + retry; user input preserved; raw reason logged not shown. (AC-16)
+5. **Contact-form abuse (bot flood)** — same IP submits >max within the window → `status: "rate-limited"`, no email, values preserved, localized "please wait" copy; the `maxKeys` ceiling bounds memory against a key-cardinality attack. (AC-14)
+6. **Honeypot tripped** — a bot fills the hidden field → fake success, no send, no error leaked. (AC-15)
+7. **Oversized / hostile message** — a 100k-char message or one containing `<script>`/HTML/`javascript:` → trimmed + length-capped before send; the template HTML-escapes the body; nothing is rendered raw. (AC-13, AC-17)
+8. **Empty catalog on homepage** — DB reset to 0 active products/brands → featured sections omitted, hero still renders, no empty grids or layout collapse. (AC-9)
+9. **`store_settings` row absent** — homepage/footer store-name/free-shipping/showroom degrade to config fallbacks (existing `getStoreSettingsStatic` returns `null` gracefully) — no crash.
+10. **Slug collision / reserved path** — a static-page slug must not shadow an existing route (`sillas`, `marcas`, `categorias`, `estilos`, `carrito`, `checkout`, `producto`); the dynamic static-page route must not intercept those. App-Router segment precedence handles this only if the static route is a distinct non-catch-all segment; slugs MUST be validated against the reserved set at seed time and at `generateStaticParams`.
 
 ## Error States Table
 
-| Trigger                              | User Sees                                                                 | System Does                                                                                          |
-| ------------------------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| MP refund API failure / MP down      | "No se pudo procesar el reembolso. Intenta de nuevo." (modal stays open)  | `refund.ts` catches → `mp-error`; order/payment state UNCHANGED; raw error logged, not echoed        |
-| Invalid/regressive status transition | "Esa transición no está permitida."                                       | `advance_order_status` → `regression_blocked`; no history row, no email; action returns typed error  |
-| Stock-restore RPC failure (cancel)   | "No se pudo cancelar el pedido."                                          | `cancel_order` transaction rolls back atomically; stock + status unchanged; error logged             |
-| Session expired / revoked mid-action | Redirect to `/admin/login` (page) or 401 (route handler)                  | `requireSession()`/`hasValidAdminSession()` fails BEFORE any DB touch                                 |
-| Email provider down (any transition) | Transition shows success; subtle "correo no enviado" where surfaced       | Dispatch catches + logs; transition/refund NOT rolled back (T9 isolation)                            |
-| Concurrent status update (two tabs)  | Both show the same final status; no duplicate history                     | `FOR UPDATE` lock + idempotent same-status branch; second call `noop_same_status`, no second email   |
-| Over-refund (single or cumulative)   | "El monto supera el saldo reembolsable."                                  | Local pre-check + `record_refund` guard reject; `over-refund` result; no state change                |
-| Non-UUID / missing order id          | 404 page (detail) / 401 or 404 (packing slip)                             | `notFound()`; route handler self-guards then validates the id                                        |
-| Refund on non-paid payment           | "Este pago no es reembolsable."                                          | `refund.ts` → `not-refundable` (`not-paid`/`no-payment-id`)                                           |
+| Trigger | User Sees | System Does |
+| --- | --- | --- |
+| Static page slug not seeded / unpublished | Localized in-shell 404 (header + footer intact) | `getStaticPageBySlug` returns `null` → `notFound()`; warning logged |
+| `en` translation row missing | Page in Spanish base copy (no error) | Wrapper falls back to base `title`/`body`; debug log only |
+| Contact: invalid email/empty required field | Inline field error(s) under the field, focus preserved, values kept | Action returns `{ status: "invalid", fieldErrors, values, submissionId }`; no send |
+| Contact: rate-limited | "Espera un momento antes de enviar otro mensaje" banner (`role="alert"`) | Limiter denies; action returns `{ status: "rate-limited", values }`; no send |
+| Contact: honeypot filled | Success state (as if sent) | No send; logged as suspected bot; returns fake success |
+| Contact: `sendContactRelay` `{ ok:false }` | "No pudimos enviar tu mensaje, inténtalo de nuevo" + retry, values preserved (`role="alert"`) | Raw `reason` logged with context; action returns `{ status: "error", values }` |
+| Contact: unexpected exception in action | Same generic error state as above | Exception caught, logged; returns `{ status: "error" }` — never throws to the client |
+| Homepage: zero products/brands | Featured section omitted; hero + other sections render | Section conditionally rendered on non-empty list |
+| Showroom: map asset/link unavailable | Address + hours text only (no broken embed) | Map slot omitted; text block always renders |
 
 ## UX Requirements
 
-**Order list**
+For every state the UI can be in:
 
-- **Loading:** skeleton rows (match `ProductTable` skeleton cadence); enter animation `ease-out`, respect `prefers-reduced-motion`.
-- **Empty:** "Aún no hay pedidos." with illustration; filtered → "Ningún pedido coincide con los filtros." + "Limpiar filtros" CTA (mirror `ProductEmptyState`).
-- **Error:** inline banner "No se pudieron cargar los pedidos." with a retry link.
-- **Success:** rows with status/payment badges; row click → detail.
-- **Mobile (375px):** table collapses to stacked cards (order number + total + status prominent); filters in a sheet.
-- **Tablet (768px):** condensed table inside an `overflow-x-auto` container; body never scrolls horizontally.
-
-**Order detail**
-
-- **Loading:** section skeletons for summary / items / history.
-- **Empty:** n/a (detail always has an order or 404s).
-- **Error:** section-scoped error if history/notes partially fail; the core order still renders.
-- **Success:** clear status-pipeline stepper (current step highlighted), action buttons (Advance, Ship, Cancel, Refund, Packing slip) enabled per state.
-- **Mobile (375px):** single-column stack; actions in a sticky bottom bar or menu; compact history log.
-- **Tablet (768px):** two-column (summary + items | history + actions).
-
-**Refund modal**
-
-- **Loading:** submit button spinner + disabled while the MP call is in flight; modal not dismissable mid-request.
-- **Error:** friendly message inline (see table); modal stays open with the amount preserved.
-- **Success:** modal closes; detail shows updated payment status + a new ledger entry + toast "Reembolso emitido".
-- **Mobile (375px):** modal becomes a full-height sheet; large tap-target amount input with an MXN affordance.
-- **Tablet (768px):** centered dialog, max-width bounded.
-
-**Packing slip**
-
-- **Loading:** print view opens in a new tab / print dialog; spinner while the route responds.
-- **Error:** 401 → login redirect; 500 → "No se pudo generar la guía."
-- **Success:** print-optimized layout (`@media print`), no admin chrome, print button or auto `window.print()`.
-- **Mobile/Tablet:** print stylesheet is device-agnostic; on-screen fallback scrolls vertically only.
+- **Loading**: Static pages and homepage are server-rendered (no client spinner — data resolves server-side like `marcas`). Contact form submit uses `useActionState` pending state to disable the submit button and show an inline "Enviando…" state on the button (no full-page spinner), mirroring existing forms.
+- **Empty**: Homepage with no products/brands omits those sections (never an empty grid). A static page with no row → in-shell 404 with a CTA back to the catalog (reuse the existing `not-found.tsx` shell). FAQ/policy pages always have seeded placeholder copy so they are never blank.
+- **Error**: Contact send failure → inline error banner (`role="alert"`) with a retry, input values preserved. Static-page/homepage data errors degrade gracefully (config fallbacks for settings; sections omitted) — never a raw error page for a content miss.
+- **Success**: Contact submit success → success banner (`role="status"`, `.enter-fade`, auto-hide consistent with existing form success cadence) + cleared inputs. In dev preview mode (`EMAIL_DEV_PREVIEW=1`) this same success renders (message logged to console).
+- **Mobile (375px)**: Hero stacks vertically (headline → subcopy → CTA full-width or intrinsic); featured chairs grid is 1 column; featured brands 1 column; showroom map/image is `max-w-full`; contact form is a single stacked column with `min-h-11` touch targets. No horizontal overflow (long emails/addresses `break-words`).
+- **Tablet (768px)**: Featured chairs 2 columns; featured brands 2 columns; hero may go two-column (copy + image) if a hero image is used; content pages stay `max-w-prose` for readable line length.
 
 ## Technical Approach
 
 ### Files to Create
 
-**Migration**
-
-- `supabase/migrations/0012_admin_orders.sql` — (a) `orders` columns `tracking_number`, `tracking_carrier`, `tracking_url` (nullable text; verify against the 0003 immutability trigger's frozen set — new columns are not listed, so allowed; add them to the trigger's allowed-mutable reasoning if needed); (b) NEW `order_internal_notes` table (`id, order_id fk on delete cascade, body text check length, created_at`), RLS-deny + `service_role` grant (mirror 0011 posture); (c) NEW transactional `cancel_order(p_order_id uuid, p_note text)` RPC: lock the order, restore each `order_items` line's quantity to `products`/`product_variants` stock (skip null FKs), advance to `cancelled` writing the history row via `email_transition_kind` (`transition_kind='cancelled'`), idempotent (no-op if already cancelled), `SECURITY DEFINER` + empty `search_path` + `service_role`-only execute; (d) the session-revocation source per AC-27 (a single-row `admin_session_version`/`store_settings` value the verifier reads, or documented max-age shortening — decided in research); (e) supporting indexes (`orders(created_at desc)` already exists in 0003; add `customers` search indexes as needed). Idempotent, LOCAL-only, integer cents.
-
-**Lib — `src/lib/admin/orders/`** (paired `*-input.ts` / `*-write.ts`; type contract lives HERE, not in app — avoid T11's lib→app inversion)
-
-- `order-list-filters.ts` — pure `parseOrderListFilters` + `hasActiveFilters` + `buildOrderListQueryString` (mirror `products/list-filters.ts` verbatim in shape).
-- `order-list-query.ts` — `listAdminOrders(filters)` (count → clamp → range via `pagination.ts`; search on order_number/email/name; status + payment filters). Mirror `products/list-query.ts`.
-- `order-read.ts` — `getAdminOrder(id)` (order + items + history + notes + tracking); returns null → `notFound()`.
-- `order-status-input.ts` / `order-status-write.ts` — parse/validate the requested transition (allowed next statuses from `order_status_rank`); write wraps `advanceOrderStatus` then branches email on the returned `transition_kind`.
-- `order-tracking-input.ts` / `order-tracking-write.ts` — validate + persist tracking columns.
-- `order-cancel-write.ts` — call the `cancel_order` RPC + `sendCancelled`.
-- `order-refund-input.ts` / `order-refund-write.ts` — validate the amount, call `refundOrderPayment`, then `sendRefundIssued`; thread a stable idempotency key.
-- `order-notes-write.ts` — insert/read `order_internal_notes`.
-- `customer-list-query.ts` — `listAdminCustomers(filters)` (+ order counts).
-- `packing-slip.ts` — pure print-HTML builder.
-- `order-status-meta.ts` — es-MX status labels, badge variants, allowed-transition map (single-sourced constants — no magic strings).
-
-**App — `src/app/admin/(app)/orders/`**
-
-- `page.tsx` — list server component (mirror `products/page.tsx`).
-- `actions.ts` — server actions `advanceStatus`, `setTracking`, `cancelOrder`, `refundOrder`, `addInternalNote` — each `requireSession()` first; only async exports.
-- `orders-form-state.ts` — typed action state (state types NOT exported from `actions.ts`, per T10 rule).
-- `[id]/page.tsx` — order detail + history + actions.
-- `[id]/packing-slip/route.ts` — SELF-GUARDED route handler (mirror `products/export/route.ts`).
-- `customers/page.tsx` — customer list.
-
-**Components — `src/components/admin/orders/`**
-
-- `order-table.tsx`, `order-filters.tsx`, `order-empty-state.tsx`, `order-status-badge.tsx`, `order-status-stepper.tsx`, `order-history-log.tsx`, `order-detail-actions.tsx` (client), `refund-modal.tsx` (client, shadcn Dialog), `tracking-form.tsx` (client), `internal-notes.tsx` (client), `packing-slip-view.tsx`, `customer-table.tsx`, `new-order-indicator.tsx`.
-
-**Types**
-
-- Add order/customer/notes row types to `src/lib/supabase/types/tables-commerce.ts` (hand-authored convention) and `cancel_order` Args/Result to `src/lib/supabase/types/rpc.ts` (keep as `type` aliases — the T8 `never`-collapse gotcha).
+- `src/lib/content/static-pages.ts` — typed read wrapper: `getStaticPageBySlug(slug, locale)` (RLS public client, overlays `translations` for the requested locale with es-MX-base fallback), returns `{ title, body } | null`; `unstable_cache` with a `static-pages` tag, degrades to `null` like `store-settings.ts`. `export type StaticPage`.
+- `src/lib/config/static-pages.ts` (or extend `src/lib/config/`) — single source of the 9 page slugs + a `staticPagePath(slug)` helper + reserved-slug guard set; showroom config fallback (address/hours/map link).
+- `src/app/[locale]/[pageSlug]/page.tsx` — **one** dynamic route rendering any text-only static page by slug (server component: `generateStaticParams` over the known slug set, `generateMetadata`, `setRequestLocale`, `getStaticPageBySlug` → `notFound()` on null, breadcrumb + `max-w-prose` body). Prefer a distinct dynamic segment over 9 near-identical folders. Give Contact and Showroom their own explicit route folders (`contacto/`, `showroom/`) since they need bespoke UI beyond title+body; the generic route serves the other 7.
+- `src/app/[locale]/contacto/page.tsx` + `contact-form.tsx` (client) + `actions.ts` (`submitContactForm` server action) + `contact-form-state.ts` — copy the Q&A form/action/state grammar (`useActionState`, honeypot, custom validation, serializable state).
+- `src/lib/contact/submit-guard.ts` — pure validation (`validateContactSubmission`: trim, length caps, email pattern, honeypot) mirroring `src/lib/qa/submit-guard.ts`.
+- `src/lib/contact/rate-limit.ts` — `checkContactRateLimit(ip)` wrapping a dedicated `createSlidingWindowLimiter` instance + `CONTACT_RATE_LIMIT_*` constants + `CONTACT_RATE_LIMIT_DISABLED` env check (mirror `src/lib/checkout/rate-limit.ts`).
+- `src/app/[locale]/showroom/page.tsx` — showroom layout (address, hours, static map/link).
+- Homepage section components under `src/components/home/` — e.g. `hero.tsx`, `featured-products.tsx`, `featured-brands.tsx` (server components composing existing `ProductGrid`/`IndexTile`).
 
 ### Files to Modify
 
-- `src/lib/admin/constants.ts` — flip the `orders` nav item `status: "soon"` → `"live"` (href already `/admin/orders`); add `ADMIN_ORDERS_PATH`, a per-page constant, and the session-version constant if the version source lives here.
-- `src/lib/admin/session-payload.ts` + `session.ts` + `session-edge.ts` — extend the payload/verify so `v` (or a new field) is checked against the persisted revocation source (AC-27). Keep the codec crypto-free; wire the version read at the `session-guard.ts` / `isSessionValid` boundary. (If the decision is max-age shortening, modify `constants.ts` `getSessionMaxAgeSeconds` policy instead.)
-- `src/app/admin/(app)/page.tsx` — replace the `redirect(ADMIN_SETTINGS_PATH)` stub with the dashboard overview + new-order indicator (the seam comment names this).
-- `src/lib/checkout/order-read.ts` — the shipped email needs tracking fields; prefer passing `{trackingNumber, carrier, trackingUrl}` at the `sendShipped` call site (the seam already accepts them) rather than widening `getOrderForEmail`.
-- `src/messages/es-MX.json` / `en.json` — confirm the `email` namespace has `shipped`/`cancelled`/`refund_issued` keys (T9 added them); admin page/nav copy stays inline es-MX (T10/T11 decision).
+- `scripts/seed-data/content.ts` — expand `STATIC_PAGES` from 4 → 9 pages with structured placeholder copy (es-MX) + English translation fixtures; export slug constants shared with the config module.
+- `scripts/seed.ts` — seed `translations` rows for static pages (currently seeds none); update the seed summary count.
+- `src/app/[locale]/page.tsx` — replace the T2 placeholder with hero + featured chairs + featured brands composition.
+- `src/components/layout/site-footer.tsx` — reconcile `STORE_LINKS`/`HELP_LINKS` hrefs with the final 9-slug set (split shipping/returns if adopted); ensure no dead link.
+- `src/components/layout/nav-items.ts` — verify `/contacto` now live (no change if slug unchanged).
+- `src/messages/es-MX.json` + `src/messages/en.json` — add `staticPages`/`contact`/`home.featured`/`showroom` namespaces (matching keys in both).
+- `src/lib/seed-invariants*.test.ts` — update seed-count invariants for the new page count.
 
 ### Data Model Changes
 
-- **`orders`** — add `tracking_number`, `tracking_carrier`, `tracking_url` (nullable text). Confirm outside the 0003 immutability trigger's frozen set (new → not listed → allowed).
-- **`order_internal_notes`** — NEW table, RLS-deny + `service_role` grant.
-- **Session version source** — a single-row `admin_session_version` (or a `store_settings` column) the verifier reads, OR a shortened max-age policy (research decides). If a table: RLS-deny + `service_role` grant.
+- **No new tables, no new RPCs.** `static_pages` and `store_settings` already exist with public RLS read.
+- **Data-only seed change**: expand `static_pages` from 4 → 9 rows (idempotent upsert on `slug`) + seed `en` `translations` rows. No DDL required for the pages themselves.
+- **Showroom fields (decision required — flagged in research)**: `store_settings` has no address/hours/map columns. Option **(A)** store showroom content inside the `showroom` static page `body` (zero schema change, honors "placeholder copy" scope) + map link/coords in `src/lib/config`; Option **(B)** add additive nullable columns to `store_settings` via a new migration `0014`. **Recommend (A) for Phase 1** (no admin UI to edit these until Phase 2 content editing). Document the choice in dev-done.
 
 ### API Endpoints
 
-- **`GET /admin/orders/[id]/packing-slip`** (route handler) — self-guarded (`hasValidAdminSession()` → 401). Response: `text/html` print view, `Cache-Control: no-store`. No body.
-- **Server actions (not REST):**
-  - `advanceStatus(orderId, targetStatus, note?)` → `{ ok, reason?, transitionKind? }`.
-  - `setTracking(orderId, { trackingNumber, carrier, trackingUrl })` → `{ ok }`.
-  - `cancelOrder(orderId, reason?)` → `{ ok, reason? }`.
-  - `refundOrder(orderId, { mode: "full" | "partial", amountMxn? })` → `RefundResult`-derived `{ ok, kind?, reason? }`; threads a stable idempotency key.
-  - `addInternalNote(orderId, body)` → `{ ok }`.
+- **No new HTTP route handlers.** The contact form uses a **server action** (`submitContactForm`), consistent with Q&A and checkout — not an `/api/*` endpoint. Signature: `submitContactForm(prevState: ContactFormState, formData: FormData): Promise<ContactFormState>`.
+- Static pages and homepage are server-component page reads, no API surface.
 
 ### Dependencies
 
-- **No new runtime dependency for the packing slip** — print-optimized HTML + `@media print` + `window.print()` (the codebase has no PDF lib; research confirms none warranted). A server-side PDF lib would need a named justification in the research report; default is HTML print.
-- Reuse: `@hugeicons/react` + `@hugeicons/core-free-icons`, `shadcn/ui` (Dialog for the refund modal, Badge for status), the Mercado Pago SDK via `refund.ts` (already a dependency).
+- **No new packages.** Reuses in-repo modules only: `next-intl` (i18n), `sendContactRelay` (email), `createSlidingWindowLimiter` (rate limit), `createPublicClient` (RLS reads), existing catalog queries + card/tile/grid components, `@hugeicons/react` for icons. A static map is a plain `<img>`/link (no map SDK) to honor the no-external-dependency + CSP posture.
 
 ## Out of Scope
 
-- Customer accounts / order-history login (guest-only in Phase 1).
-- Manual order creation from the admin (orders originate at checkout).
-- Sales/revenue analytics dashboard (only a new-order indicator here).
-- Bulk actions (multi-select status change / bulk refund).
-- Low-stock alerts (separate Continuous-Improvement/Phase-2 item).
-- CFDI / tax-invoice generation (Phase 3).
-- Reconciling PP-000005's 2 extra duplicate MP charges from the admin (manual MP-dashboard action).
-- Refund across multiple distinct MP payment ids for one order (Phase 1 refunds against `orders.mp_payment_id` only).
-- A full session-management / admin-accounts system (the revocation gate is a single version bump, not per-user sessions).
+- Rich-text / WYSIWYG editing of static pages (Phase 2). Body stays plain text rendered as structured paragraphs.
+- Admin UI to edit static-page content, homepage sections, or showroom fields (Phase 2 homepage section manager + rich-text editor).
+- A "featured" DB flag or homepage section-ordering model — featured content is a bounded slice of existing active queries.
+- Interactive/embedded map SDK (Google Maps JS, Mapbox) — a static image or maps deep-link only.
+- Newsletter signup, social sharing, related products, autocomplete (Phase 2).
+- Real legal copy for Aviso de Privacidad / Terms — **placeholder** structured copy only (real text is a pending client input per PRODUCT_SPEC).
+- Wiring real `EMAIL_*` / `WHATSAPP_PHONE_E164` values — blocked-on-user; dev path is `EMAIL_DEV_PREVIEW=1`; WhatsApp button stays hidden until configured (existing guard).
+- SEO metadata beyond a per-page `<title>` (sitemap, structured data, cookie consent are T14).
