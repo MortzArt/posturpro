@@ -56,12 +56,11 @@ export function OrderStatusStepper({ status, cancelledAt }: OrderStatusStepperPr
             <span
               aria-hidden
               className={cn(
-                "text-base leading-none transition-[color,opacity] duration-200 ease-out",
+                "text-base leading-none transition-[color,opacity] duration-200 ease-out motion-reduce:transition-none",
                 state === "current" && "text-foreground",
                 state === "past" && "text-muted-foreground",
                 state === "future" && "text-muted-foreground/40",
               )}
-              style={{ transitionTimingFunction: "var(--ease-out)" }}
             >
               {meta.glyph}
             </span>

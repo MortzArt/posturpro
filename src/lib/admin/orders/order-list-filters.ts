@@ -21,9 +21,20 @@ export interface OrderListFilters {
   search: string;
   status: OrderStatusFilter;
   payment: PaymentStatusFilter;
+  /**
+   * The "new orders" seam (`?new=1`) — orders awaiting fulfilment
+   * (`pending_payment` OR `paid`). This is the SAME set the dashboard new-order
+   * indicator counts (AC-25), so the indicator's link and its count agree (M-4).
+   * When active it constrains status to that pair; it is mutually exclusive with
+   * an explicit single-status `?status=` (which, if present, takes precedence).
+   */
+  isNew: boolean;
   /** Raw `?page` value (clamped later by parsePageParam once lastPage is known). */
   rawPage: string;
 }
+
+/** The order statuses counted as "awaiting fulfilment" (the `?new=1` set, AC-25). */
+export const NEW_ORDER_STATUSES: readonly OrderStatus[] = ["pending_payment", "paid"];
 
 /** Loose search-params shape (Next passes `Record<string, string | string[]>`). */
 export type RawSearchParams = Record<string, string | string[] | undefined>;
@@ -67,17 +78,27 @@ function asPaymentStatus(raw: string | string[] | undefined): PaymentStatusFilte
 
 /** Parse the raw search-params into the bounded, typed filter object (AC-4). */
 export function parseOrderListFilters(params: RawSearchParams): OrderListFilters {
+  const status = asOrderStatus(params.status);
+  // The `?new=1` seam only applies when NO explicit single-status filter is set,
+  // so a user narrowing to one status is never silently widened back to the pair.
+  const isNew = status === "all" && firstValue(params.new) === "1";
   return {
     search: firstValue(params.search).slice(0, ADMIN_SEARCH_MAX_LENGTH),
-    status: asOrderStatus(params.status),
+    status,
     payment: asPaymentStatus(params.payment),
+    isNew,
     rawPage: firstValue(params.page),
   };
 }
 
 /** Whether any filter (other than page) is active — drives the "Limpiar" CTA. */
 export function hasActiveOrderFilters(filters: OrderListFilters): boolean {
-  return filters.search !== "" || filters.status !== "all" || filters.payment !== "all";
+  return (
+    filters.search !== "" ||
+    filters.status !== "all" ||
+    filters.payment !== "all" ||
+    filters.isNew
+  );
 }
 
 /** Build a query string preserving the active filters + an overridden page. */
@@ -88,6 +109,7 @@ export function buildOrderListQueryString(
   const params = new URLSearchParams();
   if (filters.search) params.set("search", filters.search);
   if (filters.status !== "all") params.set("status", filters.status);
+  else if (filters.isNew) params.set("new", "1");
   if (filters.payment !== "all") params.set("payment", filters.payment);
   const page = overrides.page;
   if (page !== undefined && page > 1) params.set("page", String(page));

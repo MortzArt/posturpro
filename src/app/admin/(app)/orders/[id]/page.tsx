@@ -34,7 +34,14 @@ export default async function AdminOrderDetailPage({
   }
 
   const remainingCents = Math.max(0, order.totalCents - order.refundedCents);
-  const cancelledAt = order.orderStatus === "cancelled" ? order.createdAt : null;
+  // The real cancellation time is the newest `cancelled` history entry, NOT the
+  // order's creation time. `history` is newest-first, so `find` returns the most
+  // recent cancel. Falls back to `null` (band renders without a timestamp) when
+  // history failed to load — never a factually wrong time. (M-2)
+  const cancelledAt =
+    order.orderStatus === "cancelled"
+      ? order.history?.find((entry) => entry.toStatus === "cancelled")?.createdAt ?? null
+      : null;
 
   return (
     <div className="flex flex-col gap-6 pb-24 md:pb-0">

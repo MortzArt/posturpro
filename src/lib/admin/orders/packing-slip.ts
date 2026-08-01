@@ -4,11 +4,9 @@
  * optimized HTML document (inline `<style>` with `@media print`). No PDF
  * dependency (research-confirmed). A cancelled order renders a prominent
  * "CANCELADO" band so it is never mistaken for fulfillable. All dynamic text is
- * HTML-escaped (the slip carries customer-controlled shipping fields). Money is
- * formatted by the caller (passes pre-formatted strings is avoided — we format
- * here from cents via the injected formatter to keep the module pure of locale
- * setup? No: we accept already-formatted display where needed). Server-only-safe
- * (pure), imported by the route handler.
+ * HTML-escaped (the slip carries customer-controlled shipping fields). It is a
+ * fulfilment document — ship-to, line items, quantity/SKU only — so it renders NO
+ * prices. Server-only-safe (pure), imported by the route handler.
  */
 import type { AdminOrderDetail } from "@/lib/admin/orders/order-read";
 

@@ -158,8 +158,8 @@ export function OrderDetailActions({
         orderNumber={orderNumber}
         totalCents={totalCents}
         refundedCents={refundedCents}
-        onRefunded={() => {
-          onBanner({ message: "Reembolso emitido", emailSent: true });
+        onRefunded={(emailSent) => {
+          onBanner({ message: "Reembolso emitido", emailSent });
           router.refresh();
         }}
       />

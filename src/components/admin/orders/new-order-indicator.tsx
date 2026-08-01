@@ -15,7 +15,7 @@ export function NewOrderIndicator({ count }: { count: number }) {
   const hasNew = count > 0;
   return (
     <Link
-      href={`${ADMIN_ORDERS_PATH}?status=paid`}
+      href={`${ADMIN_ORDERS_PATH}?new=1`}
       data-testid="dashboard-new-orders"
       className={cn(
         "group/card flex flex-col gap-2 rounded-lg border p-4 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30",
@@ -43,7 +43,7 @@ export function NewOrderIndicator({ count }: { count: number }) {
           size={13}
           strokeWidth={2}
           aria-hidden
-          className="transition-transform group-hover/card:translate-x-0.5"
+          className="transition-transform group-hover/card:translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
         />
       </span>
     </Link>

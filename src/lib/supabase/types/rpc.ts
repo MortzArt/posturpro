@@ -192,6 +192,22 @@ export type CancelOrderResult = {
 };
 
 /**
+ * Args for the `admin_customer_order_counts` RPC (T12, 0013 — M-3). Takes the
+ * page's customer ids and returns ONE grouped-count row per id, so the DB does
+ * the aggregation instead of the app pulling (and truncating at PostgREST's
+ * 1000-row cap) every matching order row. `service_role`-only. `type` alias (T8).
+ */
+export type AdminCustomerOrderCountsArgs = {
+  p_customer_ids: string[];
+};
+
+/** One grouped-count row from `admin_customer_order_counts`. */
+export type AdminCustomerOrderCountRow = {
+  customer_id: string;
+  order_count: number;
+};
+
+/**
  * The `Database["public"]["Functions"]` block. Args/Returns reference the `type`
  * aliases above — keep them aliases (T8 gotcha).
  */
@@ -263,6 +279,10 @@ export type DatabaseFunctions = {
   cancel_order: {
     Args: CancelOrderArgs;
     Returns: CancelOrderResult;
+  };
+  admin_customer_order_counts: {
+    Args: AdminCustomerOrderCountsArgs;
+    Returns: AdminCustomerOrderCountRow[];
   };
   bump_admin_session_version: {
     Args: Record<string, never>;

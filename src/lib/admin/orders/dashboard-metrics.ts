@@ -8,6 +8,7 @@
  */
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { NEW_ORDER_STATUSES } from "@/lib/admin/orders/order-list-filters";
 
 /** The dashboard overview counts. */
 export interface DashboardMetrics {
@@ -22,7 +23,9 @@ export async function countNewOrders(): Promise<number> {
     const { count, error } = await db
       .from("orders")
       .select("id", { count: "exact", head: true })
-      .in("status", ["pending_payment", "paid"]);
+      // SINGLE-SOURCED with the `?new=1` list filter (order-list-filters.ts) so
+      // the dashboard count and the list it links to are one definition (M-4).
+      .in("status", NEW_ORDER_STATUSES);
     if (error) {
       console.error(`[admin-dashboard] new-order count failed: ${error.message}`);
       return 0;

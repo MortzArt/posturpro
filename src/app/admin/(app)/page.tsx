@@ -36,7 +36,7 @@ export default async function AdminDashboardPage() {
               size={13}
               strokeWidth={2}
               aria-hidden
-              className="transition-transform group-hover/card:translate-x-0.5"
+              className="transition-transform group-hover/card:translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
             />
           </span>
         </Link>

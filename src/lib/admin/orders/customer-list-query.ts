@@ -2,8 +2,9 @@
  * Admin customer-list read (T12 AC-24). LIVE read via the admin client of a page
  * of `customers` ordered by `created_at DESC`, searchable by email OR name
  * (meta-char stripped, mirrors the orders/products search m-3). The per-customer
- * order count is a SINGLE batched read (fetch orders for the page's customer ids,
- * tally in memory) — never an N+1 per row. `server-only`.
+ * order count is a SINGLE grouped-count RPC (`admin_customer_order_counts`) — the
+ * DB returns at most 25 count rows, never the underlying order rows, so counts
+ * are correct at any scale and the read is bounded (M-3). `server-only`.
  */
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -97,24 +98,27 @@ async function readCustomers(
   }));
 }
 
-/** Batch-read order counts for the page's customer ids (one query, in-memory tally). */
+/**
+ * Grouped order counts for the page's customer ids via the
+ * `admin_customer_order_counts` RPC — the DB does the aggregation, returning ONE
+ * row per id (at most 25), so counts never truncate at PostgREST's 1000-row cap
+ * and the read is bounded by page size, not total order volume (M-3).
+ */
 async function readOrderCounts(
   db: AdminClient,
   customerIds: string[],
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (customerIds.length === 0) return counts;
-  const { data, error } = await db
-    .from("orders")
-    .select("customer_id")
-    .in("customer_id", customerIds);
+  const { data, error } = await db.rpc("admin_customer_order_counts", {
+    p_customer_ids: customerIds,
+  });
   if (error) {
-    console.error(`[admin-customers] order-count read failed: ${error.message}`);
+    console.error(`[admin-customers] order-count RPC failed: ${error.message}`);
     return counts;
   }
-  for (const row of (data ?? []) as { customer_id: string | null }[]) {
-    if (row.customer_id === null) continue;
-    counts.set(row.customer_id, (counts.get(row.customer_id) ?? 0) + 1);
+  for (const row of data ?? []) {
+    counts.set(row.customer_id, Number(row.order_count));
   }
   return counts;
 }

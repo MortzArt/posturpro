@@ -11,7 +11,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { lastPageFor, parsePageParam, rangeFor } from "@/lib/catalog/pagination";
 import { ADMIN_PRODUCTS_PER_PAGE } from "@/lib/config";
-import type { OrderListFilters } from "@/lib/admin/orders/order-list-filters";
+import { NEW_ORDER_STATUSES, type OrderListFilters } from "@/lib/admin/orders/order-list-filters";
 import type { OrderStatus, PaymentStatus } from "@/lib/supabase/database.types";
 
 /** A single admin order-list row (see ui-design §1). */
@@ -45,9 +45,10 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 interface FilterableQuery {
   or(filter: string): FilterableQuery;
   eq(column: string, value: string | number): FilterableQuery;
+  in(column: string, values: readonly string[]): FilterableQuery;
 }
 
-/** Apply the shared filters to an orders query (search/status/payment). */
+/** Apply the shared filters to an orders query (search/status/payment/new). */
 function applyFilters<T extends FilterableQuery>(query: T, filters: OrderListFilters): T {
   let next: FilterableQuery = query;
   if (filters.search) {
@@ -60,7 +61,13 @@ function applyFilters<T extends FilterableQuery>(query: T, filters: OrderListFil
       `order_number.ilike.%${term}%,contact_email.ilike.%${term}%,shipping_full_name.ilike.%${term}%`,
     );
   }
-  if (filters.status !== "all") next = next.eq("status", filters.status);
+  if (filters.status !== "all") {
+    next = next.eq("status", filters.status);
+  } else if (filters.isNew) {
+    // The `?new=1` seam: exactly the pair the dashboard indicator counts, so the
+    // indicator's link and its count are one definition (AC-25 / M-4).
+    next = next.in("status", NEW_ORDER_STATUSES);
+  }
   if (filters.payment !== "all") next = next.eq("payment_status", filters.payment);
   return next as T;
 }

@@ -31,10 +31,30 @@ interface RefundModalProps {
   orderNumber: string;
   totalCents: number;
   refundedCents: number;
-  onRefunded: () => void;
+  /** Receives the ACTUAL `emailSent` outcome so the banner can flag a failed refund-issued email (AC-10 / edge 7). */
+  onRefunded: (emailSent: boolean) => void;
 }
 
 const CONFIRM_WORD = "REEMBOLSAR";
+
+/**
+ * A random suffix for the idempotency key. `crypto.randomUUID()` throws in a
+ * non-secure context (plain-http non-localhost); admin is HTTPS-only in prod, but
+ * fall back to a timestamp+random token so `goToConfirm` never surfaces an
+ * uncaught error on a misconfigured host (m-2). Uniqueness (not cryptographic
+ * strength) is all the idempotency key needs.
+ */
+function randomKeySuffix(): string {
+  const cryptoRef = typeof globalThis !== "undefined" ? globalThis.crypto : undefined;
+  if (cryptoRef && typeof cryptoRef.randomUUID === "function") {
+    try {
+      return cryptoRef.randomUUID();
+    } catch {
+      // Falls through to the non-crypto token below.
+    }
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
 
 const ERROR_COPY: Record<Exclude<RefundOrderActionResult, { ok: true }>["reason"], string> = {
   "over-refund": "El monto supera el saldo reembolsable.",
@@ -91,7 +111,7 @@ export function RefundModal({
     }
     setError(null);
     // Mint the stable idempotency key ONCE for this open→submit cycle (AC-19).
-    setIdempotencyKey(`refund:${orderId}:${crypto.randomUUID()}`);
+    setIdempotencyKey(`refund:${orderId}:${randomKeySuffix()}`);
     setStep(2);
   };
 
@@ -107,7 +127,7 @@ export function RefundModal({
       if (result.ok) {
         reset();
         onOpenChange(false);
-        onRefunded();
+        onRefunded(result.emailSent);
         return;
       }
       setError(ERROR_COPY[result.reason]);
@@ -167,10 +187,15 @@ export function RefundModal({
                       onChange={(event) => setAmount(event.target.value)}
                       placeholder="0"
                       data-testid="refund-amount"
+                      aria-invalid={partialInvalid && amount.trim() !== "" ? true : undefined}
+                      aria-describedby={cn(
+                        "refund-amount-hint",
+                        error ? "refund-step1-error" : undefined,
+                      )}
                       className="w-full bg-transparent px-3 py-2 text-sm tabular-nums text-foreground outline-none"
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p id="refund-amount-hint" className="text-xs text-muted-foreground">
                     El monto no puede superar el saldo reembolsable.
                   </p>
                 </div>
@@ -208,6 +233,8 @@ export function RefundModal({
                 Vas a reembolsar{" "}
                 <strong className="tabular-nums">{formatMXN(effectiveCents)}</strong> a este pago.
               </p>
+              {/* Passing `error` wires aria-invalid + aria-describedby on the
+                  input and renders the associated FieldError (m-3). */}
               <TextField
                 name="confirm"
                 label={`Escribe ${CONFIRM_WORD} para confirmar`}
@@ -215,11 +242,9 @@ export function RefundModal({
                 value={confirmText}
                 onChange={(event) => setConfirmText(event.target.value)}
                 disabled={pending}
+                error={error}
                 inputClassName="uppercase tracking-wide"
               />
-              {error ? (
-                <FieldError id="refund-step2-error" testid="refund-error" message={error} />
-              ) : null}
             </div>
             <DialogFooter>
               <Button variant="ghost" onClick={() => setStep(1)} disabled={pending}>

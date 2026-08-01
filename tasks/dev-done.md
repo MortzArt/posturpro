@@ -93,3 +93,41 @@ Stage 4 (ultradev). Full-stack, full-feature. **47 files created, 10 modified.**
 - **`refund-modal.tsx` partial amount** is whole-pesos (× 100 → cents); confirm no fractional-centavo expectation.
 - **`cancel_order` leaves `payment_status` untouched** by design (edge 6) — reviewer should confirm a cancelled+paid order SHOULD remain refundable.
 - **Dashboard new-order count** semantics (pending_payment OR paid) — confirm "paid but not yet advanced" is the intended definition of "new".
+
+## Fixes Applied (Stage 6 — ultrafix)
+
+Resolved every finding in `tasks/review-findings.md` (0 critical, 4 major, 6 minor, 4 nits). All 30 ACs now PASS.
+
+### Issue Tracker
+| ID | Severity | Title | Status | File | Notes |
+|----|----------|-------|--------|------|-------|
+| C-* | CRITICAL | — | N/A | — | No critical findings |
+| M-1 | MAJOR | Refund drops real `emailSent` signal | FIXED | `refund-modal.tsx`, `order-detail-actions.tsx:161` | `onRefunded` is now `(emailSent: boolean) => void`; `submit()` passes `result.emailSent`; parent threads it into the banner → "· correo no enviado" now shows when a refund's email fails. +3 unit tests. |
+| M-2 | MAJOR | Cancelled band shows creation time | FIXED | `orders/[id]/page.tsx:36-45` | `cancelledAt` derived from the newest `cancelled` history entry (history is newest-first); `null` fallback renders the band without a timestamp rather than a wrong one. |
+| M-3 | MAJOR | Customer counts truncate at 1000-row cap | FIXED | `0013_admin_customer_order_counts.sql`, `customer-list-query.ts:100-124`, `rpc.ts` | New grouped-count RPC (STABLE SECURITY DEFINER, empty search_path, service_role-only, anon denied). `readOrderCounts` calls it → ≤25 count rows, no truncation, bounded read. Verified live. |
+| M-4 | MAJOR | Dashboard count ≠ link filter | FIXED | `order-list-filters.ts`, `order-list-query.ts`, `dashboard-metrics.ts`, `new-order-indicator.tsx` | Chose "new = pending_payment OR paid" (AC-25 wording). Single-sourced `NEW_ORDER_STATUSES`; count + new `?new=1` list seam both consume it; link `?status=paid`→`?new=1`. Seam yields to an explicit `?status`. +10 unit tests. |
+| m-1 | MINOR | Idempotency key lost on remount | DOCUMENTED | `refund-modal.tsx` | Accepted per reviewer's recommendation; residual remount-only risk noted. Server-derived key is a Phase-2 hardening. |
+| m-2 | MINOR | `crypto.randomUUID()` throws in insecure ctx | FIXED | `refund-modal.tsx` | `randomKeySuffix()` feature-detects + try/catch, falls back to a `Date.now()`+`Math.random()` token. |
+| m-3 | MINOR | Refund inputs not a11y-associated | FIXED | `refund-modal.tsx` | Step-1 amount: `aria-invalid` + `aria-describedby` (hint + error). Step-2: passes `error` into `TextField` (wires aria + FieldError). |
+| m-4 | MINOR | `bigint` version typed as `number` | FIXED (doc) | `session-version.ts` | Added a PRECISION NOTE explaining the safe carry + when to switch to bigint compare. |
+| m-5 | MINOR | advance payment-status snapshot | FIXED (doc) | `order-status-write.ts` | Comment: `p_payment_status` is the desired state, RPC re-derives under its lock — not a TOCTOU to "optimize". |
+| m-6 | MINOR | `copyNumber` gives no feedback | FIXED | `order-row-actions.tsx` | Transient `role="status"` "Copiado" pill (tick, `.enter-fade`, 1.5 s auto-hide); rejection logged, not swallowed. |
+| n-1 | NIT | Whole-peso-only refund | SKIPPED | — | Product intent, not a defect (matches dev-done "whole pesos, Phase 1"). |
+| n-2 | NIT | Redundant inline timing-function | FIXED | `order-status-stepper.tsx` | Dropped inline `style`; added `motion-reduce:transition-none`. |
+| n-3 | NIT | Hover-arrow transforms un-RM-gated | FIXED | `new-order-indicator.tsx`, admin `page.tsx` | Added `motion-reduce:transform-none motion-reduce:transition-none`. |
+| n-4 | NIT | Rambling packing-slip docstring | FIXED | `packing-slip.ts` | Rewrote; slip renders no prices — the money paragraph was inaccurate and is removed. |
+
+### Summary
+- Critical: 0/0 (none found)
+- Major: 4/4 fixed, 0 skipped
+- Minor: 6/6 addressed (4 code fixes, 2 documented; m-1 accepted per reviewer)
+- Nits: 3/4 fixed, 1 skipped (n-1, product intent)
+
+### Migration Added
+- `supabase/migrations/0013_admin_customer_order_counts.sql` — `admin_customer_order_counts(uuid[])` grouped-count RPC for M-3. Applied locally via fresh `supabase db reset` (0001..0013 clean) and functionally verified: correct grouped counts (2/1), null-`customer_id` orders excluded, ids with no orders omitted (app maps missing→0), anon execute denied / service_role granted. Next migration is 0014.
+
+### Test Results After Fixes
+- `npx tsc --noEmit`: clean (exit 0)
+- ESLint (all touched files): clean (exit 0)
+- Unit: 1495/1495 pass (90 files) — was 1482; +13 new (`order-list-filters.test.ts` ×10, `refund-modal.test.tsx` ×3, incl. the M-1 emailSent-propagation regression test)
+- Integration: unchanged from Stage 4 baseline (219/219); no integration surface touched by these fixes

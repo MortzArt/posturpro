@@ -11,6 +11,14 @@
  * The read is a trivial indexed single-row select, memoized per-request via React
  * `cache()` so it adds at most one round-trip per admin request (every admin page
  * + every action verifies once). `server-only`.
+ *
+ * PRECISION NOTE (m-4): the DB counter is a `bigint`; PostgREST hands it back as a
+ * JS `number` and this module carries it as `number`. The guard compares it to the
+ * cookie's `v` with `===`. This is safe because the version is a manual
+ * rotate-on-compromise counter that increments only on an operator bump — it can
+ * never approach 2^53 (Number.MAX_SAFE_INTEGER) in the store's lifetime, so no
+ * precision is lost. If bumps ever became automatic/high-frequency, switch to a
+ * `bigint`/string comparison.
  */
 import "server-only";
 import { cache } from "react";

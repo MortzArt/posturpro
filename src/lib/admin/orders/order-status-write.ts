@@ -45,6 +45,11 @@ export async function advanceOrderTo(
     return { ok: false, reason: "not-found" };
   }
 
+  // `p_payment_status` is the DESIRED payment state we pass in, NOT a value the
+  // RPC trusts as a live read. The RPC is `FOR UPDATE`-locked and re-derives the
+  // transition kind under its own lock, so a concurrent payment webhook flipping
+  // payment_status between this read and the call cannot corrupt state — do NOT
+  // "optimize" this into a TOCTOU assumption that the snapshot is authoritative (m-5).
   const advance = await advanceOrderStatus({
     p_order_id: orderId,
     p_order_status: target,
