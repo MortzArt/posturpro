@@ -1,10 +1,10 @@
 # Pipeline State
-Task: T11 — Admin: product management
-Tier: full-cycle (high)
-Stage: COMPLETE — T11 checked off in BUILD_PLAN.md (SHIP 9/10, 2026-07-15)
-Agent: none (pipeline done)
-Last Updated: 2026-07-29
-Notes: T10 and T11 SHIPPED 2026-07-15. 2026-07-23: owner human review passed Phases 1–4 → T7 CHECKED OFF; T8 held only by the live MP sandbox test (Phase 5, needs owner's MERCADOPAGO_* test keys). Next unchecked buildable task: T13 (static pages, unblocked, independent). T12 (blocked by T8) stays blocked until T8's Phase 5 runs or the owner defers it per Phase 7. Also shipped 2026-07-23 (outside pipeline, ad-hoc fixes): cart locale-switch wipe fix, post-order catalog cache bust, cart sold-out badges, discount Apply pre-check (commits 4867a0e..a61d9f5).
+Task: T12 — Admin: order management
+Tier: full-cycle
+Stage: 1
+Agent: ultraplanner-research
+Last Updated: 2026-08-01 23:09
+Notes: Starting full cycle for T12 (owner deferred T8 Phase 5 live-sandbox sign-off; T8 code complete). T12 refund UI should use the duplicate sandbox payments on PP-000005 / underpaid PP-000004 as live test data when Phase 5 resumes.
 
 === T11 COMPLETE — SHIP (Stage 12, quality 9/10, confidence HIGH, 2026-07-15) ===
 - Pipeline: full-cycle HIGH, all 12 stages. S5 review 8/10 → S6 all 9 majors fixed+locked; S7 QA PASS HIGH (AC 35/35); S8 UX 9/10 (critical keyboard-tree fix); S9 SECURE (0 crit/high); S10 arch APPROVE 9/10; S11 hacker found+fixed int4-overflow (CRITICAL-class), variant double-submit, CSV blank-row bug — chaos score 2/10.
