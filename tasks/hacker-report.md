@@ -1,107 +1,134 @@
-# Hacker Report: T11 — Admin Product Management (Stage 11)
+# Hacker Report: T12 — Admin Order Management
 
-Chaos-gremlin pass over the NEW T11 surfaces (product list/filters/pagination, product form, image manager, variant editor, taxonomy tree/dialogs, inventory dialog, Q&A inbox, CSV import stepper + export, nav) and the storefront as downstream victim. Prior-stage findings (dev-done M-1..M-9, m-1..m-9, nits; UX/security/arch residuals) were NOT re-hunted — this pass targets what those stages missed under adversarial input, garbage, and races.
+> Stage 11 (ultrahacker). Full-cycle, complexity HIGH. Live chaos against the real
+> T12 admin surface (localhost:3000) driven by Playwright + direct SQL edge-data
+> seeding. MP left unreachable/unexercised (owner's Phase-5 refund pass reserved) —
+> the refund path was chaosed up to but NOT through the money-moving REEMBOLSAR
+> submit. DB left in a sane state (see DB State Note).
 
 ## Summary
-- Dead UI found: 0
-- Visual bugs: 0 new (viewport chaos held — see coverage log)
-- Logic bugs: 3 (1 CRITICAL-class data-corruption gap, 1 MAJOR double-submit, 1 MINOR CSV row-drop)
-- Missing states: 0 new
-- Items fixed: 3 (all found bugs)
-- Investigated-not-a-bug: 2 (CSV file-state-after-error, CSV confirm double-click — both already safe by construction)
-- Product improvements suggested: 5 (not implemented — scope discipline)
 
-## Bugs Found
+- Dead UI found: **0**
+- Visual bugs: **0** (the floating "N" is the Next.js dev-mode indicator, not app UI — ruled out; dev-only)
+- Logic bugs: **0**
+- Missing states: **0** (loading/empty/error/404/0-item/no-orders all present)
+- Robustness gaps found & FIXED: **1** (unbounded status-history note — cancel reason / advance note)
+- Items fixed: **1**
+- Product improvements suggested: **5**
 
-### CRITICAL-class — int4 integer-overflow gap (money / stock / dimensions) — FIXED
-The nastiest find. Every catalog quantity column (`stock`, `*_cents` money, `width_mm`…`weight_g`) is Postgres `integer` (int4, max **2,147,483,647**). The strict parsers guarded only `Number.isSafeInteger` (≈9e15), so any value in `(INT4_MAX, MAX_SAFE_INTEGER]` — e.g. stock `3000000000`, price `$99,999,999.99` (= 9,999,999,999 cents), weight `9999999` kg — passed all validation and reached the DB.
-
-- **Root cause:** JS safe-integer guard is ~4M× larger than the int4 column ceiling; no domain cap between them.
-- **Impact:**
-  - Form path → generic "No se pudo guardar" banner (opaque; operator can't tell why a plausible value failed).
-  - **CSV import path** (worse): oversized `stock` showed **green "Crear"/"Actualizar" in the dry-run**, then died at confirm — and `applyImport` **echoes the raw Postgres error** (`value "3000000000" is out of range for type integer`) into the per-row failure list. That violates AC-31/32 ("every bad row surfaced in the dry-run") AND the Error-States contract ("never echoes raw PG error").
-- **Fix (DRY, at the shared parser boundary):** new `INT4_MAX = 2_147_483_647` in `config/admin-products.ts`; reject `> INT4_MAX` in `parseMoneyToCents` (settings-input.ts → covers settings/product/variant/CSV money), `parseScaledInteger` (units.ts → dimensions/weight), `parseNonNegativeInt` (product-input.ts → stock), `parseStock` (variant-input.ts → variant stock), and the CSV `stock()` (csv-product-map.ts → dry-run row error "stock: fuera de rango.").
-- **Result:** oversized values now fail as friendly per-field / per-row errors BEFORE any DB touch, in both the form and the CSV dry-run. Also closes a latent T10 gap (shipping flat-rate could overflow int4 the same way).
-- **Regression-locked:** unit tests in `units.test.ts`, `product-input.test.ts`, `variant-input.test.ts`, `csv-product-map.test.ts` + **live e2e** `e2e/admin-products-chaos.spec.ts` (create with overflowing price/stock → field error, no redirect/write, body does NOT contain "out of range"; chromium + mobile).
-
-### MAJOR — variant editor double-submit (Save button never disabled) — FIXED
-`variant-editor.tsx` discarded the transition's pending flag (`const [, startTransition]`) and rendered `<Button onClick={onSave}>` and "Agregar variante" with **no `disabled`**. Double-clicking "Guardar variantes" fired `saveVariantsAction` twice concurrently (last-writer-wins reconcile of the variant set — the second, possibly-stale click clobbers the first). Distinct from M-6 (which fixed error KEYING, not submit gating).
-
-- **Root cause:** pending state unbound; no submit guard on a button that stays on-screen after click (unlike the CSV confirm, which navigates away).
-- **Fix:** bind `pending`, `disabled={pending}` on Save + Add, label swaps to "Guardando…", plus a defensive `if (pending) return;` re-entrancy guard in `onSave`.
-- **Verified:** admin-products e2e variant test (dup-SKU add/fix/save) still green (46/46).
-
-### MINOR — CSV parser dropped blank rows anywhere, not just trailing — FIXED
-`dropTrailingBlankRows` (csv-parse.ts) used `.filter()`, silently removing **every** entirely-blank row — including one in the MIDDLE of the file. A blank data row then vanished instead of surfacing as a "Falta sku" row error, and downstream line numbers no longer matched the operator's file.
-
-- **Root cause:** name/comment said "trailing" but implementation was "all".
-- **Fix:** strip only truly-trailing blank rows (slice from the end); a middle blank row is kept and errors honestly in the dry-run.
-- **Regression-locked:** `csv-parse.test.ts` (blank middle row preserved) + `csv-product-map.test.ts` (blank middle row → 1 error, 2 creates, honest counts).
-
-## Investigated — NOT a bug (no fix, documented reasoning)
-| Claim (from parallel component audit) | Verdict |
-|---|---|
-| CSV stepper "keeps stale file on Atrás after failed dry-run" | NOT a bug. On dry-run failure it returns to step `select` and shows the error; `onSelect` always overwrites `file` fresh, and `onConfirm` is unreachable from `select`. No wrong-file resubmission possible. |
-| CSV confirm "double-click race" | NOT a bug. Confirm button is `disabled={pending}` AND `onConfirm` synchronously sets step→`result` before the transition, so the confirm button unmounts. Second click can't hit confirm. |
-| Image reorder/cover "no rollback on server reject" | BY-DESIGN. ui-design + dev-done specify optimistic UI + error-banner recovery ("Recarga e intenta de nuevo"), not full state rollback. Operator always has a path back to a working screen. |
-| Variant key `Math.random()` collision | THEORETICAL (~1e-15). Not worth churn. |
-| `usePointerReorder` multi-touch on tablets | THEORETICAL; single-owner admin, `activeRef` lock covers the common path. |
-| Upload counter "stale after tab close" | Not fixable (tab close kills the JS context) and harmless (server writes are per-request). |
+The T12 surface is **exceptionally robust**. The upstream stages (Review/Fix/QA/UX)
+had already closed the big-ticket items (mobile horizontal overflow, refund
+`emailSent` propagation, customer-count truncation, dashboard count/link parity).
+Every chaos vector below — URL tampering, garbage input, two-tab races, XSS,
+malformed ids, empty sets, viewport 320→200%-zoom — was handled correctly. The
+single new finding is a defense-in-depth consistency gap, not an exploitable break.
 
 ## Dead UI
+
 | # | Element | File:Line | Issue | Fixed? |
 |---|---------|-----------|-------|--------|
-| — | (none) | — | Every button/link/menu item wired: row ⋮ (edit/duplicate/adjust/archive), filters + "Limpiar filtros", pagination hrefs, taxonomy tabs+dialogs, CSV stepper, Q&A actions all functional (code + e2e 46/46). | n/a |
+| — | (none) | — | Every button/link/menu on list, detail, customer list, packing slip, row-actions ⋮ menu, filters, dialogs is wired. 0 `href="#"`/dead links across detail (8 links), list (13), customers (6). | ✅ n/a |
 
 ## Visual Bugs
+
 | # | Issue | File:Line | Viewport | Fixed? |
 |---|-------|-----------|----------|--------|
-| — | (none new) | — | 320/375/1440 held: dialogs `max-w-[calc(100%-2rem)]`; table `overflow-x-auto`; category tree indent clamps at depth 6; stepper flex stable; mobile bottom save bar (UX S8). Long/10k-char names bounded by `PRODUCT_NAME_MAX_LENGTH=300` server-side. | n/a |
+| — | No horizontal overflow at 320 / 375 / desktop on list, detail (incl. long-content + XSS + RTL order), customers, packing slip. Long strings `break-words`; hostile customer name truncates with ellipsis in the list. | — | 320–1280 | ✅ n/a |
+| i | The dark circular **"N"** overlapping the bottom-left (all admin pages) is the **Next.js dev-mode indicator** (dev-only shadow-DOM portal), NOT app markup. Does not ship to production. | — | all | Not a bug |
 
 ## Logic Bugs
+
 | # | Bug | File:Line | Steps to Reproduce | Fixed? |
 |---|-----|-----------|---------------------|--------|
-| 1 | int4 overflow passes dry-run → raw PG error at confirm | csv-product-map.ts:110, settings-input.ts:86, units.ts:45, product-input.ts:152, variant-input.ts:117 | CSV with stock `3000000000` (or price `$99,999,999.99`) → dry-run "Crear" → confirm → raw "out of range" | ✅ |
-| 2 | Variant Save double-submit | variant-editor.tsx:61,123 | Add variant → click "Guardar variantes" twice fast → two concurrent saves | ✅ |
-| 3 | CSV blank middle row silently dropped | csv-parse.ts:90 | Import CSV with an empty line between data rows → row vanishes, line numbers shift | ✅ |
+| — | Two-tab advance race → **exactly one** history row (RPC `FOR UPDATE` + idempotent `noop_same_status`); both tabs report success, no double email. | `advance_order_status`/`cancel_order` RPC | Open same order in 2 tabs, advance to `paid` simultaneously | ✅ already safe |
+| — | Double-click advance / note-save → single write (button disabled during `useTransition`; menu closes). Verified 1 history row, 1 note. | `order-detail-actions.tsx`, `internal-notes.tsx` | Rapid double-click confirm | ✅ already safe |
+| — | Rapid filter toggling during pagination → converges to a consistent state, no 500, page resets. | `order-filters.tsx` | Toggle status select 6× fast | ✅ already safe |
+| — | Back/forward mid-flow → detail re-renders intact. | — | list → detail → back → forward | ✅ already safe |
 
 ## Missing States
-| # | Component | Missing State | File:Line | Added? |
-|---|-----------|---------------|-----------|--------|
-| — | (none) | Loading (dry-run "Analizando…", import "Importando…"), empty (products/questions/images), error (banners), negative-stock block — all present. | — | n/a |
 
-## Product Improvements (NOT implemented — feed future tickets)
+| # | Component | State | File:Line | Present? |
+|---|-----------|-------|-----------|----------|
+| 1 | Orders list | Empty (`admin-orders-empty`), page-beyond-range clamp, zero-result search | `order-empty-state.tsx`, `order-list-query.ts` | ✅ |
+| 2 | Order detail | 0-item order ("Artículos (0)", $0.00), no-history ("Sin historial."), no-notes ("Sin notas."), notes/history section-read-failure banners | `orders/[id]/page.tsx`, `internal-notes.tsx` | ✅ |
+| 3 | Detail 404 | Non-UUID (`banana`), malformed (`aaaa-…-8000`), non-existent UUID, `<script>` → localized 404 "Página no encontrada", never 500 (AC-7) | `orders/[id]/page.tsx`, `order-read.ts` | ✅ |
+| 4 | Customers | No-orders customer (count 0), empty search set | `customer-table.tsx` | ✅ |
+| 5 | Packing slip | 0-item ("Sin artículos."), cancelled ("CANCELADO" band), 401 unauth | `packing-slip.ts`, `packing-slip/route.ts` | ✅ |
+
+## Security / Injection (all defended)
+
+- **XSS:** `<script>alert(1)</script>` in customer name, `<img src=x onerror=alert(1)>` in
+  product name, `<script>` in SKU — all render as **literal escaped text** on the detail
+  page AND the raw-HTML packing slip. Zero `alert()` dialogs fired. (React escaping +
+  `packing-slip.ts` escaper.)
+- **SQL/PostgREST injection:** `'; DROP TABLE orders;--` and `%_()*.:\,` in order search
+  and customer search are meta-char-stripped (`order-list-query.ts` m-3 defense) → benign
+  no-match, no error.
+- **URL param tampering:** `?page=-1|0|banana|99999|1e9` clamp; `?status=garbage`,
+  `?payment=' OR 1=1`, `?new=banana`, repeated `?status=paid&status=cancelled`,
+  `?page[]=…` arrays → all bounded by `parseOrderListFilters` (200, correct sets, no 500).
+- **Auth:** unauth `/admin/orders*` and `/admin/orders/customers` → 307 → login;
+  post-logout access → login. `javascript:` tracking URL rejected server-side.
+- **Refund modal:** garbage amounts (`abc`,`1.5`,`-100`,emoji,`0`,`1e9`,whitespace) disable
+  Continue; over-refund pre-checked; confirm gated on `REEMBOLSAR` (lowercase accepted);
+  modal resets (fresh idempotency key) on reopen. No MP call made.
+
+## Fix Applied (1)
+
+**[ROBUSTNESS] Unbounded status-history note (cancel reason + manual-advance note).**
+`order_status_history.note` is `text` with **no DB length CHECK**, and both
+`cancel_order` (RPC) and `advanceOrderStatus` insert the caller-supplied note
+verbatim. The cancel reason is ALSO emailed to the customer. The client textareas
+cap at 2000 via `maxLength`, but that is a client-only guard (bypassable by a
+scripted/compromised client, and inconsistent with `order_internal_notes`, which
+has a `1..2000` DB CHECK). A large note would persist forever and be emailed
+unbounded.
+
+- `src/lib/admin/orders/order-constants.ts` — added `STATUS_NOTE_MAX_LENGTH = 2000`
+  with a doc note explaining the missing DB CHECK and the trim-to-cap (not reject) policy.
+- `src/app/admin/(app)/orders/actions.ts` — new `boundStatusNote()` helper (trim →
+  null-if-empty → `slice(0, cap)`); applied in `advanceStatus` (replacing the inline
+  trim) and `cancelOrder`. Bounds the note server-side before it reaches the RPC/email.
+- `src/components/admin/orders/cancel-order-dialog.tsx` — reason textarea `maxLength`
+  now references `STATUS_NOTE_MAX_LENGTH` (semantic clarity; same 2000 value).
+
+**Verified live:** cancelled a 0-item order with a 2000-char reason → history note
+stored at 1999 chars (trimmed+clamped), status `cancelled`, no error on the empty
+stock-restore path. `tsc` clean · eslint clean · orders unit 102/102 · admin unit 294/294.
+
+## Product Improvements (backlog — not implemented)
+
 | # | Improvement | Impact | Effort | Priority |
 |---|-------------|--------|--------|----------|
-| 1 | Undo for destructive actions (archive/delete product, delete image/variant, unpublish Q&A) via a "Deshacer" toast — single-owner store, one fat-finger = lost work | High | M | P2 |
-| 2 | Bulk actions on the product list (multi-select → set status / adjust stock / delete) — the operator's most repetitive task (Phase-2 deferred; prioritize) | High | L | P2 |
-| 3 | CSV dry-run: inline-editable error rows (fix a bad SKU/price in the preview and re-validate without re-uploading) | High | M | P2 |
-| 4 | Slug/SKU live uniqueness check (debounced) on the form before submit, instead of learning "ya existe" only after Guardar | Med | S | P3 |
-| 5 | Low-stock threshold + a nav badge (like the Q&A unanswered count) surfacing products at/below it | Med | M | P3 |
+| 1 | **Live character counter** on the internal-note / cancel-reason / advance-note textareas (e.g. `1980 / 2000`). Users currently discover the 2000 cap only by silent `maxLength` truncation; a counter prevents surprise mid-compose. | Med | S | P2 |
+| 2 | **Multi-payment refund UI for PP-000005-style orders** (3 duplicate approved MP payments). Today refund targets a single `mp_payment_id`; the extra charges are a manual MP-dashboard action. A per-payment refund picker (list each approved payment + its refundable balance) would close the only manual-money gap and prevent "why is $X still charged?" support tickets. | High | M | P1 |
+| 3 | **Bulk actions on the orders list** (multi-select → "Advance to preparing", "Print packing slips", "Export"). Fulfilling 25 orders one-detail-page-at-a-time is the Owner's most repetitive daily task; a select-column + action bar is a 10x speedup for launch-day volume. | High | M | P1 |
+| 4 | **Undo window for cancel** (5-second "Pedido cancelado — Deshacer" toast that re-advances + re-decrements before the cancelled email is dispatched). Cancel is destructive (stock restore + customer email); a soft undo prevents fat-finger cancellations from mailing customers. | High | M | P2 |
+| 5 | **Keyboard-first order triage:** `/` focuses search, `j/k` move row selection, `Enter` opens detail, `e` advances status, `p` prints slip. Power-Owner throughput; matches the Linear-tier bar the UX audit set. | Med | M | P3 |
 
-## Fixes Applied
-- **int4 overflow guard** (JS safe-int guard ≫ int4 column ceiling): `INT4_MAX` in `src/lib/config/admin-products.ts`; reject `> INT4_MAX` in `settings-input.ts:86` (money), `units.ts:45` (dims/weight), `products/product-input.ts:152` (stock), `products/variant-input.ts:117` (variant stock), `csv/csv-product-map.ts:110` (CSV dry-run row error).
-- **Variant double-submit** (unbound pending + no submit guard): `products/variant-editor.tsx` — bind `pending`, `disabled={pending}` on Save+Add, "Guardando…" label, re-entrancy guard.
-- **CSV blank-row drop** (`.filter()` removed all blanks): `csv/csv-parse.ts:90` — slice trailing blanks only.
-- Regression tests: +7 unit + new live e2e `e2e/admin-products-chaos.spec.ts` (4 tests, chromium+mobile).
+## Chaos Score: 1 / 10
 
-## Chaos Coverage Log
-- **Garbage in:** 10k-char/emoji/RTL names bounded server-side; money/stock `0`/`-1`/`abc`/`1,500.00`/`0.001`/whitespace → friendly errors (existing); **`1e9`+ overflow → NEW fix**; HTML/script stored as text, React-escaped on re-render + storefront (no executing XSS — S9 + code).
-- **Duplicate slug/SKU** by case: lowercased in CSV; DB 23505 → field error (existing).
-- **Race/double:** variant Save → **FIXED**; CSV confirm → safe by construction; product form submit → `disabled={pending}`; image reorder/cover optimistic + banner = by-design.
-- **Sequence abuse:** direct-URL nonexistent/deleted id, malformed `?page`, back/forward filter URL sync → e2e green; CSV stepper refresh/back → safe.
-- **Viewport chaos:** 320/375/1440 hold (dialogs, table h-scroll, tree clamp, stepper) — UX S8 live + re-checked.
-- **Data edges:** CSV blank middle row → **FIXED**; header-only/empty/missing-header/oversized rejected (existing); category depth-6 clamp intentional.
-- **Storefront victim:** admin create/edit/status-flip/Q&A publish → PDP/listing reflect via cache bust; drafts never leak; prices sane (e2e create→storefront + status-flip→removed green).
+(Lower = more robust.) One non-exploitable robustness gap (unbounded history note),
+now fixed. No dead UI, no visual defects, no logic bugs, no missing states, no XSS,
+no injection, no race double-writes. The surface absorbed every hostile input,
+malformed URL, viewport extreme, and concurrent-tab race thrown at it.
 
-## Verification Numbers
-- **tsc `--noEmit`:** 0 errors.
-- **eslint** (changed src incl. `max-lines`): clean.
-- **Unit:** **1469/1469** passed (87 files) — 1462 baseline + **7 new**.
-- **e2e admin-products:** **46/46** (23 tests × chromium+mobile) dev serial — no regression.
-- **e2e admin (core):** **30/30** on a fresh dev server (2 first-run failures were the documented stale-dev-route-cache flake after reseed-without-restart; reproduced-then-cleared; settings thousand-separator + flat-rate-save green — money cap doesn't touch legit values).
-- **e2e admin-products-chaos (NEW):** **4/4** (chromium+mobile) — int4-overflow live proof, no 500, no raw "out of range", no DB write.
-- **DB:** reset + seed → pristine (30 products, 70 variants, 100 images, 0 ledger rows, 0 questions). Port 3000 clear. tsconfig unchanged.
+## Tests After Fixes
 
-## Chaos Score: 2/10
-Target ≤ 3 met. T11 arrived hardened by five prior stages; this pass found one genuine data-integrity gap (int4 overflow across form + CSV, with a raw-error leak on the CSV path — highest-severity find), one trivially-reachable double-submit, and one silent CSV row-drop. All three fixed and regression-locked; the remainder of the chaos menu held. No git commit performed (per instructions).
+- `tsc --noEmit`: **clean (exit 0)**
+- ESLint (touched files): **clean (exit 0)**
+- Unit (orders): **102 / 102 pass**
+- Unit (all admin — `src/app/admin` + `src/lib/admin`): **294 / 294 pass**
+- Live verification: 0-item cancel with 2000-char reason → note bounded to 1999, no error.
+
+## DB State Note
+
+- **Started:** the local Supabase had **0 orders / 0 customers** (a prior stage had reset
+  it; the real PP-000001..PP-000006 sandbox orders were already absent — NOT deleted by me).
+- **During:** seeded 7 `CHAOS-0000NN` orders (normal-paid, pending, shipped+tracking,
+  cancelled+history, **0-item**, **hostile/XSS/RTL/long-content**, delivered-linked-to-customer)
+  + 3 customers (one no-orders, one long-RTL name) covering every edge. A few chaos orders
+  were mutated by the tests (pending→paid, paid→preparing, empty→cancelled).
+- **Left:** **all CHAOS-* orders/items/history/notes and all seeded customers DELETED.** DB
+  is back to the pristine empty state it was found in (verified: 0/0/0/0/0). No real PP-*
+  order was touched. No MP refund API call was made.

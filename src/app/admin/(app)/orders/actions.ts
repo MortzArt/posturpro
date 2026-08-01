@@ -21,6 +21,7 @@ import { cancelOrder as cancelOrderWrite } from "@/lib/admin/orders/order-cancel
 import { parseRefundInput } from "@/lib/admin/orders/order-refund-input";
 import { refundOrder as refundOrderWrite } from "@/lib/admin/orders/order-refund-write";
 import { addOrderNote } from "@/lib/admin/orders/order-notes-write";
+import { STATUS_NOTE_MAX_LENGTH } from "@/lib/admin/orders/order-constants";
 import type { OrderStatus } from "@/lib/supabase/database.types";
 import type {
   AdvanceStatusActionResult,
@@ -29,6 +30,21 @@ import type {
   RefundOrderActionResult,
   AddNoteActionResult,
 } from "@/lib/admin/orders/order-action-types";
+
+/**
+ * Trim + bound a status-history note (manual-advance note / cancel reason).
+ * `order_status_history.note` has NO DB length CHECK, so the write path caps it
+ * here (defense in depth beyond the client textarea `maxLength`). Empty → null;
+ * over-length is clamped to the cap rather than rejected so a legitimate action
+ * never fails on a slightly-too-long note.
+ */
+function boundStatusNote(note: string | null | undefined): string | null {
+  const trimmed = note?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.slice(0, STATUS_NOTE_MAX_LENGTH);
+}
 
 /** Revalidate an order's detail page + the list after a write. */
 function revalidateOrder(orderId: string): void {
@@ -69,7 +85,7 @@ export async function advanceStatus(
   if (!parsed.ok) {
     return { ok: false, reason: parsed.reason === "invalid-status" ? "invalid" : "not-allowed" };
   }
-  const trimmedNote = note?.trim() ? note.trim() : null;
+  const trimmedNote = boundStatusNote(note);
   const result = await advanceOrderTo(orderId, parsed.target, trimmedNote);
   if (!result.ok) {
     if (result.reason === "regression") return { ok: false, reason: "regression" };
@@ -104,7 +120,7 @@ export async function cancelOrder(
   reason?: string,
 ): Promise<CancelOrderActionResult> {
   await requireSession();
-  const result = await cancelOrderWrite(orderId, reason ?? null);
+  const result = await cancelOrderWrite(orderId, boundStatusNote(reason));
   if (!result.ok) {
     return { ok: false, reason: result.reason === "not-found" ? "not-found" : "error" };
   }

@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { TextareaField, FieldError } from "@/components/admin/form/fields";
 import { cancelOrder } from "@/app/admin/(app)/orders/actions";
-import { INTERNAL_NOTE_MAX_LENGTH } from "@/lib/admin/orders/order-constants";
+import { STATUS_NOTE_MAX_LENGTH } from "@/lib/admin/orders/order-constants";
 
 /**
  * CancelOrderDialog (T12 Surface 4, AC-13/14, edge 3) — confirm + cancel with an
@@ -91,7 +91,7 @@ export function CancelOrderDialog({
             label="Motivo (opcional, se envía al cliente)"
             testid="cancel-reason"
             rows={3}
-            maxLength={INTERNAL_NOTE_MAX_LENGTH}
+            maxLength={STATUS_NOTE_MAX_LENGTH}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             disabled={pending}
