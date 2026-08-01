@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/admin/form/fields";
@@ -31,6 +31,8 @@ const ERROR_COPY: Record<string, string> = {
   error: "No se pudo guardar la guía.",
 };
 
+const SAVED_FEEDBACK_MS = 6000;
+
 export function TrackingForm({ orderId, trackingNumber, carrier, trackingUrl }: TrackingFormProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -39,6 +41,15 @@ export function TrackingForm({ orderId, trackingNumber, carrier, trackingUrl }: 
   const [url, setUrl] = useState(trackingUrl ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  // Auto-hide the "Guía guardada" confirmation after a few seconds so the inline
+  // success line matches the auto-dismissing banner pattern used elsewhere in the
+  // detail page (a persistent success line reads as stale state).
+  useEffect(() => {
+    if (!saved) return;
+    const timer = window.setTimeout(() => setSaved(false), SAVED_FEEDBACK_MS);
+    return () => window.clearTimeout(timer);
+  }, [saved]);
 
   const onSave = (): void => {
     setError(null);

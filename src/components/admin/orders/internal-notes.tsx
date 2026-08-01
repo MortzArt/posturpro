@@ -120,7 +120,7 @@ export function InternalNotes({ orderId, notes }: InternalNotesProps) {
         <ul className="flex flex-col gap-2" data-testid="internal-notes-list">
           {notes.map((note) => (
             <li key={note.id} className="text-sm">
-              <p className="whitespace-pre-wrap text-foreground">{note.body}</p>
+              <p className="whitespace-pre-wrap break-words text-foreground">{note.body}</p>
               <p className="text-xs text-muted-foreground">{formatRelativeDate(note.createdAt)}</p>
             </li>
           ))}

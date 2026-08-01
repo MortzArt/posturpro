@@ -42,7 +42,7 @@ export default async function AdminOrderDetailPage({
   const cancelledAt = deriveCancelledAt(order.orderStatus, order.history);
 
   return (
-    <div className="flex flex-col gap-6 pb-24 md:pb-0">
+    <div className="flex flex-col gap-6">
       <div>
         <Link
           href={ADMIN_ORDERS_PATH}
@@ -57,7 +57,7 @@ export default async function AdminOrderDetailPage({
           <OrderStatusBadge status={order.orderStatus} />
           <PaymentStatusBadge status={order.paymentStatus} />
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 break-words text-sm text-muted-foreground">
           Creado {formatRelativeDate(order.createdAt)} · {order.contactEmail}
         </p>
       </div>
@@ -65,7 +65,7 @@ export default async function AdminOrderDetailPage({
       <OrderStatusStepper status={order.orderStatus} cancelledAt={cancelledAt} />
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <ContactPanel order={order} />
           <ItemsPanel order={order} />
           <Panel title="Guía de envío">
@@ -81,7 +81,7 @@ export default async function AdminOrderDetailPage({
           </Panel>
         </div>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <Panel title="Acciones">
             <OrderActionsPanel
               orderId={order.id}
@@ -105,7 +105,7 @@ export default async function AdminOrderDetailPage({
 /** A bordered card panel with a small section header. */
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-border p-4">
+    <section className="min-w-0 rounded-lg border border-border p-4">
       <h2 className="mb-3 text-sm font-medium">{title}</h2>
       {children}
     </section>
@@ -116,26 +116,26 @@ function ContactPanel({ order }: { order: AdminOrderDetail }) {
   return (
     <Panel title="Datos de contacto y envío">
       <dl className="flex flex-col gap-2 text-sm">
-        <div>
+        <div className="min-w-0">
           <dt className="text-xs text-muted-foreground">Contacto</dt>
-          <dd>{order.contactEmail}</dd>
-          {order.contactPhone ? <dd className="text-muted-foreground">{order.contactPhone}</dd> : null}
+          <dd className="break-words">{order.contactEmail}</dd>
+          {order.contactPhone ? <dd className="break-words text-muted-foreground">{order.contactPhone}</dd> : null}
         </div>
-        <div>
+        <div className="min-w-0">
           <dt className="text-xs text-muted-foreground">Envío a</dt>
-          <dd className="font-medium">{order.shippingFullName}</dd>
-          <dd className="text-muted-foreground">
+          <dd className="break-words font-medium">{order.shippingFullName}</dd>
+          <dd className="break-words text-muted-foreground">
             {order.addressLine1}
             {order.addressLine2 ? `, ${order.addressLine2}` : ""}
           </dd>
-          <dd className="text-muted-foreground">
+          <dd className="break-words text-muted-foreground">
             Col. {order.city} · CP {order.postalCode} · {order.state}
           </dd>
         </div>
         {order.deliveryNotes ? (
-          <div>
+          <div className="min-w-0">
             <dt className="text-xs text-muted-foreground">Notas de entrega</dt>
-            <dd className="text-muted-foreground">{order.deliveryNotes}</dd>
+            <dd className="break-words text-muted-foreground">{order.deliveryNotes}</dd>
           </div>
         ) : null}
       </dl>
@@ -150,10 +150,10 @@ function ItemsPanel({ order }: { order: AdminOrderDetail }) {
         {order.items.map((item) => (
           <li key={item.id} className="flex items-start justify-between gap-3 text-sm">
             <div className="min-w-0">
-              <p className="text-foreground">
+              <p className="break-words text-foreground">
                 {item.productName} <span className="text-muted-foreground">×{item.quantity}</span>
               </p>
-              <p className="font-mono text-xs text-muted-foreground">
+              <p className="break-words font-mono text-xs text-muted-foreground">
                 SKU {item.productSku}
                 {item.variantLabel ? ` · ${item.variantLabel}` : ""}
               </p>

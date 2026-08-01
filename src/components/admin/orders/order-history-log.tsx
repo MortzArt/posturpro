@@ -40,7 +40,7 @@ export function OrderHistoryLog({ history }: { history: AdminHistoryEntry[] | nu
               <p className="text-foreground">
                 {fromLabel} <span aria-hidden>→</span> {toLabel}
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="break-words text-xs text-muted-foreground">
                 {kindLabel ? <span>{kindLabel} · </span> : null}
                 {entry.note ? <span>{entry.note} · </span> : null}
                 {formatRelativeDate(entry.createdAt)}
