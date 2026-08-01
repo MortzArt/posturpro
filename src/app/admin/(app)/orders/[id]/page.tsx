@@ -13,6 +13,7 @@ import { OrderHistoryLog } from "@/components/admin/orders/order-history-log";
 import { OrderActionsPanel } from "@/components/admin/orders/order-actions-panel";
 import { TrackingForm } from "@/components/admin/orders/tracking-form";
 import { InternalNotes } from "@/components/admin/orders/internal-notes";
+import { deriveCancelledAt } from "@/lib/admin/orders/order-status-meta";
 import type { AdminOrderDetail } from "@/lib/admin/orders/order-read";
 
 /**
@@ -35,13 +36,10 @@ export default async function AdminOrderDetailPage({
 
   const remainingCents = Math.max(0, order.totalCents - order.refundedCents);
   // The real cancellation time is the newest `cancelled` history entry, NOT the
-  // order's creation time. `history` is newest-first, so `find` returns the most
-  // recent cancel. Falls back to `null` (band renders without a timestamp) when
-  // history failed to load — never a factually wrong time. (M-2)
-  const cancelledAt =
-    order.orderStatus === "cancelled"
-      ? order.history?.find((entry) => entry.toStatus === "cancelled")?.createdAt ?? null
-      : null;
+  // order's creation time — derived by the pure, unit-tested `deriveCancelledAt`
+  // (M-2). Falls back to `null` (band renders without a timestamp) when history
+  // failed to load — never a factually wrong time.
+  const cancelledAt = deriveCancelledAt(order.orderStatus, order.history);
 
   return (
     <div className="flex flex-col gap-6 pb-24 md:pb-0">

@@ -146,6 +146,29 @@ export function isAllowedNextStatus(current: OrderStatus, next: OrderStatus): bo
   return ALLOWED_NEXT_STATUSES[current].includes(next);
 }
 
+/** The minimal history-entry shape the cancelled-band derivation needs. */
+export interface CancellableHistoryEntry {
+  toStatus: OrderStatus;
+  createdAt: string;
+}
+
+/**
+ * Derive the real cancellation time for the cancelled band (M-2). The band must
+ * show WHEN the order was cancelled — the newest `cancelled` history entry — NOT
+ * the order's creation time. History is provided newest-first, so the first
+ * matching entry is the most recent cancel. Returns `null` when the order is not
+ * cancelled, when history failed to load (`null`), or when — defensively — no
+ * `cancelled` entry exists; the band then renders WITHOUT a timestamp rather than
+ * a factually wrong one.
+ */
+export function deriveCancelledAt(
+  orderStatus: OrderStatus,
+  history: readonly CancellableHistoryEntry[] | null,
+): string | null {
+  if (orderStatus !== "cancelled") return null;
+  return history?.find((entry) => entry.toStatus === "cancelled")?.createdAt ?? null;
+}
+
 /**
  * es-MX labels for the `transition_kind` audit taxonomy (0010) shown in the
  * history log. `noop` returns null (hidden — a non-material re-notification).
