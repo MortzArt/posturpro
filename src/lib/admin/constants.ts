@@ -92,6 +92,12 @@ export const ADMIN_QA_PATH = "/admin/qa" as const;
 /** Route for the product list (T11 landing surface). */
 export const ADMIN_PRODUCTS_PATH = "/admin/products" as const;
 
+/** Route for the order list (T12 landing surface). */
+export const ADMIN_ORDERS_PATH = "/admin/orders" as const;
+
+/** Route for the customer list (T12). */
+export const ADMIN_CUSTOMERS_PATH = "/admin/orders/customers" as const;
+
 /** A single admin nav entry (data-driven so T11/T12 flip `status` without JSX edits). */
 export interface AdminNavItem {
   id: AdminSectionId;
@@ -153,8 +159,8 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   {
     id: "orders",
     label: "Pedidos",
-    href: "/admin/orders",
+    href: ADMIN_ORDERS_PATH,
     icon: ShoppingCart01Icon,
-    status: "soon",
+    status: "live",
   },
 ] as const;

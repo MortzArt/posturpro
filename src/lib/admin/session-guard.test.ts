@@ -17,6 +17,14 @@ vi.mock("next/headers", () => ({
     }),
 }));
 
+// T12 AC-27: the guard now also reads the persisted session version. Mock it to
+// the baseline (1) so a freshly-minted cookie (v = ADMIN_SESSION_VERSION = 1)
+// passes the revocation check; a `null` return would fail-closed to `false`.
+const sessionVersion = { value: 1 as number | null };
+vi.mock("./session-version", () => ({
+  getAdminSessionVersion: () => Promise.resolve(sessionVersion.value),
+}));
+
 import { hasValidAdminSession } from "./session-guard";
 import { createSessionCookieValue } from "./session";
 
@@ -60,5 +68,20 @@ describe("hasValidAdminSession fail-closed mapping (M-2)", () => {
   it("returns false when there is no cookie at all", async () => {
     cookieValue.value = undefined;
     expect(await hasValidAdminSession()).toBe(false);
+  });
+
+  it("rejects a cookie whose version != the persisted version (T12 AC-28 revocation)", async () => {
+    // Mint at version 1, then bump the persisted version to 2 → the cookie is revoked.
+    cookieValue.value = createSessionCookieValue(Math.floor(Date.now() / 1000), 1);
+    sessionVersion.value = 2;
+    expect(await hasValidAdminSession()).toBe(false);
+    sessionVersion.value = 1;
+  });
+
+  it("fails closed when the version read errors (null) — never grants on a broken DB", async () => {
+    cookieValue.value = createSessionCookieValue(Math.floor(Date.now() / 1000), 1);
+    sessionVersion.value = null;
+    expect(await hasValidAdminSession()).toBe(false);
+    sessionVersion.value = 1;
   });
 });

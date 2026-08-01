@@ -173,6 +173,25 @@ export type RecordInventoryAdjustmentResult = {
 };
 
 /**
+ * Args for the `cancel_order` RPC (T12, 0012). Single-transaction cancel: locks
+ * the order, restores each order_items line's quantity to stock (skipping null
+ * FKs), advances to 'cancelled' with a history row (transition_kind='cancelled'),
+ * idempotent (re-cancel is a no-op). Kept a `type` alias (T8 gotcha).
+ */
+export type CancelOrderArgs = {
+  p_order_id: string;
+  p_note?: string | null;
+};
+
+/** The `cancel_order` RPC result (T12, 0012). `applied` gates the cancelled email. */
+export type CancelOrderResult = {
+  /** true when this call performed the cancel; false for a no-op / not-found. */
+  applied: boolean;
+  reason: "cancelled" | "noop" | "order_not_found";
+  from_status: OrderStatus | null;
+};
+
+/**
  * The `Database["public"]["Functions"]` block. Args/Returns reference the `type`
  * aliases above — keep them aliases (T8 gotcha).
  */
@@ -240,6 +259,14 @@ export type DatabaseFunctions = {
   record_inventory_adjustment: {
     Args: RecordInventoryAdjustmentArgs;
     Returns: RecordInventoryAdjustmentResult;
+  };
+  cancel_order: {
+    Args: CancelOrderArgs;
+    Returns: CancelOrderResult;
+  };
+  bump_admin_session_version: {
+    Args: Record<string, never>;
+    Returns: number;
   };
   claim_email_send: {
     Args: ClaimEmailSendArgs;

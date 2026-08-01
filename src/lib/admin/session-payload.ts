@@ -15,7 +15,14 @@ import { ADMIN_SESSION_VERSION } from "@/lib/admin/constants";
 
 /** The signed session payload (kept tiny — no PII, no secrets). */
 export interface AdminSessionPayload {
-  /** Payload format version (matches {@link ADMIN_SESSION_VERSION}). */
+  /**
+   * Session VERSION (T12 AC-27). Stamped from the persisted
+   * `admin_session_version` counter when the cookie is minted, and compared
+   * against that same persisted value on every authoritative verify — a
+   * mismatch (after a `bump_admin_session_version()`) revokes the cookie. Seeded
+   * at {@link ADMIN_SESSION_VERSION} (1). The codec only validates that it is a
+   * finite number; the equality check is I/O and lives in `session-guard.ts`.
+   */
   v: number;
   /** Issued-at, epoch SECONDS (used for the max-age expiry check, AC-5). */
   iat: number;
@@ -51,10 +58,17 @@ export function fromBase64Url(input: string): string | null {
   }
 }
 
-/** Serialize a fresh payload (current version) to its base64url signed part. */
-export function encodePayload(issuedAtSeconds: number): string {
+/**
+ * Serialize a fresh payload to its base64url signed part, stamping `version` as
+ * the session `v` (T12 AC-27 — the persisted session version at mint time, so a
+ * later `bump_admin_session_version()` invalidates this cookie).
+ */
+export function encodePayload(
+  issuedAtSeconds: number,
+  version: number = ADMIN_SESSION_VERSION,
+): string {
   const payload: AdminSessionPayload = {
-    v: ADMIN_SESSION_VERSION,
+    v: version,
     iat: issuedAtSeconds,
   };
   return toBase64Url(JSON.stringify(payload));
@@ -62,8 +76,9 @@ export function encodePayload(issuedAtSeconds: number): string {
 
 /**
  * Parse a base64url payload part into a validated {@link AdminSessionPayload}, or
- * `null` if it is malformed, wrong-typed, or an unexpected version. A version
- * mismatch (e.g. after a format bump) is treated as invalid → re-login.
+ * `null` if it is malformed or wrong-typed. `v` is validated only as a finite
+ * number here — the authoritative equality against the persisted session version
+ * is I/O and lives in `session-guard.ts` (AC-27/28), NOT in this crypto-free codec.
  */
 export function decodePayload(payloadPart: string): AdminSessionPayload | null {
   const json = fromBase64Url(payloadPart);
@@ -82,9 +97,9 @@ export function decodePayload(payloadPart: string): AdminSessionPayload | null {
   const candidate = parsed as Record<string, unknown>;
   if (
     typeof candidate.v !== "number" ||
+    !Number.isFinite(candidate.v) ||
     typeof candidate.iat !== "number" ||
-    !Number.isFinite(candidate.iat) ||
-    candidate.v !== ADMIN_SESSION_VERSION
+    !Number.isFinite(candidate.iat)
   ) {
     return null;
   }

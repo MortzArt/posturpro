@@ -69,6 +69,10 @@ export type CommerceTables = {
       confirmation_token: string;
       /** Persisted per-order UI locale (T9, 0010). 'es-MX' | 'en'. */
       locale: string;
+      /** Fulfilment tracking fields (T12, 0012). Nullable; mutable (not frozen). */
+      tracking_number: string | null;
+      tracking_carrier: string | null;
+      tracking_url: string | null;
       created_at: string;
       updated_at: string;
     };
@@ -103,6 +107,9 @@ export type CommerceTables = {
       idempotency_key?: string | null;
       confirmation_token?: string;
       locale?: string;
+      tracking_number?: string | null;
+      tracking_carrier?: string | null;
+      tracking_url?: string | null;
       created_at?: string;
       updated_at?: string;
     };
@@ -137,6 +144,9 @@ export type CommerceTables = {
       idempotency_key?: string | null;
       confirmation_token?: string;
       locale?: string;
+      tracking_number?: string | null;
+      tracking_carrier?: string | null;
+      tracking_url?: string | null;
       created_at?: string;
       updated_at?: string;
     };
@@ -247,5 +257,51 @@ export type CommerceTables = {
         referencedColumns: ["id"];
       },
     ];
+  };
+  order_internal_notes: {
+    Row: {
+      id: string;
+      order_id: string;
+      body: string;
+      created_at: string;
+    };
+    Insert: {
+      id?: string;
+      order_id: string;
+      body: string;
+      created_at?: string;
+    };
+    Update: {
+      id?: string;
+      order_id?: string;
+      body?: string;
+      created_at?: string;
+    };
+    Relationships: [
+      {
+        foreignKeyName: "order_internal_notes_order_id_fkey";
+        columns: ["order_id"];
+        referencedRelation: "orders";
+        referencedColumns: ["id"];
+      },
+    ];
+  };
+  admin_session_version: {
+    Row: {
+      id: number;
+      version: number;
+      updated_at: string;
+    };
+    Insert: {
+      id?: number;
+      version?: number;
+      updated_at?: string;
+    };
+    Update: {
+      id?: number;
+      version?: number;
+      updated_at?: string;
+    };
+    Relationships: [];
   };
 }

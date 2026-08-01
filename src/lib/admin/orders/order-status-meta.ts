@@ -1,0 +1,179 @@
+/**
+ * Single-sourced order/payment status metadata for the admin order UI (T12).
+ * es-MX labels, badge glyphs + variants, the forward-only allowed-transition
+ * map (grounded in the DB `order_status_rank`, 0009), and `transition_kind`
+ * labels for the history log. NO magic status strings live in JSX — every label,
+ * glyph, variant, and allowed next-status is resolved through this module.
+ *
+ * Next-import-free + non-secret, so it is safe to import from server components,
+ * server actions, AND client components alike (the badges/steppers/actions all
+ * consume it). Grayscale-forward: the glyph + text carry meaning; the Badge
+ * variant/tint is reinforcement only (never color alone — a11y).
+ */
+import type { OrderStatus, PaymentStatus, TransitionKind } from "@/lib/supabase/database.types";
+
+/** The `Badge` variants this feature uses (subset of the shadcn Badge cva). */
+export type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
+
+/** Display metadata for one order status (glyph + label + badge variant + tint). */
+export interface OrderStatusMeta {
+  label: string;
+  /** A single glyph whose fill grows as the order advances (○ → ● → ▢). */
+  glyph: string;
+  variant: BadgeVariant;
+  /** Reinforcement tint (never the sole state signal). */
+  tint: string;
+}
+
+/** Order-status metadata, keyed by the DB enum (0001). */
+export const ORDER_STATUS_META: Record<OrderStatus, OrderStatusMeta> = {
+  pending_payment: {
+    label: "Pago pendiente",
+    glyph: "○",
+    variant: "outline",
+    tint: "text-amber-700 dark:text-amber-400",
+  },
+  paid: {
+    label: "Pagado",
+    glyph: "◔",
+    variant: "secondary",
+    tint: "",
+  },
+  preparing: {
+    label: "Preparando",
+    glyph: "◑",
+    variant: "secondary",
+    tint: "text-blue-700 dark:text-blue-400",
+  },
+  shipped: {
+    label: "Enviado",
+    glyph: "◕",
+    variant: "secondary",
+    tint: "text-indigo-700 dark:text-indigo-400",
+  },
+  delivered: {
+    label: "Entregado",
+    glyph: "●",
+    variant: "secondary",
+    tint: "text-emerald-700 dark:text-emerald-400",
+  },
+  cancelled: {
+    label: "Cancelado",
+    glyph: "▢",
+    variant: "outline",
+    tint: "text-muted-foreground",
+  },
+};
+
+/** Payment-status metadata, keyed by the DB enum (0001). */
+export const PAYMENT_STATUS_META: Record<PaymentStatus, OrderStatusMeta> = {
+  pending: {
+    label: "Pago pendiente",
+    glyph: "○",
+    variant: "outline",
+    tint: "text-amber-700 dark:text-amber-400",
+  },
+  authorized: {
+    label: "Autorizado",
+    glyph: "◐",
+    variant: "outline",
+    tint: "text-amber-700 dark:text-amber-400",
+  },
+  paid: {
+    label: "Pagado",
+    glyph: "●",
+    variant: "secondary",
+    tint: "text-emerald-700 dark:text-emerald-400",
+  },
+  failed: {
+    label: "Fallido",
+    glyph: "✕",
+    variant: "destructive",
+    tint: "",
+  },
+  refunded: {
+    label: "Reembolsado",
+    glyph: "↩",
+    variant: "outline",
+    tint: "text-muted-foreground",
+  },
+};
+
+/**
+ * Forward-only lifecycle rank, mirroring the DB `order_status_rank` (0009):
+ * pending_payment(0) → paid(1) → preparing(2) → shipped(3) → delivered(4) →
+ * cancelled(5, highest). The stepper renders ranks 0..4; `cancelled` replaces it.
+ */
+export const ORDER_STATUS_RANK: Record<OrderStatus, number> = {
+  pending_payment: 0,
+  paid: 1,
+  preparing: 2,
+  shipped: 3,
+  delivered: 4,
+  cancelled: 5,
+};
+
+/** The five forward statuses the stepper renders (in order). `cancelled` excluded. */
+export const STEPPER_STATUSES: readonly OrderStatus[] = [
+  "pending_payment",
+  "paid",
+  "preparing",
+  "shipped",
+  "delivered",
+];
+
+/**
+ * Manual next-status transitions the admin may OFFER from a given status. This is
+ * the UI-offer set — the DB `advance_order_status` regression guard remains the
+ * authority (a forced regressive/invalid transition returns `regression_blocked`).
+ *
+ * From each status the operator can advance one forward step (or jump within the
+ * forward lifecycle). `cancelled` is NOT offered here (Cancel is its own guarded
+ * action via `cancel_order`, restoring stock). A `delivered` or `cancelled` order
+ * offers no forward status.
+ */
+export const ALLOWED_NEXT_STATUSES: Record<OrderStatus, readonly OrderStatus[]> = {
+  pending_payment: ["paid"],
+  paid: ["preparing"],
+  preparing: ["shipped"],
+  shipped: ["delivered"],
+  delivered: [],
+  cancelled: [],
+};
+
+/** Whether `next` is an offered manual transition from `current`. */
+export function isAllowedNextStatus(current: OrderStatus, next: OrderStatus): boolean {
+  return ALLOWED_NEXT_STATUSES[current].includes(next);
+}
+
+/**
+ * es-MX labels for the `transition_kind` audit taxonomy (0010) shown in the
+ * history log. `noop` returns null (hidden — a non-material re-notification).
+ */
+export function transitionKindLabel(kind: TransitionKind | null): string | null {
+  switch (kind) {
+    case "paid":
+      return "Pago recibido";
+    case "payment_pending":
+      return "Pago pendiente";
+    case "payment_failed":
+      return "Pago fallido";
+    case "payment_authorized":
+      return "Pago autorizado";
+    case "refunded":
+      return "Reembolso";
+    case "shipped":
+      return "Enviado";
+    case "cancelled":
+      return "Cancelado";
+    case "delivered":
+      return "Entregado";
+    case "preparing":
+      return "Preparando";
+    case "noop":
+    case null:
+      return null;
+    default:
+      return null;
+  }
+}

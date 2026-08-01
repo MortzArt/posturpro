@@ -39,11 +39,18 @@ describe("encodePayload / decodePayload (AC-4)", () => {
     expect(decodePayload(toBase64Url("not json"))).toBeNull();
   });
 
-  it("rejects a wrong-version payload (format bump → re-login)", () => {
+  it("accepts a different numeric version (T12 AC-27: equality is enforced in the guard, not the codec)", () => {
+    // The codec no longer hard-rejects a `v !== ADMIN_SESSION_VERSION`; the
+    // persisted-version equality check moved to the async `session-guard.ts`
+    // boundary (revocation). The codec only validates `v` is a finite number.
     const encoded = toBase64Url(
       JSON.stringify({ v: ADMIN_SESSION_VERSION + 99, iat: 1 }),
     );
-    expect(decodePayload(encoded)).toBeNull();
+    expect(decodePayload(encoded)).toEqual({ v: ADMIN_SESSION_VERSION + 99, iat: 1 });
+  });
+
+  it("rejects a non-numeric version", () => {
+    expect(decodePayload(toBase64Url(JSON.stringify({ v: "1", iat: 1 })))).toBeNull();
   });
 
   it("rejects a payload missing iat / with a non-number iat", () => {

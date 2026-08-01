@@ -12,12 +12,14 @@ import { MissingEnvVarError } from "@/lib/env";
 import { clientIp } from "@/lib/request/client-ip";
 import { verifyCredentials } from "@/lib/admin/auth";
 import { createSessionCookieValue, isSessionValid } from "@/lib/admin/session";
+import { getAdminSessionVersion } from "@/lib/admin/session-version";
 import { checkLoginRateLimit } from "@/lib/admin/login-rate-limit";
 import {
   ADMIN_COOKIE_PATH,
   ADMIN_LOGIN_PATH,
   ADMIN_ROOT_PATH,
   ADMIN_SESSION_COOKIE_NAME,
+  ADMIN_SESSION_VERSION,
   getSessionMaxAgeSeconds,
 } from "@/lib/admin/constants";
 import {
@@ -79,7 +81,12 @@ export async function login(
 /** Issue a fresh signed session cookie (scoped to `/admin`, HttpOnly, Lax). */
 async function setSessionCookie(): Promise<void> {
   const cookieStore = await cookies();
-  cookieStore.set(ADMIN_SESSION_COOKIE_NAME, createSessionCookieValue(), {
+  // Stamp the CURRENT persisted session version into the cookie (T12 AC-27) so a
+  // later bump revokes it. Fall back to the baseline if the version read fails —
+  // the mint must never block login on a transient read error.
+  const version = (await getAdminSessionVersion()) ?? ADMIN_SESSION_VERSION;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  cookieStore.set(ADMIN_SESSION_COOKIE_NAME, createSessionCookieValue(nowSeconds, version), {
     httpOnly: true,
     sameSite: "lax",
     secure: IS_PRODUCTION,

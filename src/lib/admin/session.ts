@@ -15,12 +15,13 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getAdminEnv } from "@/lib/env";
-import { getSessionMaxAgeSeconds } from "@/lib/admin/constants";
+import { getSessionMaxAgeSeconds, ADMIN_SESSION_VERSION } from "@/lib/admin/constants";
 import {
   decodePayload,
   encodePayload,
   isWithinMaxAge,
   splitCookie,
+  type AdminSessionPayload,
 } from "@/lib/admin/session-payload";
 
 /** Milliseconds per second — iat is stored in epoch seconds. */
@@ -49,15 +50,19 @@ function timingSafeHexEqual(expectedHex: string, providedHex: string): boolean {
 }
 
 /**
- * Mint a fresh signed session cookie value issued at `nowSeconds`.
+ * Mint a fresh signed session cookie value issued at `nowSeconds`, stamping the
+ * current persisted session `version` into the payload's `v` (T12 AC-27) so a
+ * later `bump_admin_session_version()` invalidates this cookie. The caller reads
+ * the version (I/O) and passes it in, keeping this module crypto-pure.
  *
  * @throws {MissingEnvVarError} if `ADMIN_SESSION_SECRET` is missing/blank
  */
 export function createSessionCookieValue(
   nowSeconds: number = Math.floor(Date.now() / MS_PER_SECOND),
+  version: number = ADMIN_SESSION_VERSION,
 ): string {
   const { sessionSecret } = getAdminEnv();
-  const payloadPart = encodePayload(nowSeconds);
+  const payloadPart = encodePayload(nowSeconds, version);
   const signature = signPayload(payloadPart, sessionSecret);
   return `${payloadPart}.${signature}`;
 }
@@ -81,18 +86,37 @@ export function isSessionValid(
   value: string | undefined | null,
   nowSeconds: number = Math.floor(Date.now() / MS_PER_SECOND),
 ): boolean {
+  return verifiedSessionPayload(value, nowSeconds) !== null;
+}
+
+/**
+ * Verify a session cookie value (signature + expiry, exactly like
+ * {@link isSessionValid}) and, on success, RETURN the decoded payload so a caller
+ * can perform an out-of-band revocation check on its `v` (SEC-M-1 / AC-27). The
+ * session-version check is I/O (a persisted single-row read) and therefore lives
+ * in the async `session-guard.ts` boundary, NOT in this pure crypto module — this
+ * function is the seam that surfaces the verified `v` to it. Returns `null` on any
+ * signature/expiry failure (identical fail-closed semantics to isSessionValid).
+ */
+export function verifiedSessionPayload(
+  value: string | undefined | null,
+  nowSeconds: number = Math.floor(Date.now() / MS_PER_SECOND),
+): AdminSessionPayload | null {
   const split = splitCookie(value);
   if (!split) {
-    return false;
+    return null;
   }
   const { sessionSecret } = getAdminEnv();
   const expected = signPayload(split.payloadPart, sessionSecret);
   if (!timingSafeHexEqual(expected, split.signaturePart)) {
-    return false;
+    return null;
   }
   const payload = decodePayload(split.payloadPart);
   if (!payload) {
-    return false;
+    return null;
   }
-  return isWithinMaxAge(payload, getSessionMaxAgeSeconds(), nowSeconds);
+  if (!isWithinMaxAge(payload, getSessionMaxAgeSeconds(), nowSeconds)) {
+    return null;
+  }
+  return payload;
 }
