@@ -21,7 +21,18 @@ const supabaseHost = supabaseParsed?.hostname;
 const supabaseProtocol: "http" | "https" =
   supabaseParsed?.protocol === "http:" ? "http" : "https";
 
+/**
+ * `next dev` blocks cross-origin requests to /_next dev resources by default,
+ * which breaks hydration when the app is browsed through the ngrok tunnel used
+ * for Mercado Pago webhook testing. Allow the tunnel host, derived from
+ * NEXT_PUBLIC_SITE_URL so it follows the active tunnel. Dev-only setting —
+ * ignored by production builds.
+ */
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+const siteHost = siteUrl ? new URL(siteUrl).hostname : undefined;
+
 const nextConfig: NextConfig = {
+  ...(siteHost ? { allowedDevOrigins: [siteHost] } : {}),
   // Test-infra escape hatch: allow an isolated build/start output dir so the e2e
   // suite can run its own server without colliding with a developer's live
   // `next dev` (which single-instance-locks the default `.next`). Defaults to
