@@ -1,688 +1,428 @@
-# UI Design: T13 — Static Pages & Homepage
+# UI Design: T15 — Premium visual identity & image-rich refresh (Casa de Azulejo)
 
-> Stage 3 (UI Design). Storefront surfaces (es-MX default + en). Matches the shipped T2–T6 storefront grammar verbatim. Skills applied: `emil-design-eng` (motion decision framework, `.enter-fade`/`.stagger`/`.card-lift` reuse, `ease-out` enter, transform/opacity only), `apple-design` (typography tracking, spatial consistency, restraint, reduced-motion). Motion vocabulary is exact per `animation-vocabulary`.
-
----
+> Implementation spec for **S3 (Dev)**. The committed visual world, rationale, palette, and art direction live in **`DESIGN.md`** (repo root). This file is the exact build order: token diffs, font plan, per-surface changes, the image-slot system, placeholder plan, states, and the visual-regression checklist. **No prose here overrides DESIGN.md; where they touch, DESIGN.md wins on look and this file wins on mechanics.**
+>
+> Seed key `d43cafe8` · direction roll (persuade) · assigned index 6 · fused challenger `architecture-places-azulejo-station-hall`. Image generation was unavailable this stage (`OPENAI_API_KEY` unset, no harness image tool), so the comp-render/finish-review is deferred to S3's build per new-work §7; the QUALITY BAR reference boards were viewed to set the craft bar.
 
 ## Design Principles for This Feature
 
-1. **Storefront grammar is law.** Every page reuses the canonical `marcas`-page shell verbatim: `<section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">` → `Breadcrumbs` → `<header>` (h1 + subtitle) → body. No new page skeleton is invented. A user must not be able to tell a T13 page from a T3 page.
-2. **Content over chrome for static pages.** Policy/legal/FAQ pages are typography-driven: `max-w-prose` body, generous leading, headed sections. The reading experience is the product; decoration is subtracted, not added (Apple: Simplicity, not minimalism).
-3. **The homepage is the front door — launch-grade, not placeholder-grade.** The hero is the single highest-craft surface. Placeholder imagery is acceptable but the *layout, type hierarchy, and motion* must be shippable. Everything below the hero reuses proven catalog components (`ProductGrid`, `IndexTile`) so the homepage inherits their polish for free.
-4. **Omit, never fake.** An empty featured section is removed from the DOM (AC-9), never rendered as an empty grid or a "no products yet" placeholder. The hero always renders. Degrade to the next real section.
-5. **No new motion invented.** Reuse `.enter-fade` (low-frequency page entrances), `.stagger` + capped `transitionDelay` (grids), `.card-lift`/`.card-image` (tiles), `.link-arrow`/`.group/brands` (directional link hint). All are already `prefers-reduced-motion`-gated and off-main-thread.
-6. **Every visible string is a message key.** Both `es-MX.json` and `en.json` in lockstep, matching key structure (enforced by `src/messages/keys-used.test.ts` + `messages.test.ts`). Zero hardcoded copy.
-7. **Server-rendered by default; the contact form is the only client island.** Static pages + homepage resolve data server-side (no client spinner). Only `contact-form.tsx` is `"use client"`.
+- **Frame, don't fill.** Cobalt tilework is the *chrome* (borders, captions, buttons, dividers, empty tiles); full-color product photos live *inside* cartouche frames. Blue never fights the product.
+- **Whole tiles, honest grout.** Grid to whole units, grout-seam borders on every edge, the seam runs straight through — premium via precision, not gloss.
+- **Premium = considered, not intimidating.** Bright, daylight, warm-Mexican. Never the black-serif luxury boutique; never the discount-bin white grid.
+- **The phone is the store.** Mobile-first; desktop is the enhancement.
+- **Truth over polish.** Every image slot degrades to an intentional blank tile; zero fabricated proof.
 
 ---
 
-## Design Tokens Used
+## 1. Token diffs (exact)
 
-- **Colors (semantic only, never raw):** `bg-background`, `text-foreground`, `text-muted-foreground`, `bg-card`, `border-border`, `bg-accent`, `bg-primary`/`text-primary-foreground`, `text-destructive`, `bg-muted`, `ring-ring`. All defined in `globals.css` `:root`/`.dark` — dark mode works for free.
-- **Typography scale (matches shipped pages):**
-  - Page h1: `text-2xl font-semibold tracking-tight sm:text-3xl`
-  - Hero h1 (one step up — the front door): `text-3xl font-semibold tracking-tight sm:text-4xl lg:text-5xl` with `text-balance` and `tracking-tight` (Apple §15: large display text wants tighter tracking).
-  - Section heading (featured / showroom blocks): `text-xl font-semibold tracking-tight sm:text-2xl`
-  - Body/subtitle: `text-sm leading-relaxed text-muted-foreground sm:text-base`
-  - Prose body paragraph: `text-sm leading-relaxed text-foreground sm:text-base` inside `max-w-prose`
-  - Prose section heading (h2 in a static-page body): `text-lg font-semibold tracking-tight text-foreground sm:text-xl mt-8 first:mt-0`
-  - Label: `text-sm font-medium`; field hint/error: `text-xs`
-- **Spacing:** section rhythm `py-8 md:py-10`; hero `py-16 md:py-24`; header `mb-6 mt-2 md:mb-8`; prose paragraph gap `space-y-4`; between static-page sections `space-y-8`; shell padding `px-4 md:px-6 lg:px-8`.
-- **Radius:** `rounded-lg` (cards/tiles/hero image), `rounded-md` (inputs/buttons), `rounded-sm` (inline focus targets). All derive from `--radius: 0.625rem`.
-- **Shadows:** only `.card-lift` hover `box-shadow: var(--shadow-sm)`. Hero and static pages are flat (border-defined, not shadow-defined) — matches the store's flat, border-first elevation language.
-- **Easing:** `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)` for every enter/press; never `ease-in`.
+### 1a. Scope mechanism — the firewall (AC-11/12, edge 1/2)
 
----
+Admin is a **parallel root layout** (`src/app/admin/layout.tsx`), and both storefront and admin bodies use the identical `bg-background font-sans text-foreground`. Therefore the brand world MUST NOT be swapped on the shared `:root` or the shared `sans` export. Mechanism:
 
-## Slug & Footer/Nav Reconciliation (DECISION — committed)
+1. **Keep the neutral `:root` (+ `.dark`) block exactly as-is** — it is now *admin's* token world.
+2. **Add a storefront scope class `.theme-storefront`** in `globals.css` holding all cobalt token values.
+3. **Apply `.theme-storefront` on the storefront `<body>`** in `src/app/[locale]/layout.tsx` (and nowhere else). Admin never gets the class → admin resolves the untouched neutral `:root`.
 
-### The 9-slug set (single-sourced in `src/lib/config/static-pages.ts`)
+### 1b. `src/app/globals.css` — add the storefront token block
 
-| # | Page | Slug (es-MX + `/en/<slug>`) | Route | Body pattern |
-|---|------|------|-------|--------------|
-| 1 | About | `sobre-nosotros` | generic `[pageSlug]` | prose |
-| 2 | Shipping policy | `envios` | generic `[pageSlug]` | headed sections |
-| 3 | Returns policy | `devoluciones` | generic `[pageSlug]` | headed sections |
-| 4 | Warranty | `garantia` | generic `[pageSlug]` | headed sections |
-| 5 | FAQ | `preguntas-frecuentes` | generic `[pageSlug]` | headed list (deep-linkable) |
-| 6 | Aviso de Privacidad | `aviso-de-privacidad` | generic `[pageSlug]` | headed legal sections |
-| 7 | Terms | `terminos` | generic `[pageSlug]` | headed legal sections |
-| 8 | Contact | `contacto` | **explicit `contacto/`** | bespoke form |
-| 9 | Showroom | `showroom` | **explicit `showroom/`** | bespoke location block |
+Insert **after** the existing `:root {…}` block (leave `:root` and `.dark` untouched). Update the "Brand Tokens" doc block above to describe the scoped world.
 
-### DECISION: split `envios-y-devoluciones` → `envios` + `devoluciones`
+```css
+/* ======================================================================== *
+ * BRAND TOKENS — Casa de Azulejo (T15). Storefront-scoped so the /admin
+ * dashboard keeps the neutral :root world (firewall, AC-11/12). Editing only
+ * these values + the --font-heading binding re-skins the whole storefront with
+ * zero component color edits (AC-4). Palette is cobalt-on-glaze tin-glazed
+ * azulejo; all pairings WCAG AA verified (see DESIGN.md → Contrast). Motion
+ * layer below is Emil's authority and is NOT brand — untouched.
+ * ======================================================================== */
+.theme-storefront {
+  --background: oklch(0.985 0.006 250);
+  --foreground: oklch(0.28 0.09 258);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.28 0.09 258);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.28 0.09 258);
+  --primary: oklch(0.42 0.16 262);
+  --primary-foreground: oklch(0.985 0.006 250);
+  --secondary: oklch(0.93 0.03 250);
+  --secondary-foreground: oklch(0.35 0.12 260);
+  --muted: oklch(0.95 0.015 250);
+  --muted-foreground: oklch(0.47 0.07 258);
+  --accent: oklch(0.90 0.04 250);
+  --accent-foreground: oklch(0.35 0.12 260);
+  --destructive: oklch(0.55 0.20 27);
+  --border: oklch(0.86 0.03 250);
+  --input: oklch(0.86 0.03 250);
+  --ring: oklch(0.42 0.16 262);
+  --radius: 0.375rem;
 
-**Rationale.** AC-1 explicitly enumerates Shipping (`/envios`) and Returns (`/devoluciones`) as **two separate pages** with two separate `static_pages` rows. The current footer slug `/envios-y-devoluciones` is a T2 combined placeholder that would leave AC-1 unsatisfiable if kept. Splitting is the ticket-mandated path, and reads better in a policy footer (shipping and returns are distinct customer concerns).
+  /* Reserved accent + semantic status (promoted from hardcoded amber/emerald) */
+  --gold: oklch(0.72 0.14 85);
+  --gold-foreground: oklch(0.28 0.09 258);
+  --success: oklch(0.52 0.13 155);
+  --success-foreground: oklch(0.985 0.006 250);
+  --warning: oklch(0.55 0.13 70);
+  --warning-foreground: oklch(0.985 0.006 250);
 
-**Consequence for `site-footer.tsx`.** It currently has 2 groups — `STORE_LINKS` = [about, shipping] and `HELP_LINKS` = [faq, contact] — in a 3-col grid where col 1 is store info. With 9 destinations we regroup into **3 real link columns** (store info gets its own leading block; grid becomes 4 tracks on `lg`):
+  /* WhatsApp affordance (brand green, FAB only — AC-7) */
+  --whatsapp: oklch(0.63 0.16 155);
+  --whatsapp-foreground: oklch(1 0 0);
 
-```
-STORE_LINKS  = [ about ]                              → footer.sections.store  "Tienda"
-HELP_LINKS   = [ faq, shipping, returns, contact ]    → footer.sections.help   "Ayuda"
-LEGAL_LINKS  = [ warranty, privacy, terms ]           → footer.sections.legal  "Legal"
-```
+  /* Cobalt-tinted glaze shadow */
+  --shadow-color: oklch(0.42 0.16 262 / 0.12);
 
-Showroom hangs off the **store-info block** as a contextual link ("Visita nuestro showroom →") since it is location content, not a policy. Removed nothing; **changed key:** `footer.links.shipping` label "Envíos y devoluciones" → "Envíos". **New keys:** `footer.links.returns`, `footer.links.warranty`, `footer.links.privacy`, `footer.links.terms`, `footer.links.showroom`, `footer.sections.legal`. **Zero footer/nav href points at a nonexistent slug after this task (AC-10).**
-
-**Nav (`nav-items.ts`):** unchanged — `/contacto` was always in the set and now resolves. No slug edit. Verify-only.
-
-### Reserved-slug guard
-
-`config/static-pages.ts` exports `RESERVED_SLUGS` — `sillas`, `marcas`, `categorias`, `estilos`, `carrito`, `checkout`, `producto`, `contacto`, `showroom`. `STATIC_PAGE_SLUGS` (the 7 generic ones) is asserted disjoint from `RESERVED_SLUGS` at module load and drives `generateStaticParams`, so an unknown slug `notFound()`s rather than pre-rendering (edge 10). `contacto`/`showroom` are their own folders (App Router prefers static segments) and are excluded from `[pageSlug]` params.
-
----
-
-## Component Inventory
-
-| Component | Status | shadcn / reuse base | File |
-|---|---|---|---|
-| `Hero` | **NEW** | `Button` (existing) | `src/components/home/hero.tsx` |
-| `FeaturedProducts` | **NEW** | wraps `ProductGrid` | `src/components/home/featured-products.tsx` |
-| `FeaturedBrands` | **NEW** | wraps `IndexTile` + `BrandLogo` | `src/components/home/featured-brands.tsx` |
-| `HomeSectionHeader` | **NEW** (tiny) | — | `src/components/home/section-header.tsx` |
-| `StaticPageBody` | **NEW** | — | `src/components/content/static-page-body.tsx` |
-| `ContactForm` | **NEW** (client) | mirrors `qa-form.tsx` | `src/app/[locale]/contacto/contact-form.tsx` |
-| `ShowroomLocation` | **NEW** | — | inline in `showroom/page.tsx` (typed) |
-| `Breadcrumbs` | reuse | — | `src/components/catalog/breadcrumbs.tsx` |
-| `ProductGrid` / `ProductCard` | reuse | — | `src/components/catalog/*` |
-| `IndexTile` / `BrandLogo` | reuse | — | `src/components/catalog/*` |
-| `Button` | reuse | shadcn | `src/components/ui/button.tsx` |
-| `SiteFooter` | **MODIFY** | — | `src/components/layout/site-footer.tsx` |
-
-**Counts:** **7 new components** (Hero, FeaturedProducts, FeaturedBrands, HomeSectionHeader, StaticPageBody, ContactForm, ShowroomLocation) + **3 new routes** (`[pageSlug]`, `contacto`, `showroom`) + homepage rebuild; **1 modified** component (SiteFooter); **6 reused** (Breadcrumbs, ProductGrid, ProductCard, IndexTile, BrandLogo, Button).
-
----
-
-### Hero (homepage front door)
-
-**Purpose:** Localized headline + subcopy + primary CTA to `/sillas`; the store's first impression.
-**Location:** Top of `src/app/[locale]/page.tsx`. Always renders (AC-9).
-**shadcn base:** existing `Button` (`asChild` → locale-aware `Link`), matching the current homepage CTA exactly.
-
-**Layout (desktop ≥1024):**
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  mx-auto max-w-(--breakpoint-xl) px-4..lg:px-8  py-16 md:py-24     │
-│  ┌───────────────────────────────┐  ┌──────────────────────────┐  │
-│  │ (copy column, max-w-xl)       │  │ (media column)           │  │
-│  │  Sillas ergonómicas para      │  │  ┌────────────────────┐  │  │
-│  │  cuidar tu espalda            │  │  │   hero image       │  │  │
-│  │  (h1, text-4xl/5xl, balance)  │  │  │   aspect-[4/3]     │  │  │
-│  │  Encuentra la silla perfecta… │  │  │   rounded-lg cover │  │  │
-│  │  (subcopy, muted, max-w-prose)│  │  │                    │  │  │
-│  │  [ Ver sillas ]  Marcas →     │  │  └────────────────────┘  │  │
-│  └───────────────────────────────┘  └──────────────────────────┘  │
-│         grid lg:grid-cols-2 gap-8 lg:gap-12 items-center           │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-**Mobile (375) — stacked, copy first:**
-```
-┌────────────────────────────┐
-│  Sillas ergonómicas para   │  (h1)
-│  cuidar tu espalda         │
-│  Encuentra la silla… (sub) │
-│  [   Ver sillas   ] (full) │
-│  Marcas →                  │
-│  ┌──────────────────────┐  │
-│  │  hero image 4/3      │  │  ← image AFTER cta on mobile
-│  └──────────────────────┘  │
-└────────────────────────────┘
-```
-
-**Placeholder-imagery strategy (launch-grade without a real photo):** the media column renders `next/image` from a config `HERO_IMAGE` path (a shipped placeholder in `/public`, `alt` from a message key). **If the asset is absent/unset**, the column degrades to a **token-tinted panel**: `bg-muted rounded-lg aspect-[4/3]` with a centered `@hugeicons` chair glyph in `text-muted-foreground/40`, `aria-hidden` — never a broken `<img>`, never layout collapse. The copy column is unaffected.
-
-**Props:**
-```typescript
-interface HeroProps {
-  headline: string;        // home.hero.title
-  subcopy: string;         // home.hero.subtitle
-  ctaLabel: string;        // home.hero.ctaCatalog
-  ctaHref: string;         // CATALOG_PATH ("/sillas")
-  secondaryLabel: string;  // home.hero.ctaBrands
-  secondaryHref: string;   // "/marcas"
-  imageUrl: string | null; // HERO_IMAGE config; null → token panel
-  imageAlt: string;        // home.hero.imageAlt
+  /* Storefront display face (real binding, no longer aliasing --font-sans) */
+  --font-heading: var(--font-heading-serif), Georgia, "Times New Roman", serif;
 }
 ```
 
-**States:**
-| State | Visual | Behavior |
-|---|---|---|
-| Default (image present) | Two-column copy + photo | CTA → `/sillas` |
-| Image missing/unset | Copy + token-tinted chair-glyph panel | Identical CTA; no broken image |
-| Loading | N/A (server-rendered, ships complete) | — |
-| Reduced motion | Enter fade without translate | `.enter-fade` gate |
+> **`--radius` scoping note:** `--radius` is redeclared inside `.theme-storefront`, which correctly overrides it for storefront descendants. The `@theme inline` `--radius-sm..4xl` derivations reference `var(--radius)` and re-derive under the scope automatically — **no `@theme` edit needed**. Verify at build that admin still resolves `--radius: 0.625rem` (its `:root` value is untouched).
 
-**Responsive:**
-| Breakpoint | Layout |
-|---|---|
-| < 640 (375) | Single column: copy → CTA (`w-full sm:w-auto`) → image. No horizontal overflow. |
-| 640–1024 | Single column, CTA intrinsic width, image full-width below copy. |
-| ≥ 1024 | `lg:grid-cols-2`, copy left / image right, `items-center`. |
+### 1c. Register new color tokens in `@theme inline`
 
-**Animations:**
-- **Mount:** *Fade-and-rise* — `.enter-fade` on the copy block (opacity 0→1, `translateY(8px→0)`, 200ms `ease-out`). Purpose: prevent jarring first paint; first-view only. Reduced-motion: opacity-only.
-- **Primary CTA press:** *Scale-down press* — `Button` ships `:active { scale(0.97) }` @160ms `ease-out`. No change.
-- **Secondary "Marcas →" hover:** *Directional nudge* — reuse `.link-arrow` inside `.group/brands`; arrow `translateX(2px)` @150ms `ease-out`, gated `@media (hover: hover) and (pointer: fine)`, dropped under reduced motion (this exact pattern already ships on the placeholder homepage).
-- **No hero image parallax / ken-burns** — high-cost, purpose-free (Emil Q1: no motion without purpose).
+So Tailwind emits `bg-success`, `text-warning`, `bg-gold`, `bg-whatsapp` utilities, add to the `@theme inline` block (these are additive; they map to CSS vars that only resolve under `.theme-storefront`, so admin never sees them applied):
+
+```css
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+  --color-whatsapp: var(--whatsapp);
+  --color-whatsapp-foreground: var(--whatsapp-foreground);
+```
+
+### 1d. Token application rule (AC-3/4)
+
+No storefront component may hardcode a raw hex/oklch/rgb brand color or raw radius after this task. All brand color flows through utilities (`bg-primary`, `text-foreground`, `border-border`, `rounded-md`, `bg-success`, `text-warning`, `bg-gold`, `bg-whatsapp`). The **only** intentional token-free exception is `src/app/global-error.tsx` (edge 8) — leave it.
 
 ---
 
-### FeaturedProducts
+## 2. Font-loading plan (AC-5, edge 4)
 
-**Purpose:** Up to `N` product cards from the catalog via `ProductGrid`. Section OMITTED when zero products (AC-9).
-**Location:** Homepage, below hero.
-**shadcn base:** none; composes `ProductGrid` (owns stagger + card-lift).
+### 2a. `src/app/fonts.ts` — add the heading face; keep `sans` unchanged
 
-**Layout:**
+```ts
+import { Inter, Libre_Caslon_Text } from "next/font/google";
+
+/** Body/UI face — SHARED with admin + not-found.tsx. UNCHANGED (firewall). */
+export const sans = Inter({
+  subsets: ["latin", "latin-ext"], // widen to latin-ext for es-MX accents (safe for admin too)
+  variable: "--font-sans",
+  display: "swap",
+});
+
+/**
+ * Storefront display/heading face — Casa de Azulejo (T15). Painted-roman caps
+ * of tile captions. Bound to --font-heading-serif and applied ONLY under the
+ * storefront layout (.theme-storefront on <body>), so admin dialogs keep the
+ * sans heading (firewall, AC-5/AC-12). latin-ext covers es-MX glyphs (edge 4).
+ */
+export const headingSerif = Libre_Caslon_Text({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-heading-serif",
+  display: "swap",
+});
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  Sillas destacadas                         Ver todas  →       │  ← HomeSectionHeader
-│  ┌────┐ ┌────┐ ┌────┐ ┌────┐  (ProductGrid verbatim)          │
-│  │card│ │card│ │card│ │card│   grid-cols-2 md:3 lg:4           │
-│  └────┘ └────┘ └────┘ └────┘                                  │
-└──────────────────────────────────────────────────────────────┘
+
+> **Font-choice note for S3:** `Libre_Caslon_Text` is the committed heading face (broad painted-roman, full Latin-Extended-A). If at build its Latin-Extended-A coverage of the inverted marks/`ñ` shows any gap on a Spanish-heavy heading, the fallback is `Libre_Caslon_Display` or `Playfair Display` (both cover latin-ext) — but verify the primary first (edge 4). Do not silently drop to a face lacking `¿ ¡ ñ` coverage.
+
+### 2b. `src/app/[locale]/layout.tsx` — wire scope + heading var + direction contract
+
+Two edits (current body is at line 72–95):
+
+**(i)** attach `.theme-storefront` and the heading font variable to the storefront `<body>`, and the heading variable on `<html>` (so the CSS var exists):
+
+```tsx
+import { sans, headingSerif } from "@/app/fonts";
+// ...
+<html lang={locale} className={cn("h-full", sans.variable, headingSerif.variable)}>
+  <body className="theme-storefront min-h-full bg-background font-sans text-foreground antialiased">
 ```
 
-**Props:**
-```typescript
-interface FeaturedProductsProps {
-  products: CatalogProductCard[]; // already sliced to N by the page; guard-returns null if empty
-  heading: string;                // home.featured.productsHeading
-  viewAllLabel: string;           // home.featured.viewAllProducts
-  viewAllHref: string;            // CATALOG_PATH
-}
+> Do **not** add `headingSerif.variable` to `admin/layout.tsx`. `--font-heading` only binds to the serif under `.theme-storefront`; admin's `dialog`/`alert-dialog` keep resolving `--font-heading` to its `@theme` fallback (sans). Confirm admin dialog titles are unchanged.
+
+**(ii)** the **direction contract** as the first child of `<body>` (AC-2) — before `NextIntlClientProvider`, an HTML comment that survives the production build:
+
+```tsx
+<body className="theme-storefront ...">
+  {/* impeccable:direction-contract seed=d43cafe8
+   THESIS: PosturPro is a Mexican tiled hall — a curated sequence of cobalt-framed
+     panels — refusing the white-grid e-commerce default and the black-serif luxury boutique.
+   OWN-WORLD: Tin-glazed azulejo. Cobalt (#1545a2) line-and-wash on milk-white glaze
+     (#f7fafe); grout-seam borders; roman-caps captions in cartouche frames; mustard
+     reserved inside frames; product photos framed, never tinted.
+   STORY: The shopper reads breadth (a hall of framed brand/category tiles), authority
+     (measured, painted precision), and fair value (honest grout, no gloss) — and buys.
+   FIRST VIEWPORT: Cobalt cartouche hero — roman-caps display headline on a cobalt scrim
+     beside the framed hero image slot; primary CTA button lower-left; a tile wall of
+     featured chairs begins just below the fold.
+   FORM: Azulejo station hall (grounded #6). seed key d43cafe8.
+   FINISH: unreviewed and undocumented is unfinished; this build ends with the finish
+     review, the verdict, and DESIGN.md. */}
+  <NextIntlClientProvider>
 ```
-`N = HOME_FEATURED_PRODUCTS = 8` (named constant; 8 = two full rows at `lg:grid-cols-4`, divides by 2/4 so the last row is never ragged at any breakpoint). Component returns `null` when `products.length === 0`; the page also omits it — belt and suspenders (AC-9).
 
-**States:**
-| State | Visual | Behavior |
-|---|---|---|
-| Has products | Section header + `ProductGrid` | cards link to PDP; staggered entrance |
-| Zero products | **Not in DOM** | homepage flows hero → next section |
-| Reduced motion | Grid appears without per-card delay | `.stagger` drops delay |
+> Placement is load-bearing: it must be a direct child of the **root layout body**, not inside a slotted child component. `next-intl`/React comment nodes survive the build as HTML comments.
 
-**Responsive:** inherits `ProductGrid`: `grid-cols-2` (375 — dense, matches catalog; **NOT** 1-col: consistency with the shipped catalog outweighs the ticket's 1-col suggestion), `md:grid-cols-3`, `lg:grid-cols-4`. `HomeSectionHeader` stacks the "Ver todas →" link under the heading on mobile (`flex-col sm:flex-row sm:items-baseline sm:justify-between`).
-
-**Animations:**
-- **Grid mount:** *Staggered fade-and-rise* — `.stagger` per card, `transitionDelay = min(index, 5) * 40ms`, capped so the grid settles ≤ ~200ms. Reused verbatim from `ProductGrid`. Reduced-motion: opacity-only, no delay.
-- **Card hover/press:** *Card lift + image zoom* — `.card-lift` + `.card-image` (`scale(1.02)`), `:active scale(0.99)`. Hover gated behind fine pointers. Verbatim reuse.
-- **"Ver todas →" hover:** *Directional nudge* — `.link-arrow`/`.group/brands`.
+**Build check (AC-2):** after `next build`, grep the built output for `d43cafe8` — the contract must be greppable in the emitted HTML.
 
 ---
 
-### FeaturedBrands
+## 3. Per-surface changes
 
-**Purpose:** Up to `M` brand tiles via `IndexTile` + `BrandLogo`. OMITTED when zero brands (AC-9).
-**Location:** Homepage, below FeaturedProducts.
+> All changes are className/token/asset edits. **Preserve every `data-testid` and every e2e structural signal** (§8). No behavior, data, or copy changes except new visible copy in lockstep i18n (§6).
 
-**Layout:**
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Marcas                                    Ver todas  →        │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐                       │
-│  │ [logo] X │ │ [logo] Y │ │ [logo] Z │  ul grid              │
-│  │ desc…    │ │ desc…    │ │ desc…    │  cols-1 sm:2 lg:3     │
-│  └──────────┘ └──────────┘ └──────────┘                       │
-└──────────────────────────────────────────────────────────────┘
-```
+### 3a. Persistent chrome (every page — do first)
 
-**Props:**
-```typescript
-interface FeaturedBrandsProps {
-  brands: CatalogBrand[];  // sliced to M; guard-returns null if empty
-  heading: string;         // home.featured.brandsHeading
-  viewAllLabel: string;    // home.featured.viewAllBrands
-  viewAllHref: string;     // "/marcas"
-  logoAltTemplate: string; // reuse existing catalog.brand.logoAlt "Logo de {brand}"
-}
-```
-`M = HOME_FEATURED_BRANDS = 6` (named constant; 6 divides by 1/2/3 → last row never ragged). Each tile: `IndexTile` with `href={brandPath(brand.slug)}`, `name={brand.name}`, `description={brand.description}`, `leading={<BrandLogo name size="sm" logoUrl logoAlt/>}`, `staggerDelayMs={min(index,5)*40}`.
+| File | Change |
+| --- | --- |
+| `layout/site-header.tsx` | Wordmark → roman-caps small (`font-heading uppercase tracking-wide text-primary`), keep `header-wordmark` testid. Grout bottom-border (`border-border`). `.nav-hover` items get cobalt active tint (`aria-current` → `text-primary`/`bg-accent`). Sticky header gains cobalt-tinted `shadow-sm` on scroll (optional; keep if trivial). Preserve `header-nav-{key}` testids, both search boxes, z-40. |
+| `layout/site-footer.tsx` | Grout top-border; column headings in `font-heading` small-caps `text-foreground`; links `text-muted-foreground hover:text-foreground` (unchanged tokens now resolve cobalt). Preserve all `footer-*` testids (`footer-store-name`, `footer-free-shipping`, `footer-link-*`, `footer-copyright`) and `min-h-[1lh]` free-shipping reservation. |
+| `layout/mobile-nav.tsx` | Drawer sheet → `bg-card` with grout border; `.drawer-*` motion untouched. Active item cobalt tint. |
+| `layout/language-toggle.tsx` | Segmented control on cobalt: active segment `bg-primary text-primary-foreground`, inactive `text-muted-foreground`. Compact mobile variant unchanged in structure. |
+| `layout/whatsapp-button.tsx` | **~line 54:** `bg-primary text-primary-foreground` → `bg-whatsapp text-whatsapp-foreground` (AC-7). Keep round seal, `shadow-lg`, `.fab-pop`, `whatsapp-button` testid, safe-area insets, z-50. |
 
-**States:**
-| State | Visual | Behavior |
-|---|---|---|
-| Has brands | Header + `IndexTile` grid (matches `marcas` exactly) | tiles link to brand page; `.card-lift` |
-| Zero brands | **Not in DOM** | homepage flows past it |
-| Brand w/o logo | `BrandLogo` monogram fallback (first 2 letters) | `aria-hidden` fallback tile |
-| Brand w/o description | Tile omits description line (no empty block) | `IndexTile` handles null already |
+### 3b. Homepage (`src/app/[locale]/page.tsx` + `home/*`)
 
-**Responsive:** `grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3` — identical to the `marcas` index grid.
+| File | Change |
+| --- | --- |
+| `home/hero.tsx` | Copy panel on a **cobalt scrim cartouche**: headline `font-heading text-4xl lg:text-6xl text-balance`. On mobile the copy sits in a `bg-primary text-primary-foreground` caption panel below/over the media; on `lg` the 2-col grid keeps copy-left/media-right, copy on glaze with cobalt headline. `HeroMedia` gains the cartouche frame (`rounded-md border border-primary/30`), keeps `aspect-[4/3]`, `fill`, `priority`, `sizes`, `hero-image-fallback` testid, null-degrade glyph. Keep `hero-cta-catalog`, `hero-link-brands` testids and `.enter-fade`/`.link-arrow`. |
+| **NEW** `home/editorial-band.tsx` | New storefront-scoped **ergonomics editorial band** (AC-8): a wide cartouche lifestyle image slot (`aspect-[16/9]` mobile → `21/9` lg) with a cobalt caption bar carrying a short posture-authority headline + subcopy (i18n keys, §6). **No fabricated proof** — copy is a curation/ergonomics claim, not a testimonial/stat. Slot config-driven (`EDITORIAL_BAND_IMAGE`), null → blank cobalt tile with Chair/posture glyph. Reuse `section-header` grammar. `.enter-fade` on mount. |
+| `home/featured-products.tsx` | Tile-wall grid; cards per 3c. Section header `font-heading` small-caps. |
+| `home/featured-brands.tsx` | Brand marks as framed tiles (`border border-border rounded-md bg-card`), cobalt caption label. |
+| `[locale]/page.tsx` | Section order: Hero → Featured Products → **Editorial Band** → Featured Brands. Resolve editorial-band strings in the RSC and pass as props (pre-resolved-labels discipline). Guarded reads unchanged. |
 
-**Animations:** same `.stagger` + `.card-lift` reuse (from `IndexTile`). `viewAll` link uses `.link-arrow`.
+### 3c. Catalog / PLP (`catalog/*`, `/sillas`, `/marcas`, `/categorias`, `/estilos` + `[slug]`)
 
----
+| File | Change |
+| --- | --- |
+| `catalog/product-card.tsx` | Card is a cartouche tile: `border-border bg-card rounded-md`; image slot `aspect-[4/5]` gains cartouche framing (keep `bg-muted`, `fill`, `sizes`, first-row `priority`, fallback glyph). **Preserve** `product-card`/`product-card-link` testids, `.stagger`/`.card-lift`/`.card-image`, and compare-at `text-muted-foreground line-through` (e2e). Price cobalt `text-foreground tabular-nums`. Out-of-stock `opacity-60` preserved. |
+| `catalog/product-grid.tsx` | **Preserve `gridTemplateColumns` structure** (e2e asserts grid columns). Gap → `gap-4 lg:gap-6` (grout). |
+| `catalog/index-tile.tsx` / `catalog/brand-logo.tsx` | Framed painted panels with cobalt caption label. |
+| `catalog/filter-*`, `catalog/toolbar.tsx`, `catalog/breadcrumbs.tsx` | Cobalt-chrome panel (`bg-card border-border`), active filters `bg-accent text-accent-foreground`. |
+| `catalog/stock-badge.tsx` | Low-stock → `text-warning` (was `text-amber-*`, 2 usages); affirmative in-stock → `text-success` where used. Keep glyph+text + testids. |
+| `catalog/no-results.tsx`, `catalog/empty-state.tsx`, `catalog/pagination.tsx` | Restyle to cobalt; blank-tile empty illustration (glyph in `bg-muted` cartouche). |
+| `catalog/catalog-skeleton.tsx` | Skeleton base `bg-muted` (pale glaze, not neutral gray); preserve layout reservation (no CLS). |
 
-### HomeSectionHeader (tiny shared)
+### 3d. PDP (`product/*`, `/producto/[slug]`)
 
-**Purpose:** the "{heading} … Ver todas →" row above each featured grid — DRY between FeaturedProducts and FeaturedBrands.
-**Props:**
-```typescript
-interface HomeSectionHeaderProps {
-  heading: string;
-  linkLabel: string;
-  linkHref: string;   // locale-aware Link
-}
-```
-Markup: `<div className="mb-6 flex flex-col gap-1 sm:mb-8 sm:flex-row sm:items-baseline sm:justify-between">` → `<h2 className="text-xl font-semibold tracking-tight sm:text-2xl">` + a `.link-arrow`/`.group/brands` "Ver todas →" link (`text-sm font-medium text-muted-foreground hover:text-foreground`, focus ring, arrow `aria-hidden`).
+| File | Change |
+| --- | --- |
+| `product/product-gallery.tsx` | Main image = large cartouche; thumbnails = small framed tiles with cobalt active ring (`ring-2 ring-primary`). `.gallery-image` motion untouched. Preserve testids. |
+| `product/product-purchase-panel.tsx` | Cobalt-bordered "spec cartouche" (`border-border bg-card`); price cobalt `tabular-nums`; CTA `bg-primary`; stock badge glyph+text. |
+| `product/product-specs.tsx` | Measured-ledger table: grout row rules (`divide-border`), roman-caps column labels. |
+| `product/product-qa.tsx`, `product/qa-form.tsx` | `qa-form.tsx` amber → `text-warning` (2, validation/pending). Cobalt links. |
+| `product/recently-viewed.tsx` | Quiet tile row of cards. |
+| `product/pdp-skeleton.tsx` | Skeleton restyle as 3c. |
 
----
+### 3e. Cart (`cart/*`, `/carrito`)
 
-### StaticPageBody (generic prose renderer — the 7 text pages)
+| File | Change |
+| --- | --- |
+| cart line/summary components | Ledger tile; grout-ruled rows. |
+| `cart/free-shipping-progress.tsx` | `bg-emerald-*` → `bg-success` (2 bg); glyph+text. Track `bg-muted`, fill `bg-success`. |
+| `cart/order-summary.tsx` | `text-emerald-*` → `text-success` (2). |
+| `cart/cart-skeleton` | Skeleton restyle. |
 
-**Purpose:** Render `static_pages.body` (plain text, max 100k) as **escaped, structured paragraphs and headed sections** — never `dangerouslySetInnerHTML` (research anti-pattern; XSS guard, AC-17).
-**Location:** `src/app/[locale]/[pageSlug]/page.tsx` (and the showroom text portion).
+### 3f. Checkout (`checkout/*`, `/checkout`, `/checkout/confirmacion/[token]`)
 
-**Body → structure convention (plain-text protocol):** seed bodies use a line beginning `## ` as a section heading; blank lines separate paragraphs. `StaticPageBody` splits on `\n`, treats `## `-prefixed lines as `<h2>` (with a slugified `id` for deep-linking — used by FAQ), and groups consecutive non-blank lines into `<p>`. All text renders as React text children (auto-escaped) — no HTML parsing, no raw injection. A 100k body renders as many `<p>`; `max-w-prose` keeps line length readable regardless (edge 7).
+| File | Change |
+| --- | --- |
+| `checkout/payment-panel.tsx` | amber (6) → `text-warning`, emerald (2) → `text-success`. Pending = calm cobalt/warning panel, never error-red. |
+| `checkout/checkout-summary.tsx` | amber (2) → `text-warning`, emerald (4) → `text-success`. |
+| `checkout/oxxo-spei-instructions.tsx` | amber (2) → `text-warning`. **Calm painted panel** (`bg-warning/10 border-warning/30 text-warning`), glyph+text — pending is normal (PRODUCT.md). |
+| `checkout/discount-code-field.tsx` | emerald (2 text, 1 bg) → `--success`. |
+| `checkout/checkout-skeleton.tsx` | Skeleton restyle. |
+| `[locale]/checkout/confirmacion/[token]/page.tsx` | emerald (4) → `text-success`. Restrained cobalt cartouche celebration; money display preserved. |
 
-**Layout (prose page — About / Shipping / Returns / Warranty / Privacy / Terms):**
-```
-┌──────────────────────────────────────────────────────────────┐
-│  section mx-auto max-w-(--breakpoint-xl) px-4..lg:px-8 py-8   │
-│  Inicio / Sobre nosotros            (Breadcrumbs)             │
-│  Sobre nosotros                     (h1, page scale)         │
-│  ── header mb-6 mt-2 ──                                       │
-│  ┌── max-w-prose space-y-4 ──┐                               │
-│  │ Intro paragraph…          │                               │
-│  │ ## Sección (h2, mt-8)     │                               │
-│  │ Paragraph…                │                               │
-│  └──────────────────────────┘                               │
-└──────────────────────────────────────────────────────────────┘
-```
+### 3g. Static pages (9) + contact + showroom (`content/*`, `[pageSlug]`, `contacto`, `showroom`)
 
-**Props:**
-```typescript
-interface StaticPageBodyProps {
-  body: string; // plain text; parsed into headings + paragraphs, escaped
-}
-```
-Renders `<div className="max-w-prose space-y-4">`; h2 = `text-lg font-semibold tracking-tight text-foreground sm:text-xl mt-8 first:mt-0`; p = `text-sm leading-relaxed text-foreground sm:text-base`.
+| File | Change |
+| --- | --- |
+| `content/static-page-body.tsx` | `max-w-prose` read column; H2 → `font-heading` small-caps tile-caption; cobalt links; no `dangerouslySetInnerHTML` introduced (renders escaped children, unchanged). |
+| `[locale]/contacto/contact-form.tsx` | amber (4 text, 1 bg) → `--warning` for validation; **preserve honeypot off-screen `left`** (e2e). Fields on grout borders, cobalt focus ring. |
+| `showroom` route / `ShowroomLocation` | Map slot degrades to cobalt pin-glyph cartouche when `SHOWROOM_MAP_IMAGE`/`SHOWROOM_MAP_URL` null (unchanged degrade, restyled). |
 
-**States:**
-| State | Visual | Behavior |
-|---|---|---|
-| Row present, published | Breadcrumb + h1(title) + prose body | server-rendered |
-| Row missing / `is_published=false` | Localized in-shell 404 (`not-found.tsx`) | wrapper → null → `notFound()` (AC-5, edges 1–2) |
-| `en` translation missing | es-MX base title/body renders (no error) | wrapper fallback (AC-4, edge 3) |
-| Single-line body | one `<p>`, no headings | parser handles gracefully |
+### 3h. 404 / error
 
-**Responsive:** `max-w-prose` caps line length at all sizes; shell padding scales. Long unbroken strings `break-words`.
-
-**Animations:** **none.** Content the user reads should not stage in — the entrance would delay comprehension (Emil Q1; Apple restraint). Breadcrumb + body paint together, server-rendered. Deliberate.
+| File | Change |
+| --- | --- |
+| `[locale]/not-found.tsx` | "Lost panel / blank tile" empty state in cobalt world; preserve testids + bilingual copy. It uses shared `sans` (fine). If it renders outside `.theme-storefront`, wrap its root element in `theme-storefront` so it gets the cobalt world. |
+| `[locale]/error.tsx` | Restyle to cobalt; testids preserved. |
+| `app/global-error.tsx` | **UNTOUCHED** — intentional token-free system-ui exception (edge 8). Confirm bilingual fallback reads acceptably; note the exception for reviewers so it is not flagged as a token violation. |
 
 ---
 
-### FAQ (headed list — pattern decision)
+## 4. Image-slot system
 
-**DECISION: headed list, NOT an accordion.** Justification:
+### 4a. Config shape (extends the `HERO_IMAGE` pattern)
 
-| Criterion | Accordion | Headed list (chosen) |
-|---|---|---|
-| Client JS | Requires `"use client"` + state | **Zero JS — pure server component** |
-| Deep-linkable | Needs JS to open the targeted panel on `#hash` load | **Native `id` anchors + `:target` — works on first paint, no JS** |
-| Content source | Plain-text body doesn't map to Q/A pairs without a parser | **Maps 1:1 to the `## question` / paragraph-answer convention** |
-| Frequency (Emil Q1) | Toggling is a repeated interaction → animation cost | **No toggle → no animation cost** |
-| Scannability / SEO | Collapsed answers hidden from Ctrl-F & crawlers | **All answers visible, indexable, Ctrl-F-able** |
+Add to `src/lib/config/static-pages.ts` (or a new `src/lib/config/imagery.ts` re-exported there). Every slot is `string | null`, defaulting `null` (Phase-1). A slot is either a `/public` path or an allow-listed remote URL.
 
-FAQ is the same `[pageSlug]` route + `StaticPageBody`: each `## ` line is a question → `<h2 id="slugified-question">`, the following paragraph(s) are the answer. A `#slugified-question` URL scrolls to and frames the question via `:target { scroll-margin-top }`. Optional light `:target` affordance: a 2px left accent bar on the targeted `<h2>` (color-only, no motion). **Satisfies "deep-linkable" with less code and better a11y than an accordion** — the Emil default when frequency is high and content should stay visible.
+```ts
+/**
+ * Editorial/lifestyle image slots (T15, AC-8/9). string | null — null degrades
+ * to a token-styled blank-tile placeholder (never a broken <img>, never CLS).
+ * Swap to a real asset by setting a /public path or an allow-listed URL — no
+ * layout rework. NEVER a slot that implies fabricated proof.
+ */
+export const HERO_IMAGE: string | null = null;              // existing (homepage hero)
+export const EDITORIAL_BAND_IMAGE: string | null = null;    // NEW — homepage ergonomics band
+export const CATALOG_BANNER_IMAGE: string | null = null;    // NEW — /sillas index banner (optional art slot)
+export const SHOWROOM_MAP_IMAGE: string | null = null;      // existing
+export const SHOWROOM_MAP_URL: string | null = null;        // existing
+```
+
+### 4b. Degrade behavior (edge 3)
+
+Every consumer follows the `HeroMedia` pattern verbatim:
+
+- **Present:** `next/image` with `fill`, correct `sizes`, `object-cover`, inside the reserved aspect box + cartouche frame.
+- **Null:** a `bg-muted` panel of the **same aspect box** with a centered `@hugeicons` line-glyph at `text-muted-foreground/40`, `aria-hidden`, plus a `data-testid` fallback. **Zero CLS whether asset present or absent.**
+
+### 4c. `public/` layout (create — does not exist yet)
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  Inicio / Preguntas frecuentes                               │
-│  Preguntas frecuentes (h1)                                   │
-│  max-w-prose:                                                │
-│   ¿Cuánto tarda el envío?           (h2 id="cuanto-tarda…")  │
-│   Los envíos tardan 3–7 días…       (p)                      │
-│   ¿Puedo devolver mi silla?         (h2 id="puedo-devolver") │
-│   Sí, dentro de 30 días…            (p)                      │
-└──────────────────────────────────────────────────────────────┘
+public/
+  images/
+    editorial/        # homepage ergonomics band lifestyle asset(s)
+    catalog/          # optional catalog/category banner art
+    showroom/         # static showroom map / storefront photo
+  README.md           # notes: all slots null by default; drop assets + set config path; art direction in DESIGN.md
 ```
+
+### 4d. Exact slot list (per page, with aspect ratios)
+
+| Slot | Surface | Config | Aspect | `sizes` | `priority` |
+| --- | --- | --- | --- | --- | --- |
+| Hero media | Homepage | `HERO_IMAGE` | `4/3` | `(min-width:1024px) 50vw, 100vw` | **yes** (LCP) |
+| Editorial band | Homepage | `EDITORIAL_BAND_IMAGE` | `16/9` → `21/9` lg | `100vw` | no |
+| Catalog banner (optional) | `/sillas` index | `CATALOG_BANNER_IMAGE` | `21/9` | `100vw` | no |
+| Product cover | Catalog cards | DB (picsum) | `4/5` | `(max-width:640px) 50vw, (max-width:1024px) 33vw, 25vw` | first-row only |
+| Product gallery | PDP | DB (picsum) | `1/1` or `4/5` | `(min-width:1024px) 50vw, 100vw` | main image only |
+| Brand mark | Featured/brands | DB / `brand-logo` | `3/2` | `(max-width:768px) 50vw, 33vw` | no |
+| Showroom map | `/showroom` | `SHOWROOM_MAP_IMAGE`/`_URL` | `16/9` | `100vw` | no |
+
+**Only the hero (and the PDP main image / catalog first row) is `priority`** (AC-15) — never lazy-load the LCP, never `priority` the below-fold band.
 
 ---
 
-### ContactForm (wires the T9 `sendContactRelay` seam)
+## 5. Placeholder sourcing plan (AC-9/10)
 
-**Purpose:** name / email / optional subject / message + honeypot; calls `submitContactForm` server action → `sendContactRelay`. Full state matrix.
-**Location:** `src/app/[locale]/contacto/page.tsx` (server) renders the shell (breadcrumb + h1 + intro + `<ContactForm/>`). `contact-form.tsx` is the sole `"use client"` island. **Copies `qa-form.tsx` grammar verbatim.**
-**shadcn base:** `Button` (existing) for submit; native inputs styled with the shipped `fieldClasses` string (identical to Q&A — no new field component).
+**Default state ships with all editorial slots `null`** → intentional blank cobalt tiles. That is a complete, premium Phase-1 state (native to the azulejo world). No fabricated proof, so this is the safe default.
 
-**Layout (mobile-first single column — the canonical form shape):**
-```
-┌────────────────────────────────────────────┐
-│  Inicio / Contacto        (Breadcrumbs)     │
-│  Contacto                 (h1)              │
-│  Escríbenos y te responderemos…  (intro)   │
-│  ┌──────────── max-w-xl ─────────────────┐  │
-│  │  Nombre *                             │  │
-│  │  [___________________________]        │  │
-│  │  Correo *                             │  │
-│  │  [___________________________]        │  │
-│  │  Asunto (opcional)                    │  │
-│  │  [___________________________]        │  │
-│  │  Mensaje *                            │  │
-│  │  [                              ]      │  │
-│  │  [                         ] 0/2000    │  │  ← live char counter (aria-describedby)
-│  │  (honeypot: absolute left-[-9999px])  │  │
-│  │  [ Enviar mensaje ]                   │  │
-│  │  ┌ role=status / role=alert banner ┐  │  │
-│  └───────────────────────────────────────┘  │
-└────────────────────────────────────────────┘
-```
+**If the owner wants real placeholder imagery before real photography arrives**, two supported paths (S3/owner choice — do not fabricate):
 
-**Honeypot (invisible to real users AND assistive tech) — verbatim from Q&A:**
-```
-<div className="absolute left-[-9999px]" aria-hidden>
-  <label htmlFor={`${id}-website`}>{honeypotLabel}</label>
-  <input id={`${id}-website`} type="text" name="website"
-         tabIndex={-1} autoComplete="off" defaultValue="" />
-</div>
-```
-Off-screen (`left-[-9999px]`, NOT `display:none` — some bots skip hidden fields) + `aria-hidden` wrapper (screen readers skip) + `tabIndex={-1}` (keyboard skips) + `autoComplete="off"`. **Real users never see it; assistive tech never announces it (AC-15, edge 6, AC-20).**
+- **Path A (preferred — local, no allow-list, no CSP risk):** generate art-directed placeholders via `generate-image.mjs` (requires `OPENAI_API_KEY` at S3; unavailable this stage) and store under `public/images/…`. Prompts per slot (per DESIGN.md art direction: bright daylight, cool-neutral grade, chair/workspace subject, cobalt-harmonious):
+  - **Hero:** *"A single premium ergonomic office chair, three-quarter view, on a clean cool-white studio background, bright even daylight, soft shadow, neutral-to-cool white balance, no text, no logos, product-catalog composition."*
+  - **Editorial band:** *"A calm modern Mexican home-office corner with one ergonomic chair at a desk, cool daylight through a window, uncluttered, cool-neutral color grade, no visible faces, no text, wide cinematic framing."*
+  - **Catalog banner:** *"A tidy row of three distinct office chairs on a light seamless studio floor, even daylight, cool-neutral grade, no text."*
+  Mark generated assets as synthetic placeholders in `public/images/README.md`.
+- **Path B (licensed stock):** high-quality licensed stock with **verified-resolving URLs**, matching the same art direction. If remote-hosted, add the host to `next.config.ts` `images.remotePatterns` mirroring the existing picsum/supabase entries (lines ~43–60). Prefer downloading into `/public` to avoid a new host + CSP exposure.
 
-**Props (client component):**
-```typescript
-interface ContactFormProps {
-  labels: {
-    name: string; namePlaceholder: string;
-    email: string; emailPlaceholder: string;
-    subject: string; subjectPlaceholder: string; subjectOptional: string;
-    message: string; messagePlaceholder: string;
-    submit: string; submitting: string;
-    honeypot: string;            // sr-invisible label
-    charCount: string;           // "{count}/{max}" template
-    success: string;             // AC-12
-    errorGeneric: string;        // AC-16
-    rateLimited: string;         // AC-14
-    retry: string;               // retry affordance
-    fieldErrors: {               // AC-13, mirrors qa field-error keys
-      nameRequired: string; nameTooLong: string;
-      emailRequired: string; emailInvalid: string; emailTooLong: string;
-      subjectTooLong: string;
-      messageRequired: string; messageTooLong: string;
-    };
-  };
-  maxLengths: { name: number; email: number; subject: number; message: number };
-}
-```
+**Hard rule (AC-9):** no image a visitor could mistake for real proof (no fake testimonials, crowds implying sales volume, invented awards). Editorial copy states curation/ergonomics claims only, never customer counts or reviews.
 
-**Form state (serializable — mirrors `QaFormState`; `src/app/[locale]/contacto/contact-form-state.ts`):**
-```typescript
-type ContactFieldKey = "name" | "email" | "subject" | "message";
-type ContactFieldErrorKey =
-  | "nameRequired" | "nameTooLong"
-  | "emailRequired" | "emailInvalid" | "emailTooLong"
-  | "subjectTooLong"
-  | "messageRequired" | "messageTooLong";
-
-interface ContactFormState {
-  status: "idle" | "success" | "invalid" | "rate-limited" | "error";
-  fieldErrors?: Partial<Record<ContactFieldKey, ContactFieldErrorKey>>;
-  values?: { name: string; email: string; subject: string; message: string };
-  submissionId: number;
-}
-
-const initialContactFormState: ContactFormState = { status: "idle", submissionId: 0 };
-```
-Honeypot-tripped returns `status: "success"` (fake success, AC-15) — indistinguishable on the client from a real send, so no status leaks the anti-spam behavior.
-
-**State matrix (the full required set):**
-| State | Trigger | Visual | Behavior |
-|---|---|---|---|
-| **Idle** | initial / after reset | Empty fields, enabled submit | ready |
-| **Validating** | client, on submit attempt | Offending field gets `aria-invalid` red border + `FieldError` (`text-xs text-destructive`, `role="alert"`, `.enter-fade`) below it | focus → first invalid field; no send |
-| **Submitting** | action `pending` (`useActionState`) | Submit `disabled`, label → "Enviando…"; values kept | no double-submit (button disabled) |
-| **Success** | `status==="success"` (incl. dev-preview & honeypot) | Success banner `role="status"` `.enter-fade` "¡Mensaje enviado!…" + **inputs cleared** (re-key on `submissionId`) | banner focus (`tabIndex={-1}` ref) + auto-hide after `SUCCESS_FEEDBACK_MS` (6000, shipped cadence) |
-| **Error** | `status==="error"` (`{ok:false}` / exception) | Destructive banner `role="alert"` `.enter-fade` "No pudimos enviar tu mensaje…" + **Retry**; **values preserved** | raw `reason` NEVER shown (logged server-side, AC-16); Retry re-submits current values |
-| **Rate-limited** | `status==="rate-limited"` | Banner `role="alert"` `.enter-fade` "Espera un momento…" (amber/muted, distinct from hard error); **values preserved** | no send; user waits (AC-14, edge 5) |
-| **Disabled submit** | during submitting only | `Button disabled` (opacity + `cursor-not-allowed` via Button) | — |
-
-**Field ↔ error association (AC-20, mirrors Q&A):** each input `id={`${id}-name`}`; label `htmlFor` matches; on error `aria-invalid={true}` + `aria-describedby={nameErrorId}`; `FieldError` carries that id + `role="alert"`. Message textarea `aria-describedby={cn(messageErrorId, counterId)}` so both error and the live counter are announced. Async banners: success `role="status"`, error/rate-limit `role="alert"`.
-
-**Owner-email dependency (dev preview):** the action calls `sendContactRelay`, which returns `{ ok: true, sent: true }` under `EMAIL_DEV_PREVIEW=1` (logs a console preview, no real send) — **the success state IS exercisable in dev/QA without live `EMAIL_*` keys.** When `EMAIL_OWNER_ADDRESS` is unset and preview is off, `sendContactRelay` returns `{ ok: false, reason: "owner address unavailable" }` → the form shows the **Error** state (generic copy + retry), never the raw reason (AC-16, edge 4). Dev/QA runs with `EMAIL_DEV_PREVIEW=1` + `CONTACT_RATE_LIMIT_DISABLED=1`.
-
-**Responsive:**
-| Breakpoint | Layout |
-|---|---|
-| 375 | Single stacked column `max-w-xl` (full width), inputs `min-h-11` touch targets, long emails/messages `break-words`, no horizontal overflow |
-| 768 | Same single column, `max-w-xl` left-aligned; taller textarea |
-| 1024 | Same; form does not widen past `max-w-xl` for readable field length |
-
-**Animations:**
-- **Field error appear:** *Fade-and-rise* — `FieldError` `.enter-fade` (200ms `ease-out`). Purpose: prevent an error snapping into layout. Reduced-motion: opacity-only.
-- **Banner appear:** *Fade-and-rise* — `.enter-fade` on the banner. Purpose: async state change needs a gentle entrance so the user notices it. Reduced-motion: opacity-only.
-- **Submit press:** *Scale-down press* — `Button :active scale(0.97)`, shipped.
-- **No morphing / celebration** — functional, occasional submit; a celebration would over-feedback (Apple §13 Utility). Calm banner + cleared inputs is the right restraint.
+**`next.config.ts` (AC-10):** no new host is needed for the null-default ship or for Path A (local `/public`). Only Path B with a remote host requires a `remotePatterns` addition; otherwise leave `next.config.ts` unchanged.
 
 ---
 
-### ShowroomLocation (Option A — content in body + config map link)
+## 6. New copy & i18n (AC-16)
 
-**Purpose:** Address, hours, and a "Ver en mapas" deep-link (no map SDK). Degrades to text if map link/image unavailable (AC-18).
-**Location:** `src/app/[locale]/showroom/page.tsx` (explicit folder). Reads the `showroom` `static_pages` body (address + hours copy, via `StaticPageBody`) + a map deep-link from config (`SHOWROOM_MAP_URL`, `SHOWROOM_MAP_IMAGE` in `src/lib/config/static-pages.ts`).
+The only new visible copy is the **editorial band** (headline + subcopy) and any new **image alt text**. Add keys to **both** `src/messages/es-MX.json` and `src/messages/en.json` in lockstep (equal key sets, currently 614 lines each). Suggested namespace `home.editorial`:
 
-**Layout:**
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Inicio / Showroom          (Breadcrumbs)                    │
-│  Showroom                   (h1)                             │
-│  grid gap-8 lg:grid-cols-[1fr_minmax(0,340px)] :             │
-│  ┌───────────────────────────┐  ┌────────────────────────┐   │
-│  │ Address + Hours (body,    │  │  ┌──────────────────┐  │   │
-│  │ StaticPageBody, prose)    │  │  │ static map image  │  │   │
-│  │ ## Dirección              │  │  │ OR token panel    │  │   │
-│  │ Av. … CDMX                │  │  │ (aspect-[4/3])    │  │   │
-│  │ ## Horario                │  │  └──────────────────┘  │   │
-│  │ Lun–Vie 9:00–18:00        │  │  [ Ver en mapas → ]    │   │
-│  └───────────────────────────┘  └────────────────────────┘   │
-└──────────────────────────────────────────────────────────────┘
-```
+| Key | es-MX (draft) | en (draft) |
+| --- | --- | --- |
+| `home.editorial.title` | "Sillas elegidas por cómo cuidan tu cuerpo" | "Chairs chosen for how they care for your body" |
+| `home.editorial.body` | "Cada silla en PosturPro se selecciona por su ergonomía y su valor, no por su etiqueta." | "Every chair at PosturPro is curated for ergonomics and value — not for its label." |
+| `home.editorial.imageAlt` | "Espacio de trabajo con una silla ergonómica" | "Workspace with an ergonomic chair" |
 
-**Props (typed, inline in the page):**
-```typescript
-interface ShowroomMapProps {
-  mapImageUrl: string | null;  // static map <img>; null → token panel
-  mapLinkUrl: string | null;   // maps deep-link; null → link omitted
-  mapImageAlt: string;         // showroom.mapAlt
-  viewOnMapsLabel: string;     // showroom.viewOnMaps
-}
-```
-
-**States:**
-| State | Visual | Behavior |
-|---|---|---|
-| Body + link + image | Address/hours left, static map + "Ver en mapas →" right | link opens native maps new tab (`rel="noopener noreferrer"`) |
-| Map image unavailable | Token-tinted `bg-muted` panel + pin glyph (`aria-hidden`), link still shown | no broken `<img>` |
-| Map link unavailable | Address + hours text only, map slot omitted | text block ALWAYS renders (AC-18) |
-| Row missing/unpublished | In-shell 404 | `getStaticPageBySlug('showroom')` → null → `notFound()` |
-
-**Responsive:** mobile stacks (address/hours → map below); `lg:` two-column with a bounded map track (`minmax(0,340px)`). Map `max-w-full`.
-
-**Animations:** none for text; "Ver en mapas →" uses `.link-arrow` directional-nudge on hover. Consistent restraint.
+> Copy is a **product/ergonomics claim**, not proof — no numbers, customers, or reviews. Final wording is the owner's to approve; keep both files symmetric. Verify one of these accented strings renders in the heading face without glyph fallback (edge 4 check: "cómo", "elegidas").
 
 ---
 
-## Page Layouts (composed)
+## 7. States (every surface keeps every state, restyled)
 
-### Homepage (`src/app/[locale]/page.tsx`)
-```
-DESKTOP ≥1024                          MOBILE 375
-┌───────────────────────────┐          ┌───────────────┐
-│ HERO (2-col copy | image) │          │ HERO (stacked)│
-├───────────────────────────┤          ├───────────────┤
-│ Sillas destacadas  Ver →  │          │ Destacadas    │
-│ [card][card][card][card]  │          │ [card][card]  │  ← 2-col
-│ [card][card][card][card]  │          │ [card][card]  │
-├───────────────────────────┤          ├───────────────┤
-│ Marcas             Ver →  │          │ Marcas        │
-│ [tile][tile][tile]        │          │ [tile]        │  ← 1-col
-│ [tile][tile][tile]        │          │ [tile] …      │
-└───────────────────────────┘          └───────────────┘
-  (each section OMITTED if empty; hero always present)
-```
-Data flow: the page runs `listProducts({ pageSize: HOME_FEATURED_PRODUCTS })` + `listBrands()` (sliced to `HOME_FEATURED_BRANDS`) in parallel; passes `.items`/sliced arrays to the section components; renders a section only when its array is non-empty. `generateMetadata` reuses the `metadata` namespace (home title). The page is a vertical stack of `<section className="mx-auto max-w-(--breakpoint-xl) …">` wrappers.
-
-### Generic static page (`[pageSlug]/page.tsx`)
-Breadcrumb (`Inicio / <Title>`) → h1(title) → `StaticPageBody`. `generateStaticParams` from `STATIC_PAGE_SLUGS`; `generateMetadata` validates locale via `hasLocale` and returns `{ title }` from the fetched page (or localized fallback). `notFound()` on null.
-
-### Contact / Showroom
-Own folders, same shell (breadcrumb + h1 + intro) with the bespoke body (form / location block).
+| State | Treatment in the cobalt world |
+| --- | --- |
+| **Loading** | Skeletons (`catalog/pdp/checkout/cart`) use `bg-muted` pale-glaze base (reads premium, not neutral gray); layout reservation preserved (no CLS). Hero LCP `priority`. |
+| **Empty** | No-results / empty cart / empty checkout / empty featured → existing components + CTAs, restyled to cobalt; a **blank-tile cartouche** with a centered glyph as the illustration; same wayfinding. |
+| **Error** | Localized 404 + `error.tsx` restyled cobalt, testids preserved; `global-error.tsx` stays neutral system-ui exception. |
+| **Success** | Order confirmation, add-to-cart, discount-applied, free-shipping-achieved → `--success`, glyph+text, AA preserved. |
+| **Disabled** | Buttons `opacity-60 pointer-events-none` (unchanged), still legible on glaze. |
+| **Mobile (375)** | Mobile-first; hero/band images stack; nav → drawer; touch targets ≥44px preserved. |
+| **Tablet (768)** | Hero copy/image, PDP gallery/purchase, checkout summary reflow at existing breakpoints. |
 
 ---
 
-## Interaction Flows
+## 8. Visual regression checklist (AC-11/13/15/18/19)
 
-### Flow: Send a contact message (happy path)
-1. User lands on `/contacto` → server-rendered shell + form (idle). No spinner.
-2. User fills name/email/(subject)/message → typing into message updates the **live char counter** `{count}/{max}` (announced via `aria-describedby`).
-3. Clicks **Enviar mensaje** → button `disabled`, label → "Enviando…" (*submitting*). Button-local pending, no full-page spinner.
-4. Server action: honeypot → validate (trim + length caps + `EMAIL_PATTERN`) → `clientIp()` + `checkContactRateLimit` → `sendContactRelay({fromName,fromEmail,subject:subject||null,message})`.
-5. `{ok:true}` → `{status:"success", submissionId++}` → client shows **success banner** (`role="status"`, `.enter-fade`), **clears inputs** (re-key on `submissionId`), focuses banner, auto-hides after 6s.
+**Admin firewall (before/after screenshots — the headline check):**
+- [ ] Screenshot `/admin/login` before and after → palette + font pixel-identical.
+- [ ] Screenshot one authed admin page (e.g. orders list) before/after → identical.
+- [ ] No file under `src/app/admin/` or `src/components/admin/` edited.
+- [ ] Shared `src/components/ui/{button,badge,alert-dialog,dialog,tabs}.tsx` **not restyled** (token-only); admin dialog titles keep sans heading (verify `--font-heading` resolves sans under admin, not the serif).
+- [ ] Admin `--radius` still `0.625rem`; storefront `0.375rem`.
 
-### Flow: Validation failure
-1. Submit with empty message / bad email → `{status:"invalid", fieldErrors, values, submissionId}` (no send).
-2. Offending fields get `aria-invalid` + `FieldError` (`.enter-fade`), **values preserved**, focus jumps to first invalid field. Correct → resubmit.
+**Contrast (AA — every surface, DESIGN.md verified values):**
+- [ ] Body / heading / muted / buttons / links / badges / form fields all ≥ AA on glaze.
+- [ ] All text-over-image sits on the cobalt scrim / caption bar (8.37:1) — hero + editorial band, verified with a synthetic worst-case (very light + very dark) image swapped into the slot.
+- [ ] Status glyph+text preserved everywhere (warning/success/destructive never color-only).
+- [ ] Cobalt focus rings visible on the glaze ground on every interactive element.
 
-### Flow: Send failure / rate-limit
-- `{ok:false}` → `{status:"error", values}` → **error banner** (`role="alert"`) + **Retry**; values preserved; raw reason logged only.
-- Over-limit → `{status:"rate-limited", values}` → **amber wait banner** (`role="alert"`); no send; user waits.
+**Structural / e2e signals (must survive — §3):**
+- [ ] `product-grid` `gridTemplateColumns` structure unchanged.
+- [ ] PDP compare-at `text-decoration: line-through` preserved.
+- [ ] Contact + mobile-filter honeypot off-screen `left` preserved.
+- [ ] Every asserted `data-testid` preserved (header/footer/hero/product-card/whatsapp/etc.). No rename unless reconciled in the e2e spec + justified.
+- [ ] `formatMXN` money display + `tabular-nums` + compare-at unchanged (AC-17).
 
-### Flow: Deep-link to an FAQ answer
-1. Visit `/preguntas-frecuentes#puedo-devolver-mi-silla` → the `<h2 id>` exists on first paint.
-2. Browser scrolls to the anchor natively (`scroll-margin-top` on `:target`); a subtle `:target` accent bar frames the question. No JS; reduced-motion safe.
+**Motion / a11y (AC-14):**
+- [ ] Motion layer untouched; `prefers-reduced-motion` honored on every surface.
+- [ ] Any new motion (band `.enter-fade`, optional cobalt-wash) is `transform`/`opacity`, `ease-out` enter, RM-gated.
 
----
+**Responsive (AC-18):**
+- [ ] No horizontal overflow at 320 / 375 / 768 / 1024 / 1280px on every storefront surface.
 
-## Accessibility Checklist
-- [x] Every interactive element (CTAs, links, submit, retry, "Ver en mapas") has a visible focus ring (`focus-visible:ring-2 focus-visible:ring-ring`, shipped pattern).
-- [x] Contact form: labels `htmlFor`↔`id`; errors via `aria-invalid` + `aria-describedby`; async success `role="status"`, error/rate-limit `role="alert"` (AC-20).
-- [x] Honeypot invisible to users AND assistive tech: `aria-hidden` wrapper + `tabIndex={-1}` + off-screen (AC-15).
-- [x] Char counter announced via `aria-describedby` (not a bare visual number).
-- [x] Color never the only indicator: error banner = destructive color **+** icon **+** text; rate-limit = amber **+** text; success = green **+** ✓ glyph **+** text.
-- [x] Hero/section images have meaningful `alt` (message keys); decorative token panels are `aria-hidden`.
-- [x] Breadcrumbs use `nav[aria-label]` + `ol` + `aria-current="page"` on the last crumb (reused component).
-- [x] FAQ deep-links: `id` anchors keyboard/URL reachable; heading order correct (h1 page title → h2 questions).
-- [x] Tab order logical: breadcrumb → h1 region → form fields top-to-bottom → submit → banner.
-- [x] Skip-to-content (shipped in nav) lands in `<main>`.
-- [x] Touch targets ≥ 44px (`min-h-11`) on all form inputs and CTAs.
-- [x] All motion `prefers-reduced-motion`-gated (inherited from `.enter-fade`/`.stagger`/`.card-lift`/`.link-arrow`).
-
-## Motion Summary (every animation, spec'd)
-| Surface | Effect (vocabulary) | Trigger | Property | Easing | Duration | Reduced-motion |
-|---|---|---|---|---|---|---|
-| Hero copy | Fade-and-rise (`.enter-fade`) | mount | opacity + translateY | `--ease-out` | 200ms | opacity-only |
-| Hero primary CTA | Scale-down press | `:active` | transform scale | `--ease-out` | 160ms | none (drop) |
-| Hero/section "→" links | Directional nudge (`.link-arrow`) | hover (fine pointer) | transform translateX(2px) | `--ease-out` | 150ms | none |
-| Featured grids | Staggered fade-and-rise (`.stagger`) | mount | opacity + translateY, `delay=min(i,5)*40ms` | `--ease-out` | 200ms | opacity-only, no delay |
-| Product/brand tiles | Card lift + image zoom (`.card-lift`) | hover/`:active` | box-shadow / transform scale | `--ease-out` | 200/160ms | none |
-| Static/FAQ/showroom body | **None** (deliberate restraint) | — | — | — | — | — |
-| FAQ `:target` | Accent bar (color only) | `:target` | color | — | — | unaffected |
-| Contact field error | Fade-and-rise (`.enter-fade`) | validation | opacity + translateY | `--ease-out` | 200ms | opacity-only |
-| Contact banners | Fade-and-rise (`.enter-fade`) | async result | opacity + translateY | `--ease-out` | 200ms | opacity-only |
-| Contact submit | Scale-down press | `:active` | transform scale | `--ease-out` | 160ms | none |
+**Perf / build (AC-2/10/15/19):**
+- [ ] `next build` succeeds; grep built output for `d43cafe8` (direction contract survives).
+- [ ] Font bundle bounded (2 families, `latin`+`latin-ext` subset, `display: swap`).
+- [ ] `next/image` `sizes`/`priority` correct; LCP hero `priority`; no below-fold `priority`; aspect boxes reserved (no CLS).
+- [ ] No `next/image` from a non-allow-listed host.
+- [ ] `tsc --noEmit` clean; `eslint` clean on touched files; unit + integration + storefront e2e green.
+- [ ] es-MX accented heading renders in the serif with no glyph fallback (edge 4).
 
 ---
 
-## Message-Key Inventory (both `es-MX.json` + `en.json`, matching keys)
+## 9. Build order (recommended for S3)
 
-New namespaces/keys. `en` values are English; **static-page BODY content is translated via the `translations` DB table, NOT these files** — these files are UI chrome only.
+1. **Firewall first** — screenshot admin baseline; add `.theme-storefront` block + `@theme` color tokens; apply class on storefront `<body>`. Verify storefront re-paints and admin is untouched.
+2. **Fonts** — add `headingSerif`, wire `--font-heading` under scope, verify accented heading.
+3. **Direction contract comment** in `[locale]/layout.tsx` body; confirm greppable after build.
+4. **Chrome** (header/footer/mobile-nav/language-toggle/WhatsApp) — every page.
+5. **Homepage** (hero cartouche → editorial band → featured products/brands) + i18n keys.
+6. **Catalog/PLP → PDP → cart → checkout → static/contact/showroom → 404/error** — apply world + reconcile the 10 storefront amber/emerald files to `--warning`/`--success` consistently.
+7. **Image-slot system** — create `public/`, add config slots, verify null-degrade on every slot.
+8. **Sweep** — AA (incl. text-over-image), RM, responsive 320–1280, i18n lockstep, money intact.
+9. **Comp render + finish review** (deferred from S2): render the hero/homepage comp, run the impeccable finish reviewer against the direction contract, then the documenter re-confirms DESIGN.md from the built world.
+10. **Test green + admin before/after** — full suite; firewall screenshots.
 
-### `home` (extend existing)
-```
-home.hero.title              "Sillas ergonómicas para cuidar tu espalda" / "Ergonomic chairs to care for your back"
-home.hero.subtitle           "Encuentra la silla perfecta entre nuestras marcas y estilos." / "Find the perfect chair across our brands and styles."
-home.hero.ctaCatalog         "Ver sillas" / "Shop chairs"
-home.hero.ctaBrands          "Marcas" / "Brands"
-home.hero.imageAlt           "Silla ergonómica PosturPro" / "PosturPro ergonomic chair"
-home.featured.productsHeading "Sillas destacadas" / "Featured chairs"
-home.featured.brandsHeading   "Marcas" / "Brands"
-home.featured.viewAllProducts "Ver todas las sillas" / "View all chairs"
-home.featured.viewAllBrands   "Ver todas las marcas" / "View all brands"
-```
-(Existing flat `home.title`/`home.intro`/`home.ctaCatalog`/`home.ctaBrands` become unused once the hero keys land — dev reconciles so `keys-used.test.ts` stays green; recommend replacing the flat keys with `home.hero.*`.)
+## 10. Binding decisions the owner may veto (flag for the orchestrator)
 
-### `staticPages` (new — generic page chrome; minimal)
-```
-staticPages.breadcrumb.home     reuse catalog.breadcrumb.home ("Inicio"/"Home")   — OR mint staticPages.breadcrumb.home
-staticPages.breadcrumb.ariaLabel reuse catalog.breadcrumb.ariaLabel               — recommend reuse to avoid duplication
-```
-(The generic page's h1/body come from the DB row; only the breadcrumb "Inicio" label + `ariaLabel` are chrome. Recommend reusing the existing `catalog.breadcrumb.*` keys.)
+1. **The cobalt-azulejo world itself** — a distinctly Mexican tile identity, not neutral premium minimalism. This is the committed direction (the roll and the strongest dealt challenger agreed on it). Owner can veto → re-roll or take the standing exit (category-standard premium e-commerce).
+2. **Body face stays Inter** (identity carried by cobalt + the roman-caps heading), not a novelty body font — keeps admin-font risk zero and the bundle bounded.
+3. **Dark mode decommissioned for storefront** (light-only azulejo). `.dark` retained only as admin's untouched world.
+4. **All editorial image slots ship `null`** (blank cobalt tiles) until the owner provides real photography or approves generated/licensed placeholders — no fabricated proof.
 
-### `contact` (new)
-```
-contact.metadata.title      "Contacto" / "Contact"
-contact.intro               "Escríbenos y te responderemos lo antes posible." / "Write to us and we'll reply as soon as we can."
-contact.name.label          "Nombre" / "Name"
-contact.name.placeholder    "Tu nombre" / "Your name"
-contact.email.label         "Correo electrónico" / "Email"
-contact.email.placeholder   "tu@correo.com" / "you@email.com"
-contact.subject.label       "Asunto" / "Subject"
-contact.subject.optional    "(opcional)" / "(optional)"
-contact.subject.placeholder "¿Sobre qué nos escribes?" / "What's this about?"
-contact.message.label       "Mensaje" / "Message"
-contact.message.placeholder "Cuéntanos cómo podemos ayudarte…" / "Tell us how we can help…"
-contact.charCount           "{count}/{max}"
-contact.submit              "Enviar mensaje" / "Send message"
-contact.submitting          "Enviando…" / "Sending…"
-contact.honeypot            "No llenar este campo" / "Do not fill this field"
-contact.success             "¡Mensaje enviado! Te responderemos pronto." / "Message sent! We'll get back to you soon."
-contact.errorGeneric        "No pudimos enviar tu mensaje, inténtalo de nuevo." / "We couldn't send your message, please try again."
-contact.rateLimited         "Espera un momento antes de enviar otro mensaje." / "Please wait a moment before sending another message."
-contact.retry               "Reintentar" / "Try again"
-contact.errors.nameRequired    "Ingresa tu nombre." / "Please enter your name."
-contact.errors.nameTooLong     "El nombre es demasiado largo." / "That name is too long."
-contact.errors.emailRequired   "Ingresa tu correo." / "Please enter your email."
-contact.errors.emailInvalid    "Ingresa un correo válido." / "Please enter a valid email."
-contact.errors.emailTooLong    "El correo es demasiado largo." / "That email is too long."
-contact.errors.subjectTooLong  "El asunto es demasiado largo." / "That subject is too long."
-contact.errors.messageRequired "Escribe tu mensaje." / "Please write your message."
-contact.errors.messageTooLong  "El mensaje es demasiado largo." / "That message is too long."
-```
+### Files at a glance (S3 create/modify)
 
-### `showroom` (new)
-```
-showroom.metadata.title  "Showroom" / "Showroom"
-showroom.intro           "Visítanos y prueba nuestras sillas en persona." / "Visit us and try our chairs in person."
-showroom.viewOnMaps      "Ver en mapas" / "View on maps"
-showroom.mapAlt          "Mapa de la ubicación del showroom" / "Map of the showroom location"
-```
-
-### `footer` (extend existing — reconciliation)
-```
-footer.sections.legal    "Legal" / "Legal"                          (NEW)
-footer.links.shipping    "Envíos" / "Shipping"                      (CHANGED from "Envíos y devoluciones")
-footer.links.returns     "Devoluciones" / "Returns"                 (NEW)
-footer.links.warranty    "Garantía" / "Warranty"                    (NEW)
-footer.links.privacy     "Aviso de privacidad" / "Privacy notice"   (NEW)
-footer.links.terms       "Términos y condiciones" / "Terms"         (NEW)
-footer.links.showroom    "Visita nuestro showroom" / "Visit our showroom" (NEW)
-```
-(Existing `footer.links.about`, `footer.links.faq`, `footer.links.contact` retained.)
-
-**Parity note:** `keys-used.test.ts` + `messages.test.ts` enforce es-MX↔en key symmetry — every key above must exist in BOTH files with identical structure or the suite fails. Dev adds them in lockstep.
-
----
-
-## Seed Content Structure (informs the body-parser contract)
-
-`StaticPageBody` expects the plain-text `## heading` / blank-line-paragraph convention. Seed bodies (`scripts/seed-data/content.ts`, es-MX; `en` via `translations`) must follow it. Legal page shape (Aviso / Terms = headed sections per AC-3):
-```
-Intro sentence about the policy.
-
-## Recopilación de datos
-Explanation paragraph…
-
-## Uso de la información
-Explanation paragraph…
-```
-FAQ body: each `## ` line is a question, the following paragraph is the answer. This keeps the renderer dumb (split + escape) and the content editable as plain text (no HTML, XSS-safe — AC-17).
-
----
-
-## Handoff Notes for Dev (Stage 4)
-- **Reuse, don't rebuild:** `ProductGrid`, `IndexTile`, `BrandLogo`, `Breadcrumbs`, `Button`, the `fieldClasses` string, `.enter-fade`/`.stagger`/`.card-lift`/`.link-arrow` classes, the `marcas`-page section shell. No new CSS class invented; no new field component.
-- **Named constants:** `HOME_FEATURED_PRODUCTS = 8`, `HOME_FEATURED_BRANDS = 6`, `SUCCESS_FEEDBACK_MS = 6000`, contact `MAX_*` length caps, `CONTACT_RATE_LIMIT_*`. No magic numbers in JSX.
-- **Contact action contract:** `sendContactRelay({ fromName, fromEmail, subject: string | null, message })` — subject `string | null` (empty → null). Pass message raw (template escapes). Never echo `reason`.
-- **Slug decision is committed:** split shipping/returns; footer re-columned to 3 link groups + Legal; change `footer.links.shipping` label + add 6 new footer keys. Grep every footer/nav href against `STATIC_PAGE_SLUGS ∪ {contacto, showroom}` — zero dead links (AC-10).
-- **Hero image:** ship a placeholder asset + `HERO_IMAGE` config; the component MUST degrade to the token panel if the asset is null (no broken `<img>`).
-- **No animation on static/FAQ/showroom body** — deliberate; do not add stagger to prose paragraphs.
+- **Create:** `DESIGN.md` (done, S2), `src/components/home/editorial-band.tsx`, `public/` + `public/images/README.md`.
+- **Modify (tokens/fonts/scope):** `globals.css`, `fonts.ts`, `[locale]/layout.tsx`, `lib/config/static-pages.ts`, (`next.config.ts` only if Path B remote host).
+- **Modify (surface application):** ~40 storefront components per §3 (className/token edits), incl. the **10 storefront amber/emerald files**: `catalog/stock-badge.tsx`, `product/qa-form.tsx`, `checkout/{discount-code-field,payment-panel,checkout-summary,oxxo-spei-instructions}.tsx`, `cart/{order-summary,free-shipping-progress}.tsx`, `contacto/contact-form.tsx`, `checkout/confirmacion/[token]/page.tsx`.
+- **Modify (i18n):** `messages/es-MX.json` + `messages/en.json` (editorial band keys only).
+- **Do NOT touch:** anything under `src/app/admin/` or `src/components/admin/`, shared `src/components/ui/*` (token-only), the motion layer in `globals.css`, `app/global-error.tsx`.
