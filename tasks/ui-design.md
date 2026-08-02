@@ -1,428 +1,661 @@
-# UI Design: T15 — Premium visual identity & image-rich refresh (Casa de Azulejo)
+# UI Design: T16 — B2B Landing Page (`/empresas`, offices + quote form)
 
-> Implementation spec for **S3 (Dev)**. The committed visual world, rationale, palette, and art direction live in **`DESIGN.md`** (repo root). This file is the exact build order: token diffs, font plan, per-surface changes, the image-slot system, placeholder plan, states, and the visual-regression checklist. **No prose here overrides DESIGN.md; where they touch, DESIGN.md wins on look and this file wins on mechanics.**
+> **Scope discipline (impeccable, extension mode).** This page is a **new whole surface
+> INSIDE the committed Casa de Azulejo world** — not a new visual world. Per `new-work.md §3`
+> "Create a whole surface inside an established world": the visual system is **fixed** (cobalt
+> line-and-wash, grout-seam borders, roman-caps Libre Caslon captions in cartouche frames,
+> `.enter-fade`/`.stagger`/`.link-arrow` motion). No concept tournament, no `concept-seed.mjs`
+> roll (that is only for a genuinely open new world), no DESIGN.md rewrite. This spec resolves
+> **only the new**: the offices purpose, section flow/hierarchy, the quote-form field set +
+> state matrix, one new page-composition component, image slots, nav/footer placement, copy,
+> and a11y. Every claim is truthful (PRODUCT.md hard rule — no fabricated proof).
 >
-> Seed key `d43cafe8` · direction roll (persuade) · assigned index 6 · fused challenger `architecture-places-azulejo-station-hall`. Image generation was unavailable this stage (`OPENAI_API_KEY` unset, no harness image tool), so the comp-render/finish-review is deferred to S3's build per new-work §7; the QUALITY BAR reference boards were viewed to set the craft bar.
+> **Mode: Persuade.** The visitor (an office manager) must, within seconds, understand *what
+> this is* (outfit your team's workspace with ergonomics-first chairs), *why it matters* (the
+> three real pillars), and *what to do* (request a quote). The offer and the primary action are
+> both visible above the fold; the form is the close.
+
+---
 
 ## Design Principles for This Feature
 
-- **Frame, don't fill.** Cobalt tilework is the *chrome* (borders, captions, buttons, dividers, empty tiles); full-color product photos live *inside* cartouche frames. Blue never fights the product.
-- **Whole tiles, honest grout.** Grid to whole units, grout-seam borders on every edge, the seam runs straight through — premium via precision, not gloss.
-- **Premium = considered, not intimidating.** Bright, daylight, warm-Mexican. Never the black-serif luxury boutique; never the discount-bin white grid.
-- **The phone is the store.** Mobile-first; desktop is the enhancement.
-- **Truth over polish.** Every image slot degrades to an intentional blank tile; zero fabricated proof.
+1. **Persuade in the incumbent's grammar.** Every persuasive beat is a *painted tile panel* —
+   cartouche frame, cobalt caption bar, roman-caps section title. The page reads as another hall
+   in the same tiled house, not a bolt-on marketing template. No new component wears a look the
+   home page doesn't already wear.
+2. **Truth is the only proof.** No testimonials, client logos, "trusted by N offices", "X chairs
+   delivered", stars, or press — none exist, none are invented (AC-3, PRODUCT.md). Persuasion
+   comes from the **three real pillars**, an **honest process** (request → the owner responds),
+   and the **real seeded brands pulled live** (breadth as *range*, never as endorsement).
+3. **The phone is the store.** Mobile-first: single column at 375px, ≥44px touch targets,
+   native `<select>` picker, zero horizontal overflow. Desktop is the enhancement (split hero,
+   3-up pillar row).
+4. **Compose, don't invent.** Reuse `Hero`, `EditorialBand`, `HomeSectionHeader`, the contact
+   `fieldClasses`/`Field`/`FormBanner`/`SuccessBanner` grammar, `.enter-fade`, `.stagger`. The
+   ONLY genuinely new UI is (a) one small server component for the 3-pillar / process grids, and
+   (b) a labeled native `<select>` inside the otherwise-cloned form.
+5. **Motion is Emil-disciplined.** `.enter-fade` on section mount (opacity + 8px rise, `ease-out`
+   200ms, reduced-motion → opacity-only). No new motion is invented. No animation without
+   purpose; the form's success/error banners reuse the shipped `.enter-fade`.
 
 ---
 
-## 1. Token diffs (exact)
+## Page Layout — `/empresas` (desktop → mobile)
 
-### 1a. Scope mechanism — the firewall (AC-11/12, edge 1/2)
+The page is a stack of full-width `<section>` wrappers, **identical rhythm to the homepage**
+(fragment of sibling `<section>` blocks, each owning its own container + vertical rhythm):
+`mx-auto max-w-(--breakpoint-xl) px-4 py-16 md:px-6 md:py-24 lg:px-8` for the hero, and
+`mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8` for the interior bands
+(matching `page.tsx:82` / `:96` verbatim).
 
-Admin is a **parallel root layout** (`src/app/admin/layout.tsx`), and both storefront and admin bodies use the identical `bg-background font-sans text-foreground`. Therefore the brand world MUST NOT be swapped on the shared `:root` or the shared `sans` export. Mechanism:
+### Desktop (≥1024px)
 
-1. **Keep the neutral `:root` (+ `.dark`) block exactly as-is** — it is now *admin's* token world.
-2. **Add a storefront scope class `.theme-storefront`** in `globals.css` holding all cobalt token values.
-3. **Apply `.theme-storefront` on the storefront `<body>`** in `src/app/[locale]/layout.tsx` (and nowhere else). Admin never gets the class → admin resolves the untouched neutral `:root`.
+```
+┌──────────────────── site-header (shell, unchanged; "Empresas" nav item now present) ─────────────┐
+├───────────────────────────────────────────────────────────────────────────────────────────────┤
+│  §1 HERO  (Hero component, reused)                                                                │
+│  ┌───────────────────────────────┐   ┌──────────────────────────────────┐                        │
+│  │ EQUIPA A TU EQUIPO             │   │  cartouche image slot            │                        │
+│  │ (roman-caps display, cobalt)   │   │  B2B_HERO_IMAGE  4/3             │                        │
+│  │ subcopy: fleet/volume framing  │   │  (or blank-tile Building glyph)  │                        │
+│  │ [ Solicitar cotización ]  ·  ¿Cómo funciona? →                        │                        │
+│  └───────────────────────────────┘   └──────────────────────────────────┘                        │
+├───────────────────────────────────────────────────────────────────────────────────────────────┤
+│  §2 VALUE — 3 PILLARS   (new B2BPillars component)                                                │
+│  HomeSectionHeader:  "POR QUÉ POSTURPRO PARA OFICINAS"                                            │
+│  ┌────────────┐ ┌────────────┐ ┌────────────┐   (grid-cols-3, grout gap-6, .stagger entrance)     │
+│  │ [glyph]    │ │ [glyph]    │ │ [glyph]    │                                                     │
+│  │ Ergonomía  │ │ Multimarca │ │ Valor      │                                                     │
+│  │ body …     │ │ body …     │ │ body …     │                                                     │
+│  └────────────┘ └────────────┘ └────────────┘                                                     │
+├───────────────────────────────────────────────────────────────────────────────────────────────┤
+│  §3 PROCESS — HOW IT WORKS   (B2BProcess numbered strip)   id="como-funciona"                     │
+│  "CÓMO FUNCIONA"   ①Solicita → ②Te contactamos → ③Cotización a medida  (3 numbered tiles)         │
+├───────────────────────────────────────────────────────────────────────────────────────────────┤
+│  §4 BRAND BREADTH   (FeaturedBrands, reused — REAL seeded brands, presented as range)             │
+│  HomeSectionHeader: "MARCAS QUE MANEJAMOS"  ·  Ver todas →                                        │
+│  ┌────┐ ┌────┐ ┌────┐  (brand tiles via IndexTile+BrandLogo, .stagger, .card-lift)                │
+├───────────────────────────────────────────────────────────────────────────────────────────────┤
+│  §5 QUOTE FORM  (QuoteForm client island)  — the close.  id="cotizacion" (scroll anchor target)   │
+│  "SOLICITA TU COTIZACIÓN"                                                                          │
+│  ┌───────────────────────── max-w-xl ─────────────────────────┐                                   │
+│  │ Company* | Contact name*   (2-up ≥sm)                       │                                   │
+│  │ Email*   | Phone (opt)     (2-up ≥sm)                       │                                   │
+│  │ Team size*  (native select)                                │                                   │
+│  │ Needs*   (textarea + counter)                              │                                   │
+│  │ [banner slot]   [ Solicitar cotización ]                   │                                   │
+│  └────────────────────────────────────────────────────────────┘                                   │
+├──────────────────────────────── site-footer (shell; "Empresas" link now present) ────────────────┤
+```
 
-### 1b. `src/app/globals.css` — add the storefront token block
+### Mobile (375px)
 
-Insert **after** the existing `:root {…}` block (leave `:root` and `.dark` untouched). Update the "Brand Tokens" doc block above to describe the scoped world.
+```
+┌─ header (hamburger → drawer includes "Empresas") ─┐
+│ §1  EQUIPA A TU EQUIPO (text-4xl)                  │
+│     subcopy                                        │
+│     [ Solicitar cotización ]                       │
+│     ¿Cómo funciona? →                              │
+│     ┌───────────── 4/3 cartouche ─────────────┐    │
+│     │ image or Building blank-tile glyph        │   │
+│     └──────────────────────────────────────────┘   │
+│ §2  POR QUÉ POSTURPRO…  → 3 pillars stacked        │
+│ §3  CÓMO FUNCIONA  → 3 numbered tiles stacked      │
+│ §4  MARCAS QUE MANEJAMOS → 1-col brand tiles       │
+│ §5  SOLICITA TU COTIZACIÓN                          │
+│     company (full) / contact (full)                │
+│     email (full) / phone (full)                    │
+│     team size select (full, native picker)         │
+│     needs textarea (full)                           │
+│     [ Solicitar cotización ] (full)                 │
+└────────────────────────────────────────────────────┘
+```
 
-```css
-/* ======================================================================== *
- * BRAND TOKENS — Casa de Azulejo (T15). Storefront-scoped so the /admin
- * dashboard keeps the neutral :root world (firewall, AC-11/12). Editing only
- * these values + the --font-heading binding re-skins the whole storefront with
- * zero component color edits (AC-4). Palette is cobalt-on-glaze tin-glazed
- * azulejo; all pairings WCAG AA verified (see DESIGN.md → Contrast). Motion
- * layer below is Emil's authority and is NOT brand — untouched.
- * ======================================================================== */
-.theme-storefront {
-  --background: oklch(0.985 0.006 250);
-  --foreground: oklch(0.28 0.09 258);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.28 0.09 258);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.28 0.09 258);
-  --primary: oklch(0.42 0.16 262);
-  --primary-foreground: oklch(0.985 0.006 250);
-  --secondary: oklch(0.93 0.03 250);
-  --secondary-foreground: oklch(0.35 0.12 260);
-  --muted: oklch(0.95 0.015 250);
-  --muted-foreground: oklch(0.47 0.07 258);
-  --accent: oklch(0.90 0.04 250);
-  --accent-foreground: oklch(0.35 0.12 260);
-  --destructive: oklch(0.55 0.20 27);
-  --border: oklch(0.86 0.03 250);
-  --input: oklch(0.86 0.03 250);
-  --ring: oklch(0.42 0.16 262);
-  --radius: 0.375rem;
+---
 
-  /* Reserved accent + semantic status (promoted from hardcoded amber/emerald) */
-  --gold: oklch(0.72 0.14 85);
-  --gold-foreground: oklch(0.28 0.09 258);
-  --success: oklch(0.52 0.13 155);
-  --success-foreground: oklch(0.985 0.006 250);
-  --warning: oklch(0.55 0.13 70);
-  --warning-foreground: oklch(0.985 0.006 250);
+## Section Flow (Persuade beats, grounded ONLY in PRODUCT.md truth)
 
-  /* WhatsApp affordance (brand green, FAB only — AC-7) */
-  --whatsapp: oklch(0.63 0.16 155);
-  --whatsapp-foreground: oklch(1 0 0);
+| # | Section | Job | Truth grounding | Composed from |
+|---|---------|-----|-----------------|---------------|
+| 1 | **Hero** | Make the offer intelligible + desirable in one line; expose the primary action | Offices-furnishing-workspaces audience; volume-quote (no self-serve pricing) | **`Hero`** (reused) — headline + subcopy + primary CTA (`Solicitar cotización` → `#cotizacion`) + secondary link (`¿Cómo funciona?` → `#como-funciona`) + `B2B_HERO_IMAGE` cartouche |
+| 2 | **Value — 3 pillars** | The persuasion spine | Pillar 1 ergonomics authority, 2 multi-brand breadth, 3 value/volume (PRODUCT.md "Positioning", verbatim intent) | **`B2BPillars`** (NEW server component) — `HomeSectionHeader` + 3 cartouche-bordered tiles, each a line-glyph seal + roman-caps title + body |
+| 3 | **Process — how it works** | Set honest expectations: no instant price, a human responds | "request volume quotes through a quote form (no self-serve volume pricing)" — the whole honest mechanism | **`B2BProcess`** (NEW; same file/pattern as `B2BPillars`) — 3 numbered cobalt tiles: Solicita → Te contactamos → Cotización a medida |
+| 4 | **Brand breadth** | Show range, not endorsement | The **real seeded brands** rendered live via `listBrands()` — exactly the homepage mechanism; if read fails or is empty, the section is **omitted** (never an empty grid, never a fake logo wall) | **`FeaturedBrands`** (reused verbatim) under a B2B heading |
+| 5 | **Quote form** | The close / CTA | 6 fields, relays to owner by email only | **`QuoteForm`** (NEW client island, clones contact-form grammar) |
 
-  /* Cobalt-tinted glaze shadow */
-  --shadow-color: oklch(0.42 0.16 262 / 0.12);
+**Why this order:** hook (§1) → belief (§2 pillars, §4 real breadth as evidence a competitor can't
+copy-paste) → objection-handling (§3 "what happens after I ask?") → action (§5). §3 sits before §4
+so the reader knows the *mechanism* before the *range*; §4 (real brands) is the last piece of
+persuasion before the ask, doing the "prove, don't claim" job with genuine catalog data.
 
-  /* Storefront display face (real binding, no longer aliasing --font-sans) */
-  --font-heading: var(--font-heading-serif), Georgia, "Times New Roman", serif;
+---
+
+## Composition Within Casa de Azulejo
+
+| Casa de Azulejo block | Where it composes | Notes |
+|---|---|---|
+| **Cartouche frame** (`rounded-md border border-primary/30 bg-muted`, reserved aspect box) | Hero media (§1); pillar tile borders use the quieter `border-border` (grout) | Exactly the `HeroMedia` / `EditorialBand` frame grammar. Degrade-to-blank-tile on the hero. |
+| **Cobalt caption bar / seal** (`bg-primary text-primary-foreground`) | Process tiles' round number seal (§3) | The AA scrim (8.37:1) for any text on cobalt |
+| **Roman-caps section title** (`font-heading … tracking-wide`, cobalt/foreground) | Every `HomeSectionHeader` (§2, §4) + §5 form heading + §3 title | Reuses `HomeSectionHeader` markup 1:1 |
+| **`.enter-fade`** | Every section root (opacity + 8px rise, ease-out 200ms) | Reused verbatim; reduced-motion → opacity-only (globals.css:426) |
+| **`.stagger`** (40ms step, capped 5) | Pillar tiles (§2), process tiles (§3), brand tiles (§4 via `FeaturedBrands`) | Inline `transitionDelay = Math.min(index,5)*40ms` — same as `FeaturedBrands` |
+| **`.link-arrow`** | Hero secondary link, `HomeSectionHeader` "Ver todas →" | Reused verbatim (`.group/brands` parent) |
+| **`fieldClasses`** (`min-h-11 …`) | Every quote form input/select/textarea | Copied verbatim from contact-form:67 (guarantees ≥44px touch + focus ring + `aria-invalid` styling) |
+
+---
+
+## New Components (kept minimal — prefer composition)
+
+Only **two** new UI files are justified. Both are small, single-concern, and wear the incumbent look.
+
+### 1. `B2BPillars` + `B2BProcess`  (one new file: `src/components/b2b/b2b-sections.tsx`, server)
+
+**Purpose**: render the 3-pillar value grid (§2) and the 3-step process strip (§3). Both are
+pure presentational server components fed pre-resolved strings + a hugeicon per item (RSC-resolved
+labels discipline — no client JS, no i18n hook inside). Grouped in one file because they share the
+same tile grammar and neither is large (SRP: "render a labeled tile grid").
+
+**Location**: `/empresas` sections §2 and §3.
+**shadcn base**: none — composition of `<section>`/`<ul>`/`<li>` + `HugeiconsIcon`, matching the
+existing home-component style (plain semantic markup + Tailwind, like `EditorialBand`).
+
+**Layout (ASCII — pillar tile)**:
+```
+┌──────────────────────────── li ────────────────────────────┐
+│  ┌──────┐   glyph seal: HugeiconsIcon 24, text-primary in    │
+│  │glyph │   rounded-md bg-secondary p-2                      │
+│  └──────┘                                                    │
+│  Autoridad en ergonomía          (font-heading text-lg)     │
+│  Curamos cada silla por cómo …   (text-sm muted, relaxed)   │
+└─────────────────────────────────────────────────────────────┘
+   border border-border bg-card rounded-md p-5, .stagger
+```
+
+**Layout (ASCII — process tile, numbered)**:
+```
+┌──────────────────────────── li ────────────────────────────┐
+│  (1)  ← cobalt round seal: bg-primary text-primary-foreground │
+│       size-8 grid place-items-center rounded-full tabular-nums│
+│  Solicita tu cotización          (font-heading text-lg)     │
+│  Cuéntanos qué necesita tu …     (text-sm muted)            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Props**:
+```typescript
+import type { IconSvgObject } from "@hugeicons/react";
+
+interface PillarItem {
+  icon: IconSvgObject;          // @hugeicons/core-free-icons object
+  title: string;                // RSC-resolved
+  body: string;                 // RSC-resolved
+}
+interface B2BPillarsProps {
+  heading: string;                                       // roman-caps section title
+  items: readonly [PillarItem, PillarItem, PillarItem];  // exactly 3 (fixed tuple)
+}
+
+interface ProcessStep {
+  title: string;
+  body: string;
+}
+interface B2BProcessProps {
+  heading: string;
+  id: string;                                            // "como-funciona" — hero secondary anchor target
+  steps: readonly [ProcessStep, ProcessStep, ProcessStep]; // exactly 3
 }
 ```
 
-> **`--radius` scoping note:** `--radius` is redeclared inside `.theme-storefront`, which correctly overrides it for storefront descendants. The `@theme inline` `--radius-sm..4xl` derivations reference `var(--radius)` and re-derive under the scope automatically — **no `@theme` edit needed**. Verify at build that admin still resolves `--radius: 0.625rem` (its `:root` value is untouched).
+**States**: purely static, copy-driven — no loading/empty/error branch (strings always resolve
+from the dictionary; never DB-backed). Icons are compile-time imports (cannot be null). No skeleton.
 
-### 1c. Register new color tokens in `@theme inline`
+**Responsive**:
+| Breakpoint | Layout |
+|---|---|
+| `<640px` | `grid-cols-1` — tiles stack full-width |
+| `640–1024px` | pillars `sm:grid-cols-3` (short copy) else `sm:grid-cols-2`; process `sm:grid-cols-3` |
+| `>1024px` | pillars `lg:grid-cols-3`; process `lg:grid-cols-3` |
 
-So Tailwind emits `bg-success`, `text-warning`, `bg-gold`, `bg-whatsapp` utilities, add to the `@theme inline` block (these are additive; they map to CSS vars that only resolve under `.theme-storefront`, so admin never sees them applied):
+Gap `gap-4 md:gap-6` (grout rhythm).
 
-```css
-  --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
-  --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
-  --color-gold: var(--gold);
-  --color-gold-foreground: var(--gold-foreground);
-  --color-whatsapp: var(--whatsapp);
-  --color-whatsapp-foreground: var(--whatsapp-foreground);
-```
+**Animations**:
+- Mount: section root `.enter-fade` (opacity + 8px rise, `ease-out`, 200ms; reduced-motion →
+  opacity-only). Trigger: `@starting-style` on first paint.
+- Tile cascade: each `<li>` uses `.stagger` with inline `style={{ transitionDelay }}` =
+  `Math.min(index, 5) * 40ms` (matches `FeaturedBrands`). Property: `transform`/`opacity` only.
+- **No hover motion** on pillar/process tiles — they are read, not pressed (Emil: no motion without
+  purpose; only links get `.card-lift`). Brand tiles in §4 keep their existing `.card-lift`.
 
-### 1d. Token application rule (AC-3/4)
+### 2. `QuoteForm`  (`src/app/[locale]/empresas/quote-form.tsx`, `"use client"`)
 
-No storefront component may hardcode a raw hex/oklch/rgb brand color or raw radius after this task. All brand color flows through utilities (`bg-primary`, `text-foreground`, `border-border`, `rounded-md`, `bg-success`, `text-warning`, `bg-gold`, `bg-whatsapp`). The **only** intentional token-free exception is `src/app/global-error.tsx` (edge 8) — leave it.
+The sole client island. **Clones `contact-form.tsx` grammar verbatim** — `useActionState`,
+off-screen honeypot, first-invalid focus, success clear+focus+auto-hide, Retry, `FormBanner`,
+`SuccessBanner`, `FieldError`, `CharacterCounter`, `fieldClasses`, `Field`. The **only new
+primitive is `SelectField`** (a labeled native `<select>` for team size), defined inline in the
+same file using the identical `fieldClasses` + label + `aria-describedby` error grammar as `Field`.
 
----
-
-## 2. Font-loading plan (AC-5, edge 4)
-
-### 2a. `src/app/fonts.ts` — add the heading face; keep `sans` unchanged
-
-```ts
-import { Inter, Libre_Caslon_Text } from "next/font/google";
-
-/** Body/UI face — SHARED with admin + not-found.tsx. UNCHANGED (firewall). */
-export const sans = Inter({
-  subsets: ["latin", "latin-ext"], // widen to latin-ext for es-MX accents (safe for admin too)
-  variable: "--font-sans",
-  display: "swap",
-});
-
-/**
- * Storefront display/heading face — Casa de Azulejo (T15). Painted-roman caps
- * of tile captions. Bound to --font-heading-serif and applied ONLY under the
- * storefront layout (.theme-storefront on <body>), so admin dialogs keep the
- * sans heading (firewall, AC-5/AC-12). latin-ext covers es-MX glyphs (edge 4).
- */
-export const headingSerif = Libre_Caslon_Text({
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "700"],
-  style: ["normal", "italic"],
-  variable: "--font-heading-serif",
-  display: "swap",
-});
-```
-
-> **Font-choice note for S3:** `Libre_Caslon_Text` is the committed heading face (broad painted-roman, full Latin-Extended-A). If at build its Latin-Extended-A coverage of the inverted marks/`ñ` shows any gap on a Spanish-heavy heading, the fallback is `Libre_Caslon_Display` or `Playfair Display` (both cover latin-ext) — but verify the primary first (edge 4). Do not silently drop to a face lacking `¿ ¡ ñ` coverage.
-
-### 2b. `src/app/[locale]/layout.tsx` — wire scope + heading var + direction contract
-
-Two edits (current body is at line 72–95):
-
-**(i)** attach `.theme-storefront` and the heading font variable to the storefront `<body>`, and the heading variable on `<html>` (so the CSS var exists):
-
-```tsx
-import { sans, headingSerif } from "@/app/fonts";
-// ...
-<html lang={locale} className={cn("h-full", sans.variable, headingSerif.variable)}>
-  <body className="theme-storefront min-h-full bg-background font-sans text-foreground antialiased">
-```
-
-> Do **not** add `headingSerif.variable` to `admin/layout.tsx`. `--font-heading` only binds to the serif under `.theme-storefront`; admin's `dialog`/`alert-dialog` keep resolving `--font-heading` to its `@theme` fallback (sans). Confirm admin dialog titles are unchanged.
-
-**(ii)** the **direction contract** as the first child of `<body>` (AC-2) — before `NextIntlClientProvider`, an HTML comment that survives the production build:
-
-```tsx
-<body className="theme-storefront ...">
-  {/* impeccable:direction-contract seed=d43cafe8
-   THESIS: PosturPro is a Mexican tiled hall — a curated sequence of cobalt-framed
-     panels — refusing the white-grid e-commerce default and the black-serif luxury boutique.
-   OWN-WORLD: Tin-glazed azulejo. Cobalt (#1545a2) line-and-wash on milk-white glaze
-     (#f7fafe); grout-seam borders; roman-caps captions in cartouche frames; mustard
-     reserved inside frames; product photos framed, never tinted.
-   STORY: The shopper reads breadth (a hall of framed brand/category tiles), authority
-     (measured, painted precision), and fair value (honest grout, no gloss) — and buys.
-   FIRST VIEWPORT: Cobalt cartouche hero — roman-caps display headline on a cobalt scrim
-     beside the framed hero image slot; primary CTA button lower-left; a tile wall of
-     featured chairs begins just below the fold.
-   FORM: Azulejo station hall (grounded #6). seed key d43cafe8.
-   FINISH: unreviewed and undocumented is unfinished; this build ends with the finish
-     review, the verdict, and DESIGN.md. */}
-  <NextIntlClientProvider>
-```
-
-> Placement is load-bearing: it must be a direct child of the **root layout body**, not inside a slotted child component. `next-intl`/React comment nodes survive the build as HTML comments.
-
-**Build check (AC-2):** after `next build`, grep the built output for `d43cafe8` — the contract must be greppable in the emitted HTML.
+Full spec below.
 
 ---
 
-## 3. Per-surface changes
+## Quote Form Spec
 
-> All changes are className/token/asset edits. **Preserve every `data-testid` and every e2e structural signal** (§8). No behavior, data, or copy changes except new visible copy in lockstep i18n (§6).
-
-### 3a. Persistent chrome (every page — do first)
-
-| File | Change |
-| --- | --- |
-| `layout/site-header.tsx` | Wordmark → roman-caps small (`font-heading uppercase tracking-wide text-primary`), keep `header-wordmark` testid. Grout bottom-border (`border-border`). `.nav-hover` items get cobalt active tint (`aria-current` → `text-primary`/`bg-accent`). Sticky header gains cobalt-tinted `shadow-sm` on scroll (optional; keep if trivial). Preserve `header-nav-{key}` testids, both search boxes, z-40. |
-| `layout/site-footer.tsx` | Grout top-border; column headings in `font-heading` small-caps `text-foreground`; links `text-muted-foreground hover:text-foreground` (unchanged tokens now resolve cobalt). Preserve all `footer-*` testids (`footer-store-name`, `footer-free-shipping`, `footer-link-*`, `footer-copyright`) and `min-h-[1lh]` free-shipping reservation. |
-| `layout/mobile-nav.tsx` | Drawer sheet → `bg-card` with grout border; `.drawer-*` motion untouched. Active item cobalt tint. |
-| `layout/language-toggle.tsx` | Segmented control on cobalt: active segment `bg-primary text-primary-foreground`, inactive `text-muted-foreground`. Compact mobile variant unchanged in structure. |
-| `layout/whatsapp-button.tsx` | **~line 54:** `bg-primary text-primary-foreground` → `bg-whatsapp text-whatsapp-foreground` (AC-7). Keep round seal, `shadow-lg`, `.fab-pop`, `whatsapp-button` testid, safe-area insets, z-50. |
-
-### 3b. Homepage (`src/app/[locale]/page.tsx` + `home/*`)
-
-| File | Change |
-| --- | --- |
-| `home/hero.tsx` | Copy panel on a **cobalt scrim cartouche**: headline `font-heading text-4xl lg:text-6xl text-balance`. On mobile the copy sits in a `bg-primary text-primary-foreground` caption panel below/over the media; on `lg` the 2-col grid keeps copy-left/media-right, copy on glaze with cobalt headline. `HeroMedia` gains the cartouche frame (`rounded-md border border-primary/30`), keeps `aspect-[4/3]`, `fill`, `priority`, `sizes`, `hero-image-fallback` testid, null-degrade glyph. Keep `hero-cta-catalog`, `hero-link-brands` testids and `.enter-fade`/`.link-arrow`. |
-| **NEW** `home/editorial-band.tsx` | New storefront-scoped **ergonomics editorial band** (AC-8): a wide cartouche lifestyle image slot (`aspect-[16/9]` mobile → `21/9` lg) with a cobalt caption bar carrying a short posture-authority headline + subcopy (i18n keys, §6). **No fabricated proof** — copy is a curation/ergonomics claim, not a testimonial/stat. Slot config-driven (`EDITORIAL_BAND_IMAGE`), null → blank cobalt tile with Chair/posture glyph. Reuse `section-header` grammar. `.enter-fade` on mount. |
-| `home/featured-products.tsx` | Tile-wall grid; cards per 3c. Section header `font-heading` small-caps. |
-| `home/featured-brands.tsx` | Brand marks as framed tiles (`border border-border rounded-md bg-card`), cobalt caption label. |
-| `[locale]/page.tsx` | Section order: Hero → Featured Products → **Editorial Band** → Featured Brands. Resolve editorial-band strings in the RSC and pass as props (pre-resolved-labels discipline). Guarded reads unchanged. |
-
-### 3c. Catalog / PLP (`catalog/*`, `/sillas`, `/marcas`, `/categorias`, `/estilos` + `[slug]`)
-
-| File | Change |
-| --- | --- |
-| `catalog/product-card.tsx` | Card is a cartouche tile: `border-border bg-card rounded-md`; image slot `aspect-[4/5]` gains cartouche framing (keep `bg-muted`, `fill`, `sizes`, first-row `priority`, fallback glyph). **Preserve** `product-card`/`product-card-link` testids, `.stagger`/`.card-lift`/`.card-image`, and compare-at `text-muted-foreground line-through` (e2e). Price cobalt `text-foreground tabular-nums`. Out-of-stock `opacity-60` preserved. |
-| `catalog/product-grid.tsx` | **Preserve `gridTemplateColumns` structure** (e2e asserts grid columns). Gap → `gap-4 lg:gap-6` (grout). |
-| `catalog/index-tile.tsx` / `catalog/brand-logo.tsx` | Framed painted panels with cobalt caption label. |
-| `catalog/filter-*`, `catalog/toolbar.tsx`, `catalog/breadcrumbs.tsx` | Cobalt-chrome panel (`bg-card border-border`), active filters `bg-accent text-accent-foreground`. |
-| `catalog/stock-badge.tsx` | Low-stock → `text-warning` (was `text-amber-*`, 2 usages); affirmative in-stock → `text-success` where used. Keep glyph+text + testids. |
-| `catalog/no-results.tsx`, `catalog/empty-state.tsx`, `catalog/pagination.tsx` | Restyle to cobalt; blank-tile empty illustration (glyph in `bg-muted` cartouche). |
-| `catalog/catalog-skeleton.tsx` | Skeleton base `bg-muted` (pale glaze, not neutral gray); preserve layout reservation (no CLS). |
-
-### 3d. PDP (`product/*`, `/producto/[slug]`)
-
-| File | Change |
-| --- | --- |
-| `product/product-gallery.tsx` | Main image = large cartouche; thumbnails = small framed tiles with cobalt active ring (`ring-2 ring-primary`). `.gallery-image` motion untouched. Preserve testids. |
-| `product/product-purchase-panel.tsx` | Cobalt-bordered "spec cartouche" (`border-border bg-card`); price cobalt `tabular-nums`; CTA `bg-primary`; stock badge glyph+text. |
-| `product/product-specs.tsx` | Measured-ledger table: grout row rules (`divide-border`), roman-caps column labels. |
-| `product/product-qa.tsx`, `product/qa-form.tsx` | `qa-form.tsx` amber → `text-warning` (2, validation/pending). Cobalt links. |
-| `product/recently-viewed.tsx` | Quiet tile row of cards. |
-| `product/pdp-skeleton.tsx` | Skeleton restyle as 3c. |
-
-### 3e. Cart (`cart/*`, `/carrito`)
-
-| File | Change |
-| --- | --- |
-| cart line/summary components | Ledger tile; grout-ruled rows. |
-| `cart/free-shipping-progress.tsx` | `bg-emerald-*` → `bg-success` (2 bg); glyph+text. Track `bg-muted`, fill `bg-success`. |
-| `cart/order-summary.tsx` | `text-emerald-*` → `text-success` (2). |
-| `cart/cart-skeleton` | Skeleton restyle. |
-
-### 3f. Checkout (`checkout/*`, `/checkout`, `/checkout/confirmacion/[token]`)
-
-| File | Change |
-| --- | --- |
-| `checkout/payment-panel.tsx` | amber (6) → `text-warning`, emerald (2) → `text-success`. Pending = calm cobalt/warning panel, never error-red. |
-| `checkout/checkout-summary.tsx` | amber (2) → `text-warning`, emerald (4) → `text-success`. |
-| `checkout/oxxo-spei-instructions.tsx` | amber (2) → `text-warning`. **Calm painted panel** (`bg-warning/10 border-warning/30 text-warning`), glyph+text — pending is normal (PRODUCT.md). |
-| `checkout/discount-code-field.tsx` | emerald (2 text, 1 bg) → `--success`. |
-| `checkout/checkout-skeleton.tsx` | Skeleton restyle. |
-| `[locale]/checkout/confirmacion/[token]/page.tsx` | emerald (4) → `text-success`. Restrained cobalt cartouche celebration; money display preserved. |
-
-### 3g. Static pages (9) + contact + showroom (`content/*`, `[pageSlug]`, `contacto`, `showroom`)
-
-| File | Change |
-| --- | --- |
-| `content/static-page-body.tsx` | `max-w-prose` read column; H2 → `font-heading` small-caps tile-caption; cobalt links; no `dangerouslySetInnerHTML` introduced (renders escaped children, unchanged). |
-| `[locale]/contacto/contact-form.tsx` | amber (4 text, 1 bg) → `--warning` for validation; **preserve honeypot off-screen `left`** (e2e). Fields on grout borders, cobalt focus ring. |
-| `showroom` route / `ShowroomLocation` | Map slot degrades to cobalt pin-glyph cartouche when `SHOWROOM_MAP_IMAGE`/`SHOWROOM_MAP_URL` null (unchanged degrade, restyled). |
-
-### 3h. 404 / error
-
-| File | Change |
-| --- | --- |
-| `[locale]/not-found.tsx` | "Lost panel / blank tile" empty state in cobalt world; preserve testids + bilingual copy. It uses shared `sans` (fine). If it renders outside `.theme-storefront`, wrap its root element in `theme-storefront` so it gets the cobalt world. |
-| `[locale]/error.tsx` | Restyle to cobalt; testids preserved. |
-| `app/global-error.tsx` | **UNTOUCHED** — intentional token-free system-ui exception (edge 8). Confirm bilingual fallback reads acceptably; note the exception for reviewers so it is not flagged as a token violation. |
-
----
-
-## 4. Image-slot system
-
-### 4a. Config shape (extends the `HERO_IMAGE` pattern)
-
-Add to `src/lib/config/static-pages.ts` (or a new `src/lib/config/imagery.ts` re-exported there). Every slot is `string | null`, defaulting `null` (Phase-1). A slot is either a `/public` path or an allow-listed remote URL.
-
-```ts
-/**
- * Editorial/lifestyle image slots (T15, AC-8/9). string | null — null degrades
- * to a token-styled blank-tile placeholder (never a broken <img>, never CLS).
- * Swap to a real asset by setting a /public path or an allow-listed URL — no
- * layout rework. NEVER a slot that implies fabricated proof.
- */
-export const HERO_IMAGE: string | null = null;              // existing (homepage hero)
-export const EDITORIAL_BAND_IMAGE: string | null = null;    // NEW — homepage ergonomics band
-export const CATALOG_BANNER_IMAGE: string | null = null;    // NEW — /sillas index banner (optional art slot)
-export const SHOWROOM_MAP_IMAGE: string | null = null;      // existing
-export const SHOWROOM_MAP_URL: string | null = null;        // existing
-```
-
-### 4b. Degrade behavior (edge 3)
-
-Every consumer follows the `HeroMedia` pattern verbatim:
-
-- **Present:** `next/image` with `fill`, correct `sizes`, `object-cover`, inside the reserved aspect box + cartouche frame.
-- **Null:** a `bg-muted` panel of the **same aspect box** with a centered `@hugeicons` line-glyph at `text-muted-foreground/40`, `aria-hidden`, plus a `data-testid` fallback. **Zero CLS whether asset present or absent.**
-
-### 4c. `public/` layout (create — does not exist yet)
+### Layout (ASCII wireframe — desktop)
 
 ```
-public/
-  images/
-    editorial/        # homepage ergonomics band lifestyle asset(s)
-    catalog/          # optional catalog/category banner art
-    showroom/         # static showroom map / storefront photo
-  README.md           # notes: all slots null by default; drop assets + set config path; art direction in DESIGN.md
+┌─────────────────────────── max-w-xl (form container) ───────────────────────────┐
+│ [SuccessBanner — role=status, only when successVisible]                          │
+│                                                                                  │
+│ ┌── honeypot (absolute left-[-9999px], aria-hidden, tabIndex=-1) ──┐            │
+│ │  <label>company_url</label> <input name="company_url" …>          │            │
+│ └───────────────────────────────────────────────────────────────────┘          │
+│                                                                                  │
+│  ┌───────────────────────────┐  ┌───────────────────────────┐                   │
+│  │ Empresa *                 │  │ Nombre de contacto *      │   (grid sm:2-cols) │
+│  │ [input company]           │  │ [input name]              │                   │
+│  └───────────────────────────┘  └───────────────────────────┘                   │
+│  ┌───────────────────────────┐  ┌───────────────────────────┐                   │
+│  │ Correo electrónico *      │  │ Teléfono (opcional)       │                   │
+│  │ [input email]             │  │ [input phone]             │                   │
+│  └───────────────────────────┘  └───────────────────────────┘                   │
+│  ┌───────────────────────────┐                                                   │
+│  │ Tamaño del equipo *       │   ← native <select>, options from QUOTE_TEAM_SIZES │
+│  │ [ Selecciona un rango  ▾ ]│                                                   │
+│  └───────────────────────────┘                                                   │
+│  ┌───────────────────────────────────────────────────────────────┐              │
+│  │ ¿Qué necesitas? *                                             │              │
+│  │ [textarea needs, min-h-32 resize-y]                          │              │
+│  │                                                   0/2000  ↙ counter          │
+│  └───────────────────────────────────────────────────────────────┘              │
+│                                                                                  │
+│  [FormBanner slot — rate-limited (warning) / error (destructive), role=alert]    │
+│                                                                                  │
+│  [ Solicitar cotización ]   ← Button size=lg, min-h-11, sm:self-start            │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 4d. Exact slot list (per page, with aspect ratios)
+**Layout decision — 2-up field pairs on ≥sm.** Company/name and email/phone pair into
+`grid grid-cols-1 gap-4 sm:grid-cols-2` rows; team-size and needs are full-width. Rationale: 6
+fields read as a longer form than contact's 4 — pairing the four short single-line fields halves
+the vertical scroll on desktop/tablet while every field stays full-width and ≥44px on mobile
+(`grid-cols-1`). This is the one layout divergence from the contact form (single-column); it stays
+inside the grammar (same `fieldClasses`, `Field`, gap rhythm) and never breaks 375px. The form
+container stays `max-w-xl` like contact.
 
-| Slot | Surface | Config | Aspect | `sizes` | `priority` |
-| --- | --- | --- | --- | --- | --- |
-| Hero media | Homepage | `HERO_IMAGE` | `4/3` | `(min-width:1024px) 50vw, 100vw` | **yes** (LCP) |
-| Editorial band | Homepage | `EDITORIAL_BAND_IMAGE` | `16/9` → `21/9` lg | `100vw` | no |
-| Catalog banner (optional) | `/sillas` index | `CATALOG_BANNER_IMAGE` | `21/9` | `100vw` | no |
-| Product cover | Catalog cards | DB (picsum) | `4/5` | `(max-width:640px) 50vw, (max-width:1024px) 33vw, 25vw` | first-row only |
-| Product gallery | PDP | DB (picsum) | `1/1` or `4/5` | `(min-width:1024px) 50vw, 100vw` | main image only |
-| Brand mark | Featured/brands | DB / `brand-logo` | `3/2` | `(max-width:768px) 50vw, 33vw` | no |
-| Showroom map | `/showroom` | `SHOWROOM_MAP_IMAGE`/`_URL` | `16/9` | `100vw` | no |
+### Fields (6 + honeypot)
 
-**Only the hero (and the PDP main image / catalog first row) is `priority`** (AC-15) — never lazy-load the LCP, never `priority` the below-fold band.
+| Field | name | Type | Required | Notes |
+|---|---|---|---|---|
+| Company | `company` | `text` input | ✅ | `maxLength=QUOTE_COMPANY_MAX`; `autoComplete="organization"`; control-char stripped server-side |
+| Contact name | `name` | `text` input | ✅ | `maxLength=QUOTE_NAME_MAX`; `autoComplete="name"`; control-char stripped |
+| Email | `email` | `email` input | ✅ | `maxLength=QUOTE_EMAIL_MAX`; `autoComplete="email"`; `EMAIL_PATTERN` shape check server-side; becomes `replyTo` |
+| Phone | `phone` | `tel` input | ⬜ optional | `maxLength=QUOTE_PHONE_MAX`; `autoComplete="tel"`; `inputMode="tel"` |
+| Team size | `teamSize` | native `<select>` | ✅ | options = `QUOTE_TEAM_SIZES` (single source); first option is a disabled placeholder; membership-checked server-side |
+| Needs | `needs` | `textarea` | ✅ | `maxLength=QUOTE_MESSAGE_MAX`; `min-h-32 resize-y`; live `CharacterCounter` |
+| (honeypot) | `company_url` | off-screen `text` | — | `absolute left-[-9999px]` + `aria-hidden` wrapper + `tabIndex=-1` + `autoComplete="off"` |
 
----
+> **`SelectField` (new primitive, inline in quote-form.tsx).** Same anatomy as `Field`: a
+> `flex flex-col gap-1.5` wrapper, `<label htmlFor>` (`text-sm font-medium`), the control with
+> `fieldClasses` + `aria-invalid`/`aria-describedby`, and a conditional `<FieldError>`. The
+> control is `<select>` whose first `<option value="" disabled>` is the placeholder
+> (`labels.teamSizePlaceholder`, e.g. "Selecciona un rango") and whose real options map over
+> `QUOTE_TEAM_SIZES` with `defaultValue={state.values?.teamSize ?? ""}`. Use the **native**
+> `<select>` — the keyboard/SR/mobile-picker-correct choice (AC-11); never a custom div-dropdown.
+> The native arrow is acceptable; add `appearance-none` + a background chevron ONLY if it clashes
+> visually.
 
-## 5. Placeholder sourcing plan (AC-9/10)
+### State Matrix (full — mirrors contact, serializable `QuoteFormState`)
 
-**Default state ships with all editorial slots `null`** → intentional blank cobalt tiles. That is a complete, premium Phase-1 state (native to the azulejo world). No fabricated proof, so this is the safe default.
+| State | Visual | Behavior |
+|---|---|---|
+| **idle** | Empty fields with placeholders; team-size on its disabled placeholder; submit enabled reading "Solicitar cotización" | `initialQuoteFormState` (`status:"idle"`) |
+| **submitting** (`pending`) | Submit disabled, label → "Enviando…"; form stays visible + filled; **no layout shift** | `useActionState` pending; `disabled={pending}` |
+| **success** | Form `.reset()`s + counter → 0; a `role="status"` `.enter-fade` banner appears ("¡Solicitud enviada! Te contactaremos pronto."), receives focus; auto-hides after `QUOTE_SUCCESS_FEEDBACK_MS` (6000) | Effect keyed on `state.status`+`submissionId`; button returns to default label |
+| **invalid** | Inline `text-destructive` `FieldError` under each offending field; `aria-invalid` + `aria-describedby` wired; **first invalid field focused**; typed values preserved | `{status:"invalid", fieldErrors, values}`; focus walk company→name→email→phone→teamSize→needs |
+| **rate-limited** | `role="alert"` `bg-warning/10 text-warning` banner + `Alert02Icon`: "Espera un momento antes de enviar otra solicitud." (calm, glyph+text); values preserved | `{status:"rate-limited", values}`; no send |
+| **error** | `role="alert"` `text-destructive` banner + `Alert02Icon`: "No pudimos enviar tu solicitud, inténtalo de nuevo."; submit label → "Reintentar"; values preserved; raw provider reason NEVER shown | `{status:"error", values}`; Retry re-submits preserved values |
 
-**If the owner wants real placeholder imagery before real photography arrives**, two supported paths (S3/owner choice — do not fabricate):
+First-invalid focus order (extends contact's 4-field walk to 6):
+`company → name → email → phone → teamSize → needs`.
 
-- **Path A (preferred — local, no allow-list, no CSP risk):** generate art-directed placeholders via `generate-image.mjs` (requires `OPENAI_API_KEY` at S3; unavailable this stage) and store under `public/images/…`. Prompts per slot (per DESIGN.md art direction: bright daylight, cool-neutral grade, chair/workspace subject, cobalt-harmonious):
-  - **Hero:** *"A single premium ergonomic office chair, three-quarter view, on a clean cool-white studio background, bright even daylight, soft shadow, neutral-to-cool white balance, no text, no logos, product-catalog composition."*
-  - **Editorial band:** *"A calm modern Mexican home-office corner with one ergonomic chair at a desk, cool daylight through a window, uncluttered, cool-neutral color grade, no visible faces, no text, wide cinematic framing."*
-  - **Catalog banner:** *"A tidy row of three distinct office chairs on a light seamless studio floor, even daylight, cool-neutral grade, no text."*
-  Mark generated assets as synthetic placeholders in `public/images/README.md`.
-- **Path B (licensed stock):** high-quality licensed stock with **verified-resolving URLs**, matching the same art direction. If remote-hosted, add the host to `next.config.ts` `images.remotePatterns` mirroring the existing picsum/supabase entries (lines ~43–60). Prefer downloading into `/public` to avoid a new host + CSP exposure.
+### Char counters — where warranted
 
-**Hard rule (AC-9):** no image a visitor could mistake for real proof (no fake testimonials, crowds implying sales volume, invented awards). Editorial copy states curation/ergonomics claims only, never customer counts or reviews.
+- **Needs (textarea): YES.** Live `CharacterCounter` (reused verbatim): muted → `text-warning`
+  within the last 10% → `text-destructive` at `QUOTE_MESSAGE_MAX`; `aria-live="polite"` only in the
+  warn zone. Same as contact's message counter.
+- **Company / name / email / phone: NO.** Short single-line caps; a counter would add noise (Emil:
+  unseen restraint). `maxLength` on the input is the only ceiling surfaced; the server re-caps.
 
-**`next.config.ts` (AC-10):** no new host is needed for the null-default ship or for Path A (local `/public`). Only Path B with a remote host requires a `remotePatterns` addition; otherwise leave `next.config.ts` unchanged.
+### Honeypot
 
----
-
-## 6. New copy & i18n (AC-16)
-
-The only new visible copy is the **editorial band** (headline + subcopy) and any new **image alt text**. Add keys to **both** `src/messages/es-MX.json` and `src/messages/en.json` in lockstep (equal key sets, currently 614 lines each). Suggested namespace `home.editorial`:
-
-| Key | es-MX (draft) | en (draft) |
-| --- | --- | --- |
-| `home.editorial.title` | "Sillas elegidas por cómo cuidan tu cuerpo" | "Chairs chosen for how they care for your body" |
-| `home.editorial.body` | "Cada silla en PosturPro se selecciona por su ergonomía y su valor, no por su etiqueta." | "Every chair at PosturPro is curated for ergonomics and value — not for its label." |
-| `home.editorial.imageAlt` | "Espacio de trabajo con una silla ergonómica" | "Workspace with an ergonomic chair" |
-
-> Copy is a **product/ergonomics claim**, not proof — no numbers, customers, or reviews. Final wording is the owner's to approve; keep both files symmetric. Verify one of these accented strings renders in the heading face without glyph fallback (edge 4 check: "cómo", "elegidas").
-
----
-
-## 7. States (every surface keeps every state, restyled)
-
-| State | Treatment in the cobalt world |
-| --- | --- |
-| **Loading** | Skeletons (`catalog/pdp/checkout/cart`) use `bg-muted` pale-glaze base (reads premium, not neutral gray); layout reservation preserved (no CLS). Hero LCP `priority`. |
-| **Empty** | No-results / empty cart / empty checkout / empty featured → existing components + CTAs, restyled to cobalt; a **blank-tile cartouche** with a centered glyph as the illustration; same wayfinding. |
-| **Error** | Localized 404 + `error.tsx` restyled cobalt, testids preserved; `global-error.tsx` stays neutral system-ui exception. |
-| **Success** | Order confirmation, add-to-cart, discount-applied, free-shipping-achieved → `--success`, glyph+text, AA preserved. |
-| **Disabled** | Buttons `opacity-60 pointer-events-none` (unchanged), still legible on glaze. |
-| **Mobile (375)** | Mobile-first; hero/band images stack; nav → drawer; touch targets ≥44px preserved. |
-| **Tablet (768)** | Hero copy/image, PDP gallery/purchase, checkout summary reflow at existing breakpoints. |
-
----
-
-## 8. Visual regression checklist (AC-11/13/15/18/19)
-
-**Admin firewall (before/after screenshots — the headline check):**
-- [ ] Screenshot `/admin/login` before and after → palette + font pixel-identical.
-- [ ] Screenshot one authed admin page (e.g. orders list) before/after → identical.
-- [ ] No file under `src/app/admin/` or `src/components/admin/` edited.
-- [ ] Shared `src/components/ui/{button,badge,alert-dialog,dialog,tabs}.tsx` **not restyled** (token-only); admin dialog titles keep sans heading (verify `--font-heading` resolves sans under admin, not the serif).
-- [ ] Admin `--radius` still `0.625rem`; storefront `0.375rem`.
-
-**Contrast (AA — every surface, DESIGN.md verified values):**
-- [ ] Body / heading / muted / buttons / links / badges / form fields all ≥ AA on glaze.
-- [ ] All text-over-image sits on the cobalt scrim / caption bar (8.37:1) — hero + editorial band, verified with a synthetic worst-case (very light + very dark) image swapped into the slot.
-- [ ] Status glyph+text preserved everywhere (warning/success/destructive never color-only).
-- [ ] Cobalt focus rings visible on the glaze ground on every interactive element.
-
-**Structural / e2e signals (must survive — §3):**
-- [ ] `product-grid` `gridTemplateColumns` structure unchanged.
-- [ ] PDP compare-at `text-decoration: line-through` preserved.
-- [ ] Contact + mobile-filter honeypot off-screen `left` preserved.
-- [ ] Every asserted `data-testid` preserved (header/footer/hero/product-card/whatsapp/etc.). No rename unless reconciled in the e2e spec + justified.
-- [ ] `formatMXN` money display + `tabular-nums` + compare-at unchanged (AC-17).
-
-**Motion / a11y (AC-14):**
-- [ ] Motion layer untouched; `prefers-reduced-motion` honored on every surface.
-- [ ] Any new motion (band `.enter-fade`, optional cobalt-wash) is `transform`/`opacity`, `ease-out` enter, RM-gated.
-
-**Responsive (AC-18):**
-- [ ] No horizontal overflow at 320 / 375 / 768 / 1024 / 1280px on every storefront surface.
-
-**Perf / build (AC-2/10/15/19):**
-- [ ] `next build` succeeds; grep built output for `d43cafe8` (direction contract survives).
-- [ ] Font bundle bounded (2 families, `latin`+`latin-ext` subset, `display: swap`).
-- [ ] `next/image` `sizes`/`priority` correct; LCP hero `priority`; no below-fold `priority`; aspect boxes reserved (no CLS).
-- [ ] No `next/image` from a non-allow-listed host.
-- [ ] `tsc --noEmit` clean; `eslint` clean on touched files; unit + integration + storefront e2e green.
-- [ ] es-MX accented heading renders in the serif with no glyph fallback (edge 4).
+Off-screen real input named **`company_url`** (a plausible-to-a-bot field name), wrapped in
+`<div className="absolute left-[-9999px]" aria-hidden>` with `<label>` + `tabIndex={-1}` +
+`autoComplete="off"` + `defaultValue=""`. Filled → `isQuoteHoneypotTripped` → server returns a
+**FAKE `{status:"success"}`** (identical success banner) + a `console.warn`, **no send** —
+indistinguishable from real success on the client (AC-7, edge 2).
 
 ---
 
-## 9. Build order (recommended for S3)
+## Copy Inventory (launch-grade, both locales)
 
-1. **Firewall first** — screenshot admin baseline; add `.theme-storefront` block + `@theme` color tokens; apply class on storefront `<body>`. Verify storefront re-paints and admin is untouched.
-2. **Fonts** — add `headingSerif`, wire `--font-heading` under scope, verify accented heading.
-3. **Direction contract comment** in `[locale]/layout.tsx` body; confirm greppable after build.
-4. **Chrome** (header/footer/mobile-nav/language-toggle/WhatsApp) — every page.
-5. **Homepage** (hero cartouche → editorial band → featured products/brands) + i18n keys.
-6. **Catalog/PLP → PDP → cart → checkout → static/contact/showroom → 404/error** — apply world + reconcile the 10 storefront amber/emerald files to `--warning`/`--success` consistently.
-7. **Image-slot system** — create `public/`, add config slots, verify null-degrade on every slot.
-8. **Sweep** — AA (incl. text-over-image), RM, responsive 320–1280, i18n lockstep, money intact.
-9. **Comp render + finish review** (deferred from S2): render the hero/homepage comp, run the impeccable finish reviewer against the direction contract, then the documenter re-confirms DESIGN.md from the built world.
-10. **Test green + admin before/after** — full suite; firewall screenshots.
+> All strings live under the new **`empresas`** namespace (there is no `contacto` namespace — the
+> Spanish `/contacto` route reads the `contact` namespace; `/empresas` follows the same convention
+> with its own `empresas` namespace). Placeholder-quality bar: launch-grade, both locales, zero
+> fabricated proof. es-MX is primary; en is a faithful equivalent (not a literal gloss). No numbers
+> presented as social proof anywhere.
 
-## 10. Binding decisions the owner may veto (flag for the orchestrator)
+### `empresas` namespace — es-MX / en
 
-1. **The cobalt-azulejo world itself** — a distinctly Mexican tile identity, not neutral premium minimalism. This is the committed direction (the roll and the strongest dealt challenger agreed on it). Owner can veto → re-roll or take the standing exit (category-standard premium e-commerce).
-2. **Body face stays Inter** (identity carried by cobalt + the roman-caps heading), not a novelty body font — keeps admin-font risk zero and the bundle bounded.
-3. **Dark mode decommissioned for storefront** (light-only azulejo). `.dark` retained only as admin's untouched world.
-4. **All editorial image slots ship `null`** (blank cobalt tiles) until the owner provides real photography or approves generated/licensed placeholders — no fabricated proof.
+```
+empresas.metadata.title            "Cotizaciones para empresas · PosturPro"
+                                    "Volume quotes for offices · PosturPro"
+empresas.metadata.description       "Equipa el espacio de trabajo de tu equipo con sillas
+                                     ergonómicas de múltiples marcas. Solicita una cotización por
+                                     volumen — sin precios de autoservicio, atención directa."
+                                    "Outfit your team's workspace with ergonomic chairs from
+                                     multiple brands. Request a volume quote — no self-serve
+                                     pricing, a direct reply."
 
-### Files at a glance (S3 create/modify)
+── HERO (Hero component) ──
+empresas.hero.title                 "Equipa a tu equipo con sillas que cuidan su postura"
+                                    "Equip your team with chairs that protect their posture"
+empresas.hero.subtitle              "Amueblamos oficinas con sillas ergonómicas de varias marcas.
+                                     Cuéntanos el tamaño de tu equipo y te preparamos una
+                                     cotización a la medida."
+                                    "We furnish offices with ergonomic chairs from several brands.
+                                     Tell us your team size and we'll prepare a quote tailored
+                                     to you."
+empresas.hero.cta                   "Solicitar cotización"           / "Request a quote"
+empresas.hero.secondary             "¿Cómo funciona?"                / "How it works"
+empresas.hero.imageAlt              "Espacio de trabajo de oficina equipado con sillas ergonómicas"
+                                    "Office workspace furnished with ergonomic chairs"
 
-- **Create:** `DESIGN.md` (done, S2), `src/components/home/editorial-band.tsx`, `public/` + `public/images/README.md`.
-- **Modify (tokens/fonts/scope):** `globals.css`, `fonts.ts`, `[locale]/layout.tsx`, `lib/config/static-pages.ts`, (`next.config.ts` only if Path B remote host).
-- **Modify (surface application):** ~40 storefront components per §3 (className/token edits), incl. the **10 storefront amber/emerald files**: `catalog/stock-badge.tsx`, `product/qa-form.tsx`, `checkout/{discount-code-field,payment-panel,checkout-summary,oxxo-spei-instructions}.tsx`, `cart/{order-summary,free-shipping-progress}.tsx`, `contacto/contact-form.tsx`, `checkout/confirmacion/[token]/page.tsx`.
-- **Modify (i18n):** `messages/es-MX.json` + `messages/en.json` (editorial band keys only).
-- **Do NOT touch:** anything under `src/app/admin/` or `src/components/admin/`, shared `src/components/ui/*` (token-only), the motion layer in `globals.css`, `app/global-error.tsx`.
+── VALUE / PILLARS (B2BPillars) ──
+empresas.value.heading              "Por qué PosturPro para oficinas"  / "Why PosturPro for offices"
+empresas.value.pillars.ergonomics.title
+                                    "Autoridad en ergonomía"           / "Ergonomics authority"
+empresas.value.pillars.ergonomics.body
+                                    "Curamos cada silla por cómo trata el cuerpo de quien se sienta
+                                     en ella toda la jornada — postura primero, no solo estética."
+                                    "We curate every chair for how it treats the body of the person
+                                     sitting in it all day — posture first, not just looks."
+empresas.value.pillars.brands.title "La selección más amplia"          / "The widest selection"
+empresas.value.pillars.brands.body  "Varias marcas de sillas bajo un mismo techo, para que
+                                     encuentres la opción correcta para cada rol de tu equipo."
+                                    "Several chair brands under one roof, so you can find the right
+                                     option for every role on your team."
+empresas.value.pillars.value.title  "Precio por volumen"               / "Value at volume"
+empresas.value.pillars.value.body   "Calidad premium a mejor precio, con una cotización pensada
+                                     para el número de personas que vas a equipar."
+                                    "Premium quality at a better price, with a quote sized to the
+                                     number of people you're outfitting."
+
+── PROCESS (B2BProcess) ──
+empresas.process.heading            "Cómo funciona"                    / "How it works"
+empresas.process.steps.request.title
+                                    "Solicita tu cotización"           / "Request your quote"
+empresas.process.steps.request.body "Llena el formulario con el tamaño de tu equipo y lo que
+                                     necesitas. Sin compromiso."
+                                    "Fill in the form with your team size and what you need.
+                                     No commitment."
+empresas.process.steps.reply.title  "Te contactamos"                   / "We get in touch"
+empresas.process.steps.reply.body   "Una persona del equipo revisa tu solicitud y te responde
+                                     directamente — sin precios automáticos."
+                                    "Someone on our team reviews your request and replies to you
+                                     directly — no automated pricing."
+empresas.process.steps.quote.title  "Cotización a la medida"           / "A tailored quote"
+empresas.process.steps.quote.body   "Recibes una propuesta de sillas y precio pensada para tu
+                                     oficina y tu presupuesto."
+                                    "You get a chair-and-price proposal built for your office and
+                                     your budget."
+
+── BRANDS (FeaturedBrands, reused) ──
+empresas.brands.heading             "Marcas que manejamos"             / "Brands we carry"
+empresas.brands.viewAll             "Ver todas las marcas"             / "View all brands"
+                (viewAllHref = BRANDS_PATH; brand tiles pull live seeded brands)
+
+── FORM (QuoteForm) ──
+empresas.form.heading               "Solicita tu cotización"           / "Request your quote"
+empresas.form.intro                 "Respondemos por correo. Entre más nos cuentes, mejor será la
+                                     cotización."
+                                    "We reply by email. The more you tell us, the better the quote."
+empresas.form.company.label         "Empresa"                          / "Company"
+empresas.form.company.placeholder   "Nombre de tu empresa"             / "Your company name"
+empresas.form.name.label            "Nombre de contacto"               / "Contact name"
+empresas.form.name.placeholder      "¿Con quién hablamos?"             / "Who are we speaking with?"
+empresas.form.email.label           "Correo electrónico"               / "Email"
+empresas.form.email.placeholder     "tucorreo@empresa.com"             / "you@company.com"
+empresas.form.phone.label           "Teléfono"                         / "Phone"
+empresas.form.phone.optional        "(opcional)"                       / "(optional)"
+empresas.form.phone.placeholder     "10 dígitos"                       / "10 digits"
+empresas.form.teamSize.label        "Tamaño del equipo"                / "Team size"
+empresas.form.teamSize.placeholder  "Selecciona un rango"              / "Select a range"
+empresas.form.teamSize.options.1-10   "1–10 personas"    / "1–10 people"
+empresas.form.teamSize.options.11-50  "11–50 personas"   / "11–50 people"
+empresas.form.teamSize.options.51-200 "51–200 personas"  / "51–200 people"
+empresas.form.teamSize.options.200+   "Más de 200 personas" / "More than 200 people"
+empresas.form.needs.label           "¿Qué necesitas?"                  / "What do you need?"
+empresas.form.needs.placeholder     "Cuéntanos cuántas sillas, para qué roles, y cualquier
+                                     preferencia de marca o presupuesto."
+                                    "Tell us how many chairs, for which roles, and any brand or
+                                     budget preferences."
+empresas.form.charCount             "{count}/{max}"                    / "{count}/{max}"
+empresas.form.submit                "Solicitar cotización"             / "Request a quote"
+empresas.form.submitting            "Enviando…"                        / "Sending…"
+empresas.form.retry                 "Reintentar"                       / "Try again"
+empresas.form.honeypot              "No llenar este campo"             / "Do not fill this field"
+empresas.form.success               "¡Solicitud enviada! Te contactaremos pronto."
+                                    "Request sent! We'll be in touch soon."
+empresas.form.errorGeneric          "No pudimos enviar tu solicitud, inténtalo de nuevo."
+                                    "We couldn't send your request. Please try again."
+empresas.form.rateLimited           "Espera un momento antes de enviar otra solicitud."
+                                    "Please wait a moment before sending another request."
+
+empresas.form.errors.companyRequired    "Escribe el nombre de tu empresa."   / "Enter your company name."
+empresas.form.errors.companyTooLong     "El nombre es demasiado largo."       / "That name is too long."
+empresas.form.errors.nameRequired       "Escribe un nombre de contacto."      / "Enter a contact name."
+empresas.form.errors.nameTooLong        "El nombre es demasiado largo."       / "That name is too long."
+empresas.form.errors.emailRequired      "Escribe tu correo electrónico."      / "Enter your email."
+empresas.form.errors.emailInvalid       "Ese correo no parece válido."        / "That email doesn't look valid."
+empresas.form.errors.emailTooLong       "El correo es demasiado largo."       / "That email is too long."
+empresas.form.errors.phoneTooLong       "El teléfono es demasiado largo."     / "That phone number is too long."
+empresas.form.errors.teamSizeRequired   "Elige el tamaño de tu equipo."       / "Choose your team size."
+empresas.form.errors.teamSizeInvalid    "Elige una opción de la lista."       / "Choose an option from the list."
+empresas.form.errors.needsRequired      "Cuéntanos qué necesitas."            / "Tell us what you need."
+empresas.form.errors.needsTooLong       "El mensaje es demasiado largo."      / "That message is too long."
+```
+
+### Nav + footer keys
+
+```
+nav.items.offices        "Empresas"   / "For business"
+footer.links.offices     "Empresas"   / "For business"
+```
+
+> **Label decision:** **es-MX "Empresas" / en "For business".** "Empresas" (companies) is the
+> natural Spanish destination label and matches the `/empresas` slug. English uses **"For
+> business"** rather than a literal "Companies" because it reads as an audience invitation on a
+> storefront nav — clearer intent for the office-manager visitor. The slug stays `/empresas` in
+> both locales; only the label localizes, consistent with every other route.
+
+---
+
+## Interaction Flows
+
+### Flow A — Request a quote (happy path)
+1. Visitor lands on `/empresas`; hero + pitch is **server-rendered, fully readable with no JS**.
+2. Clicks **"Solicitar cotización"** (hero CTA) → in-page scroll to `#cotizacion` (native anchor;
+   `scroll-mt-*` offsets the sticky header, mirroring `.static-heading:target`).
+3. Fills the 6 fields; team-size via the native `<select>` (mobile shows the OS picker).
+4. Submits → button disables, label → "Enviando…" (no layout shift; form stays filled).
+5. Server: honeypot → validate → rate-limit → `sendQuoteRelay`. On `{ok:true}` → `{status:"success"}`.
+6. Form clears, the `role="status"` `.enter-fade` success banner appears + takes focus ("¡Solicitud
+   enviada! Te contactaremos pronto."), auto-hides after 6s. Next step implied ("we'll contact
+   you") — no fabricated confirmation number.
+
+### Flow B — "How it works" scan
+1. Clicks hero secondary link **"¿Cómo funciona?"** → scroll to `#como-funciona` (§3).
+2. Reads the 3 numbered steps → returns to the form via the §5 heading in view.
+
+### Flow C — Validation error
+1. Submits with company empty + malformed email → `{status:"invalid"}`.
+2. Inline `FieldError`s render under company + email; **focus jumps to company** (first invalid);
+   all typed values preserved; team-size keeps its selected option.
+
+### Flow D — Owner email unconfigured / provider failure (edge 3, the real CI default)
+1. Valid submit, but `EMAIL_OWNER_ADDRESS` unset → `sendQuoteRelay` → `{ok:false, reason}`.
+2. Action logs reason **server-side only**, returns `{status:"error"}`; generic banner shows;
+   submit label → "Reintentar"; values preserved; **raw reason never surfaced**.
+
+### Flow E — Rate-limited flood (edge 4)
+1. Same IP over `QUOTE_MAX_SUBMISSIONS_PER_WINDOW` → `{status:"rate-limited"}`.
+2. Calm `bg-warning/10` `role="alert"` banner; values preserved; **quote limiter is its own
+   instance** — a legit contact message is never throttled by quote traffic.
+
+---
+
+## Accessibility Checklist
+
+- [ ] Every form control has an associated `<label htmlFor>` (company, name, email, phone,
+      **teamSize `<select>`**, needs).
+- [ ] Field errors wired via `aria-invalid` + `aria-describedby`; textarea `aria-describedby` also
+      points at the live counter.
+- [ ] First invalid field receives focus on `invalid` (keyboard user lands on the error).
+- [ ] Success banner is `role="status"` + `tabIndex=-1` + receives focus; error / rate-limited
+      banners are `role="alert"`.
+- [ ] Status is **glyph + text** (`Alert02Icon` / `CheckmarkCircle02Icon`) — never color alone
+      (colorblind-safe, AC-11).
+- [ ] Team size is a **native `<select>`** — keyboard + SR + mobile-picker correct; never a custom
+      div-dropdown.
+- [ ] Honeypot wrapper `aria-hidden` + field `tabIndex=-1` — invisible to AT and keyboard.
+- [ ] Hero CTA is a real `<a href="#cotizacion">`; §3 root `id="como-funciona"`; §5 root
+      `id="cotizacion"`; both targets get `scroll-mt-24` (or the shell header height) — anchors work
+      without JS and clear the sticky header.
+- [ ] All text over imagery sits on the cobalt scrim / caption bar (8.37:1); no raw text on photo.
+- [ ] Section titles are real `<h2>`s under the page `<h1>` (hero headline); logical heading order.
+- [ ] `.enter-fade` / `.stagger` degrade to opacity-only under `prefers-reduced-motion`; no section
+      relies on motion to be understood.
+- [ ] Focus rings: every input/select/textarea/button inherits `focus-visible:ring-2 ring-ring` via
+      `fieldClasses` / the shared `Button`.
+- [ ] Tab order: nav → hero CTA → hero secondary → form fields in DOM order → submit. Logical.
+
+---
+
+## Design Tokens Used
+
+- **Colors** (all from DESIGN.md, no new tokens): `--primary` (cobalt CTA, process seals, section
+  titles), `--primary-foreground` (text on cobalt), `--foreground` (body ink), `--muted-foreground`
+  (subcopy, meta), `--muted`/`--secondary` (blank-tile backing, glyph seals), `--border` (grout
+  seams), `--card` (tile faces), `--ring` (focus), `--destructive` (field/form errors), `--warning`
+  (rate-limit + counter warn). `--success`/`--gold`: **not used** (no proof/badge on this page).
+- **Typography**: Display (hero) `text-4xl`→`lg:text-6xl` `font-heading` cobalt; H2/section
+  `text-2xl`→`sm:text-3xl` `font-heading tracking-wide`; H3/tile-title `text-lg`→`sm:text-xl`; body
+  `text-sm`→`sm:text-base leading-relaxed`; counter `tabular-nums`.
+- **Spacing**: hero `py-16 md:py-24`; interior `py-8 md:py-10`; container
+  `max-w-(--breakpoint-xl) px-4 md:px-6 lg:px-8`; grids `gap-4 md:gap-6`; `HomeSectionHeader`
+  `mb-6 sm:mb-8` (more space above a heading than below).
+- **Radius**: `rounded-md` (`--radius` 6px) on tiles/inputs/buttons/cartouche; `rounded-full` ONLY
+  on the process number seals (deliberate seal-in-a-square exception).
+- **Elevation**: flat glaze — `border border-border` at rest; cartouche `border-primary/30`;
+  `shadow-sm` on hero media + brand tiles on hover (`.card-lift`). No heavy shadows.
+- **Motion**: `--ease-out` (`cubic-bezier(0.23,1,0.32,1)`), 200ms enters; `.enter-fade`, `.stagger`
+  (40ms step, cap 5), `.link-arrow` — all reused, all reduced-motion-gated.
+
+---
+
+## Image Slots (imagery.ts pattern)
+
+| Slot | Add to | Aspect | Art direction | Degrade |
+|---|---|---|---|---|
+| **`B2B_HERO_IMAGE`** (NEW `string \| null`) | `src/lib/config/imagery.ts` (same file as `EDITORIAL_BAND_IMAGE`) | `4/3` (matches `HeroMedia`) | A real workspace scene consistent with DESIGN.md: bright cool-neutral daylight, an *office* furnished with chairs (the audience's scene), inside the cobalt cartouche frame. Licensed Unsplash stock, provenance in `public/images/SOURCES.md`. **Never proof imagery** (no branded logos, no "our client" framing). | `null` → `HeroMedia` blank-tile with a centered line-glyph. **Use `Building06Icon`** (or `Building03Icon`) instead of the chair glyph so the B2B fallback reads "offices", not "single product". Zero CLS (aspect box reserved). |
+
+**Decision — one image slot, not two.** §1 hero carries the only photographic slot
+(`B2B_HERO_IMAGE`). §2/§3 use **line-glyphs in seals**, not photos (icons drawn in the world's
+grammar). §4 uses real brand logos/monograms via the existing `BrandLogo` (no new slot). A second
+lifestyle band would be length without substance (Persuade: "sections that restate a claim add
+length, not substance"). If the dev wants a §3 lifestyle band instead of numbered tiles, reuse
+`EditorialBand` with `EDITORIAL_BAND_IMAGE` (already exists) rather than minting a new slot — but
+the numbered-tile `B2BProcess` is the recommended, more honest treatment of "how it works".
+
+> **Ship value:** `B2B_HERO_IMAGE` may ship as a real licensed office-workspace photo **or** `null`
+> (Building blank-tile) for launch — both are AC-compliant and swap without layout rework. Ship a
+> real workspace photo if one clears licensing; otherwise `null` reads as premium-not-broken.
+
+---
+
+## Nav / Footer Placement (exact)
+
+### Nav — `src/components/layout/nav-items.ts`
+- Extend the closed union: `key: "catalog" | "brands" | "styles" | "contact" | "offices"`.
+- Append to `NAV_ITEMS` **after `contact`** (audience-secondary; primary shopping links lead):
+  `{ key: "offices", href: "/empresas" }`.
+- Flows automatically into the **desktop header** (`site-header.tsx:53`) and the **mobile drawer**
+  (`mobile-nav.tsx:245`) — both iterate `NAV_ITEMS`. Label from `nav.items.offices`.
+- Order: catalog → brands → styles → contact → **empresas** (last). B2B is confirmed-but-secondary.
+
+### Footer — `src/components/layout/site-footer.tsx`
+- The footer grid is already fully occupied at `lg:grid-cols-4` (store-info + STORE + HELP + LEGAL);
+  **do not add a 5th column.** Add "Empresas" as a **new first entry in `STORE_LINKS`**:
+  `const STORE_LINKS = [{ key: "offices", href: "/empresas" }, { key: "about", href: "/sobre-nosotros" }] as const;`
+  Label from `footer.links.offices`.
+- Rationale: the STORE (Tienda) column is the "who we are / what we offer" column; "Empresas" is an
+  offer/audience destination that fits there, and the column is currently light (one link). No grid
+  change, no new `footer.sections.*` key. Every href resolves to the live page → **zero dead links**
+  (AC-8); existing links untouched.
+
+---
+
+## Responsive Spec (375 / 768 / 1024)
+
+| Section | 375px (mobile) | 768px (tablet) | 1024px+ (desktop) |
+|---|---|---|---|
+| **Hero** | Copy stacked above 4/3 cartouche; CTA + secondary wrap; `text-4xl` | Same stack or `Hero` split begins; `text-5xl` | `lg:grid-cols-2` copy-left/media-right; `text-6xl` |
+| **Pillars §2** | `grid-cols-1` — 3 tiles stacked | `sm:grid-cols-3` (short copy) or `sm:grid-cols-2` | `lg:grid-cols-3` |
+| **Process §3** | `grid-cols-1` numbered tiles stacked | `sm:grid-cols-3` | `lg:grid-cols-3` |
+| **Brands §4** | `grid-cols-1` (existing `FeaturedBrands`) | `sm:grid-cols-2` | `lg:grid-cols-3` |
+| **Form §5** | All fields full-width single column; native `<select>` OS picker | Company/name + email/phone pair `sm:grid-cols-2`; teamSize/needs full | Same 2-up pairs; `max-w-xl`; submit `sm:self-start` |
+| **Overflow** | **No horizontal overflow at 375 or 768** (AC-12) — all grids collapse to 1-col at `<sm`; container `px-4`; textarea `resize-y` only (no x). | — | — |
+
+---
+
+## Compliance Trace (AC → design)
+
+- **AC-1/AC-2** — 5-section Persuade flow (hero pitch + 3-pillar value + process + form; brands as
+  bonus breadth), inside the storefront shell, cobalt/roman-caps.
+- **AC-3** — zero fabricated proof: pillars = real positioning, §4 = live seeded brands (omitted if
+  empty), single image slot = licensed stock or null blank-tile; no hardcoded proof numbers.
+- **AC-4** — 6 fields incl. native `<select>` over `QUOTE_TEAM_SIZES`; all labels/options from i18n.
+- **AC-6/AC-7** — full state matrix + honeypot/validate/rate-limit ordering (form spec above).
+- **AC-8/AC-9/AC-13** — nav+footer i18n links (zero dead), `generateMetadata` both locales, keys in
+  both dictionaries + `CONSUMED_KEYS`.
+- **AC-10** — cartouche frames, grout borders, roman-caps titles, `string|null` image slot,
+  `.enter-fade` reduced-motion-gated; admin firewall untouched (no `ui/*`, no `:root`).
+- **AC-11** — labeled controls + `aria-describedby` errors, native select, glyph+text status,
+  8.37:1 scrim.
+- **AC-12** — single-column collapse at `<sm`; no x-overflow at 375/768.
+
+---
+
+## Handoff notes for Dev (Stage 4)
+
+- **New files (UI):** `src/components/b2b/b2b-sections.tsx` (`B2BPillars` + `B2BProcess`),
+  `src/app/[locale]/empresas/quote-form.tsx` (clone contact-form; add inline `SelectField`).
+- **Page RSC** (`empresas/page.tsx`) mirrors `contacto/page.tsx`: `resolveLocale` helper,
+  `generateMetadata` from `empresas.metadata`, `setRequestLocale`, `getTranslations("empresas")`,
+  build the flat `QuoteFormLabels` bag server-side, read brands via a `readB2BBrands()` helper
+  (clone of the homepage `readFeaturedBrands` try/catch → `[]`), compose §1–§5. **No `notFound()`
+  gate** — the page is copy-driven (not a `static_pages` row), so it renders even with empty content
+  tables (edge 6).
+- **Reuse verbatim:** `Hero`, `FeaturedBrands`, `HomeSectionHeader`, `fieldClasses`, `Field`,
+  `FormBanner`, `SuccessBanner`, `FieldError`, `CharacterCounter`, `.enter-fade`, `.stagger`.
+- **Icons (@hugeicons only):** hero fallback `Building06Icon`; pillars — ergonomics
+  `Chair01Icon`, breadth `Store01Icon`/`Layers01Icon`, value `Tag01Icon`/`Coins01Icon`; form status
+  `Alert02Icon`/`CheckmarkCircle02Icon`; hero secondary `ArrowRight01Icon`. Dev picks the closest
+  available free-icon objects — never mix icon sets.
+- **`QUOTE_TEAM_SIZES`** single-sources the `<select>` options AND the guard membership check — map
+  over it in JSX (label via `empresas.form.teamSize.options.{value}`); do not duplicate the list.
+- **Scroll anchors:** hero CTA `href="#cotizacion"`, secondary `href="#como-funciona"`; §3 root
+  `id="como-funciona"`, §5 root `id="cotizacion"`; add `scroll-mt-24` to both targets.
+- **Form container** stays `max-w-xl`; the only divergence from contact is the `sm:grid-cols-2` field
+  pairing for the four short fields.
+```
