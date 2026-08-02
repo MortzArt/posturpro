@@ -175,13 +175,14 @@ Vendored from [emilkowalski/skills](https://github.com/emilkowalski/skills) into
 | \`review-animations\`    | \`.claude/skills/review-animations/SKILL.md\` (+ \`STANDARDS.md\`) | Reviewing any diff that adds/changes animation or transition code — strict bar, approval is earned |
 | \`improve-animations\`   | \`.claude/skills/improve-animations/SKILL.md\` | Codebase-wide motion audit producing prioritized, self-contained fix plans (read-only on source)  |
 | \`animation-vocabulary\` | \`.claude/skills/animation-vocabulary/SKILL.md\` | Naming a motion effect precisely (specs, tickets, prompts)                                        |
+| \`impeccable\`           | \`.claude/skills/impeccable/SKILL.md\`        | Vendored from [pbakaus/impeccable](https://github.com/pbakaus/impeccable) (v4). Design-director-grade craft: shaping new surfaces, redesigns, premium polish, imagery direction, and 23 sub-commands (\`craft\`, \`shape\`, \`critique\`, \`audit\`, \`polish\`, \`bolder\`, \`colorize\`, \`typeset\`, \`layout\`, …). Run \`node .claude/skills/impeccable/scripts/context.mjs\` once per session (loads PRODUCT.md / DESIGN.md design context). |
 
 **Pipeline integration** (orchestrator: include this in agent prompts for UI-surface tasks):
 
-- **UI Design (3, ultradesign)** — load \`emil-design-eng\` + \`apple-design\`; use \`animation-vocabulary\` terms in specs so implementation is unambiguous.
-- **Dev (4, ultradev)** — load \`emil-design-eng\` before writing components; \`apple-design\` when the ticket involves gestures, sheets, or springs.
-- **Review (5, ultrareview)** — apply \`review-animations\` STANDARDS.md to any animation/transition code in the diff.
-- **UX (8, ultraux) & ui-polish-engineer** — load \`emil-design-eng\` + \`apple-design\`; run \`improve-animations\`-style audits for motion passes.
+- **UI Design (3, ultradesign)** — load \`impeccable\` (+ its \`reference/new-work.md\` for new surfaces) AND \`emil-design-eng\` + \`apple-design\`; use \`animation-vocabulary\` terms in specs so implementation is unambiguous. Where the two authorities conflict on visual boldness, \`impeccable\` owns look/identity; Emil owns motion restraint.
+- **Dev (4, ultradev)** — load \`emil-design-eng\` before writing components; load \`impeccable\` \`reference/craft-floor.md\` immediately before editing UI (quality floor + absolute bans); \`apple-design\` when the ticket involves gestures, sheets, or springs.
+- **Review (5, ultrareview)** — apply \`review-animations\` STANDARDS.md to any animation/transition code in the diff; \`/impeccable audit\` checks for marketing/brand surfaces.
+- **UX (8, ultraux) & ui-polish-engineer** — load \`impeccable\` (\`polish\`/\`critique\` playbooks) + \`emil-design-eng\` + \`apple-design\`; run \`improve-animations\`-style audits for motion passes.
 - **Baseline rules that always apply:** enter animations use \`ease-out\` (never \`ease-in\`); respect \`prefers-reduced-motion\`; animate \`transform\`/\`opacity\` (compositor-friendly), not layout properties; interactions must be interruptible; no motion without purpose.
 
 ## Clean Code Rules (Uncle Bob)
