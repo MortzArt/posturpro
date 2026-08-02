@@ -138,7 +138,13 @@ function buildFormLabels(t: EmpresasTranslator): QuoteFormLabels {
     },
     needs: t("form.needs.label"),
     needsPlaceholder: t("form.needs.placeholder"),
-    charCount: t("form.charCount"),
+    // `t.raw` — this is an interpolation TEMPLATE ("{count}/{max}") filled
+    // client-side by `interpolate()`. Calling `t()` would try to ICU-format it
+    // with no `count`/`max` context, throw FORMATTING_ERROR, and fall back to
+    // the raw KEY path ("empresas.form.charCount") — which the counter would
+    // then render verbatim. `t.raw` returns the template untouched (the
+    // codebase pattern: PDP `qa.form.counter`, cart, checkout all use it).
+    charCount: t.raw("form.charCount"),
     submit: t("form.submit"),
     submitting: t("form.submitting"),
     honeypot: t("form.honeypot"),

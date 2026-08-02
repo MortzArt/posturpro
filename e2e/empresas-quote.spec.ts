@@ -97,6 +97,24 @@ test.describe("quote form (AC-4, AC-6, AC-7, AC-11)", () => {
     expect(parseInt(offScreenLeft, 10)).toBeLessThan(-1000)
   })
 
+  test("the live needs char-counter renders a real count, NOT the raw i18n key (regression)", async ({
+    page,
+  }) => {
+    // Regression for the `t()` vs `t.raw()` template bug: `charCount` is the
+    // interpolation template "{count}/{max}" filled client-side. If the server
+    // resolves it with `t()` (ICU format, no vars) it throws + falls back to the
+    // raw key path, and the counter renders the literal "empresas.form.charCount".
+    await page.goto("/empresas")
+    const counter = page.getByTestId("quote-counter")
+    await expect(counter).toBeVisible()
+    // Never the raw key; always a numeric "N/M" count.
+    await expect(counter).not.toContainText("charCount")
+    await expect(counter).toHaveText(/^\d+\/\d+$/)
+    // It reacts to typed input (the template is genuinely interpolated).
+    await page.getByTestId("quote-needs").fill("Hola equipo")
+    await expect(counter).toHaveText(/^11\/\d+$/)
+  })
+
   test("submitting empty required fields shows inline errors and sends nothing", async ({
     page,
   }) => {
@@ -141,6 +159,108 @@ test.describe("quote form (AC-4, AC-6, AC-7, AC-11)", () => {
     // Input values are preserved so the user can retry.
     await expect(page.getByTestId("quote-company")).toHaveValue("Acme SA")
     await expect(page.getByTestId("quote-teamSize")).toHaveValue("51-200")
+  })
+
+  test("preserves ALL SIX field values across an error re-render — incl. the re-keyed team-size <select> (AC-6, edge 3, React-19 remount)", async ({
+    page,
+  }) => {
+    // The React-19 form-action reset drops an uncontrolled <select> back to its
+    // placeholder on a failure re-render; the fix re-keys the SelectField per
+    // submission so it remounts with the preserved defaultValue. Text inputs
+    // preserve natively. This asserts the WHOLE 6-field bag survives, not just a
+    // sample — the select is the load-bearing case S4 verified only in code.
+    const values = {
+      company: "Talleres Zócalo",
+      name: "María José",
+      email: "mj@zocalo.mx",
+      phone: "5599887766",
+      teamSize: "200+",
+      needs: "40 sillas ejecutivas + 15 operativas, marca a elección.",
+    } as const
+
+    await page.goto("/empresas")
+    await page.getByTestId("quote-company").fill(values.company)
+    await page.getByTestId("quote-name").fill(values.name)
+    await page.getByTestId("quote-email").fill(values.email)
+    await page.getByTestId("quote-phone").fill(values.phone)
+    await page.getByTestId("quote-teamSize").selectOption(values.teamSize)
+    await page.getByTestId("quote-needs").fill(values.needs)
+    await page.getByTestId("quote-submit").click()
+
+    // A failure re-render occurs (no EMAIL_* env → error; if the shared-server
+    // quote bucket is exhausted → rate-limited). BOTH preserve values, and the
+    // preservation — not which banner — is what this test guards. Wait for
+    // either failure banner so the assertion is resilient to run ordering.
+    await expect(
+      page.getByTestId("quote-form-error").or(page.getByTestId("quote-rate-limited")),
+    ).toBeVisible()
+
+    // EVERY field kept its typed value after the server round-trip + remount.
+    await expect(page.getByTestId("quote-company")).toHaveValue(values.company)
+    await expect(page.getByTestId("quote-name")).toHaveValue(values.name)
+    await expect(page.getByTestId("quote-email")).toHaveValue(values.email)
+    await expect(page.getByTestId("quote-phone")).toHaveValue(values.phone)
+    // The critical one: the re-keyed native select still shows the chosen range.
+    await expect(page.getByTestId("quote-teamSize")).toHaveValue(values.teamSize)
+    await expect(page.getByTestId("quote-needs")).toHaveValue(values.needs)
+
+    // The submit label flips to the localized Retry (AC-6).
+    await expect(page.getByTestId("quote-submit")).not.toHaveText(/enviando/i)
+  })
+})
+
+test.describe("honeypot is off-screen in BOTH locales (AC-7, edge 2)", () => {
+  // The abuse-control DOM must be identically hidden regardless of locale — a
+  // localized page must not accidentally surface the trap field.
+  for (const path of ["/empresas", "/en/empresas"] as const) {
+    test(`${path}: honeypot present, off-screen, aria-hidden, out of tab order`, async ({
+      page,
+    }) => {
+      await page.goto(path)
+      const honeypot = page.locator('input[name="company_url"]')
+      await expect(honeypot).toHaveCount(1)
+      await expect(honeypot).toHaveAttribute("tabindex", "-1")
+      await expect(honeypot).toHaveAttribute("autocomplete", "off")
+      const wrapper = page.locator('[aria-hidden="true"]', { has: honeypot })
+      await expect(wrapper).toHaveCount(1)
+      const left = await wrapper.evaluate((el) => getComputedStyle(el).left)
+      expect(parseInt(left, 10), path).toBeLessThan(-1000)
+      // The trap is never visible to a sighted user.
+      await expect(honeypot).not.toBeInViewport()
+    })
+  }
+})
+
+test.describe("per-page SEO metadata resolves per locale (AC-9)", () => {
+  test("es-MX /empresas has a non-empty localized title + description", async ({
+    page,
+  }) => {
+    await page.goto("/empresas")
+    const title = await page.title()
+    expect(title.length).toBeGreaterThan(0)
+    // The es-MX title carries the Spanish brand framing.
+    expect(title).toMatch(/empresas/i)
+    const description = await page
+      .locator('head meta[name="description"]')
+      .getAttribute("content")
+    expect(description && description.length).toBeGreaterThan(0)
+    expect(description).toMatch(/ergonómicas|cotización/i)
+  })
+
+  test("en /empresas resolves a DISTINCT English title (not the es-MX one)", async ({
+    page,
+  }) => {
+    await page.goto("/empresas")
+    const esTitle = await page.title()
+    await page.goto("/en/empresas")
+    const enTitle = await page.title()
+    expect(enTitle.length).toBeGreaterThan(0)
+    // The two locales genuinely resolve different metadata (not a silent fallback).
+    expect(enTitle).not.toBe(esTitle)
+    const enDescription = await page
+      .locator('head meta[name="description"]')
+      .getAttribute("content")
+    expect(enDescription && enDescription.length).toBeGreaterThan(0)
   })
 })
 
