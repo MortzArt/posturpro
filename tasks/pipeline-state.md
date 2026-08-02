@@ -1,11 +1,23 @@
 # Pipeline State
-Task: T13 — Static pages & homepage
+Task: T15 — Premium visual identity & image-rich refresh
 Tier: standard
-Stage: COMPLETE
-Agent: —
-Complexity: medium
-Feature Type: full-stack (full-feature)
-Last Updated: 2026-08-02 02:50
+Stage: 2
+Agent: ultradesign
+Last Updated: 2026-08-02 14:10
+Notes: S1 (PlanResearch) COMPLETE. Complexity=MEDIUM (token+asset+per-surface reskin; broad but NO new models/migrations/endpoints/deps; standard flow correct). Feature Type=ui-only (S2 UI Design runs FULL depth = the impeccable new-work flow; Dev/ReviewFix/QA = visual application + regression-safety, no new logic to test). Artifacts: tasks/next-ticket.md (19 ACs) + tasks/research-report.md.
+
+=== S2 (ultradesign) — RUN THE IMPECCABLE NEW-WORK FLOW. Key directives: ===
+- DO NOT pick the visual world from the ticket — the ticket deliberately does NOT prescribe palette/type/aesthetic. Run .claude/skills/impeccable/ new-work.md IN ORDER: run scripts/context.mjs once, then concept-seed.mjs (--scope direction --mode persuade for the storefront's Persuade surfaces) — writing artifact code before the roll is dealt+acknowledged is a contract violation. Present ONE committed direction + challengers + canon (serve-question.mjs; structured tool if headless). generate-image.mjs IS available → do the comp/visualize step. Build with full commitment, run impeccable-finish-reviewer FRESH, then impeccable-documenter writes DESIGN.md from the BUILT world (root, currently absent).
+- THE #1 RISK (from S1 research): brand tokens + font + 5 ui primitives are SHARED with admin. `@/app/fonts` sans export is imported by [locale]/layout.tsx AND admin/layout.tsx AND not-found.tsx. globals.css :root tokens feed admin's bg-background/text-foreground/font-sans. src/components/ui/{button,badge,alert-dialog,dialog,tabs}.tsx imported by admin (24/8/5/4/2×); dialog+alert-dialog consume --font-heading. A naive :root/sans swap re-skins ADMIN → AC-11/12 FAIL. RECOMMENDED FIREWALL: apply new brand tokens + display font storefront-scoped under [locale]/layout.tsx (wrapper/selector), NOT the global :root or shared sans export; keep ui/* token-driven. Screenshot /admin before+after to prove untouched.
+- TOKEN SEAM: ONE :root(+.dark) block globals.css:51-131, all grayscale oklch(L 0 0), --radius:0.625rem. Motion layer (globals.css:145-838, ~20 classes + --ease-* tokens) is EMIL AUTHORITY — KEEP VERBATIM (impeccable owns look, Emil owns motion). --font-heading currently ALIASES --font-sans (line 12) — a real display face needs a new binding.
+- IMAGE SLOTS: pattern exists (HERO_IMAGE/SHOWROOM_MAP_IMAGE = string|null in config/static-pages.ts, degrade to token glyph panel). NO public/ dir exists yet — create it. Extend config-slot pattern for new lifestyle/editorial bands. Products flow from DB (picsum via SEED_IMAGE_BASE_URL). New hosts → next.config.ts remotePatterns. NEVER fabricate proof (testimonials/reviews/sales) — PRODUCT.md hard rule.
+- TOKEN-CLEANLINESS CAVEAT: storefront ~95% token-clean for BRAND color, BUT ~12 files hardcode SEMANTIC amber(warning/OXXO-SPEI/low-stock)+emerald(success/discount/free-ship), always glyph+text AA-safe (stock-badge.tsx:43, checkout-summary.tsx:135/247/270, payment-panel.tsx:292/313/351/396, oxxo-spei-instructions.tsx:85, discount-code-field.tsx:151, cart/order-summary.tsx:108, free-shipping-progress.tsx:79, qa-form.tsx:338, contact-form.tsx:355/465). Decide once: keep as status semantics OR promote to --warning/--success; apply consistently.
+- E2E IS RESKIN-SAFE: storefront specs assert NO colors/fonts/computed-styles — only visibility/text/href/structure. ONLY reskin-fragile signals are STRUCTURAL: catalog grid gridTemplateColumns, PDP compare-at line-through, contact/mobile-filter honeypot off-screen left. Preserve those + all asserted data-testids.
+- FONT es-MX: ~160 accented chars (á é í ó ú ñ ¿ ¡) → chosen faces MUST cover Latin Extended-A; next/font subsets; verify a "ñ/í/¿…?" heading.
+- global-error.tsx uses hardcoded hex+system-ui BY DESIGN (replaces whole doc, no tokens/providers) — intentional exception, don't token-ify, note it so review doesn't flag it.
+- SCOPE: 11 storefront routes ([locale] tree) + ~40 storefront components. Admin fully isolated (NO admin route under [locale]). Bilingual parity 614/614 keys (lockstep any new copy). formatMXN/tabular-nums/integer-cents unchanged. Mobile-first, AA, prefers-reduced-motion floors binding.
+
+=== PRIOR STAGE NOTES (T13, kept for reference) ===
 
 === T13 COMPLETE — QA PASS (Stage S5, ultraqa, standard tier, confidence HIGH, 2026-08-02) ===
 - STANDARD PIPELINE COMPLETE: PlanResearch → UI Design → Dev (b4181e3) → ReviewFix (4fccebc, APPROVE 9.5/10) → QA PASS (this stage). QA is the quality gate for the standard tier (no verify stage) → T13 SHIPS. Marked [x] in BUILD_PLAN.

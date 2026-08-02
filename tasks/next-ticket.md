@@ -1,172 +1,161 @@
-# Task: T13 — Static Pages & Homepage
+# Task: T15 — Premium visual identity & image-rich refresh
 
 ## Priority
 
-**High** — This is a launch-blocker. T13 makes live the footer/nav links that have shipped as intentional dead links since T2 (`/sobre-nosotros`, `/envios-y-devoluciones`, `/preguntas-frecuentes`, `/contacto`), delivers the Contact form that wires the tested-but-dark T9 `contact_relay` email seam, and builds the real homepage (currently a T2 placeholder that explicitly defers hero/featured content to T13). T14 (SEO/launch hardening) is `blocked by: T13`, so the whole store cannot ship until this lands.
+**High** — PosturPro's brand name is final but NO visual identity exists yet (PRODUCT.md Brand Commitments); the storefront currently ships the neutral create-next-app grayscale token world (`oklch(… 0 0)` everywhere). The owner volunteered a binding direction: the site must feel **premium** and **image-rich**. Every downstream launch task depends on this landing first — T16 (B2B landing) is explicitly "follows the T15 visual world," and T14 (SEO/perf/launch hardening) must run LAST so its metadata/sitemap/image-perf pass covers the final reskinned surfaces. Shipping launch on the neutral world would undercut all three positioning pillars (ergonomics authority, curated multi-brand, value-for-money) the store is built to sell.
 
 ## Complexity
 
-**medium** — Justification against the criteria:
+**medium** — justified against the criteria:
 
-- Spans 5–15+ files but follows existing patterns almost entirely: storefront pages copy the proven `marcas`/`categorias` server-component grammar; the Contact form copies the Q&A `useActionState` + form-state + custom-validation pattern; the rate limiter reuses `createSlidingWindowLimiter`; the email send reuses `sendContactRelay` verbatim.
-- Adds new UI surfaces (9 static pages, homepage hero + featured sections, contact form) and **one** new backend seam (contact server action + rate limiter wiring), but **no new data model** — `static_pages` and `store_settings` tables already exist with RLS read policies.
-- The one genuinely new-logic slice (contact form → rate-limit → sanitize → `sendContactRelay` → serializable form state) is a well-scoped copy of two existing patterns, not a new subsystem.
+- **Not low:** far more than a pattern-copy or bug fix. Touches every storefront surface (11 routes, ~40 storefront components), replaces the entire design-token world, introduces a new font pairing and a new config-driven image-slot system. That is architectural surface, not a <5-file change.
+- **Not high:** despite the breadth, this is a **token + asset + per-surface-application** reskin, NOT a new subsystem or data model. There are ZERO new database models, ZERO new migrations, ZERO new API endpoints, ZERO backend/business-logic changes, ZERO new dependencies beyond possibly a second `next/font` family. The token-swap seam already exists and is centralized (one `:root`/`.dark` block in `globals.css` + one `--font-sans` binding in `src/app/fonts.ts`), the image-slot pattern already exists (`HERO_IMAGE`/`SHOWROOM_MAP_IMAGE` config nulls degrading to token panels), the motion layer is already shipped and reused, and every surface already flows brand color/radius/font through token utilities. The work is broad but bounded, follows existing patterns, and adds new visual language + assets rather than new logic. That is textbook **medium** (new feature/visual system, follows existing patterns, adds new UI). The standard tier (PlanResearch → UI Design → Dev → ReviewFix → QA) is the right depth; auto-classify keeps it on the standard flow.
 
-It is NOT `high`: no new migrations for tables/RPCs (only a **data-only seed expansion** of `static_pages` + an optional additive-column decision for showroom — see Data Model note), no new integration, no architectural change. It is NOT `low`: 9 new routes + homepage rebuild + a new server action with abuse controls is well beyond a pattern-copy bug fix.
+The file count leans toward the top of medium; the mitigating factor that keeps it out of high is that the changes are homogeneous (token/class/asset application), reversible-by-token, and add no logic paths to test.
 
 ## Feature Type
 
-**full-stack** (`full-feature`).
-Frontend: 9 static pages, homepage hero + featured chairs + featured brands, Contact form UI, footer/nav link reconciliation. Backend: new `getStaticPageBySlug` read wrapper, new `submitContactForm` server action wiring `sendContactRelay` with rate limiting + input hygiene, seed-data expansion. Both storefront locales (es-MX default + en) apply. All pipeline stages run at full depth; UI Design (Stage 3) and UX (Stage 8) are load-bearing (hero + featured layout, form states, showroom map).
+**`ui-only`** — a pure visual/token/asset/typography reskin plus image-slot scaffolding. No hooks, no data-fetching, no state, no utils, no server actions change behavior. Per the CLAUDE.md Feature-Type rules, the UI Design stage (S2) runs at FULL depth (it is the heart of this task — the impeccable new-work flow), and Dev/ReviewFix/QA focus on visual application, regression-safety, a11y/perf floors, and the no-admin-regression boundary. QA is scoped to "the reskin broke nothing," not "new logic is correct" (there is none).
 
 ## User Story
 
-As a **prospective chair buyer in Mexico**, I want **a homepage that showcases featured chairs and brands, plus clear informational pages (about, shipping, returns, warranty, FAQ, privacy, terms, showroom) and a working way to contact the store**, so that **I can trust the store, understand its policies, find the showroom, and reach the owner before or after buying**.
-
-And as the **non-technical store owner**, I want **the contact form to email me the visitor's message reliably (and safely, without spam abuse)**, so that **I never miss a customer inquiry and my inbox is not flooded by bots**.
+As a **mobile-heavy Mexican shopper evaluating a quality chair**, I want **a storefront that looks and feels genuinely premium and image-rich the moment it loads**, so that **I trust PosturPro's ergonomics authority, curated multi-brand breadth, and value promise enough to buy online without a phone call** — while the owner keeps a single-token brand-swap seam and an asset-swap-ready image system so real photography and any future rebrand drop in without layout rework.
 
 ## Background
 
-What exists today:
+**What exists today (the neutral world = the anti-reference to replace):**
 
-- **Homepage** (`src/app/[locale]/page.tsx`) is a deliberate T2 placeholder: a localized `<h1>` + intro + two CTAs (`/sillas`, `/marcas`). Its own comment says "NO featured chairs, brands, or hero imagery — that is T13."
-- **Footer** (`src/components/layout/site-footer.tsx`) already links to `/sobre-nosotros`, `/envios-y-devoluciones`, `/preguntas-frecuentes`, `/contacto` — all currently **dead links** that render the localized in-shell 404 via the `[locale]/[...rest]` catch-all (T2 AC-10). **Nav** (`nav-items.ts`) links to `/contacto` (also dead).
-- **`static_pages` table exists** (migration `0004`): `id, slug (unique), title, body, is_published (default true), created_at, updated_at`. RLS: `anon` may `select` where `is_published = true` (migration `0005`). **Body is plain text (max 100k chars, CHECK in `0006`), NOT rich text / HTML.**
-- **Seed** (`scripts/seed-data/content.ts` via `scripts/seed.ts`) currently seeds **only 4** of the 9 required pages: `sobre-nosotros`, `envios-y-devoluciones`, `preguntas-frecuentes`, `contacto`. Missing: standalone Returns, Warranty, Aviso de Privacidad, Terms, Showroom — and the combined `envios-y-devoluciones` must be reconciled if shipping/returns are split.
-- **`store_settings` table exists** (`0003`): `store_name, contact_email, shipping_flat_rate_cents, free_shipping_threshold_cents, currency`. It has **NO showroom/address/hours/map/phone columns** — showroom data has no home today.
-- **i18n**: `static_pages` localizes via the generic `translations` table (`locale, entity_type='static_page', entity_id, field, value`) — but **no translation rows are seeded**, so English static-page content does not exist yet. UI chrome localizes via `src/messages/{es-MX,en}.json` namespaces (`footer`, `nav`, `home`, `catalog`, ...); there is **no `staticPages` namespace yet**.
-- **Contact email seam**: `sendContactRelay(input: ContactRelayInput): Promise<DispatchResult>` exists and is unit-tested (`src/lib/email/dispatch.ts`), but is **called nowhere**. It sends to `EMAIL_OWNER_ADDRESS`, HTML-escapes the message, and does NOT touch the `email_sends` order ledger (caller owns rate limiting). With no `EMAIL_API_KEY` (or `EMAIL_DEV_PREVIEW=1`) it logs a console preview and returns `{ ok: true, sent: false }`-style success; if `EMAIL_OWNER_ADDRESS` is absent it returns `{ ok: false, reason: "owner address unavailable" }`. **EMAIL_\* vars are blocked-on-user; the dev path is `EMAIL_DEV_PREVIEW=1`.**
-- **Rate-limiter template**: `createSlidingWindowLimiter({ windowMs, maxPerWindow, maxKeys })` (`src/lib/rate-limit/sliding-window.ts`), wrapped for checkout as `checkCheckoutRateLimit(ip)` keyed by client IP (`src/lib/request/client-ip.ts`), disabled in tests via a `*_RATE_LIMIT_DISABLED=1` env var. Q&A uses the same limiter keyed `ip|productId` with a honeypot field.
+- All color/radius live in ONE `:root` (+ `.dark`) block in `src/app/globals.css` (lines 51–131). Every value is grayscale `oklch(L 0 0)` — the literal create-next-app neutral default. `--radius: 0.625rem`. There is NO brand hue anywhere.
+- The single storefront font is `Inter` bound to `--font-sans` in `src/app/fonts.ts`. `--font-heading` currently *aliases* `--font-sans` (globals.css:12) — there is no real display face.
+- A rich, shipped motion layer (~20 CSS classes: `.enter-fade`, `.stagger`, `.card-lift`, `.link-arrow`, `.gallery-image`, `.cart-*`, `.drawer-*`, `.dialog-content-motion`, etc.) with `--ease-out`/`--ease-in-out`/`--ease-drawer` tokens, all `prefers-reduced-motion`-gated and hover-capability-gated. **This is the Emil motion authority and is NOT brand — it stays.**
+- Image-slot pattern already established: `HERO_IMAGE`, `SHOWROOM_MAP_IMAGE`, `SHOWROOM_MAP_URL` in `src/lib/config/static-pages.ts` are `string | null`, and every consumer degrades a `null` to a token-tinted glyph panel (never a broken `<img>`). Product images flow from the DB (picsum placeholders via `SEED_IMAGE_BASE_URL`) through `next/image`; `next.config.ts` allow-lists picsum + the Supabase Storage host.
+- There is **no `public/` directory yet** — new lifestyle/editorial image assets have nowhere to live and must be scaffolded.
+- The storefront is ~95% token-clean for BRAND color, but ~12 files hardcode SEMANTIC status colors (amber for warning/OXXO-SPEI-pending/low-stock, emerald for success/discount/free-shipping) — always paired with glyph+text (colorblind-safe). See Research Report §1.
 
-Why this matters: this is the last content/UX task before launch hardening (T14). It converts a functionally-complete store into a presentable, contactable, policy-complete storefront.
+**What's missing:** a committed premium visual world (palette, type pairing, spatial system, material language, signature composition) and image-rich art direction on every page. Creating this identity is IN SCOPE per PRODUCT.md — it is not a waiting-on-client gap.
+
+**Why the visual world is decided in S2, not here:** this ticket SCOPES the work. The impeccable skill's new-work flow (`.claude/skills/impeccable/reference/new-work.md`) owns choosing the world: it runs `concept-seed.mjs` to deal a direction, may serve a decision page, generates comp sketches, builds with full commitment, runs the finish reviewer, and writes `DESIGN.md` from the built world. **This ticket MUST NOT prescribe a palette, typeface, aesthetic, or "premium look" — doing so pre-empts the roll that keeps the design out of the category default.** The ticket's job is boundaries, image-slot architecture, the admin firewall, and the a11y/perf/test floors the chosen world must satisfy.
+
+**The load-bearing constraint (biggest risk, see Edge Cases + Research Report):** the brand tokens AND the font AND 5 shadcn ui primitives are physically SHARED between storefront and admin. The `:root` token block, the `sans` font export (`@/app/fonts`, imported by both `[locale]/layout.tsx` and `admin/layout.tsx` and `not-found.tsx`), and `src/components/ui/{button,badge,alert-dialog,dialog,tabs}.tsx` all feed admin. A naive "swap `:root` for the brand" or "swap the `sans` export" flows straight into the admin dashboard — which the ticket requires to stay UNTOUCHED. The reskin must be scoped to the storefront subtree, not applied at a seam admin also drinks from.
 
 ## Acceptance Criteria
 
 Each criterion is binary — PASS or FAIL.
 
-### Static pages (data-backed)
+**Design authority & documentation**
 
-- [ ] **AC-1**: All **9** static pages resolve at their Spanish slug in es-MX and under `/en/<slug>` in English, returning HTTP 200 with the page title as an `<h1>`: About (`/sobre-nosotros`), Contact (`/contacto`), Shipping policy (`/envios`), Returns policy (`/devoluciones`), Warranty (`/garantia`), FAQ (`/preguntas-frecuentes`), Aviso de Privacidad (`/aviso-de-privacidad`), Terms (`/terminos`), Showroom (`/showroom`). The final slug set is single-sourced in a constants module; the shipping/returns split vs. the current combined `/envios-y-devoluciones` footer slug MUST be reconciled (see AC-10).
-- [ ] **AC-2**: Each static page's `title` + `body` renders from the `static_pages` row read through a new typed wrapper `getStaticPageBySlug(slug, locale)` using the RLS-enforced public client — NOT hardcoded in the component.
-- [ ] **AC-3**: `scripts/seed-data/content.ts` seeds **all 9** pages with placeholder es-MX copy (`is_published = true`); Aviso de Privacidad and Terms are structured as real legal-document placeholders (headed sections), not a single sentence. Re-running the seed is idempotent (upsert on `slug`).
-- [ ] **AC-4**: English content for each static page renders from a seeded `translations` row (`locale='en', entity_type='static_page', field IN ('title','body')`); when an `en` translation row is absent for a page, the page falls back to the es-MX base `title`/`body` rather than 404ing or showing an empty page.
-- [ ] **AC-5**: A static page whose row is missing or has `is_published = false` returns the localized in-shell 404 (via `notFound()`), never a 500 and never a blank shell.
-- [ ] **AC-6**: Every static page exports `generateMetadata` producing a locale-correct `<title>` (validating the locale via `hasLocale`, falling back to `routing.defaultLocale`), consistent with the `marcas` page pattern.
+- [ ] AC-1: The impeccable new-work flow was run for the storefront (concept-seed direction dealt/acknowledged; commitment recorded), and `DESIGN.md` exists at the repo root, written from the BUILT world (not before the build), documenting the committed palette, type system, spacing/radius system, material language, and image art-direction rules.
+- [ ] AC-2: The direction contract (5-block THESIS/OWN-WORLD/STORY/FIRST VIEWPORT/FORM + FINISH line) is present in the emitted markup as an HTML comment in the storefront root layout body, and survives the production build (greppable in built output).
 
-### Homepage
+**Token replacement (the brand-swap seam stays centralized & swappable)**
 
-- [ ] **AC-7**: The homepage renders a **hero** section (localized headline + subcopy + primary CTA to `/sillas`), a **Featured chairs** section showing up to N product cards (reusing `ProductCard`/`ProductGrid`), and a **Featured brands** section showing up to M brand tiles (reusing `IndexTile` + `BrandLogo`). N and M are named constants.
-- [ ] **AC-8**: Featured chairs are fetched via the catalog query layer (`listProducts({ pageSize: N })` or a dedicated `listFeaturedProducts(limit)`); featured brands via `listBrands()` sliced to M (or `listFeaturedBrands(limit)`). No new "featured" DB flag/migration is introduced — selection is a bounded slice of existing active-content queries.
-- [ ] **AC-9**: When there are zero active products or zero brands, the corresponding homepage section is **omitted** (not rendered as an empty grid) and the rest of the homepage still renders. Hero always renders.
+- [ ] AC-3: The neutral grayscale token world is replaced with the committed premium palette. All brand color/radius values still live centrally in `src/app/globals.css` `:root` (+ `.dark` if a dark theme is committed) — no storefront component hardcodes a raw hex/oklch/rgb brand color or a raw radius; every brand value flows through a token utility (`bg-primary`, `text-foreground`, `border-border`, `rounded-md`, etc.).
+- [ ] AC-4: A single-token brand-swap remains true: editing only the `:root`/`.dark` values (and the font binding) re-skins the storefront, with no component-level color edits required. The "Brand Tokens" documentation block in `globals.css` is updated to reflect the new world and the (possibly expanded) token set.
+- [ ] AC-5: The typography system is upgraded to the committed premium pairing. If a display/heading face is introduced, it is wired via a real `--font-heading` binding (no longer aliasing `--font-sans`) and consumed by headings across storefront surfaces; body/heading faces load via `next/font` with `display: "swap"` and subsets sufficient for full es-MX glyph coverage (á é í ó ú ñ ¿ ¡ — ~160 accented chars in messages, Latin Extended-A required).
 
-### Footer / nav reconciliation
+**Per-surface application (every storefront surface reflects the new world)**
 
-- [ ] **AC-10**: Every footer and nav link that previously 404'd now resolves to a real page. If the shipping/returns split is adopted, `site-footer.tsx`'s `/envios-y-devoluciones` link + `footer.links.shipping` label are updated so no footer/nav link points at a nonexistent slug. There are **zero** dead internal links in the footer, header nav, and homepage after this task.
+- [ ] AC-6: The premium world is applied to ALL storefront surfaces, each visibly reflecting the committed identity (not the residual neutral look): homepage (hero + featured), catalog surfaces (`/sillas`, `/marcas`, `/categorias`, `/estilos` + their `[slug]` pages, product grid/cards, filters/toolbar), PDP (`/producto/[slug]` — gallery, purchase panel, specs, Q&A, recently-viewed), cart (`/carrito`), checkout shell (`/checkout` + confirmation `/checkout/confirmacion/[token]`), all 9 static pages incl. contact & showroom, and the persistent shell (header, footer, mobile nav, WhatsApp FAB) + the localized 404 and `error.tsx`.
+- [ ] AC-7: The persistent chrome (header wordmark/nav, footer, mobile drawer, language toggle, WhatsApp FAB) reflects the new identity while preserving every existing structural affordance and `data-testid`. The WhatsApp FAB stays a recognizable WhatsApp affordance (currently `bg-primary` — if the brand primary is no longer WhatsApp-green, S2 decides whether the FAB gets a dedicated brand/green token so it reads as WhatsApp).
 
-### Contact form (wires the T9 seam)
+**Image-slot system (image-rich, asset-swap-ready, no fabricated proof)**
 
-- [ ] **AC-11**: The Contact page renders a form with fields: name, email, optional subject, message — plus a hidden honeypot field (mirroring Q&A). Submitting valid input calls a new `submitContactForm` server action which calls `sendContactRelay({ fromName, fromEmail, subject, message })`.
-- [ ] **AC-12**: On a successful send (`DispatchResult.ok === true`, including dev-preview mode), the form shows a localized success state and clears the input values; `submissionId` increments per submit (idempotency-safe `useActionState` contract).
-- [ ] **AC-13**: Inputs are trimmed and length-capped before send (name, email, subject, message each have a named max constant); email is validated against the existing `EMAIL_PATTERN`; invalid input returns `status: "invalid"` with `fieldErrors` and preserved `values` — no email is sent.
-- [ ] **AC-14**: The action is rate-limited by client IP using the sliding-window limiter (dedicated `contact` limiter instance with its own window/max/maxKeys constants), disabled in tests via a `CONTACT_RATE_LIMIT_DISABLED=1`-style env flag. Over-limit returns `status: "rate-limited"` with preserved values and sends no email.
-- [ ] **AC-15**: A tripped honeypot returns a **fake success** (no email sent, no error surfaced), mirroring the Q&A anti-spam pattern.
-- [ ] **AC-16**: When `sendContactRelay` returns `{ ok: false }` (e.g. owner address unavailable, provider error), the form shows a localized error state with a retry affordance; the raw provider reason is **never** rendered to the user, only logged server-side.
-- [ ] **AC-17**: The message body reaching `sendContactRelay` is passed as-is (the template HTML-escapes it); the action must not itself inject unescaped user input into any HTML.
+- [ ] AC-8: An image-slot system exists for lifestyle/editorial imagery on the image-rich surfaces (at minimum: homepage hero + at least one homepage editorial/lifestyle band, and art-directed image slots defined for catalog/category and static/showroom surfaces per DESIGN.md). Every slot is config-driven (extends the existing `HERO_IMAGE`-style `string | null` config pattern under `src/lib/config/`), and every slot degrades gracefully to a token-styled placeholder when its asset is `null` — never a broken `<img>`, never layout collapse (the slot reserves its aspect box).
+- [ ] AC-9: Placeholder imagery is either high-quality licensed stock with verified-resolving URLs, or generated via the impeccable `generate-image.mjs` script, and is stored so a real-asset swap needs no layout rework (config path or `/public` asset swap only). Any synthetic imagery that a visitor could mistake for real proof is labeled/structured as placeholder. NO fabricated testimonials, customer names, review counts, sales figures, or press appear on any surface (PRODUCT.md Evidence posture — hard rule).
+- [ ] AC-10: `next.config.ts` `images.remotePatterns` allow-lists any new external image host used by placeholder assets (or assets are local under `/public`); no `next/image` renders from a non-allow-listed host (build/runtime would error).
 
-### Showroom
+**No-admin-regression (the firewall — binding)**
 
-- [ ] **AC-18**: The Showroom page renders a location block (address, hours, and either an embedded static map image OR a "Ver en mapas" link to Google/Apple Maps — no external map SDK). Showroom data (address, hours, map link/coords) is sourced from a single documented location (see Data Model Changes) with a config fallback, and degrades gracefully (renders address + hours text even if the map is unavailable).
+- [ ] AC-11: The `/admin` subtree is visually UNCHANGED by this task. The admin dashboard does not inherit the storefront's new brand palette or new display font. Verified by: (a) admin renders with its own (or the neutral) token/font world, and (b) the reskin does not edit any file under `src/components/admin/` or `src/app/admin/`, and does not change the shared `src/components/ui/*` primitives in a way that alters admin's appearance.
+- [ ] AC-12: The scope-boundary mechanism is explicit and documented: the new brand palette and display font are applied via the storefront root (`src/app/[locale]/layout.tsx`) / a storefront-scoped selector, NOT via the shared `sans` export or a shared seam that admin also consumes — OR admin explicitly opts out. Whichever mechanism is chosen, `DESIGN.md`/dev-done documents it so a future rebrand keeps the firewall.
 
-### i18n & accessibility (both locales)
+**Accessibility & performance floors**
 
-- [ ] **AC-19**: All static-page UI chrome (breadcrumb labels, contact form labels/placeholders/errors/success/rate-limit/error copy, homepage section headings, showroom labels) comes from a new `staticPages` (and/or `home`, `contact`) message namespace present in **both** `es-MX.json` and `en.json` with matching key structure — no hardcoded visible strings.
-- [ ] **AC-20**: Every page is keyboard-navigable and screen-reader sane: the contact form associates labels with inputs, exposes validation errors via `aria-describedby`/`role="alert"`, and announces async success/rate-limit/error via `role="status"`/`role="alert"`, mirroring the Q&A form.
+- [ ] AC-13: WCAG AA contrast holds on every storefront surface in the new world — body text, headings, muted text, buttons, links, badges, form fields, and all text over imagery (hero/lifestyle overlays included) meet AA (4.5:1 normal, 3:1 large). Status semantics remain glyph+text (never color-only). Focus rings remain visible against the new backgrounds.
+- [ ] AC-14: `prefers-reduced-motion` is honored on every surface (the existing gated motion layer is preserved; any new motion added by the reskin is `ease-out` on enter, `transform`/`opacity` only, interruptible, and RM-gated per the Emil rules in CLAUDE.md — impeccable owns look, Emil owns motion).
+- [ ] AC-15: The reskin does not regress performance: images use `next/image` with correct `sizes`/`priority` (LCP hero `priority`), no layout shift is introduced (image slots reserve aspect boxes, `min-h` reservations preserved), and no render-blocking font/asset is added that measurably worsens load. Font subsetting keeps the added type bundle bounded.
+
+**Bilingual parity, money, responsiveness, test-suite green**
+
+- [ ] AC-16: Bilingual parity is preserved — es-MX and en storefront message files stay symmetric (equal key sets, currently 614 lines each); any NEW visible copy the reskin introduces (e.g. an editorial-band headline, image alt text) is added to BOTH `src/messages/es-MX.json` and `src/messages/en.json` in lockstep, with no hardcoded visible strings.
+- [ ] AC-17: Integer-MXN-cents money display is unchanged — prices still render via `formatMXN`, `tabular-nums` alignment preserved, compare-at line-through preserved.
+- [ ] AC-18: Mobile-first responsiveness holds: no horizontal overflow at 320/375/768/1024/1280px on any storefront surface; the new world is designed mobile-first with desktop as the enhancement (PRODUCT.md principle "the phone is the store").
+- [ ] AC-19: The full test suite stays green after the reskin: `tsc --noEmit` clean, `eslint` clean on all touched files, unit + integration suites pass, and the storefront e2e suite passes. The storefront e2e suite asserts NO colors/fonts/computed-styles (confirmed — Research Report §2), so a visual reskin should not break e2e; the only reskin-fragile e2e assertions are STRUCTURAL (grid columns, compare-at `line-through`, honeypot off-screen `left`) — those structural signals MUST be preserved. Every `data-testid` asserted by the storefront e2e suite is preserved (or its rename is reconciled in the spec and justified). NO product behavior regresses.
 
 ## Edge Cases
 
-At least 5 that MUST be handled:
-
-1. **Missing seed row for a page** — `getStaticPageBySlug('garantia')` returns `null` (row never seeded / DB reset without seed) → page calls `notFound()` → localized in-shell 404, not a 500 or blank body. (AC-5)
-2. **Unpublished page** — a page row exists but `is_published = false` → anon RLS filters it out → wrapper returns `null` → in-shell 404. (AC-5)
-3. **Missing English translation row** — `/en/terminos` requested but no `translations` row for `en/static_page/terminos` → page renders the es-MX base `title`/`body` (documented fallback), never an empty page. (AC-4)
-4. **Contact email send failure** — `sendContactRelay` returns `{ ok: false, reason: "owner address unavailable" }` (EMAIL_OWNER_ADDRESS unset) or a provider timeout → form shows localized error + retry; user input preserved; raw reason logged not shown. (AC-16)
-5. **Contact-form abuse (bot flood)** — same IP submits >max within the window → `status: "rate-limited"`, no email, values preserved, localized "please wait" copy; the `maxKeys` ceiling bounds memory against a key-cardinality attack. (AC-14)
-6. **Honeypot tripped** — a bot fills the hidden field → fake success, no send, no error leaked. (AC-15)
-7. **Oversized / hostile message** — a 100k-char message or one containing `<script>`/HTML/`javascript:` → trimmed + length-capped before send; the template HTML-escapes the body; nothing is rendered raw. (AC-13, AC-17)
-8. **Empty catalog on homepage** — DB reset to 0 active products/brands → featured sections omitted, hero still renders, no empty grids or layout collapse. (AC-9)
-9. **`store_settings` row absent** — homepage/footer store-name/free-shipping/showroom degrade to config fallbacks (existing `getStoreSettingsStatic` returns `null` gracefully) — no crash.
-10. **Slug collision / reserved path** — a static-page slug must not shadow an existing route (`sillas`, `marcas`, `categorias`, `estilos`, `carrito`, `checkout`, `producto`); the dynamic static-page route must not intercept those. App-Router segment precedence handles this only if the static route is a distinct non-catch-all segment; slugs MUST be validated against the reserved set at seed time and at `generateStaticParams`.
+1. **Shared-seam bleed into admin (the headline risk).** The dev swaps the `:root` tokens or the `sans` font export and the admin dashboard silently inherits the storefront brand color/display font → AC-11/AC-12 FAIL. Expected: the reskin is scoped so admin renders exactly as before; verify by screenshotting `/admin/login` and an authed admin page before/after and confirming no palette/font change.
+2. **Shared ui-primitive drift.** `src/components/ui/{button,badge,alert-dialog,dialog,tabs}.tsx` are imported by admin (24× button, 8× badge, 5× alert-dialog, 4× dialog, 2× tabs). If the reskin restyles these primitives directly, admin's buttons/badges/dialog titles change too (note `dialog.tsx`/`alert-dialog.tsx` consume `font-heading`). Expected: primitives keep flowing through tokens; any storefront-specific treatment is applied at the storefront call-site or via storefront-scoped tokens, not baked into the shared primitive.
+3. **Null image slot (no real photography exists).** Every new image slot must render its token placeholder when the asset is `null` (the Phase-1 default) — no broken image, no collapsed layout, aspect box reserved so zero CLS whether the asset is present or absent. Expected: hero and every new lifestyle band look intentional and premium even with all assets `null`.
+4. **es-MX accented glyphs in a display face.** The committed premium heading face may lack full Latin-Extended coverage; Spanish copy is accent-heavy (¿ ¡ ñ á é í ó ú appear ~160× in es-MX messages). A face missing glyphs falls back mid-word and looks broken. Expected: the chosen faces cover es-MX glyphs (correct `next/font` subsets), verified on a Spanish-heavy heading (e.g. a category title with "ñ"/"í" / a "¿…?" question).
+5. **Text-over-image contrast failure.** An image-rich hero/lifestyle band places text over a photo; a light-on-light or dark-on-dark region drops below AA. Expected: overlays/scrims/text-shadows or a committed contrast strategy guarantee AA on every text-over-image region, including when a real photo (unknown luminance) later swaps into a slot.
+6. **e2e testid/text/structural-assertion breakage.** The storefront e2e suite asserts many `data-testid`s and a few STRUCTURAL computed styles (grid `gridTemplateColumns` in catalog, compare-at `textDecorationLine: line-through` in PDP, honeypot off-screen `left` in contact/mobile-filter). A reskin that renames a testid, drops the `line-through`, changes the grid structure, or moves the honeypot breaks e2e. Expected: preserve all asserted testids and those structural signals; if a rename is warranted, update the spec in lockstep and justify it.
+7. **Dark mode divergence.** A `.dark` block exists (globals.css:99–131). If the committed world is light-only, the reskin must decide what `.dark` does (drop it, or make it a real committed dark theme) — leaving stale neutral `.dark` values half-applied yields a broken dark experience if any surface triggers it. Expected: `.dark` is either fully re-committed to the new world or intentionally decommissioned, documented in DESIGN.md.
+8. **`global-error.tsx` hardcoded inline styles.** The catastrophic root error boundary uses hardcoded hex (`#666`/`#111`/`#ccc`/`#fff`) + `system-ui` by design (it replaces the whole document and cannot rely on tokens/providers). Expected: this remains an intentional, documented exception — the reskin does NOT need to token-ify it, but should confirm the bilingual fallback message still reads acceptably and note the exception so a reviewer does not flag it as a token violation.
+9. **Semantic status colors (amber/emerald) in the new palette.** ~12 storefront files hardcode `text-amber-*`/`text-emerald-*` for warning/success semantics (OXXO-SPEI pending, low-stock, discount applied, free-shipping achieved). Expected: S2/dev decides one consistent treatment — either keep them as orthogonal status semantics (they are always glyph+text, AA-safe) or promote them to `--warning`/`--success` tokens; either way, apply it consistently across all ~12 files and keep AA + glyph+text. Do NOT leave a mix of the old neutral world's amber next to the new brand's other colors clashing.
 
 ## Error States Table
 
 | Trigger | User Sees | System Does |
-| --- | --- | --- |
-| Static page slug not seeded / unpublished | Localized in-shell 404 (header + footer intact) | `getStaticPageBySlug` returns `null` → `notFound()`; warning logged |
-| `en` translation row missing | Page in Spanish base copy (no error) | Wrapper falls back to base `title`/`body`; debug log only |
-| Contact: invalid email/empty required field | Inline field error(s) under the field, focus preserved, values kept | Action returns `{ status: "invalid", fieldErrors, values, submissionId }`; no send |
-| Contact: rate-limited | "Espera un momento antes de enviar otro mensaje" banner (`role="alert"`) | Limiter denies; action returns `{ status: "rate-limited", values }`; no send |
-| Contact: honeypot filled | Success state (as if sent) | No send; logged as suspected bot; returns fake success |
-| Contact: `sendContactRelay` `{ ok:false }` | "No pudimos enviar tu mensaje, inténtalo de nuevo" + retry, values preserved (`role="alert"`) | Raw `reason` logged with context; action returns `{ status: "error", values }` |
-| Contact: unexpected exception in action | Same generic error state as above | Exception caught, logged; returns `{ status: "error" }` — never throws to the client |
-| Homepage: zero products/brands | Featured section omitted; hero + other sections render | Section conditionally rendered on non-empty list |
-| Showroom: map asset/link unavailable | Address + hours text only (no broken embed) | Map slot omitted; text block always renders |
+| ------- | --------- | ----------- |
+| Image slot asset is `null` (Phase-1 default) | Token-styled placeholder panel with a glyph in the slot's reserved aspect box — premium, intentional, never broken | Config value `null` → component renders fallback branch; no network request, no CLS |
+| Real image URL 404s / fails at runtime | `next/image` empty box within the reserved aspect ratio (no layout jump); alt text present | Slot reserves aspect box; error logged if applicable |
+| New image host not allow-listed in `next.config.ts` | Build fails (or `next/image` throws at runtime) | Caught in dev/CI before ship; host added to `remotePatterns` or asset moved to `/public` |
+| Display font glyph missing for a Spanish accent | Fallback-font glyph mid-word (visible defect) | Prevented at build by correct `next/font` subset selection — a selection-time guarantee, not runtime recovery |
+| `store_settings` read fails (footer/header) | Store name falls back to `SEED_STORE_NAME`; free-shipping line omitted (existing degrade, unchanged) | Existing `getStoreSettingsStatic` null-degrade preserved by the reskin |
+| Catastrophic root-layout error | Neutral bilingual "Algo salió mal / Something went wrong" screen (system-ui, hardcoded styles) | `global-error.tsx` replaces the document; intentional token-free exception (edge 8) |
 
 ## UX Requirements
 
-For every state the UI can be in:
+For every state a storefront surface can be in, in the new world (the reskin must not lose any existing state treatment):
 
-- **Loading**: Static pages and homepage are server-rendered (no client spinner — data resolves server-side like `marcas`). Contact form submit uses `useActionState` pending state to disable the submit button and show an inline "Enviando…" state on the button (no full-page spinner), mirroring existing forms.
-- **Empty**: Homepage with no products/brands omits those sections (never an empty grid). A static page with no row → in-shell 404 with a CTA back to the catalog (reuse the existing `not-found.tsx` shell). FAQ/policy pages always have seeded placeholder copy so they are never blank.
-- **Error**: Contact send failure → inline error banner (`role="alert"`) with a retry, input values preserved. Static-page/homepage data errors degrade gracefully (config fallbacks for settings; sections omitted) — never a raw error page for a content miss.
-- **Success**: Contact submit success → success banner (`role="status"`, `.enter-fade`, auto-hide consistent with existing form success cadence) + cleared inputs. In dev preview mode (`EMAIL_DEV_PREVIEW=1`) this same success renders (message logged to console).
-- **Mobile (375px)**: Hero stacks vertically (headline → subcopy → CTA full-width or intrinsic); featured chairs grid is 1 column; featured brands 1 column; showroom map/image is `max-w-full`; contact form is a single stacked column with `min-h-11` touch targets. No horizontal overflow (long emails/addresses `break-words`).
-- **Tablet (768px)**: Featured chairs 2 columns; featured brands 2 columns; hero may go two-column (copy + image) if a hero image is used; content pages stay `max-w-prose` for readable line length.
+- **Loading:** existing skeletons (`catalog-skeleton`, `pdp-skeleton`, `checkout-skeleton`, `cart-skeleton`) are restyled to the new token world (they must read as the premium brand, not neutral gray) while preserving their layout-reservation role (no CLS). Hero LCP image (if present) is `priority`.
+- **Empty:** catalog no-results, empty cart, empty checkout, empty featured-sections keep their existing empty-state components and CTAs, restyled to the new world with the same wayfinding.
+- **Error:** localized 404 and `[locale]/error.tsx` reflect the new world (restyled, testids preserved); `global-error.tsx` stays the neutral bilingual exception.
+- **Success:** order confirmation, add-to-cart feedback, discount-applied, free-shipping-achieved keep their success semantics legibly in the new palette — AA preserved, glyph+text preserved.
+- **Mobile (375px):** every surface designed mobile-first; no horizontal overflow; hero/lifestyle images stack sensibly; nav collapses to the drawer; touch targets ≥ 44px preserved.
+- **Tablet (768px):** grids and split layouts (hero copy/image, PDP gallery/purchase, checkout summary) reflow at their existing breakpoints, restyled; no dead space or overflow.
 
 ## Technical Approach
 
+> The specific palette, faces, radius scale, spacing rhythm, image compositions, and signature interaction are decided by S2 (impeccable new-work) and recorded in DESIGN.md — NOT prescribed here. Below is the structural approach the chosen world plugs into.
+
 ### Files to Create
 
-- `src/lib/content/static-pages.ts` — typed read wrapper: `getStaticPageBySlug(slug, locale)` (RLS public client, overlays `translations` for the requested locale with es-MX-base fallback), returns `{ title, body } | null`; `unstable_cache` with a `static-pages` tag, degrades to `null` like `store-settings.ts`. `export type StaticPage`.
-- `src/lib/config/static-pages.ts` (or extend `src/lib/config/`) — single source of the 9 page slugs + a `staticPagePath(slug)` helper + reserved-slug guard set; showroom config fallback (address/hours/map link).
-- `src/app/[locale]/[pageSlug]/page.tsx` — **one** dynamic route rendering any text-only static page by slug (server component: `generateStaticParams` over the known slug set, `generateMetadata`, `setRequestLocale`, `getStaticPageBySlug` → `notFound()` on null, breadcrumb + `max-w-prose` body). Prefer a distinct dynamic segment over 9 near-identical folders. Give Contact and Showroom their own explicit route folders (`contacto/`, `showroom/`) since they need bespoke UI beyond title+body; the generic route serves the other 7.
-- `src/app/[locale]/contacto/page.tsx` + `contact-form.tsx` (client) + `actions.ts` (`submitContactForm` server action) + `contact-form-state.ts` — copy the Q&A form/action/state grammar (`useActionState`, honeypot, custom validation, serializable state).
-- `src/lib/contact/submit-guard.ts` — pure validation (`validateContactSubmission`: trim, length caps, email pattern, honeypot) mirroring `src/lib/qa/submit-guard.ts`.
-- `src/lib/contact/rate-limit.ts` — `checkContactRateLimit(ip)` wrapping a dedicated `createSlidingWindowLimiter` instance + `CONTACT_RATE_LIMIT_*` constants + `CONTACT_RATE_LIMIT_DISABLED` env check (mirror `src/lib/checkout/rate-limit.ts`).
-- `src/app/[locale]/showroom/page.tsx` — showroom layout (address, hours, static map/link).
-- Homepage section components under `src/components/home/` — e.g. `hero.tsx`, `featured-products.tsx`, `featured-brands.tsx` (server components composing existing `ProductGrid`/`IndexTile`).
+- `DESIGN.md` (repo root) — written by the impeccable documenter at finish, from the built world (AC-1).
+- `public/` (directory) + placeholder image assets — the asset home that does not exist yet; lifestyle/editorial/hero placeholders live here (or on an allow-listed host).
+- New storefront-scoped homepage editorial/lifestyle section component(s) under `src/components/home/` (e.g. an editorial band) as the committed direction requires — reusing the existing `Hero`/`section-header` grammar where possible.
+- (If the world uses a storefront-scoped font/theme wrapper rather than global `:root`) a thin storefront theme wrapper/class — see Files to Modify, AC-12.
 
 ### Files to Modify
 
-- `scripts/seed-data/content.ts` — expand `STATIC_PAGES` from 4 → 9 pages with structured placeholder copy (es-MX) + English translation fixtures; export slug constants shared with the config module.
-- `scripts/seed.ts` — seed `translations` rows for static pages (currently seeds none); update the seed summary count.
-- `src/app/[locale]/page.tsx` — replace the T2 placeholder with hero + featured chairs + featured brands composition.
-- `src/components/layout/site-footer.tsx` — reconcile `STORE_LINKS`/`HELP_LINKS` hrefs with the final 9-slug set (split shipping/returns if adopted); ensure no dead link.
-- `src/components/layout/nav-items.ts` — verify `/contacto` now live (no change if slug unchanged).
-- `src/messages/es-MX.json` + `src/messages/en.json` — add `staticPages`/`contact`/`home.featured`/`showroom` namespaces (matching keys in both).
-- `src/lib/seed-invariants*.test.ts` — update seed-count invariants for the new page count.
+- `src/app/globals.css` — replace the neutral `:root` (+ `.dark`) token values with the committed palette/radius; update the "Brand Tokens" doc block; add a real `--font-heading` binding if a display face is introduced; preserve the entire motion layer and the `.static-heading:target`/status conventions verbatim.
+- `src/app/fonts.ts` — introduce the committed body/heading `next/font` families with es-MX-covering subsets. **Scope carefully:** this export is shared with admin + `not-found.tsx` (AC-12) — the new brand font must reach storefront without changing admin's font (e.g. a separate storefront font binding, or the display face applied only under the storefront layout).
+- `src/app/[locale]/layout.tsx` — apply the storefront-scoped brand theme/font wrapper; add the direction-contract HTML comment as the first body child (AC-2). This is the storefront firewall boundary.
+- `src/lib/config/static-pages.ts` (and/or a new `src/lib/config/` image-slot module) — add config-driven `string | null` slots for any new lifestyle/editorial imagery, mirroring the `HERO_IMAGE` pattern.
+- `next.config.ts` — add any new image host to `images.remotePatterns` (AC-10), if placeholders are not local.
+- Storefront surface files as needed to APPLY the world (homepage `page.tsx`, `Hero`, product-card, catalog toolbar/filters, PDP components, cart/checkout shells, static-page body, header/footer/mobile-nav/whatsapp-button, 404/error) — primarily className/token/asset-slot edits, plus the ~12 semantic-color files (Research Report §1) reconciled consistently.
+- `src/messages/es-MX.json` + `src/messages/en.json` — any new visible copy the reskin introduces, in lockstep (AC-16).
+- Storefront e2e specs — ONLY where an intended structural/testid change requires reconciliation (AC-19).
 
 ### Data Model Changes
 
-- **No new tables, no new RPCs.** `static_pages` and `store_settings` already exist with public RLS read.
-- **Data-only seed change**: expand `static_pages` from 4 → 9 rows (idempotent upsert on `slug`) + seed `en` `translations` rows. No DDL required for the pages themselves.
-- **Showroom fields (decision required — flagged in research)**: `store_settings` has no address/hours/map columns. Option **(A)** store showroom content inside the `showroom` static page `body` (zero schema change, honors "placeholder copy" scope) + map link/coords in `src/lib/config`; Option **(B)** add additive nullable columns to `store_settings` via a new migration `0014`. **Recommend (A) for Phase 1** (no admin UI to edit these until Phase 2 content editing). Document the choice in dev-done.
+- **None.** Zero migrations, zero schema changes, zero DB writes. (Migrations remain at 0013; next is 0014, untouched by T15.)
 
 ### API Endpoints
 
-- **No new HTTP route handlers.** The contact form uses a **server action** (`submitContactForm`), consistent with Q&A and checkout — not an `/api/*` endpoint. Signature: `submitContactForm(prevState: ContactFormState, formData: FormData): Promise<ContactFormState>`.
-- Static pages and homepage are server-component page reads, no API surface.
+- **None.** No new or changed routes/handlers/server actions. Pure presentation-layer task.
 
 ### Dependencies
 
-- **No new packages.** Reuses in-repo modules only: `next-intl` (i18n), `sendContactRelay` (email), `createSlidingWindowLimiter` (rate limit), `createPublicClient` (RLS reads), existing catalog queries + card/tile/grid components, `@hugeicons/react` for icons. A static map is a plain `<img>`/link (no map SDK) to honor the no-external-dependency + CSP posture.
+- **Likely none new.** At most a second `next/font/google` (or `next/font/local`) family import — no new npm package. If the committed world genuinely needs a new package (e.g. a font not on Google Fonts, delivered as a local font file), it is added minimally, justified in dev-done, must not bloat the client bundle or violate the CSP posture. Prefer `next/font` (self-hosted, no external request) over any runtime web-font CDN.
 
 ## Out of Scope
 
-- Rich-text / WYSIWYG editing of static pages (Phase 2). Body stays plain text rendered as structured paragraphs.
-- Admin UI to edit static-page content, homepage sections, or showroom fields (Phase 2 homepage section manager + rich-text editor).
-- A "featured" DB flag or homepage section-ordering model — featured content is a bounded slice of existing active queries.
-- Interactive/embedded map SDK (Google Maps JS, Mapbox) — a static image or maps deep-link only.
-- Newsletter signup, social sharing, related products, autocomplete (Phase 2).
-- Real legal copy for Aviso de Privacidad / Terms — **placeholder** structured copy only (real text is a pending client input per PRODUCT_SPEC).
-- Wiring real `EMAIL_*` / `WHATSAPP_PHONE_E164` values — blocked-on-user; dev path is `EMAIL_DEV_PREVIEW=1`; WhatsApp button stays hidden until configured (existing guard).
-- SEO metadata beyond a per-page `<title>` (sitemap, structured data, cookie consent are T14).
+- Any change to the `/admin` subtree (`src/app/admin/*`, `src/components/admin/*`) or to shared `src/components/ui/*` primitives in a way that alters admin's appearance (AC-11 forbids it).
+- Backend, business logic, data model, migrations, API routes, server actions, payment/checkout/order logic, email templates, packing slips.
+- T16's B2B landing page (separate task; follows this world).
+- T14's SEO/analytics/sitemap/structured-data/cookie-consent/error-monitoring work (runs LAST, after this).
+- Real photography, real testimonials, real showroom address/map, real legal copy — all remain owner-provided placeholders; the reskin structures slots for them but does NOT fabricate them.
+- Rich-text page editing, customer accounts, discount-code management UI, or any Phase 2 feature.
+- Re-architecting the motion layer — the shipped Emil motion classes are the motion authority and are preserved.
