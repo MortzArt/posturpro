@@ -45,7 +45,7 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 - [x] **T13 — Static pages & homepage** (tier: standard; PlanResearch → UI Design → Dev → ReviewFix → QA PASS, HIGH, 2026-08-02)
   Data-backed static pages with placeholder copy: About, Contact (form emails owner), Shipping policy, Returns policy, Warranty, FAQ, Aviso de Privacidad, Terms, Showroom (location/map/hours). Homepage: hero, featured chairs, featured brands. `blocked by: T2`
 
-- [ ] **T15 — Premium visual identity & image-rich refresh** (tier: standard)
+- [x] **T15 — Premium visual identity & image-rich refresh** (tier: standard; PlanResearch → UI Design → Dev → ReviewFix → QA PASS, HIGH, 2026-08-02)
   Design PosturPro's premium visual identity (brand is final, no identity exists — see PRODUCT.md Brand Commitments) via the `impeccable` skill (new-work: replace the neutral world; write DESIGN.md). Apply across ALL storefront surfaces: homepage, catalog/PDP, static pages, cart/checkout shells. Image-rich direction: define image slots + art direction on every page, using high-quality licensed-stock/generated placeholders structured for asset swap (no real photography exists — never fabricate proof). Tokens stay centralized/swappable. Admin untouched. `blocked by: T13`
 
 - [ ] **T16 — B2B landing page (offices, quote form)** (tier: standard)
