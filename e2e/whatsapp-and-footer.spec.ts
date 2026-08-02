@@ -33,14 +33,19 @@ test.describe("footer graceful degrade (AC-7, AC-15, edge case 2)", () => {
     // Store name always resolves (config fallback when the row is absent).
     await expect(page.getByTestId("footer-store-name")).not.toBeEmpty()
 
-    // Real Spanish static-page slugs (may be dead until T13, links present).
+    // Real Spanish static-page slugs — LIVE after T13 (combined shipping/returns
+    // slug was split into /envios + /devoluciones).
     await expect(page.getByTestId("footer-link-about")).toHaveAttribute(
       "href",
       "/sobre-nosotros",
     )
     await expect(page.getByTestId("footer-link-shipping")).toHaveAttribute(
       "href",
-      "/envios-y-devoluciones",
+      "/envios",
+    )
+    await expect(page.getByTestId("footer-link-returns")).toHaveAttribute(
+      "href",
+      "/devoluciones",
     )
     await expect(page.getByTestId("footer-link-faq")).toHaveAttribute(
       "href",

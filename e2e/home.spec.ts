@@ -45,7 +45,7 @@ test.describe("/ renders the Spanish shell by default (AC-1, AC-12)", () => {
     await expect(copyright).toContainText(String(new Date().getFullYear()))
   })
 
-  test("renders the localized homepage placeholder heading + CTAs", async ({
+  test("renders the localized hero heading + CTAs (T13 AC-7)", async ({
     page,
   }) => {
     await page.goto("/")
@@ -53,8 +53,13 @@ test.describe("/ renders the Spanish shell by default (AC-1, AC-12)", () => {
     // so the assertion is stable during the hydration window in which Radix's
     // force-mounted (closed) drawer can transiently perturb the a11y name tree.
     await expect(page.locator("main h1")).toHaveText(/sillas ergonómicas/i)
-    await expect(page.getByTestId("home-cta-catalog")).toBeVisible()
-    await expect(page.getByTestId("home-link-brands")).toBeVisible()
+    // Hero CTA → catalog, secondary link → brands (T13 renamed the testids).
+    const cta = page.getByTestId("hero-cta-catalog")
+    await expect(cta).toBeVisible()
+    await expect(cta).toHaveAttribute("href", "/sillas")
+    const brands = page.getByTestId("hero-link-brands")
+    await expect(brands).toBeVisible()
+    await expect(brands).toHaveAttribute("href", "/marcas")
   })
 
   test("has no horizontal scroll on the homepage (AC-14)", async ({ page }) => {
