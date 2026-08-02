@@ -40,15 +40,14 @@ export async function NoResults({
   return (
     <div className="flex flex-col gap-10" data-testid="no-results">
       <div className="enter-fade flex flex-col items-center gap-4 px-4 py-8 text-center">
-        <HugeiconsIcon
-          icon={SearchRemoveIcon}
-          size={48}
-          strokeWidth={1.5}
+        <span
           aria-hidden
-          className="text-muted-foreground"
-        />
+          className="flex size-20 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground/40"
+        >
+          <HugeiconsIcon icon={SearchRemoveIcon} size={40} strokeWidth={1.5} />
+        </span>
         <div className="flex w-full max-w-prose flex-col gap-1">
-          <h2 className="text-lg font-semibold tracking-tight break-words">
+          <h2 className="font-heading text-lg font-semibold tracking-tight break-words">
             {heading}
           </h2>
           {queryEcho ? (
@@ -69,7 +68,7 @@ export async function NoResults({
 
       {popular.length > 0 ? (
         <section aria-label={popularHeading} data-testid="popular-strip">
-          <h2 className="mb-6 text-center text-sm font-semibold tracking-tight text-muted-foreground">
+          <h2 className="mb-6 text-center font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             {popularHeading}
           </h2>
           <ProductGrid products={popular} />

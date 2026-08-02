@@ -60,6 +60,11 @@
       "brandsHeading": "Brands",
       "viewAllProducts": "View all chairs",
       "viewAllBrands": "View all brands"
+    },
+    "editorial": {
+      "title": "Chairs chosen for how they care for your body",
+      "body": "Every chair at PosturPro is curated for ergonomics and value — not for its label.",
+      "imageAlt": "Workspace with an ergonomic chair"
     }
   },
   "notFound": {

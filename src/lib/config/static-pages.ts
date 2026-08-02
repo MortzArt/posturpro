@@ -108,12 +108,13 @@ export const HOME_FEATURED_PRODUCTS = 8;
 export const HOME_FEATURED_BRANDS = 6;
 
 /**
- * Hero media asset (a shipped placeholder under `/public`), or `null` to render
- * the token-tinted glyph panel instead of a broken `<img>`. No real photography
- * exists yet, so this is `null` in Phase 1; set it to a public path when a hero
- * image lands and the Hero renders it via `next/image`.
+ * Hero media asset (a shipped licensed Unsplash photo under `/public`), or
+ * `null` to render the token-tinted glyph panel instead of a broken `<img>`.
+ * T15: filled with an art-directed ergonomic-chair photo (bright cool-neutral
+ * daylight; provenance in `public/images/SOURCES.md`). Set back to `null` to
+ * restore the blank-tile placeholder — the Hero degrades gracefully either way.
  */
-export const HERO_IMAGE: string | null = null;
+export const HERO_IMAGE: string | null = "/images/hero/ergonomic-chair.jpg";
 
 /* ------------------------------------------------------------------------- *
  * Showroom config (Option A): address/hours copy lives in the `showroom` page

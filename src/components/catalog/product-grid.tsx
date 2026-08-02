@@ -47,7 +47,7 @@ export async function ProductGrid({
 
   return (
     <ul
-      className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 md:gap-x-6 md:gap-y-10 lg:grid-cols-4"
+      className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 lg:gap-6"
       data-testid="product-grid"
     >
       {products.map((product, index) => (

@@ -117,7 +117,7 @@ export function VariantSelector({
                 "swatch-press relative flex size-9 items-center justify-center overflow-hidden rounded-full border border-border",
                 "outline-none ring-offset-background group-focus-visible/swatch:ring-2 group-focus-visible/swatch:ring-ring group-focus-visible/swatch:ring-offset-2",
                 isSelected &&
-                  "ring-2 ring-foreground ring-offset-2 ring-offset-background",
+                  "ring-2 ring-primary ring-offset-2 ring-offset-background",
                 isOut && "opacity-60",
               )}
               style={{

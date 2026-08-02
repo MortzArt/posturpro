@@ -5,7 +5,8 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { routing } from "@/i18n/routing";
 import { getStoreSettingsStatic } from "@/lib/store-settings";
 import { SEED_STORE_NAME } from "@/lib/config";
-import { sans } from "@/app/fonts";
+import { sans, headingSerif } from "@/app/fonts";
+import { DirectionContract } from "@/components/layout/direction-contract";
 import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { WhatsAppButton } from "@/components/layout/whatsapp-button";
@@ -70,8 +71,12 @@ export default async function LocaleLayout({
   const storeName = settings?.store_name ?? SEED_STORE_NAME;
 
   return (
-    <html lang={locale} className={cn("h-full", sans.variable)}>
-      <body className="min-h-full bg-background font-sans text-foreground antialiased">
+    <html
+      lang={locale}
+      className={cn("h-full", sans.variable, headingSerif.variable)}
+    >
+      <body className="theme-storefront min-h-full bg-background font-sans text-foreground antialiased">
+        <DirectionContract />
         <NextIntlClientProvider>
           <CartProvider>
             <div className="flex min-h-dvh flex-col">

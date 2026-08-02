@@ -11,8 +11,8 @@ import { PRODUCTS_PER_PAGE } from "@/lib/config";
 /** A single skeleton card (image box + two text bars). */
 function SkeletonCard() {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="aspect-[4/5] w-full bg-muted motion-safe:animate-pulse" />
+    <div className="overflow-hidden rounded-md border border-border bg-card">
+      <div className="m-2 aspect-[4/5] rounded-md border border-primary/30 bg-muted motion-safe:animate-pulse" />
       <div className="flex flex-col gap-2 p-3 md:p-4">
         <div className="h-3 w-1/3 rounded bg-muted motion-safe:animate-pulse" />
         <div className="h-4 w-2/3 rounded bg-muted motion-safe:animate-pulse" />
@@ -26,7 +26,7 @@ function SkeletonCard() {
 export function ProductGridSkeleton() {
   return (
     <ul
-      className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 md:gap-x-6 md:gap-y-10 lg:grid-cols-4"
+      className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 lg:gap-6"
       aria-hidden
       data-testid="product-grid-skeleton"
     >

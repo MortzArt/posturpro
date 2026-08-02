@@ -25,14 +25,13 @@ export function EmptyState({ message, ctaLabel, ctaHref }: EmptyStateProps) {
       className="enter-fade flex min-h-[40vh] flex-col items-center justify-center gap-4 px-4 text-center"
       data-testid="empty-state"
     >
-      <HugeiconsIcon
-        icon={Chair01Icon}
-        size={48}
-        strokeWidth={1.5}
+      <span
         aria-hidden
-        className="text-muted-foreground"
-      />
-      <p className="text-lg font-semibold tracking-tight">{message}</p>
+        className="flex size-20 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground/40"
+      >
+        <HugeiconsIcon icon={Chair01Icon} size={40} strokeWidth={1.5} />
+      </span>
+      <p className="font-heading text-lg font-semibold tracking-tight">{message}</p>
       <Button asChild size="lg" className="min-h-11 px-4">
         <Link href={ctaHref} data-testid="empty-state-cta">
           {ctaLabel}

@@ -42,7 +42,7 @@ export function ProductQa({
 
   return (
     <section className="mt-10 md:mt-12" data-testid="product-qa">
-      <h2 className="mb-4 text-sm font-medium tracking-tight text-foreground">
+      <h2 className="mb-4 font-heading text-sm uppercase tracking-wide text-foreground">
         {heading}
       </h2>
 

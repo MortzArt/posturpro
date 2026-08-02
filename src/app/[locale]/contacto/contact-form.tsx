@@ -352,7 +352,7 @@ function FormBanner({
       <p
         role="alert"
         data-testid="contact-rate-limited"
-        className="enter-fade flex items-start gap-2 rounded-md bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400"
+        className="enter-fade flex items-start gap-2 rounded-md bg-warning/10 p-3 text-sm text-warning"
       >
         <HugeiconsIcon
           icon={Alert02Icon}
@@ -436,7 +436,7 @@ function FieldError({
 
 /**
  * Live character counter tied to the textarea via `aria-describedby`. Announces
- * only near the limit (avoids per-keystroke chatter): muted → amber within the
+ * only near the limit (avoids per-keystroke chatter): muted → warning within the
  * last 10% → destructive at the cap.
  */
 function CharacterCounter({
@@ -462,7 +462,7 @@ function CharacterCounter({
         atLimit
           ? "text-destructive"
           : warn
-            ? "text-amber-600 dark:text-amber-400"
+            ? "text-warning"
             : "text-muted-foreground",
       )}
     >

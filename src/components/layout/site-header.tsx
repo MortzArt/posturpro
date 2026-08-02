@@ -45,7 +45,7 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
           href="/"
           data-testid="header-wordmark"
           aria-label={storeName}
-          className="min-w-0 shrink truncate rounded-md text-base font-semibold tracking-tight text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-w-0 shrink truncate rounded-md font-heading text-base font-bold uppercase tracking-wide text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {storeName}
         </Link>

@@ -10,7 +10,8 @@
  * handoff ("Pagar ahora" → "Redirigiendo…", `aria-busy`), no invented spinner
  * (checkout precedent, UI principle 6). All motion reuses existing globals.css
  * classes. Error/unavailable use the `GlobalBanner` destructive shape; paid uses
- * `role="status"` emerald; processing/voucher use neutral/amber.
+ * `role="status"` success; processing/voucher use a calm warning panel (never
+ * error-red — pending is normal, PRODUCT.md).
  */
 import { useCallback, useState, useTransition } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -286,10 +287,10 @@ function UnavailableCard({
   retryLabel: string;
 }) {
   return (
-    <Card testId="payment-panel-unavailable" extra="border-amber-500/30 bg-muted/40">
+    <Card testId="payment-panel-unavailable" extra="border-warning/30 bg-warning/10">
       <div className="flex flex-col gap-4" aria-busy={pending} role="alert">
         <div className="flex items-start gap-2 text-sm text-foreground">
-          <span className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden>
+          <span className="mt-0.5 shrink-0 text-warning" aria-hidden>
             <HugeiconsIcon icon={Alert02Icon} size={18} strokeWidth={2} />
           </span>
           <p>{body}</p>
@@ -307,10 +308,10 @@ function UnavailableCard({
  */
 function StaleCard({ labels }: { labels: PaymentPanelLabels }) {
   return (
-    <Card testId="payment-panel-stale" extra="border-amber-500/30 bg-muted/40">
+    <Card testId="payment-panel-stale" extra="border-warning/30 bg-warning/10">
       <div className="flex flex-col gap-4" role="status">
         <div className="flex items-start gap-2 text-sm text-foreground">
-          <span className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden>
+          <span className="mt-0.5 shrink-0 text-warning" aria-hidden>
             <HugeiconsIcon icon={Alert02Icon} size={18} strokeWidth={2} />
           </span>
           <div className="flex flex-col gap-0.5">
@@ -345,10 +346,10 @@ function ProcessingCard({
   onRetry: () => void;
 }) {
   return (
-    <Card testId="payment-panel-processing" extra="border-amber-500/30 bg-muted/40">
+    <Card testId="payment-panel-processing" extra="border-warning/30 bg-warning/10">
       <div className="flex flex-col gap-3" role="status">
         <div className="flex items-start gap-2 text-sm text-foreground">
-          <span className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden>
+          <span className="mt-0.5 shrink-0 text-warning" aria-hidden>
             <HugeiconsIcon icon={Clock01Icon} size={18} strokeWidth={2} />
           </span>
           <div className="flex flex-col gap-0.5">
@@ -393,7 +394,7 @@ function PaidCard({
   return (
     <Card testId="payment-panel-paid">
       <div className="flex items-center gap-3" role="status">
-        <span className="shrink-0 text-emerald-600 dark:text-emerald-500" aria-hidden>
+        <span className="shrink-0 text-success" aria-hidden>
           <HugeiconsIcon icon={CheckmarkCircle02Icon} size={24} strokeWidth={2} />
         </span>
         <div className="flex flex-col gap-0.5">

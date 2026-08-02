@@ -84,7 +84,7 @@ export function ProductGallery({
             // suppresses the inner <img> alt in the a11y tree).
             aria-label={`${labels.zoom} — ${activeAlt}`}
             data-testid="gallery-zoom-trigger"
-            className="gallery-zoom-trigger group/main relative block aspect-[4/5] w-full cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="gallery-zoom-trigger group/main relative block aspect-[4/5] w-full cursor-zoom-in overflow-hidden rounded-md border border-primary/30 bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             <GalleryImage
               key={active.id}
@@ -157,7 +157,7 @@ export function ProductGallery({
                   className={cn(
                     "relative block size-16 overflow-hidden rounded-md border border-border bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                     isActive
-                      ? "ring-2 ring-foreground ring-offset-2 ring-offset-background"
+                      ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
                       : "thumb-hover",
                   )}
                 >
@@ -219,7 +219,7 @@ function GalleryImage({
 function GalleryPlaceholder({ name, label }: { name: string; label: string }) {
   return (
     <section aria-label={label} data-testid="product-gallery">
-      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-lg border border-border bg-muted">
+      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-md border border-primary/30 bg-muted">
         <PlaceholderFill name={name} label={label} />
       </div>
     </section>

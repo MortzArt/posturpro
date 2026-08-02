@@ -73,7 +73,7 @@ export async function SiteFooter() {
           <div className="flex flex-col gap-2">
             <p
               data-testid="footer-store-name"
-              className="text-base font-semibold tracking-tight text-foreground"
+              className="font-heading text-base font-semibold tracking-tight text-foreground"
             >
               {storeName}
             </p>
@@ -134,7 +134,7 @@ interface FooterLinkGroupProps {
 function FooterLinkGroup({ heading, links, labelFor }: FooterLinkGroupProps) {
   return (
     <nav aria-label={heading} className="flex flex-col gap-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <p className="font-heading text-xs font-semibold uppercase tracking-wide text-foreground">
         {heading}
       </p>
       <ul className="flex flex-col gap-2">

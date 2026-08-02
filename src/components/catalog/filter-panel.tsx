@@ -182,7 +182,7 @@ export function FilterPanel({
       {/* JS-off sort control: a native <select> inside the filter form. The
           client toolbar SortSelect is the JS-on enhancement (Open Question 1). */}
       <label className="flex flex-col gap-2">
-        <span className="text-sm font-semibold tracking-tight">{labels.sortLabel}</span>
+        <span className="font-heading text-sm font-semibold uppercase tracking-wide">{labels.sortLabel}</span>
         <select
           name={keys.orden}
           defaultValue={selected.sort}

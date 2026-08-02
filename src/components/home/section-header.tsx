@@ -23,7 +23,7 @@ export function HomeSectionHeader({
 }: HomeSectionHeaderProps) {
   return (
     <div className="mb-6 flex flex-col gap-1 sm:mb-8 sm:flex-row sm:items-baseline sm:justify-between">
-      <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">
+      <h2 className="font-heading text-2xl font-bold tracking-wide text-foreground sm:text-3xl">
         {heading}
       </h2>
       <Link

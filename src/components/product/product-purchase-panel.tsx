@@ -176,11 +176,11 @@ export function ProductPurchasePanel({
         />
       </div>
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 rounded-md border border-border bg-card p-5 md:p-6">
         {brandName ? (
           <p className="text-xs text-muted-foreground">{brandName}</p>
         ) : null}
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+        <h1 className="font-heading text-2xl tracking-tight text-foreground md:text-3xl">
           {productName}
         </h1>
 

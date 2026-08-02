@@ -53,7 +53,7 @@ export function ActiveFilters({
           >
             <Badge
               variant="secondary"
-              className="max-w-[70vw] gap-1 py-1 pl-3 pr-2 text-sm font-normal sm:max-w-xs"
+              className="max-w-[70vw] gap-1 border-border bg-accent py-1 pl-3 pr-2 text-sm font-normal text-accent-foreground sm:max-w-xs"
             >
               {/* Truncate a long label (e.g. an 80-char `q` echo) so no single
                   chip can exceed the viewport and force horizontal body scroll

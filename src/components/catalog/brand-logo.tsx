@@ -73,7 +73,7 @@ export function BrandLogo({
     <span
       aria-hidden
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-md bg-muted font-semibold tracking-tight text-foreground",
+        "flex shrink-0 items-center justify-center rounded-md border border-border bg-muted font-heading font-semibold tracking-tight text-foreground",
         SIZE_BOX[size],
         SIZE_TEXT[size],
         className,

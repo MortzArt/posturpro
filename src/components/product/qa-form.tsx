@@ -309,7 +309,7 @@ function FieldError({
 
 /**
  * Live character counter tied to the textarea via `aria-describedby`. Announces
- * only near the limit (avoids per-keystroke chatter): muted → amber within the
+ * only near the limit (avoids per-keystroke chatter): muted → warning within the
  * last 10% → destructive at the cap.
  */
 function CharacterCounter({
@@ -335,7 +335,7 @@ function CharacterCounter({
         atLimit
           ? "text-destructive"
           : warn
-            ? "text-amber-600 dark:text-amber-400"
+            ? "text-warning"
             : "text-muted-foreground",
       )}
     >

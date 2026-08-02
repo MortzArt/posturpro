@@ -45,7 +45,7 @@ function BodyBlockView({ block }: { block: BodyBlock }) {
         id={block.id}
         // `scroll-mt-24` frames a `:target` deep-linked heading below the sticky
         // header; the `:target` accent bar is applied in globals.css (color only).
-        className="static-heading mt-8 scroll-mt-24 break-words text-lg font-semibold tracking-tight text-foreground first:mt-0 sm:text-xl"
+        className="static-heading mt-8 scroll-mt-24 break-words font-heading text-lg font-semibold uppercase tracking-wide text-foreground first:mt-0 sm:text-xl"
       >
         {block.text}
       </h2>

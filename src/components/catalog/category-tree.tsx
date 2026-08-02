@@ -55,10 +55,10 @@ function CategoryNode({ category, depth, staggerIndex }: CategoryNodeProps) {
         href={categoryPath(category.slug)}
         data-testid="category-tree-link"
         className={cn(
-          "card-lift block rounded-lg border border-border bg-card p-4 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "card-lift block rounded-md border border-border bg-card p-4 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         )}
       >
-        <span className="text-sm font-medium tracking-tight text-foreground">
+        <span className="font-heading text-sm font-medium uppercase tracking-wide text-foreground">
           {category.name}
         </span>
         {category.description ? (

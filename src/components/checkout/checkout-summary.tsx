@@ -93,7 +93,9 @@ export function CheckoutSummary({
       data-testid="checkout-summary"
       aria-label={labels.heading}
     >
-      <h2 className="text-sm font-medium text-foreground">{labels.heading}</h2>
+      <h2 className="font-heading text-sm font-medium uppercase tracking-wide text-foreground">
+        {labels.heading}
+      </h2>
 
       <ul className="flex flex-col gap-3" data-testid="checkout-summary-lines">
         {lines.map((line, index) => (
@@ -132,7 +134,7 @@ export function CheckoutSummary({
         {discountCents > 0 ? (
           <div className="flex items-center justify-between">
             <dt className="text-muted-foreground">{labels.discount}</dt>
-            <dd className="tabular-nums font-medium text-emerald-600 dark:text-emerald-500">
+            <dd className="tabular-nums font-medium text-success">
               <span key={discountCents} className="price-value" data-testid="checkout-discount">
                 −{formatMXN(discountCents)}
               </span>
@@ -190,7 +192,7 @@ function SummaryLine({
 }) {
   const ringClass =
     issue === "price-changed"
-      ? "ring-1 ring-amber-500/40"
+      ? "ring-1 ring-warning/40"
       : issue
         ? "ring-1 ring-destructive/40"
         : "";
@@ -244,7 +246,7 @@ function LineIssueNote({
 }) {
   if (issue === "price-changed" && liveUnitPriceCents !== undefined) {
     return (
-      <p role="alert" className="enter-fade mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+      <p role="alert" className="enter-fade mt-0.5 text-xs text-warning">
         {interpolate(labels.linePriceChanged, { amount: formatMXN(liveUnitPriceCents) })}
       </p>
     );
@@ -267,7 +269,7 @@ function ShippingValue({
   switch (shipping.kind) {
     case "free":
       return (
-        <span className="font-medium text-emerald-600 dark:text-emerald-500">
+        <span className="font-medium text-success">
           {labels.shippingFree}
         </span>
       );

@@ -16,14 +16,14 @@ interface ProductSpecsProps {
 export function ProductSpecs({ rows, heading }: ProductSpecsProps) {
   return (
     <section className="mt-10 md:mt-12" data-testid="product-specs">
-      <h2 className="mb-4 text-sm font-medium tracking-tight text-foreground">
+      <h2 className="mb-4 font-heading text-sm uppercase tracking-wide text-foreground">
         {heading}
       </h2>
-      <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+      <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
         {rows.map((row) => (
           <div
             key={row.key}
-            className="flex justify-between gap-4 border-b border-border/60 py-2"
+            className="flex justify-between gap-4 border-b border-border py-2"
             data-testid={`spec-row-${row.key}`}
           >
             <dt className="text-sm text-muted-foreground">{row.label}</dt>

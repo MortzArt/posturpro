@@ -127,14 +127,14 @@ export function FilterSheet({ activeCount, labels, children }: FilterSheetProps)
             aria-modal={open ? true : undefined}
             className={cn(
               "drawer-panel fixed inset-y-0 left-0 z-[60] flex h-full w-[90vw] max-w-sm flex-col lg:hidden",
-              "border-r border-border bg-background shadow-xl outline-none",
+              "border-r border-border bg-card shadow-xl outline-none",
             )}
           >
             {open ? (
               <FocusScope asChild loop trapped>
                 <div className="flex h-full flex-col">
                   <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-                    <Dialog.Title className="text-base font-semibold tracking-tight">
+                    <Dialog.Title className="font-heading text-base font-semibold uppercase tracking-wide">
                       {labels.title}
                     </Dialog.Title>
                     <Dialog.Close asChild>
@@ -154,7 +154,7 @@ export function FilterSheet({ activeCount, labels, children }: FilterSheetProps)
 
                   <div className="flex-1 overflow-y-auto p-4">{children}</div>
 
-                  <div className="shrink-0 border-t border-border bg-background/80 p-4 backdrop-blur">
+                  <div className="shrink-0 border-t border-border bg-card/80 p-4 backdrop-blur">
                     <Button
                       type="button"
                       size="lg"

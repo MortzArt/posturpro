@@ -60,6 +60,11 @@
       "brandsHeading": "Marcas",
       "viewAllProducts": "Ver todas las sillas",
       "viewAllBrands": "Ver todas las marcas"
+    },
+    "editorial": {
+      "title": "Sillas elegidas por cómo cuidan tu cuerpo",
+      "body": "Cada silla en PosturPro se selecciona por su ergonomía y su valor, no por su etiqueta.",
+      "imageAlt": "Espacio de trabajo con una silla ergonómica"
     }
   },
   "notFound": {

@@ -65,7 +65,7 @@ export default async function ShowroomPage({ params }: ShowroomPageProps) {
         ]}
       />
       <header className="mb-6 mt-2 md:mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+        <h1 className="font-heading text-2xl font-semibold uppercase tracking-wide sm:text-3xl">
           {page.title}
         </h1>
       </header>
@@ -102,7 +102,7 @@ function ShowroomMap({
   return (
     <div className="flex flex-col gap-3" data-testid="showroom-map">
       {mapImageUrl ? (
-        <span className="relative block aspect-[4/3] w-full overflow-hidden rounded-lg border border-border bg-muted">
+        <span className="relative block aspect-[4/3] w-full overflow-hidden rounded-md border border-border bg-muted">
           <Image
             src={mapImageUrl}
             alt={mapImageAlt}
@@ -114,7 +114,7 @@ function ShowroomMap({
       ) : (
         <span
           aria-hidden
-          className="flex aspect-[4/3] w-full items-center justify-center rounded-lg border border-border bg-muted"
+          className="flex aspect-[4/3] w-full items-center justify-center rounded-md border border-border bg-muted"
         >
           <HugeiconsIcon
             icon={Location01Icon}

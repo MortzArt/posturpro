@@ -37,7 +37,7 @@ export function PdpSkeleton({ className }: { className?: string }) {
       {/* two-column: gallery + purchase panel */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-10">
         <div className="flex flex-col gap-3">
-          <div className="aspect-[4/5] w-full rounded-lg bg-muted motion-safe:animate-pulse" />
+          <div className="aspect-[4/5] w-full rounded-md bg-muted motion-safe:animate-pulse" />
           <div className="flex gap-2">
             {Array.from({ length: 4 }).map((_, index) => (
               <Bar key={index} className="size-16 rounded-md" />

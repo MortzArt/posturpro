@@ -42,7 +42,7 @@ export function FacetGroup({
 }) {
   return (
     <fieldset className="flex flex-col gap-3" data-testid={testId}>
-      <legend className="text-sm font-semibold tracking-tight">{title}</legend>
+      <legend className="font-heading text-sm font-semibold uppercase tracking-wide">{title}</legend>
       {children}
     </fieldset>
   );

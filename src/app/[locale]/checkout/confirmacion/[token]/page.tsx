@@ -75,12 +75,12 @@ export default async function ConfirmationPage({ params, searchParams }: Confirm
 
       <div className="enter-fade flex flex-col items-center gap-3 text-center" role="status">
         <span
-          className={isPaidHero ? "text-emerald-600 dark:text-emerald-500" : "text-muted-foreground"}
+          className={isPaidHero ? "text-success" : "text-muted-foreground"}
           aria-hidden
         >
           <HugeiconsIcon icon={CheckmarkCircle02Icon} size={48} strokeWidth={1.5} />
         </span>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground" data-testid="confirmation-heading">
+        <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground" data-testid="confirmation-heading">
           {isPaidHero ? t("confirmation.paidTitle") : t("confirmation.receivedTitle")}
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -157,7 +157,9 @@ function summaryLabels(t: Translator): SummaryLabels {
 function OrderSummaryCard({ order, labels }: { order: OrderView; labels: SummaryLabels }) {
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 md:p-5" data-testid="confirmation-summary">
-      <h2 className="text-sm font-medium text-foreground">{labels.heading}</h2>
+      <h2 className="font-heading text-sm font-medium uppercase tracking-wide text-foreground">
+        {labels.heading}
+      </h2>
       <ul className="flex flex-col gap-2 text-sm">
         {order.items.map((item, index) => (
           <li key={index} className="flex items-start justify-between gap-3">
@@ -195,7 +197,7 @@ function Row({ label, value, positive }: { label: string; value: string; positiv
   return (
     <div className="flex items-center justify-between">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className={cn("tabular-nums", positive ? "font-medium text-emerald-600 dark:text-emerald-500" : "text-foreground")}>
+      <dd className={cn("tabular-nums", positive ? "font-medium text-success" : "text-foreground")}>
         {value}
       </dd>
     </div>
@@ -219,7 +221,9 @@ function shippingLabels(t: Translator): ShippingLabels {
 function ShippingCard({ order, labels }: { order: OrderView; labels: ShippingLabels }) {
   return (
     <section className="flex flex-col gap-1 rounded-lg border border-border bg-card p-4 text-sm md:p-5" data-testid="confirmation-shipping">
-      <h2 className="mb-2 text-sm font-medium text-foreground">{labels.heading}</h2>
+      <h2 className="mb-2 font-heading text-sm font-medium uppercase tracking-wide text-foreground">
+        {labels.heading}
+      </h2>
       <p className="break-words font-medium text-foreground">{order.shippingFullName}</p>
       <p className="break-words text-muted-foreground">
         {order.addressLine1}

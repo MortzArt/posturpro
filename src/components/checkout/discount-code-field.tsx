@@ -148,7 +148,7 @@ function AppliedPill({
 }) {
   return (
     <div
-      className="flex items-center justify-between gap-2 rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400"
+      className="flex items-center justify-between gap-2 rounded-md bg-success/10 px-3 py-2 text-sm text-success"
       data-testid="checkout-discount-applied"
     >
       <span className="flex min-w-0 items-center gap-1.5">

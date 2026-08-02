@@ -354,7 +354,7 @@ function BackLink({ label }: { label: string }) {
 function PageHeading({ title }: { title: string }) {
   return (
     <h1
-      className="mb-6 text-2xl font-semibold tracking-tight text-foreground md:text-3xl"
+      className="mb-6 font-heading text-2xl font-semibold tracking-tight text-foreground md:text-3xl"
       data-testid="checkout-heading"
     >
       {title}

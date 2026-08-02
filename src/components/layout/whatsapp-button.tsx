@@ -51,7 +51,7 @@ export async function WhatsAppButton() {
       className={cn(
         "fab-pop fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-50",
         "inline-flex size-14 items-center justify-center rounded-full",
-        "bg-primary text-primary-foreground shadow-lg outline-none",
+        "bg-whatsapp text-whatsapp-foreground shadow-lg outline-none",
         "hover:shadow-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         "md:right-6 md:bottom-[calc(1.5rem+env(safe-area-inset-bottom))]",
       )}

@@ -8,10 +8,12 @@ import {
   HOME_FEATURED_PRODUCTS,
   HOME_FEATURED_BRANDS,
   HERO_IMAGE,
+  EDITORIAL_BAND_IMAGE,
 } from "@/lib/config";
 import { listProducts, listBrands } from "@/lib/catalog/queries";
 import type { CatalogBrand, CatalogProductCard } from "@/lib/catalog/types";
 import { Hero } from "@/components/home/hero";
+import { EditorialBand } from "@/components/home/editorial-band";
 import { FeaturedProducts } from "@/components/home/featured-products";
 import { FeaturedBrands } from "@/components/home/featured-brands";
 
@@ -100,6 +102,15 @@ export default async function HomePage({ params }: HomePageProps) {
           />
         </section>
       ) : null}
+
+      <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
+        <EditorialBand
+          title={t("editorial.title")}
+          body={t("editorial.body")}
+          imageUrl={EDITORIAL_BAND_IMAGE}
+          imageAlt={t("editorial.imageAlt")}
+        />
+      </section>
 
       {brands.length > 0 ? (
         <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">

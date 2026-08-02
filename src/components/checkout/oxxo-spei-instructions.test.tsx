@@ -2,7 +2,7 @@
  * <OxxoSpeiInstructions> component tests (T8 AC-17; QA Stage-7 voucher-degradation
  * matrix). The voucher card is DEFENSIVE by design: every field is nullable and
  * rendered only if present — no `undefined`, no "Invalid Date", no empty `<a href>`
- * (dev principle 7). It is amber/neutral, never green (pending is not success). We
+ * (dev principle 7). It is a calm warning panel, never green (pending is not success). We
  * assert:
  *   - a fully-populated OXXO voucher renders reference / amount / expiry / link.
  *   - a SPEI voucher swaps the title + reference label (CLABE).
@@ -105,11 +105,14 @@ describe("OxxoSpeiInstructions — fully populated", () => {
     expect(ref.className).toContain("select-all");
   });
 
-  it("is NOT styled as success (amber border, not emerald/green)", () => {
+  it("is a calm warning panel, NOT styled as success (warning border, not success/green)", () => {
     renderVoucher({});
     const card = screen.getByTestId("payment-voucher");
-    expect(card.className).toContain("amber");
-    expect(card.className).not.toContain("emerald");
+    // Casa de Azulejo: pending reads as a calm cobalt-world warning panel — never
+    // success/green (UI principle 3) and never error-red (pending is normal).
+    expect(card.className).toContain("warning");
+    expect(card.className).not.toContain("success");
+    expect(card.className).not.toContain("destructive");
   });
 });
 

@@ -2,8 +2,9 @@
 
 /**
  * <OxxoSpeiInstructions> (T8 AC-17) — the pending-payment voucher card for OXXO
- * (cash) and SPEI (bank transfer). Amber/neutral, DELIBERATELY NOT green: pending
- * is never dressed as success (UI principle 3).
+ * (cash) and SPEI (bank transfer). A CALM warning panel, DELIBERATELY NOT green
+ * (pending is never dressed as success, UI principle 3) and NEVER error-red
+ * (pending is normal, PRODUCT.md: "cash is not an edge case").
  *
  * Every voucher field is nullable and rendered ONLY if present (research §5 path
  * ambiguity): no `undefined`, no `Invalid Date`, no empty `<a href>` (principle 7).
@@ -78,11 +79,11 @@ export function OxxoSpeiInstructions({
       role="status"
       data-testid="payment-voucher"
       data-method={method}
-      className="enter-fade flex flex-col gap-4 rounded-lg border border-amber-500/30 bg-muted/40 p-4 md:p-5"
+      className="enter-fade flex flex-col gap-4 rounded-lg border border-warning/30 bg-warning/10 p-4 md:p-5"
     >
       <div className="flex flex-col gap-1">
         <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-          <span className="text-amber-600 dark:text-amber-400" aria-hidden>
+          <span className="text-warning" aria-hidden>
             <HugeiconsIcon icon={Clock01Icon} size={18} strokeWidth={2} />
           </span>
           {title}

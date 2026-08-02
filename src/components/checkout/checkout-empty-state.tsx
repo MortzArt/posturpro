@@ -33,7 +33,7 @@ export function CheckoutEmptyState({ browseHref, labels }: CheckoutEmptyStatePro
         <HugeiconsIcon icon={ShoppingCart01Icon} size={40} strokeWidth={1.5} />
       </span>
       <div className="flex flex-col gap-1">
-        <p className="text-lg font-medium text-foreground">{labels.title}</p>
+        <p className="font-heading text-lg font-medium text-foreground">{labels.title}</p>
         <p className="text-sm text-muted-foreground">{labels.subtitle}</p>
       </div>
       <Link

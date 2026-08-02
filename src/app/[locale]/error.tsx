@@ -43,7 +43,9 @@ export default function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
           className="text-destructive"
           aria-hidden
         />
-        <h1 className="text-xl font-semibold tracking-tight">{t("title")}</h1>
+        <h1 className="font-heading text-xl font-semibold tracking-tight text-foreground">
+          {t("title")}
+        </h1>
         <p className="max-w-md text-sm text-muted-foreground">
           {t("description")}
         </p>

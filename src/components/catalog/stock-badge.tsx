@@ -38,9 +38,10 @@ const STATE_STYLES = {
 } as const;
 
 const ICON_STYLES = {
-  in: "text-foreground",
-  // Amber tone conveys urgency; text + icon still carry the state without hue.
-  low: "text-amber-600 dark:text-amber-400",
+  // Affirmative in-stock reads in the success hue; text + icon carry the state.
+  in: "text-success",
+  // Warning tone conveys urgency; text + icon still carry the state without hue.
+  low: "text-warning",
   out: "text-muted-foreground",
 } as const;
 

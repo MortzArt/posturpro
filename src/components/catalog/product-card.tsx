@@ -56,9 +56,9 @@ export function ProductCard({
       <Link
         href={productPath(product.slug)}
         data-testid="product-card-link"
-        className="card-lift group/card block overflow-hidden rounded-lg border border-border bg-card outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="card-lift group/card block overflow-hidden rounded-md border border-border bg-card outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
-        <div className="relative aspect-[4/5] w-full overflow-hidden bg-muted">
+        <div className="relative m-2 aspect-[4/5] overflow-hidden rounded-md border border-primary/30 bg-muted">
           {product.coverImageUrl ? (
             <Image
               src={product.coverImageUrl}
@@ -99,7 +99,7 @@ export function ProductCard({
           {product.brandName ? (
             <p className="text-xs text-muted-foreground">{product.brandName}</p>
           ) : null}
-          <h2 className="line-clamp-2 text-sm font-medium tracking-tight text-foreground">
+          <h2 className="line-clamp-2 font-heading text-sm font-medium tracking-tight text-foreground">
             {product.name}
           </h2>
           <p className="flex flex-wrap items-baseline gap-2">

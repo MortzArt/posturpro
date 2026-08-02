@@ -111,7 +111,9 @@ export function CheckoutCard({
 }) {
   return (
     <section className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 md:p-5">
-      <h2 className="text-sm font-medium text-foreground">{heading}</h2>
+      <h2 className="font-heading text-sm font-medium uppercase tracking-wide text-foreground">
+        {heading}
+      </h2>
       {children}
     </section>
   );

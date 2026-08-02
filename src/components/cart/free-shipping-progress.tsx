@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  * `origin-left scaleX(pct)`. `remainingCents` is formatted through `formatMXN`
  * FIRST, then interpolated into the `{amount}` template (never raw cents into a
  * string). `role="progressbar"` carries `aria-valuenow/min/max` and the visible
- * copy is real text (not color-only). Achieved uses the `emerald` accent tint
+ * copy is real text (not color-only). Achieved uses the `success` accent tint
  * plus a 🎉 (aria-hidden) so the state is legible without color alone.
  */
 
@@ -76,7 +76,7 @@ export function FreeShippingProgress({
         <div
           className={cn(
             "cart-progress-fill h-full w-full rounded-full",
-            achieved ? "bg-emerald-600 dark:bg-emerald-500" : "bg-primary",
+            achieved ? "bg-success" : "bg-primary",
           )}
           style={{ transform: `scaleX(${pct})` }}
         />

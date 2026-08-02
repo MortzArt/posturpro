@@ -39,7 +39,7 @@ export function Hero({
   return (
     <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-12">
       <div className="enter-fade order-1 flex max-w-xl flex-col gap-4">
-        <h1 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl lg:text-5xl">
+        <h1 className="text-balance font-heading text-4xl font-bold tracking-tight text-primary sm:text-5xl lg:text-6xl">
           {headline}
         </h1>
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground sm:text-base">
@@ -83,7 +83,7 @@ function HeroMedia({
 }) {
   if (imageUrl) {
     return (
-      <span className="relative order-2 block aspect-[4/3] w-full overflow-hidden rounded-lg border border-border bg-muted">
+      <span className="relative order-2 block aspect-[4/3] w-full overflow-hidden rounded-md border border-primary/30 bg-muted shadow-sm">
         <Image
           src={imageUrl}
           alt={imageAlt}
@@ -99,7 +99,7 @@ function HeroMedia({
     <span
       aria-hidden
       data-testid="hero-image-fallback"
-      className="order-2 flex aspect-[4/3] w-full items-center justify-center rounded-lg border border-border bg-muted"
+      className="order-2 flex aspect-[4/3] w-full items-center justify-center rounded-md border border-primary/30 bg-muted"
     >
       <HugeiconsIcon
         icon={Chair01Icon}

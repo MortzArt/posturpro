@@ -15,11 +15,13 @@ export default async function NotFound() {
       <div className="enter-fade flex flex-col items-center gap-3">
         <p
           aria-hidden
-          className="text-5xl font-semibold tracking-tight text-muted-foreground"
+          className="flex size-24 items-center justify-center rounded-md border border-border bg-muted font-heading text-4xl font-semibold tracking-wide text-muted-foreground"
         >
           {t("code")}
         </p>
-        <h1 className="text-xl font-semibold tracking-tight">{t("title")}</h1>
+        <h1 className="font-heading text-xl font-semibold tracking-tight text-foreground">
+          {t("title")}
+        </h1>
         <p className="max-w-md text-sm text-muted-foreground">
           {t("description")}
         </p>

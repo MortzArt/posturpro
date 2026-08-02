@@ -9,7 +9,11 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-heading: var(--font-sans);
+  /* The `font-heading` utility emits `font-family: var(--font-heading-family)`.
+   * That runtime var defaults to `--font-sans` (admin, not-found → Inter) and is
+   * overridden to Libre Caslon Text ONLY under `.theme-storefront` (T15) — the
+   * firewall at the font seam (AC-5/AC-12). Not self-referential, so no cycle. */
+  --font-heading: var(--font-heading-family);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -39,6 +43,17 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Storefront-only semantic/accent colors (Casa de Azulejo, T15). These map to
+   * CSS vars that ONLY resolve under `.theme-storefront`, so admin never sees
+   * them applied — additive, firewall-safe. */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+  --color-whatsapp: var(--whatsapp);
+  --color-whatsapp-foreground: var(--whatsapp-foreground);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -86,6 +101,12 @@
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 
+  /* Heading face resolver — defaults to the sans body face so admin + not-found
+   * headings stay Inter (firewall). `.theme-storefront` overrides it to the
+   * roman display face. The `font-heading` Tailwind utility reads it via the
+   * `@theme` binding above. (T15 AC-5) */
+  --font-heading-family: var(--font-sans);
+
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -130,6 +151,70 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* ======================================================================== *
+ * BRAND TOKENS — Casa de Azulejo (T15). Storefront-scoped so the /admin
+ * dashboard keeps the neutral :root world (firewall, AC-11/12). Editing ONLY
+ * these values + the --font-heading binding re-skins the whole storefront with
+ * zero component color edits (AC-4). Palette is cobalt-on-glaze tin-glazed
+ * azulejo (a lit, daylight tiled hall); all pairings WCAG AA verified (see
+ * DESIGN.md → Contrast guarantees). The neutral :root / .dark blocks above are
+ * NOT edited — .dark stays admin's untouched world and is never activated on
+ * the storefront (light-only by identity, edge 7). The motion layer below is
+ * Emil's authority and is NOT brand — untouched verbatim.
+ *
+ * WHAT TO EDIT FOR A STOREFRONT BRAND SWAP (the seam):
+ *   1. Colors + radius: the values in `.theme-storefront` below.
+ *   2. Heading face: `--font-heading` binding below + the family in fonts.ts.
+ * No storefront component hardcodes a hex/oklch/rgb color or a raw radius —
+ * every brand value flows through a token utility (bg-primary, text-foreground,
+ * border-border, rounded-md, bg-success, text-warning, bg-gold, bg-whatsapp).
+ * ======================================================================== */
+.theme-storefront {
+  --background: oklch(0.985 0.006 250);
+  --foreground: oklch(0.28 0.09 258);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.28 0.09 258);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.28 0.09 258);
+  --primary: oklch(0.42 0.16 262);
+  --primary-foreground: oklch(0.985 0.006 250);
+  --secondary: oklch(0.93 0.03 250);
+  --secondary-foreground: oklch(0.35 0.12 260);
+  --muted: oklch(0.95 0.015 250);
+  --muted-foreground: oklch(0.47 0.07 258);
+  --accent: oklch(0.90 0.04 250);
+  --accent-foreground: oklch(0.35 0.12 260);
+  --destructive: oklch(0.55 0.20 27);
+  --border: oklch(0.86 0.03 250);
+  --input: oklch(0.86 0.03 250);
+  --ring: oklch(0.42 0.16 262);
+  --radius: 0.375rem;
+
+  /* Reserved accent + semantic status (promoted from hardcoded amber/emerald,
+   * edge 9). Applied consistently across ~10 storefront files; status stays
+   * glyph + text (color is never the only signal — colorblind-safe). */
+  --gold: oklch(0.72 0.14 85);
+  --gold-foreground: oklch(0.28 0.09 258);
+  --success: oklch(0.52 0.13 155);
+  --success-foreground: oklch(0.985 0.006 250);
+  --warning: oklch(0.55 0.13 70);
+  --warning-foreground: oklch(0.985 0.006 250);
+
+  /* WhatsApp affordance (brand green, FAB fill only — AC-7). */
+  --whatsapp: oklch(0.63 0.16 155);
+  --whatsapp-foreground: oklch(1 0 0);
+
+  /* Cobalt-tinted glaze shadow — depth reads as glaze, not gray. */
+  --shadow-color: oklch(0.42 0.16 262 / 0.12);
+
+  /* Storefront display face (real binding — no longer aliasing --font-sans).
+   * Overrides the `--font-heading-family` resolver ONLY under this scope, so the
+   * `font-heading` utility renders Libre Caslon Text on the storefront while
+   * admin/not-found keep the `:root` default (Inter). */
+  --font-heading-family: var(--font-heading-serif), Georgia, "Times New Roman",
+    serif;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -143,26 +228,30 @@
 }
 
 /* ======================================================================== *
- * BRAND TOKENS — the brand-swap seam (T2 AC-9)
+ * TWO TOKEN WORLDS — the firewall (T2 AC-9 → refined by T15 AC-11/12)
  * ------------------------------------------------------------------------
- * To re-skin PosturPro for a different chair brand, edit ONLY the values in
- * `:root` (and `.dark`) above. No component hardcodes a hex/oklch color, a
- * radius, or a raw font family — every visual value flows through a token
- * utility (`bg-primary`, `text-foreground`, `border-border`, `rounded-md`,
- * `font-sans`).
+ * There are now TWO scoped token worlds, and the swap seam differs per world:
  *
- * WHAT TO EDIT FOR A BRAND SWAP
- *   1. Colors:  `:root` + `.dark` → --primary, --primary-foreground,
- *               --background, --foreground, --border, --muted*, --accent*,
- *               --ring, --destructive.
- *   2. Radius:  `:root` → --radius (the whole radius scale derives from it).
- *   3. Font:    the `--font-sans` binding in `src/app/fonts.ts` (swap the one
- *               next/font family); this file consumes it via `font-sans`.
- *   4. Copy/ids: `src/lib/config.ts` → SEED_STORE_NAME, WHATSAPP_PHONE_E164,
- *               WHATSAPP_PREFILL_MESSAGE_ES, contact email.
+ *   • ADMIN world  → the neutral `:root` (+ `.dark`) blocks above. Admin's
+ *     `<body>` never carries `.theme-storefront`, so it resolves these values.
+ *     To rebrand ADMIN, edit `:root`/`.dark`. UNCHANGED by T15.
  *
- * The motion easing tokens (--ease-out / --ease-in-out / --ease-drawer) are
- * NOT brand values — leave them; they encode the app's motion feel.
+ *   • STOREFRONT world → the `.theme-storefront` block above, applied on the
+ *     storefront `<body>` in `src/app/[locale]/layout.tsx`. To rebrand the
+ *     STOREFRONT (colors, radius, heading face), edit ONLY that block + the
+ *     `--font-heading` binding + the family in `src/app/fonts.ts`. No storefront
+ *     component hardcodes a hex/oklch color or a raw radius — every brand value
+ *     flows through a token utility (`bg-primary`, `text-foreground`,
+ *     `border-border`, `rounded-md`, `bg-success`, `text-warning`, `bg-gold`,
+ *     `bg-whatsapp`). The one intentional token-free exception is
+ *     `src/app/global-error.tsx` (edge 8).
+ *
+ *   • Copy/ids: `src/lib/config.ts` → SEED_STORE_NAME, WHATSAPP_PHONE_E164,
+ *     WHATSAPP_PREFILL_MESSAGE_ES, contact email.
+ *
+ * The motion easing tokens (--ease-out / --ease-in-out / --ease-drawer) and the
+ * motion layer below are NOT brand values — leave them; they encode the app's
+ * motion feel (Emil authority).
  * ======================================================================== */
 
 /* ======================================================================== *

@@ -53,7 +53,9 @@ export function OrderSummary({
       data-testid="order-summary"
       aria-label={labels.heading}
     >
-      <h2 className="text-sm font-medium text-foreground">{labels.heading}</h2>
+      <h2 className="font-heading text-sm font-medium uppercase tracking-wide text-foreground">
+        {labels.heading}
+      </h2>
 
       <dl className="flex flex-col gap-2 text-sm">
         <div className="flex items-center justify-between">
@@ -105,7 +107,7 @@ function ShippingValue({
 }) {
   switch (shipping.kind) {
     case "free":
-      return <span className="font-medium text-emerald-600 dark:text-emerald-500">{labels.shippingFree}</span>;
+      return <span className="font-medium text-success">{labels.shippingFree}</span>;
     case "flat":
       return <span>{formatMXN(shipping.cents)}</span>;
     case "unavailable":

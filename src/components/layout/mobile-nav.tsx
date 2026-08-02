@@ -171,7 +171,7 @@ export function MobileNav() {
           aria-modal={open ? true : undefined}
           className={cn(
             "drawer-panel fixed inset-y-0 left-0 z-[60] flex h-full w-[85vw] max-w-xs flex-col",
-            "border-r border-border bg-background shadow-xl outline-none",
+            "border-r border-border bg-card shadow-xl outline-none",
           )}
         >
           {/* The panel is force-mounted (so its slide-out is an interruptible
@@ -212,7 +212,7 @@ function MobileNavBody({ t, onNavigate }: MobileNavBodyProps) {
   return (
     <>
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-            <Dialog.Title className="truncate text-base font-semibold tracking-tight">
+            <Dialog.Title className="truncate font-heading text-base font-semibold uppercase tracking-wide text-foreground">
               {t("menuTitle")}
             </Dialog.Title>
             <Dialog.Description className="sr-only">

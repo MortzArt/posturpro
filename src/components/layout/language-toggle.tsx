@@ -109,7 +109,7 @@ export function LanguageToggle({
             className={cn(
               "toggle-press inline-flex h-full min-h-8 min-w-9 items-center justify-center rounded-[calc(var(--radius)*0.6)] px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
               isActive
-                ? "bg-background font-medium text-foreground shadow-sm"
+                ? "bg-primary font-medium text-primary-foreground shadow-sm"
                 : "font-normal text-muted-foreground hover:text-foreground",
             )}
           >
