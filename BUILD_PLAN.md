@@ -45,8 +45,14 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 - [x] **T13 — Static pages & homepage** (tier: standard; PlanResearch → UI Design → Dev → ReviewFix → QA PASS, HIGH, 2026-08-02)
   Data-backed static pages with placeholder copy: About, Contact (form emails owner), Shipping policy, Returns policy, Warranty, FAQ, Aviso de Privacidad, Terms, Showroom (location/map/hours). Homepage: hero, featured chairs, featured brands. `blocked by: T2`
 
+- [ ] **T15 — Premium visual identity & image-rich refresh** (tier: standard)
+  Design PosturPro's premium visual identity (brand is final, no identity exists — see PRODUCT.md Brand Commitments) via the `impeccable` skill (new-work: replace the neutral world; write DESIGN.md). Apply across ALL storefront surfaces: homepage, catalog/PDP, static pages, cart/checkout shells. Image-rich direction: define image slots + art direction on every page, using high-quality licensed-stock/generated placeholders structured for asset swap (no real photography exists — never fabricate proof). Tokens stay centralized/swappable. Admin untouched. `blocked by: T13`
+
+- [ ] **T16 — B2B landing page (offices, quote form)** (tier: standard)
+  Marketing landing page targeting offices furnishing workspaces (Persuade mode): ergonomics-authority pitch, multi-brand breadth, value positioning per PRODUCT.md; volume/fleet framing; CTA = quote request form (company, contact, team size, needs) relaying to the owner via the T13 contact-relay pattern (rate-limited, honeypot, bilingual). Linked from nav/footer. Follows the T15 visual world. `blocked by: T15`
+
 - [ ] **T14 — SEO, analytics & launch hardening** (tier: full-cycle)
-  Clean URLs, per-page metadata, product structured data, sitemap.xml; analytics; cookie consent banner; image optimization + performance pass; error monitoring; backup verification; final security review of the whole store (secrets, admin auth, webhook, RLS). `blocked by: T12, T13`
+  Clean URLs, per-page metadata, product structured data, sitemap.xml; analytics; cookie consent banner; image optimization + performance pass; error monitoring; backup verification; final security review of the whole store (secrets, admin auth, webhook, RLS). **Runs LAST — after T15/T16 so metadata/sitemap/perf cover the final surfaces. Go-live additionally gated on T8 Phase 5 owner sign-off.** `blocked by: T12, T13, T15, T16`
 
 ## Rules for this plan
 
