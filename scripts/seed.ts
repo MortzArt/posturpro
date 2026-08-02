@@ -35,7 +35,11 @@ import type {
 } from "@/lib/supabase/database.types";
 import { BRANDS, CATEGORIES, STYLES, TAGS } from "./seed-data/taxonomy";
 import { PRODUCTS, seedImageUrl } from "./seed-data/products";
-import { STATIC_PAGES } from "./seed-data/content";
+import {
+  STATIC_PAGES,
+  EN_LOCALE,
+  STATIC_PAGE_ENTITY_TYPE,
+} from "./seed-data/content";
 import { DISCOUNT_CODES } from "./seed-data/discounts";
 
 type Db = SupabaseClient<Database>;
@@ -250,8 +254,42 @@ async function seedImages(db: Db, productIds: Map<string, string>): Promise<numb
   return imageRows.length;
 }
 
-async function seedContent(db: Db): Promise<void> {
-  await upsert(db, "static_pages", STATIC_PAGES.map((p) => ({ slug: p.slug, title: p.title, body: p.body, is_published: true })), "slug");
+async function seedContent(db: Db): Promise<{ pages: number; translations: number }> {
+  // 1. Base es-MX static_pages rows (idempotent upsert on slug).
+  await upsert(
+    db,
+    "static_pages",
+    STATIC_PAGES.map((p) => ({ slug: p.slug, title: p.title, body: p.body, is_published: true })),
+    "slug",
+  );
+
+  // 2. English overlay via the generic `translations` table (T13 AC-4). Resolve
+  //    each page's id from its slug, then upsert (locale, entity_type, entity_id,
+  //    field) → value rows. Upsert on the natural composite key so re-running is
+  //    a no-op, never a duplicate (edge case 3).
+  const pageIds = await staticPageIdBySlug(db);
+  const translationRows: TablesInsert<"translations">[] = [];
+  for (const page of STATIC_PAGES) {
+    const entityId = pageIds.get(page.slug);
+    if (!entityId) fail(`static_pages id not found for ${page.slug}`);
+    translationRows.push(
+      { locale: EN_LOCALE, entity_type: STATIC_PAGE_ENTITY_TYPE, entity_id: entityId, field: "title", value: page.en.title },
+      { locale: EN_LOCALE, entity_type: STATIC_PAGE_ENTITY_TYPE, entity_id: entityId, field: "body", value: page.en.body },
+    );
+  }
+  await upsert(db, "translations", translationRows, "locale,entity_type,entity_id,field");
+
+  return { pages: STATIC_PAGES.length, translations: translationRows.length };
+}
+
+/** Fetch a static_pages slug→id map so translation rows can resolve entity_id. */
+async function staticPageIdBySlug(db: Db): Promise<Map<string, string>> {
+  const { data, error } = await db.from("static_pages").select("id, slug");
+  if (error) fail("Failed reading static_pages", error);
+  const rows = (data ?? []) as unknown as { id: string; slug: string }[];
+  const map = new Map<string, string>();
+  for (const row of rows) map.set(row.slug, row.id);
+  return map;
 }
 
 async function seedStoreSettings(db: Db): Promise<void> {
@@ -286,7 +324,7 @@ async function main(): Promise<void> {
 
   await seedTaxonomy(db);
   const { products, variants, images } = await seedProducts(db);
-  await seedContent(db);
+  const { pages, translations } = await seedContent(db);
   await seedStoreSettings(db);
   const discountCodes = await seedDiscountCodes(db);
 
@@ -298,7 +336,8 @@ async function main(): Promise<void> {
   console.log(`  products:       ${products}`);
   console.log(`  variants:       ${variants}`);
   console.log(`  product_images: ${images}`);
-  console.log(`  static_pages:   ${STATIC_PAGES.length}`);
+  console.log(`  static_pages:   ${pages}`);
+  console.log(`  translations:   ${translations}`);
   console.log(`  store_settings: 1`);
   console.log(`  discount_codes: ${discountCodes}`);
   console.log("\n✓ Seed complete (idempotent — safe to re-run).");

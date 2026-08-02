@@ -28,13 +28,19 @@
     "freeShipping": "Free shipping on orders over {threshold}",
     "sections": {
       "store": "Store",
-      "help": "Help"
+      "help": "Help",
+      "legal": "Legal"
     },
     "links": {
       "about": "About us",
-      "shipping": "Shipping & returns",
+      "shipping": "Shipping",
+      "returns": "Returns",
+      "warranty": "Warranty",
       "faq": "Frequently asked questions",
-      "contact": "Contact"
+      "contact": "Contact",
+      "privacy": "Privacy notice",
+      "terms": "Terms",
+      "showroom": "Visit our showroom"
     },
     "rights": "© {year} {storeName}. All rights reserved."
   },
@@ -42,10 +48,19 @@
     "label": "Contact us on WhatsApp"
   },
   "home": {
-    "title": "Ergonomic chairs for your back",
-    "intro": "Find the perfect chair among our brands and styles.",
-    "ctaCatalog": "Browse chairs",
-    "ctaBrands": "Brands"
+    "hero": {
+      "title": "Ergonomic chairs to care for your back",
+      "subtitle": "Find the perfect chair across our brands and styles.",
+      "ctaCatalog": "Shop chairs",
+      "ctaBrands": "Brands",
+      "imageAlt": "PosturPro ergonomic chair"
+    },
+    "featured": {
+      "productsHeading": "Featured chairs",
+      "brandsHeading": "Brands",
+      "viewAllProducts": "View all chairs",
+      "viewAllBrands": "View all brands"
+    }
   },
   "notFound": {
     "code": "404",
@@ -548,5 +563,52 @@
       "intro": "We've processed a refund of {amount} for your order {orderNumber}. The time to see it depends on your bank.",
       "amountLabel": "Amount refunded"
     }
+  },
+  "contact": {
+    "metadata": {
+      "title": "Contact"
+    },
+    "name": {
+      "label": "Name",
+      "placeholder": "Your name"
+    },
+    "email": {
+      "label": "Email",
+      "placeholder": "you@email.com"
+    },
+    "subject": {
+      "label": "Subject",
+      "optional": "(optional)",
+      "placeholder": "What's this about?"
+    },
+    "message": {
+      "label": "Message",
+      "placeholder": "Tell us how we can help…"
+    },
+    "charCount": "{count}/{max}",
+    "submit": "Send message",
+    "submitting": "Sending…",
+    "honeypot": "Do not fill this field",
+    "success": "Message sent! We'll get back to you soon.",
+    "errorGeneric": "We couldn't send your message, please try again.",
+    "rateLimited": "Please wait a moment before sending another message.",
+    "retry": "Try again",
+    "errors": {
+      "nameRequired": "Please enter your name.",
+      "nameTooLong": "That name is too long.",
+      "emailRequired": "Please enter your email.",
+      "emailInvalid": "Please enter a valid email.",
+      "emailTooLong": "That email is too long.",
+      "subjectTooLong": "That subject is too long.",
+      "messageRequired": "Please write your message.",
+      "messageTooLong": "That message is too long."
+    }
+  },
+  "showroom": {
+    "metadata": {
+      "title": "Showroom"
+    },
+    "viewOnMaps": "View on maps",
+    "mapAlt": "Map of the showroom location"
   }
 }

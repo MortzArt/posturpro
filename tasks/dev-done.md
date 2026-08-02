@@ -1,133 +1,111 @@
-# Dev Summary: T12 — Admin Order Management
+# Dev Summary: T13 — Static Pages & Homepage
 
-Stage 4 (ultradev). Full-stack, full-feature. **47 files created, 10 modified.**
-`tsc` clean · `eslint` clean (full repo) · migration 0012 applies cleanly (fresh
-`db reset` 0001..0012) · unit 1482/1482 · integration 219/219 · prod build green ·
-0 server symbols in the client bundle.
+Standard tier, Stage 4 (Dev). Full-stack. 22 files created + 8 modified. Zero TODOs, zero placeholders in code. No new migration (0013 latest, next 0014). No new npm deps.
+
+**Verification:** `npx tsc --noEmit` clean · eslint clean (all touched files + full `src/app`) · unit **1698/1698** (102 files; +105 from T12's 1593, incl. 22 new tests) · local DB reseeded idempotently (**9** static_pages + **18** translations) · live spot-check on the running :3000 dev server — **all 20 surfaces render 200 with correct `<h1>`** (10 es-MX + 10 en).
 
 ## Files Changed
 
-### Migration
 | Path | Change | Summary |
 |------|--------|---------|
-| `supabase/migrations/0012_admin_orders.sql` | created | (a) `orders` tracking cols (nullable text, outside the 0003 frozen set — verified mutable); (b) `order_internal_notes` table (RLS-deny + service_role, 1..2000 CHECK); (c) `cancel_order(uuid,text)` transactional RPC (lock → stock restore skipping null FKs → advance to cancelled with `transition_kind` via `email_transition_kind` → idempotent no-op) SECURITY DEFINER + empty search_path + service_role-only; (d) `admin_session_version` single-row source + `bump_admin_session_version()` RPC (AC-27 revocation); (e) `customers` lower(email)/lower(full_name) search indexes. |
+| `src/lib/config/static-pages.ts` | created | Single source of the 9 slugs (`STATIC_PAGE_SLUGS` 7 generic + `CONTACT_SLUG`/`SHOWROOM_SLUG`), `RESERVED_SLUGS` guard with a **load-time throw** on collision (edge 10), `staticPagePath`/`isStaticPageSlug`, `HOME_FEATURED_PRODUCTS=8`/`HOME_FEATURED_BRANDS=6`, `HERO_IMAGE`, `SHOWROOM_MAP_URL`/`SHOWROOM_MAP_IMAGE` (all null Phase 1). |
+| `src/lib/config/contact.ts` | created | Contact length caps (`CONTACT_NAME_MAX`…`CONTACT_MESSAGE_MAX`) + rate-limit tunables (`CONTACT_RATE_LIMIT_WINDOW_MS`/`_MAX_SUBMISSIONS_PER_WINDOW`/`_MAX_KEYS`) + `CONTACT_SUCCESS_FEEDBACK_MS=6000`. |
+| `src/lib/config.ts` | modified | Barrel re-exports the two new config modules. |
+| `src/lib/content/static-pages.ts` | created | `getStaticPageBySlug(slug, locale)` — RLS public-client base row + per-locale `translations` overlay with es-MX fallback (AC-4); degrade-to-null (edges 1–3, never throws); `unstable_cache` per `(slug, locale)`, tag `static-pages`. `export type StaticPage`. |
+| `src/lib/content/parse-body.ts` | created | **Pure** body parser: `## ` → heading with slugified/de-duped id (FAQ deep-links), blank-line paragraph grouping, intra-paragraph soft breaks. No React, no I/O. |
+| `src/components/content/static-page-body.tsx` | created | Renders `parseStaticBody` output as **escaped React children** — never `dangerouslySetInnerHTML` (AC-17). `max-w-prose`, `## `→`<h2 id scroll-mt-24>`, no mount animation (deliberate). |
+| `src/app/[locale]/[pageSlug]/page.tsx` | created | Generic route for the 7 text pages: `generateStaticParams` over `STATIC_PAGE_SLUGS`, `isStaticPageSlug` guard + `notFound()` (edge 10), `generateMetadata` (locale-validated), `null`→`notFound()` (AC-5). |
+| `src/lib/contact/submit-guard.ts` | created | **Pure** `validateContactSubmission` (trim → caps → `EMAIL_PATTERN`) + `isContactHoneypotTripped`. Mirrors `lib/qa/submit-guard`. |
+| `src/lib/contact/rate-limit.ts` | created | `checkContactRateLimit(ip)` — dedicated `createSlidingWindowLimiter` instance + `CONTACT_RATE_LIMIT_DISABLED=1` hatch. Mirrors `lib/checkout/rate-limit`. |
+| `src/app/[locale]/contacto/contact-form-state.ts` | created | Serializable `ContactFormState` + `initialContactFormState` (outside `"use server"`). |
+| `src/app/[locale]/contacto/actions.ts` | created | `submitContactForm` server action: honeypot→fake success, validate→invalid, rate-limit→rate-limited, `sendContactRelay`→success/error. Never throws; raw reason never surfaced (AC-16). |
+| `src/app/[locale]/contacto/contact-form.tsx` | created | Client island copying `qa-form.tsx`: honeypot, `useActionState`, full state matrix, live char counter, retry, auto-hide success, a11y (labels/`aria-describedby`/`role=status`/`alert`). |
+| `src/app/[locale]/contacto/page.tsx` | created | Server shell: breadcrumb + h1 + prose intro/hours (from `contacto` body via `StaticPageBody`) + `<ContactForm>`; `null`→`notFound()`. |
+| `src/app/[locale]/showroom/page.tsx` | created | Showroom: address/hours body (always renders) + map column (config image→token pin panel; config link→"Ver en mapas" or omitted) — AC-18. |
+| `src/components/home/hero.tsx` | created | Editorial split hero; `HERO_IMAGE` null → token chair-glyph panel (no broken img); `.enter-fade` mount, `.link-arrow` secondary link. |
+| `src/components/home/section-header.tsx` | created | Shared `HomeSectionHeader` ("{heading} … Ver todas →"). |
+| `src/components/home/featured-products.tsx` | created | Wraps `ProductGrid`; returns `null` when empty (AC-9). |
+| `src/components/home/featured-brands.tsx` | created | Wraps `IndexTile`+`BrandLogo` (async, resolves `logoAlt`); returns `null` when empty (AC-9). |
+| `src/app/[locale]/page.tsx` | modified | Homepage rebuild: hero (always) + featured chairs + featured brands; featured reads degrade to `[]` (edge 9); sections omitted on empty (edge 8). `generateMetadata` from `metadata` namespace. |
+| `src/components/layout/site-footer.tsx` | modified | 3 real link columns + Legal (`lg:grid-cols-4`); split shipping/returns; showroom contextual link on store-info block. Zero dead links (AC-10). |
+| `scripts/seed-data/content.ts` | modified | `STATIC_PAGES` 4→**9** with structured `##` es-MX bodies + `en` overlay per page; `EN_LOCALE`/`STATIC_PAGE_ENTITY_TYPE` exports. |
+| `scripts/seed.ts` | modified | Seeds `translations` (18 rows) via a new `staticPageIdBySlug` map, upsert on `(locale,entity_type,entity_id,field)`; summary now prints `translations`. |
+| `src/messages/es-MX.json` + `en.json` | modified | Replaced flat `home.*` with `home.hero.*`/`home.featured.*`; added `contact.*` + `showroom.*`; extended `footer.*` (Legal + 6 links). 434 keys each, parity verified. |
+| `src/messages/keys-used.test.ts` | modified | `CONSUMED_KEYS` updated for the new home/footer/contact/showroom keys. |
+| `src/lib/seed-invariants-extra.test.ts` | modified | Asserts 9 pages + es-MX/en non-empty, config-set parity (AC-1), reserved-slug disjointness (edge 10), headed legal/FAQ bodies (AC-3). |
+| `src/lib/content/parse-body.test.ts` | created | 9 tests: headings, dedupe, paragraphs, soft breaks, hostile input, CRLF. |
+| `src/lib/contact/submit-guard.test.ts` | created | Validation + caps + email shape + 100k-message cap (edge 7) + honeypot. |
+| `src/lib/contact/rate-limit.test.ts` | created | Per-window max, per-IP isolation, disable hatch. |
+| `src/app/globals.css` | modified | `.static-heading:target` accent bar (color/border only, reduced-motion-safe). |
 
-### Types
-| Path | Change | Summary |
-|------|--------|---------|
-| `src/lib/supabase/types/tables-commerce.ts` | modified | `orders` gains tracking cols (Row/Insert/Update); new `order_internal_notes` + `admin_session_version` table types. |
-| `src/lib/supabase/types/rpc.ts` | modified | `CancelOrderArgs`/`CancelOrderResult` + `bump_admin_session_version` in `DatabaseFunctions` (kept `type` aliases — T8 never-collapse gotcha). |
-
-### Session revocation (AC-27/28 gate)
-| Path | Change | Summary |
-|------|--------|---------|
-| `src/lib/admin/session-version.ts` | created | `getAdminSessionVersion()` (React `cache`, per-request; `null` → fail-closed) + `bumpAdminSessionVersion()`. |
-| `src/lib/admin/session-payload.ts` | modified | `encodePayload(iat, version=ADMIN_SESSION_VERSION)`; `decodePayload` now validates `v` as a finite number only (equality moved to the guard). |
-| `src/lib/admin/session.ts` | modified | `createSessionCookieValue(nowSeconds, version=…)`; new `verifiedSessionPayload()` seam returning the verified payload. |
-| `src/lib/admin/session-guard.ts` | modified | `hasValidAdminSession()` = signature+expiry THEN persisted-version equality (revocation); fails closed on a version-read error. |
-| `src/app/admin/actions.ts` | modified | Login stamps the current persisted version into the minted cookie. |
-| `src/lib/admin/session-guard.test.ts` / `session-payload.test.ts` | modified | Updated to the new codec contract + 2 new revocation tests (mismatch → false, null → false). |
-
-### Lib — `src/lib/admin/orders/` (18 files, all created)
-`order-status-meta.ts` (single-sourced labels/glyphs/variants/allowed-transition map/kind labels) · `order-list-filters.ts` + `order-list-query.ts` (mirror products, meta-char-stripped search) · `order-read.ts` (order+items+history+notes+refunded_total, section-isolated) · `order-status-input.ts`/`order-status-write.ts` (advanceOrderStatus + email branch on `transition_kind`) · `order-tracking-input.ts`/`order-tracking-write.ts` · `order-cancel-write.ts` (cancel_order RPC + sendCancelled) · `order-refund-input.ts`/`order-refund-write.ts` (first caller of `refundOrderPayment`, stable key, sendRefundIssued) · `order-notes-write.ts` · `customer-list-filters.ts`/`customer-list-query.ts` (batched order counts, no N+1) · `packing-slip.ts` (pure escaped print-HTML builder) · `dashboard-metrics.ts` · `order-action-types.ts` · `order-constants.ts` (client-safe note-length const).
-
-### App — `src/app/admin/(app)/` (created unless noted)
-`orders/page.tsx` (list + error banner) · `orders/loading.tsx` · `orders/actions.ts` (5 session-gated actions) · `orders/[id]/page.tsx` (detail) · `orders/[id]/loading.tsx` · `orders/[id]/packing-slip/route.ts` (self-guarded 401) · `orders/customers/page.tsx` · `page.tsx` **modified** (redirect stub → dashboard).
-
-### Components — `src/components/admin/orders/` (18 files, all created)
-`order-status-badge` · `payment-status-badge` · `order-table` · `order-filters` · `order-empty-state` · `order-row-actions` · `list-pagination` · `order-status-stepper` · `order-history-log` · `order-detail-actions` · `order-actions-panel` · `refund-modal` · `cancel-order-dialog` · `tracking-form` · `internal-notes` · `customer-table` · `customer-filters` · `new-order-indicator`.
-
-### Nav
-| Path | Change | Summary |
-|------|--------|---------|
-| `src/lib/admin/constants.ts` | modified | Orders nav `soon`→`live`; added `ADMIN_ORDERS_PATH` + `ADMIN_CUSTOMERS_PATH`. |
-
-## AC Coverage (30/30)
-- **AC-1..4 (list/search/filter):** `order-list-query` (25/page, created_at DESC, formatted MXN, badge pair) + pure bounded `parseOrderListFilters` (search meta-char-stripped, enums constrained). ✓
-- **AC-5..7 (detail/history/404):** `getAdminOrder` full read; `OrderHistoryLog` chronological newest-first; non-UUID/missing → `notFound()`. ✓
-- **AC-8..10 (status→email):** allowed-transition map offers only valid next; `advanceOrderStatus` only path; email branches on returned `transition_kind` (shipped→sendShipped, cancelled→sendCancelled); email failure ≠ rollback, surfaced as `emailSent:false`. ✓
-- **AC-11/12 (tracking):** `setTracking` persists cols; empty tracking number allowed → shipped email `trackingNumber:null`; URL validated. ✓
-- **AC-13..15 (cancel/restore):** `cancel_order` single SQL transaction (verified live: product 10→13, variant 7→9, payment_status stays paid, `transition_kind='cancelled'`, idempotent re-cancel = noop, null-FK skip). NOT compensation. sendCancelled once. ✓
-- **AC-16..20 (refund):** `RefundModal` two-step (compose → typed REEMBOLSAR), first caller of `refundOrderPayment`, full→refunded/partial→paid, over-refund/mp-error friendly (raw MP never echoed). ✓
-- **AC-18/19 (email once / idempotency):** sendRefundIssued deduped on MP refund id; stable per-open/submit key (`refund:{orderId}:{uuid}`). ✓
-- **AC-21 (notes):** `order_internal_notes`, newest-first, never in history/email. ✓
-- **AC-22/23 (packing slip):** self-guarded route (401 unauth, 404 missing), print-HTML `@media print`, CANCELADO band, no PDF dep. ✓
-- **AC-24 (customers):** paginated list, email/name search, order counts (batched, no N+1). ✓
-- **AC-25/26 (dashboard):** `NewOrderIndicator` (live count of pending_payment/paid), links to filtered list; owner email stays at checkout, not duplicated; no per-request marker. ✓
-- **AC-27/28 (revocation):** persisted `admin_session_version` compared to cookie `v` on every authoritative verify; bump revokes all; revoked → false with no further access (tested). Live BEFORE refund ships. ✓
-- **AC-29 (route self-guard):** packing-slip calls `hasValidAdminSession()` at entry → 401. ✓
-- **AC-30 (action guard):** every action `requireSession()` FIRST. ✓
-
-## Data-Testids Added (selection)
-`admin-orders-table/search/count/pagination/error/empty`, `admin-order-row-{id}`, `order-actions-{id}`, `order-status-{s}`, `payment-status-{s}`, `order-stepper`, `order-history`, `order-detail-actions`, `advance-status-trigger`, `advance-to-{s}`, `refund-open/modal/mode-full/mode-partial/amount/continue/confirm-input/submit/error`, `cancel-open/cancel-order-dialog/cancel-confirm/cancel-shipped-warning`, `tracking-form/tracking-save`, `internal-notes/internal-note-save`, `order-action-banner`, `partial-refund-note`, `admin-customers-table/search`, `dashboard-new-orders`, `packing-slip-open`.
+## Data-Testids Added
+- `hero-cta-catalog`, `hero-link-brands`, `hero-image-fallback` — hero (`components/home/hero.tsx`)
+- `featured-products`, `featured-products-view-all`, `featured-brands`, `featured-brands-view-all`, `featured-brand-tile` — homepage sections
+- `static-page-body` — prose renderer (`components/content/static-page-body.tsx`)
+- `contact-form`, `contact-name`, `contact-email`, `contact-subject`, `contact-message`, `contact-counter`, `contact-submit`, `contact-success`, `contact-rate-limited`, `contact-form-error`, `contact-*-error` — contact form
+- `showroom-map`, `showroom-map-link` — showroom map column
+- `footer-link-showroom` (+ existing `footer-link-{about,shipping,returns,warranty,faq,contact,privacy,terms}`) — footer
 
 ## Key Decisions
-- **Session revocation via persisted `admin_session_version`** (research's pick) over max-age shortening — a real "log out everywhere". Read cached per-request; enforced at the async Node guard, Edge pre-check untouched.
-- **Codec decoupled from version equality:** `decodePayload` accepts any finite `v`; the guard owns the persisted-equality check — required so a bumped-version cookie is a *revocation*, not a *decode failure*.
-- **`ListPagination` generalized** (hrefFor builder) to serve both order + customer lists without duplicating `AdminPagination`.
-- **`order-constants.ts`** holds the client-safe note-length constant so client components never import a `server-only` write module (build-enforced — the prod build caught + fixed this).
-- **Packing slip = escaped print-HTML**, no PDF dependency (research-confirmed).
+- **Route shape:** one generic `[pageSlug]` for the 7 text pages + explicit `contacto/`/`showroom/` folders (DRY, static-segment precedence). Verified live: existing routes still 200, unknown/reserved slugs 404.
+- **Showroom data home:** **Option A** — copy in the `showroom` page body + map link/image in config. No migration, honors placeholder scope; Option B (additive `store_settings` columns) deferred to Phase 2.
+- **FAQ:** headed list with native `:target` deep-links — zero client JS, all answers Ctrl-F/SEO-visible.
+- **Featured selection:** bounded slices of `listProducts({pageSize:8})` / `listBrands().slice(0,6)` — no "featured" DB flag.
+- **Per-`(slug,locale)` cache readers:** memoized `unstable_cache` closures so each locale caches independently under the shared `static-pages` tag (the wrapped body never touches cookies — ISR-safe).
+- **Old flat `home.*` keys deleted** (no other consumer) rather than left orphaned.
 
-## Deviations from Ticket
-- None. Every listed file/AC delivered; refund action is gated behind the now-live revocation (AC-27 order honored).
+## Deviations from Ticket / Design Spec
+- **None.** Every ui-design.md decision (slug split, 3-column footer + Legal, split-hero token fallback, headed-FAQ `:target`, verbatim contact grammar, no-animation prose, Option-A showroom, full message-key inventory) implemented as specified.
 
 ## Edge Cases Handled
-1. Over-refund → `over-refund` friendly, no state change (refund.ts + record_refund). 2. PP-000005 duplicates → refund targets single `mp_payment_id`, balance line never implies more. 3. Cancel-after-shipped → allowed (rank 5) + `alreadyShipped` warning. 4. Double-transition race → RPC `FOR UPDATE` + `noop_same_status` (no 2nd email). 5. Regressive transition → not offered; forced → `regression_blocked` → "Transición no permitida". 6. Refund on cancelled-but-paid → Refund stays enabled + helper line. 7. Email-send failure → committed, `emailSent:false`, "correo no enviado". 8. Cancelled packing slip → CANCELADO band, still self-guarded. 9. Stolen cookie post-refund → version bump revokes. 10. Concurrent partials → record_refund rejects 2nd, "error" → reconcile message. 11. Since-deleted product/variant → cancel skips null FK (verified live).
+1. **Missing seed row** → `getStaticPageBySlug` returns `null` → `notFound()` (verified: unknown slug 404).
+2. **Unpublished page** → anon RLS filters it → `null` → in-shell 404.
+3. **Missing `en` translation** → per-field fallback to es-MX base in `readStaticPage` (the `??` overlay).
+4. **Contact send failure** (`{ok:false}` / owner-address-unavailable, the current default with no EMAIL_* env) → `status:"error"` + retry, values preserved, raw reason logged only.
+5. **Contact abuse** → dedicated per-IP sliding window + `maxKeys` ceiling → `status:"rate-limited"` (unit-tested).
+6. **Honeypot tripped** → `status:"success"` fake, no send.
+7. **Oversized/hostile message** → capped at `CONTACT_MESSAGE_MAX` before send (unit-tested); template HTML-escapes; body rendered as escaped text.
+8. **Empty catalog** → featured sections omitted, hero renders (page-level + component-level guard).
+9. **Featured read failure / absent settings** → try/catch → `[]`, hero survives; footer degrades to config fallbacks (existing).
+10. **Slug collision / reserved path** → `RESERVED_SLUGS` + load-time throw + `generateStaticParams` restricted to the 7 generic slugs; verified `/sillas`,`/marcas`,`/producto` unaffected.
 
 ## How to Test
-1. `npm run db:seed` (30 products). Log in at `/admin`. Dashboard shows new-order count.
-2. `/admin/orders` — search/filter/paginate; row → detail.
-3. Detail: advance status (Avanzar), Ship (tracking form → advance to Enviado → shipped email), Cancel (AlertDialog → stock restore), Refund (two-step modal → typed REEMBOLSAR).
-4. `/admin/orders/[id]/packing-slip` in a new tab (print). Log out → 401.
-5. Bump `admin_session_version` in DB → the current admin cookie is instantly rejected on the next request.
+1. `npm run db:seed` (idempotent) → summary shows `static_pages: 9`, `translations: 18`.
+2. Visit `/`, all 9 slugs, `/contacto`, `/showroom` and their `/en/*` counterparts → 200, localized `<h1>`, English body via overlay.
+3. Deep-link `/preguntas-frecuentes#puedo-devolver-mi-silla` → scrolls to the framed question (no JS).
+4. Contact form: submit empty → inline field errors, values kept, focus first invalid; submit valid with **no** EMAIL_* env → error banner + retry (raw reason never shown).
+5. **Success path (QA):** set `EMAIL_OWNER_ADDRESS=<dummy>` **and** `EMAIL_DEV_PREVIEW=1` (owner-address check precedes the preview short-circuit in `dispatch.ts` — both required) + `CONTACT_RATE_LIMIT_DISABLED=1` → submit → success banner, cleared inputs, console preview.
+6. Footer: every link resolves 200 (verified live — zero dead links).
+
+## AC Coverage Map
+| AC | Status | Where |
+|----|--------|-------|
+| AC-1 (9 pages, es-MX + `/en/`, `<h1>`, single-sourced slugs, split reconciled) | ✅ verified live (20/20 render 200) | `config/static-pages.ts`, routes, `content.ts` |
+| AC-2 (title+body via `getStaticPageBySlug`, not hardcoded) | ✅ | `content/static-pages.ts` |
+| AC-3 (seed 9 es-MX, legal headed, idempotent upsert) | ✅ verified reseed | `content.ts`, `seed.ts`, invariant test |
+| AC-4 (en from `translations`, es-MX fallback) | ✅ verified live (en titles) | overlay in wrapper + seed |
+| AC-5 (missing/unpublished → `notFound`, no 500/blank) | ✅ verified live (404) | route `notFound()` |
+| AC-6 (`generateMetadata` locale-correct, `hasLocale` fallback) | ✅ | all 3 route files |
+| AC-7 (hero + featured chairs + featured brands, named consts) | ✅ verified live | `page.tsx` + `components/home/*` |
+| AC-8 (featured via catalog layer, no new flag) | ✅ | slices of `listProducts`/`listBrands` |
+| AC-9 (omit empty section, hero always) | ✅ | page + component guards |
+| AC-10 (zero dead footer/nav links) | ✅ verified live (9/9 200) | `site-footer.tsx`, `nav-items.ts` |
+| AC-11 (fields + honeypot → action → `sendContactRelay`) | ✅ | contact form + action |
+| AC-12 (success clears + `submissionId`) | ✅ | form + action |
+| AC-13 (trim/cap/validate, invalid preserves values, no send) | ✅ unit | `submit-guard.ts` |
+| AC-14 (IP rate limit, disable env, over-limit no send) | ✅ unit | `rate-limit.ts` |
+| AC-15 (honeypot → fake success) | ✅ | action + guard |
+| AC-16 (`{ok:false}` → error+retry, raw reason never shown) | ✅ verified default (no EMAIL_*) | action mapping |
+| AC-17 (message passed raw; no unescaped injection) | ✅ | action passes verbatim; body escaped |
+| AC-18 (showroom address/hours + map or link, degrades) | ✅ verified live (token panel) | `showroom/page.tsx` |
+| AC-19 (all chrome from namespaces, both locales) | ✅ parity verified | messages + `keys-used` |
+| AC-20 (keyboard/SR sane, labels, `aria-describedby`, roles) | ✅ | contact form |
 
 ## Known Limitations
-- New-order indicator is a live count (pending_payment/paid), not a "since last viewed" marker — simplest AC-25/26-compliant form (no marker to persist).
-- Refund is single-payment (`orders.mp_payment_id`); PP-000005's 2 extra charges are a manual MP-dashboard action (out of scope, UI never implies otherwise).
+- **Contact success is not exercisable without `EMAIL_OWNER_ADDRESS`** (blocked-on-user, like T8 Phase 5). Dev/QA path: `EMAIL_OWNER_ADDRESS=<dummy>` + `EMAIL_DEV_PREVIEW=1`; `sendContactRelay` branches already unit-tested in `dispatch.test.ts`.
+- **In-memory rate limiter** is per-instance (documented backlog caveat shared with checkout/Q&A).
+- **Legal copy** (Aviso/Terms) is structured **placeholder** with a "reference text" disclaimer — real text pending client input (Out of Scope).
+- `HERO_IMAGE`/`SHOWROOM_MAP_*` are `null` Phase 1 → token panels render; set config values when real assets/address land.
 
 ## Dependencies Added
-- None. Reused shadcn Dialog/AlertDialog/Badge/Button, `@hugeicons`, `refundOrderPayment`/`advanceOrderStatus`/email seams, list/pagination patterns.
-
-## Risks for Review (Stage 5)
-- **Session codec contract change** touches the shared trust boundary — the Edge middleware still does a fast pre-check that does NOT do the revocation read (by design; the authoritative Node guard does). Reviewer should confirm the Edge/Node asymmetry is acceptable (it matches the existing defense-in-depth split).
-- **`refund-modal.tsx` partial amount** is whole-pesos (× 100 → cents); confirm no fractional-centavo expectation.
-- **`cancel_order` leaves `payment_status` untouched** by design (edge 6) — reviewer should confirm a cancelled+paid order SHOULD remain refundable.
-- **Dashboard new-order count** semantics (pending_payment OR paid) — confirm "paid but not yet advanced" is the intended definition of "new".
-
-## Fixes Applied (Stage 6 — ultrafix)
-
-Resolved every finding in `tasks/review-findings.md` (0 critical, 4 major, 6 minor, 4 nits). All 30 ACs now PASS.
-
-### Issue Tracker
-| ID | Severity | Title | Status | File | Notes |
-|----|----------|-------|--------|------|-------|
-| C-* | CRITICAL | — | N/A | — | No critical findings |
-| M-1 | MAJOR | Refund drops real `emailSent` signal | FIXED | `refund-modal.tsx`, `order-detail-actions.tsx:161` | `onRefunded` is now `(emailSent: boolean) => void`; `submit()` passes `result.emailSent`; parent threads it into the banner → "· correo no enviado" now shows when a refund's email fails. +3 unit tests. |
-| M-2 | MAJOR | Cancelled band shows creation time | FIXED | `orders/[id]/page.tsx:36-45` | `cancelledAt` derived from the newest `cancelled` history entry (history is newest-first); `null` fallback renders the band without a timestamp rather than a wrong one. |
-| M-3 | MAJOR | Customer counts truncate at 1000-row cap | FIXED | `0013_admin_customer_order_counts.sql`, `customer-list-query.ts:100-124`, `rpc.ts` | New grouped-count RPC (STABLE SECURITY DEFINER, empty search_path, service_role-only, anon denied). `readOrderCounts` calls it → ≤25 count rows, no truncation, bounded read. Verified live. |
-| M-4 | MAJOR | Dashboard count ≠ link filter | FIXED | `order-list-filters.ts`, `order-list-query.ts`, `dashboard-metrics.ts`, `new-order-indicator.tsx` | Chose "new = pending_payment OR paid" (AC-25 wording). Single-sourced `NEW_ORDER_STATUSES`; count + new `?new=1` list seam both consume it; link `?status=paid`→`?new=1`. Seam yields to an explicit `?status`. +10 unit tests. |
-| m-1 | MINOR | Idempotency key lost on remount | DOCUMENTED | `refund-modal.tsx` | Accepted per reviewer's recommendation; residual remount-only risk noted. Server-derived key is a Phase-2 hardening. |
-| m-2 | MINOR | `crypto.randomUUID()` throws in insecure ctx | FIXED | `refund-modal.tsx` | `randomKeySuffix()` feature-detects + try/catch, falls back to a `Date.now()`+`Math.random()` token. |
-| m-3 | MINOR | Refund inputs not a11y-associated | FIXED | `refund-modal.tsx` | Step-1 amount: `aria-invalid` + `aria-describedby` (hint + error). Step-2: passes `error` into `TextField` (wires aria + FieldError). |
-| m-4 | MINOR | `bigint` version typed as `number` | FIXED (doc) | `session-version.ts` | Added a PRECISION NOTE explaining the safe carry + when to switch to bigint compare. |
-| m-5 | MINOR | advance payment-status snapshot | FIXED (doc) | `order-status-write.ts` | Comment: `p_payment_status` is the desired state, RPC re-derives under its lock — not a TOCTOU to "optimize". |
-| m-6 | MINOR | `copyNumber` gives no feedback | FIXED | `order-row-actions.tsx` | Transient `role="status"` "Copiado" pill (tick, `.enter-fade`, 1.5 s auto-hide); rejection logged, not swallowed. |
-| n-1 | NIT | Whole-peso-only refund | SKIPPED | — | Product intent, not a defect (matches dev-done "whole pesos, Phase 1"). |
-| n-2 | NIT | Redundant inline timing-function | FIXED | `order-status-stepper.tsx` | Dropped inline `style`; added `motion-reduce:transition-none`. |
-| n-3 | NIT | Hover-arrow transforms un-RM-gated | FIXED | `new-order-indicator.tsx`, admin `page.tsx` | Added `motion-reduce:transform-none motion-reduce:transition-none`. |
-| n-4 | NIT | Rambling packing-slip docstring | FIXED | `packing-slip.ts` | Rewrote; slip renders no prices — the money paragraph was inaccurate and is removed. |
-
-### Summary
-- Critical: 0/0 (none found)
-- Major: 4/4 fixed, 0 skipped
-- Minor: 6/6 addressed (4 code fixes, 2 documented; m-1 accepted per reviewer)
-- Nits: 3/4 fixed, 1 skipped (n-1, product intent)
-
-### Migration Added
-- `supabase/migrations/0013_admin_customer_order_counts.sql` — `admin_customer_order_counts(uuid[])` grouped-count RPC for M-3. Applied locally via fresh `supabase db reset` (0001..0013 clean) and functionally verified: correct grouped counts (2/1), null-`customer_id` orders excluded, ids with no orders omitted (app maps missing→0), anon execute denied / service_role granted. Next migration is 0014.
-
-### Test Results After Fixes
-- `npx tsc --noEmit`: clean (exit 0)
-- ESLint (all touched files): clean (exit 0)
-- Unit: 1495/1495 pass (90 files) — was 1482; +13 new (`order-list-filters.test.ts` ×10, `refund-modal.test.tsx` ×3, incl. the M-1 emailSent-propagation regression test)
-- Integration: unchanged from Stage 4 baseline (219/219); no integration surface touched by these fixes
+- **None.** Reuses `next-intl`, `sendContactRelay`, `createSlidingWindowLimiter`, `createPublicClient`, catalog queries, and shipped card/tile/grid/breadcrumb/button components + shipped motion classes.

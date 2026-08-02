@@ -32,3 +32,5 @@ export * from "./config/product-detail";
 export * from "./config/cart";
 export * from "./config/checkout";
 export * from "./config/email";
+export * from "./config/static-pages";
+export * from "./config/contact";

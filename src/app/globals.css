@@ -345,6 +345,20 @@
   }
 }
 
+/* ======================================================================== *
+ * STATIC-PAGE HEADING :target ACCENT (T13 FAQ deep-links)
+ * ------------------------------------------------------------------------
+ * A `#slug` deep link to an FAQ question frames the targeted `<h2>` with a
+ * subtle left accent bar. COLOR/BORDER ONLY — no motion, so it is inherently
+ * reduced-motion-safe and works on first paint with zero client JS. `scroll-mt`
+ * (set on the element) keeps the target below the sticky header.
+ * ======================================================================== */
+.static-heading:target {
+  border-left: 2px solid var(--ring);
+  padding-left: 0.75rem;
+  margin-left: -0.75rem;
+}
+
 /* Nav item hover — color only, gated behind hover-capable pointers (AC-13). */
 @media (hover: hover) and (pointer: fine) {
   .nav-hover {

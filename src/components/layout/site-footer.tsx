@@ -25,15 +25,27 @@ import { cn } from "@/lib/utils";
  * renders the localized 404 inside the shell (AC-10), never a broken page.
  */
 
-/** Footer link groups keyed to the `footer.links` dictionary + real slugs. */
-const STORE_LINKS = [
-  { key: "about", href: "/sobre-nosotros" },
-  { key: "shipping", href: "/envios-y-devoluciones" },
-] as const;
+/**
+ * Footer link groups keyed to the `footer.links` dictionary + REAL seeded slugs
+ * (T13 AC-10 reconciliation). Split into 3 real link columns now that all 9
+ * static pages exist. Every href resolves to a live static page — ZERO dead
+ * links. The combined T2 `/envios-y-devoluciones` was split into `/envios` +
+ * `/devoluciones` (matching the seeded page set). Showroom hangs off the
+ * store-info block as a contextual link, not a policy column.
+ */
+const STORE_LINKS = [{ key: "about", href: "/sobre-nosotros" }] as const;
 
 const HELP_LINKS = [
   { key: "faq", href: "/preguntas-frecuentes" },
+  { key: "shipping", href: "/envios" },
+  { key: "returns", href: "/devoluciones" },
   { key: "contact", href: "/contacto" },
+] as const;
+
+const LEGAL_LINKS = [
+  { key: "warranty", href: "/garantia" },
+  { key: "privacy", href: "/aviso-de-privacidad" },
+  { key: "terms", href: "/terminos" },
 ] as const;
 
 const FOOTER_LINK_CLASS = cn(
@@ -57,7 +69,7 @@ export async function SiteFooter() {
   return (
     <footer className="mt-auto border-t border-border bg-background">
       <div className="mx-auto max-w-(--breakpoint-xl) px-4 py-10 md:px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <div className="flex flex-col gap-2">
             <p
               data-testid="footer-store-name"
@@ -72,6 +84,14 @@ export async function SiteFooter() {
             >
               {freeShippingLine}
             </p>
+            {/* Showroom is location content, not a policy — contextual here. */}
+            <Link
+              href="/showroom"
+              data-testid="footer-link-showroom"
+              className={cn(FOOTER_LINK_CLASS, "mt-1")}
+            >
+              {t("links.showroom")}
+            </Link>
           </div>
 
           <FooterLinkGroup
@@ -82,6 +102,11 @@ export async function SiteFooter() {
           <FooterLinkGroup
             heading={t("sections.help")}
             links={HELP_LINKS}
+            labelFor={(key) => t(`links.${key}`)}
+          />
+          <FooterLinkGroup
+            heading={t("sections.legal")}
+            links={LEGAL_LINKS}
             labelFor={(key) => t(`links.${key}`)}
           />
         </div>

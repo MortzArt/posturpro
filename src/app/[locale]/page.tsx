@@ -1,56 +1,116 @@
+import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { Link } from "@/i18n/navigation";
-import { Button } from "@/components/ui/button";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import { hasLocale } from "next-intl";
+import { routing } from "@/i18n/routing";
+import {
+  CATALOG_PATH,
+  BRANDS_PATH,
+  HOME_FEATURED_PRODUCTS,
+  HOME_FEATURED_BRANDS,
+  HERO_IMAGE,
+} from "@/lib/config";
+import { listProducts, listBrands } from "@/lib/catalog/queries";
+import type { CatalogBrand, CatalogProductCard } from "@/lib/catalog/types";
+import { Hero } from "@/components/home/hero";
+import { FeaturedProducts } from "@/components/home/featured-products";
+import { FeaturedBrands } from "@/components/home/featured-brands";
 
 /**
- * Minimal homepage placeholder (T2 scope only). A localized heading + short
- * intro + nav affordances that replace the create-next-app splash. NO featured
- * chairs, brands, or hero imagery — that is T13. CTAs point at routes owned by
- * later tasks; they 404 gracefully inside the shell until built (AC-10).
+ * Homepage (T13 AC-7, AC-8, AC-9) — the launch-grade front door. Replaces the T2
+ * placeholder with a hero (ALWAYS rendered) + Featured chairs (bounded slice of
+ * `listProducts`) + Featured brands (`listBrands` sliced to M). Each featured
+ * section is OMITTED when its list is empty (edge 8); featured selection is a
+ * bounded slice of existing active-content queries — no "featured" DB flag.
+ *
+ * Featured reads degrade to empty on failure so the hero always survives (edge
+ * 9); a hard content miss must never blank the front door.
  */
 
 interface HomePageProps {
   params: Promise<{ locale: string }>;
 }
 
+export async function generateMetadata({
+  params,
+}: HomePageProps): Promise<Metadata> {
+  const { locale } = await params;
+  const activeLocale = hasLocale(routing.locales, locale)
+    ? locale
+    : routing.defaultLocale;
+  const t = await getTranslations({ locale: activeLocale, namespace: "metadata" });
+  return { title: t("title"), description: t("description") };
+}
+
+/** Read the featured chairs, degrading to `[]` on any read failure (edge 9). */
+async function readFeaturedProducts(): Promise<CatalogProductCard[]> {
+  try {
+    const page = await listProducts({ pageSize: HOME_FEATURED_PRODUCTS });
+    return page.items;
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    console.warn(`[home] featured products read failed: ${message}. Omitting section.`);
+    return [];
+  }
+}
+
+/** Read the featured brands (sliced to M), degrading to `[]` on failure (edge 9). */
+async function readFeaturedBrands(): Promise<CatalogBrand[]> {
+  try {
+    const brands = await listBrands();
+    return brands.slice(0, HOME_FEATURED_BRANDS);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    console.warn(`[home] featured brands read failed: ${message}. Omitting section.`);
+    return [];
+  }
+}
+
 export default async function HomePage({ params }: HomePageProps) {
   const { locale } = await params;
   setRequestLocale(locale);
-  const t = await getTranslations("home");
+
+  const [t, products, brands] = await Promise.all([
+    getTranslations("home"),
+    readFeaturedProducts(),
+    readFeaturedBrands(),
+  ]);
 
   return (
-    <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-16 md:px-6 md:py-24 lg:px-8">
-      <div className="flex max-w-2xl flex-col gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          {t("title")}
-        </h1>
-        <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
-          {t("intro")}
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-4">
-          <Button asChild size="lg" className="min-h-11 px-4">
-            <Link href="/sillas" data-testid="home-cta-catalog">
-              {t("ctaCatalog")}
-            </Link>
-          </Button>
-          <Link
-            href="/marcas"
-            data-testid="home-link-brands"
-            className="nav-hover group/brands inline-flex items-center gap-1 rounded-sm text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {t("ctaBrands")}
-            <HugeiconsIcon
-              icon={ArrowRight01Icon}
-              size={16}
-              strokeWidth={2}
-              aria-hidden
-              className="link-arrow"
-            />
-          </Link>
-        </div>
-      </div>
-    </section>
+    <>
+      <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-16 md:px-6 md:py-24 lg:px-8">
+        <Hero
+          headline={t("hero.title")}
+          subcopy={t("hero.subtitle")}
+          ctaLabel={t("hero.ctaCatalog")}
+          ctaHref={CATALOG_PATH}
+          secondaryLabel={t("hero.ctaBrands")}
+          secondaryHref={BRANDS_PATH}
+          imageUrl={HERO_IMAGE}
+          imageAlt={t("hero.imageAlt")}
+        />
+      </section>
+
+      {products.length > 0 ? (
+        <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
+          <FeaturedProducts
+            products={products}
+            heading={t("featured.productsHeading")}
+            viewAllLabel={t("featured.viewAllProducts")}
+            viewAllHref={CATALOG_PATH}
+          />
+        </section>
+      ) : null}
+
+      {brands.length > 0 ? (
+        <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
+          <FeaturedBrands
+            brands={brands}
+            heading={t("featured.brandsHeading")}
+            viewAllLabel={t("featured.viewAllBrands")}
+            viewAllHref={BRANDS_PATH}
+          />
+        </section>
+      ) : null}
+    </>
   );
 }

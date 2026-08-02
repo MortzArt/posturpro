@@ -28,13 +28,19 @@
     "freeShipping": "Envío gratis en compras mayores a {threshold}",
     "sections": {
       "store": "Tienda",
-      "help": "Ayuda"
+      "help": "Ayuda",
+      "legal": "Legal"
     },
     "links": {
       "about": "Sobre nosotros",
-      "shipping": "Envíos y devoluciones",
+      "shipping": "Envíos",
+      "returns": "Devoluciones",
+      "warranty": "Garantía",
       "faq": "Preguntas frecuentes",
-      "contact": "Contacto"
+      "contact": "Contacto",
+      "privacy": "Aviso de privacidad",
+      "terms": "Términos y condiciones",
+      "showroom": "Visita nuestro showroom"
     },
     "rights": "© {year} {storeName}. Todos los derechos reservados."
   },
@@ -42,10 +48,19 @@
     "label": "Contáctanos por WhatsApp"
   },
   "home": {
-    "title": "Sillas ergonómicas para tu espalda",
-    "intro": "Encuentra la silla perfecta entre nuestras marcas y estilos.",
-    "ctaCatalog": "Ver sillas",
-    "ctaBrands": "Marcas"
+    "hero": {
+      "title": "Sillas ergonómicas para cuidar tu espalda",
+      "subtitle": "Encuentra la silla perfecta entre nuestras marcas y estilos.",
+      "ctaCatalog": "Ver sillas",
+      "ctaBrands": "Marcas",
+      "imageAlt": "Silla ergonómica PosturPro"
+    },
+    "featured": {
+      "productsHeading": "Sillas destacadas",
+      "brandsHeading": "Marcas",
+      "viewAllProducts": "Ver todas las sillas",
+      "viewAllBrands": "Ver todas las marcas"
+    }
   },
   "notFound": {
     "code": "404",
@@ -548,5 +563,52 @@
       "intro": "Procesamos un reembolso de {amount} para tu pedido {orderNumber}. El tiempo de acreditación depende de tu banco.",
       "amountLabel": "Monto reembolsado"
     }
+  },
+  "contact": {
+    "metadata": {
+      "title": "Contacto"
+    },
+    "name": {
+      "label": "Nombre",
+      "placeholder": "Tu nombre"
+    },
+    "email": {
+      "label": "Correo electrónico",
+      "placeholder": "tu@correo.com"
+    },
+    "subject": {
+      "label": "Asunto",
+      "optional": "(opcional)",
+      "placeholder": "¿Sobre qué nos escribes?"
+    },
+    "message": {
+      "label": "Mensaje",
+      "placeholder": "Cuéntanos cómo podemos ayudarte…"
+    },
+    "charCount": "{count}/{max}",
+    "submit": "Enviar mensaje",
+    "submitting": "Enviando…",
+    "honeypot": "No llenar este campo",
+    "success": "¡Mensaje enviado! Te responderemos pronto.",
+    "errorGeneric": "No pudimos enviar tu mensaje, inténtalo de nuevo.",
+    "rateLimited": "Espera un momento antes de enviar otro mensaje.",
+    "retry": "Reintentar",
+    "errors": {
+      "nameRequired": "Ingresa tu nombre.",
+      "nameTooLong": "El nombre es demasiado largo.",
+      "emailRequired": "Ingresa tu correo.",
+      "emailInvalid": "Ingresa un correo válido.",
+      "emailTooLong": "El correo es demasiado largo.",
+      "subjectTooLong": "El asunto es demasiado largo.",
+      "messageRequired": "Escribe tu mensaje.",
+      "messageTooLong": "El mensaje es demasiado largo."
+    }
+  },
+  "showroom": {
+    "metadata": {
+      "title": "Showroom"
+    },
+    "viewOnMaps": "Ver en mapas",
+    "mapAlt": "Mapa de la ubicación del showroom"
   }
 }

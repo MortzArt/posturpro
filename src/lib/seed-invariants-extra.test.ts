@@ -10,6 +10,9 @@ import { STATIC_PAGES } from "../../scripts/seed-data/content";
 import {
   FREE_SHIPPING_THRESHOLD_CENTS,
   SHIPPING_FLAT_RATE_CENTS,
+  ALL_STATIC_PAGE_SLUGS,
+  STATIC_PAGE_SLUGS,
+  RESERVED_SLUGS,
 } from "./config";
 
 /** Resolve the parent chain of a category by slug; detect any cycle. */
@@ -125,8 +128,9 @@ describe("store-settings seed values (AC-11)", () => {
   });
 });
 
-describe("static-page fixtures (AC-5)", () => {
-  it("has unique slugs and non-empty title/body for every page", () => {
+describe("static-page fixtures (T13 AC-1, AC-3, AC-4)", () => {
+  it("seeds all 9 pages with unique slugs and non-empty es-MX + en title/body", () => {
+    expect(STATIC_PAGES).toHaveLength(9);
     expect(new Set(STATIC_PAGES.map((p) => p.slug)).size).toBe(
       STATIC_PAGES.length,
     );
@@ -134,6 +138,32 @@ describe("static-page fixtures (AC-5)", () => {
       expect(page.slug.length).toBeGreaterThan(0);
       expect(page.title.length).toBeGreaterThan(0);
       expect(page.body.length).toBeGreaterThan(0);
+      // English overlay present for every page (AC-4 seeds it; fallback is a
+      // read-time safety net, not an excuse to skip seeding).
+      expect(page.en.title.length).toBeGreaterThan(0);
+      expect(page.en.body.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("covers exactly the config's single-sourced 9-slug set (AC-1)", () => {
+    expect(new Set(STATIC_PAGES.map((p) => p.slug))).toEqual(
+      new Set(ALL_STATIC_PAGE_SLUGS),
+    );
+  });
+
+  it("keeps the 7 generic slugs disjoint from reserved route segments (edge 10)", () => {
+    for (const slug of STATIC_PAGE_SLUGS) {
+      expect(RESERVED_SLUGS.has(slug)).toBe(false);
+    }
+  });
+
+  it("structures legal + FAQ bodies as headed sections, not one sentence (AC-3)", () => {
+    const headed = ["aviso-de-privacidad", "terminos", "preguntas-frecuentes"];
+    for (const slug of headed) {
+      const page = STATIC_PAGES.find((p) => p.slug === slug);
+      expect(page).toBeDefined();
+      expect(page?.body).toContain("## ");
+      expect(page?.en.body).toContain("## ");
     }
   });
 });
