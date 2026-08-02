@@ -458,7 +458,11 @@ function SelectField({
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
         data-testid="quote-teamSize"
-        className={cn(fieldClasses, "appearance-none bg-none pr-3")}
+        // Keep the NATIVE dropdown arrow (ui-design.md §SelectField: "the native
+        // arrow is acceptable; add appearance-none + a chevron ONLY if it
+        // clashes"). Without it a bare `<select>` reads as a text input — no
+        // affordance that it opens a picker. `fieldClasses` already sets `px-3`.
+        className={fieldClasses}
       >
         <option value="" disabled>
           {placeholder}

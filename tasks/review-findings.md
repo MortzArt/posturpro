@@ -1,105 +1,118 @@
-# Code Review + Fix: T15 — Premium visual identity ("Casa de Azulejo") [S4 ReviewFix]
+# Code Review + Fix: T16 — B2B landing page (`/empresas`, offices + quote form)
 
 ## Summary
 
-The cobalt-on-milk-white azulejo reskin is a disciplined, high-quality token/asset/typography pass. The admin firewall is correctly implemented (storefront-scoped `.theme-storefront`, admin body untouched, font seam resolved via a `--font-heading-family` default), token discipline holds (zero hardcoded brand colors, semantic amber/emerald cleanly promoted to `--warning`/`--success`), i18n is perfectly symmetric (527 keys), and every structural e2e signal is preserved. One MAJOR defect was found and fixed inline: a config slot + a shipped 294 KB image asset that were never rendered anywhere (dead code + dead weight). All fixes verified (tsc/eslint/i18n/unit/e2e).
+Standard S4 (ReviewFix), single-pass over all 29 files of S3 commit `f713355`. The
+implementation is a faithful, well-hardened clone of the shipped T13 contact stack composed
+into the T15 Casa de Azulejo world — the risk-center (public input → owner email) is genuinely
+mirrored, not just claimed. One MAJOR affordance regression was found and FIXED inline (the
+team-size `<select>` had its native dropdown arrow stripped with no replacement, against the
+binding ui-design spec). No critical issues. All 14 ACs verified in code; the 8 edge cases hold.
+`tsc`, `eslint`, and the full 1920-test unit suite are green after the fix.
 
 ## Issues Found & Resolved
 
 ### Critical Issues
 
-None found. The headline risk (admin-firewall bleed) was independently verified and is correctly contained.
+None found. The public write path is correctly ordered (honeypot → validate → rate-limit →
+relay), every user field is trimmed + length-capped, company/name are additionally
+control-char-stripped (T13 `stripControlChars` genuinely mirrored — verified byte-for-byte),
+the team-size enum is membership-checked server-side (tampered value rejected as
+`teamSizeInvalid`, never reaches the template), the relay template HTML-escapes every field
+via `renderParagraph`'s default `escape=true` + explicit `escapeHtml` on the needs body, the
+raw provider reason is logged server-side only and never surfaced, and the action never throws
+to the client. No secret/config leakage in the serializable state.
 
 ### Major Issues
 
-#### M-1: `CATALOG_BANNER_IMAGE` slot and its 294 KB asset were dead — never rendered
+#### M-1: Team-size `<select>` stripped of its native dropdown affordance
 
 - **Severity**: MAJOR
-- **File**: `src/lib/config/imagery.ts:24` (export) + `public/images/catalog/workspace-banner.jpg` (asset)
-- **Problem**: The commit exported `CATALOG_BANNER_IMAGE`, shipped a 294 KB `workspace-banner.jpg`, and documented a "Catalog index banner" slot in `dev-done.md`, `SOURCES.md`, `README.md`, and `DESIGN.md` (§Per-surface application). But `grep` confirmed **no page consumes it** — the `/sillas` index never rendered the banner. The slot was neither "filled" nor "degrading to a tile"; it was invisible, and the 294 KB asset was pure dead weight in the repo/bundle.
-- **Impact**: (a) Clean-code violation — dead export + dead asset (CLAUDE.md "No dead code"). (b) AC-15 perf smell — an oversized image shipped that no surface uses. (c) AC-8 gap — DESIGN.md commits a catalog art slot that did not exist in code; a DESIGN.md↔code mismatch. (d) The owner's documented "filled slots" decision was silently unmet for this slot.
-- **Fix Applied**: Wired the slot into the catalog index honoring DESIGN.md's "framed painted panel" grammar:
-  - New `src/components/catalog/catalog-banner.tsx` — a decorative 21/9 cobalt cartouche mirroring the `Hero`/`EditorialBand` null-degrade grammar (`next/image` with `sizes`, no `priority` since it is not the LCP; degrades to a `catalog-banner-fallback` blank cobalt tile with a chair glyph when the config is `null`; aspect box reserved → zero CLS).
-  - Rendered in `src/app/[locale]/sillas/page.tsx` above the toolbar/grid, gated on `!active` (unfiltered index only — the "hall entrance", not filtered result views), so it never intercepts or shifts the grid the e2e column-count assertion measures.
-  - Added symmetric `catalog.banner.imageAlt` to `en.json` + `es-MX.json` (no hardcoded string; AC-16 lockstep held).
-- **Status**: FIXED — verified: tsc clean, eslint clean, i18n symmetric, mobile column-count e2e passes with the banner present.
+- **File**: `src/app/[locale]/empresas/quote-form.tsx:461`
+- **Problem**: The native `<select>` used `className={cn(fieldClasses, "appearance-none bg-none pr-3")}`.
+  `appearance-none bg-none` removes the browser's native dropdown chevron, and no replacement
+  chevron (background image or sibling icon) was provided. The control renders visually
+  identical to a plain text input — no affordance that it opens a picker.
+- **Impact**: Discoverability/recognition regression (a user cannot tell it is a dropdown);
+  also an undocumented deviation from the BINDING ui-design spec (`tasks/ui-design.md` §SelectField,
+  line 304: *"The native arrow is acceptable; add `appearance-none` + a background chevron ONLY
+  if it clashes"*). It was not among the 2 documented deviations.
+- **Fix Applied**: Dropped `appearance-none bg-none pr-3`; the control now uses `fieldClasses`
+  verbatim, restoring the native OS dropdown arrow (the spec's default, explicitly "acceptable").
+  `pr-3` was redundant with the `px-3` already in `fieldClasses`. Added a comment citing the spec.
+- **Status**: FIXED
 
 ### Minor Issues
 
-#### m-1: `/sillas` page `<h1>` was residual-neutral (not in the roman-caps heading world)
+#### m-1: Honeypot short-circuit is a (benign) timing oracle
 
-- **File**: `src/app/[locale]/sillas/page.tsx:137`
-- **Problem**: The catalog index title used `text-2xl font-semibold tracking-tight` — the old neutral treatment, not the committed `font-heading uppercase tracking-wide` cartouche-caption style every other section header adopted (AC-6 consistency). This file was outside the S3 commit's changed-file set, so it kept the old look.
-- **Fix Applied**: Changed the `<h1>` to `font-heading text-2xl font-semibold uppercase tracking-wide` (opportunistically, while already editing this file for M-1). Boy-Scout consistency with the committed type scale.
-- **Status**: FIXED
+- **File**: `src/app/[locale]/empresas/actions.ts:52`
+- **Suggestion**: The honeypot fake-success returns before validate/rate-limit/relay, so a
+  honeypot-tripped response is measurably faster than a real submission. In principle a bot
+  could time-distinguish it.
+- **Status**: SKIPPED — identical to the shipped, QA'd contact action (the spec mandates
+  "mirror contact verbatim"); the honeypot targets crude bots, not timing-attack-resistant
+  adversaries, and adding artificial delay would be a speculative change to a proven pattern.
+  Noted for the record, not a regression.
 
-#### m-2: impeccable `broken-image` hook finding on `catalog-banner.tsx:15`
+#### m-2: `renderQuoteRelay` / `sendQuoteRelay` are a second copy of the contact relay grammar
 
-- **File**: `src/components/catalog/catalog-banner.tsx:15`
-- **Suggestion**: The design hook flagged the `next/image src={imageUrl}` as a possible broken/placeholder image.
-- **Status**: SKIPPED (false positive) — `src` is bound to a real `/public` asset via `CATALOG_BANNER_IMAGE`; the `null` branch renders a token fallback tile, never a broken `<img>`. This is the exact committed null-degrade grammar Hero/EditorialBand use. The detector cannot statically resolve the non-empty config value. No suppression comment added (leaving the finding visible is correct; it is contextually intentional).
-
-## Independently-verified firewall & discipline (no issues — evidence recorded)
-
-- **Admin firewall (AC-11/12)**: `.theme-storefront` appears ONLY on the storefront `<body>` (`[locale]/layout.tsx:78`); `admin/layout.tsx:29` body has NO such class → admin resolves the untouched neutral `:root`. No file under `src/app/admin/` or `src/components/admin/` or `src/components/ui/*` was edited (confirmed via commit stat).
-- **Radix portal theming**: Dialog/AlertDialog/Select portals mount into `document.body`, which IS the element carrying `.theme-storefront` on the storefront — so storefront portaled dialogs/toasts inherit the cobalt world; admin's separate `<body>` keeps them neutral. Correct by construction.
-- **Font seam (AC-5)**: `--font-heading` binds to `--font-heading-family`, which defaults to `var(--font-sans)` in `:root` (admin/not-found → Inter) and is overridden to Libre Caslon Text only under `.theme-storefront`. No CSS-var cycle. `subsets: ["latin","latin-ext"]` covers es-MX glyphs; `display: "swap"` (no FOUT block, so nav-click timing is unaffected).
-- **Token discipline (AC-3/4)**: No hardcoded hex/oklch/rgb brand color or raw amber/emerald left in any storefront component (grep clean). Semantic colors promoted to `--warning`/`--success`/`--gold`/`--whatsapp`, registered additively in `@theme inline` (undefined under admin scope, and unused there → firewall-safe).
-- **Contrast (AC-13)**: OXXO/SPEI panel uses `text-warning` glyph (aria-hidden) beside `text-foreground` title (glyph+text, colorblind-safe); container is decorative `bg-warning/10`. Hero/editorial copy sits on `bg-primary` scrim (8.37:1) regardless of photo luminance. Catalog banner carries no overlaid text (edge 5 N/A).
-- **Images (AC-9/10)**: Hero `priority` + correct `sizes`; editorial/banner lazy. All 3 assets local under `/public` (≤300 KB), so no `next.config.ts` host change needed. SOURCES.md provenance complete (Unsplash License — commercial OK, no attribution required); no fabricated proof.
+- **File**: `src/lib/email/templates/quote-relay.ts`, `src/lib/email/dispatch.ts:325`
+- **Suggestion**: `sendQuoteRelay` is byte-for-byte `sendContactRelay` (owner-guard → render →
+  `sendWithTimeout` → `replyTo`); `quotedNeedsHtml` duplicates `quotedMessageHtml`. Two copies
+  now exist. The ticket explicitly specified a clone (separate template/seam per T9/T13
+  discipline), so this is correct for now.
+- **Status**: SKIPPED (backlog) — three copies is the refactor trigger; a shared
+  `sendOwnerRelay(input, render)` helper + a shared `quotedBodyHtml` should be extracted when a
+  third owner-relay lands. Not actioned this stage (two copies, DRY-with-judgment per CLAUDE.md).
 
 ## Acceptance Criteria Verification
 
-| #     | Criterion | Status | Evidence |
-| ----- | --------- | ------ | -------- |
-| AC-1  | DESIGN.md from built world | PASS | `DESIGN.md` present, seed `d43cafe8`, documents built palette/type/spacing/imagery |
-| AC-2  | Direction contract greppable | PASS | `direction-contract.tsx` emits real HTML comment via `dangerouslySetInnerHTML`, `d43cafe8` |
-| AC-3  | Neutral world replaced, tokens centralized | PASS | `.theme-storefront` block; grep confirms no component hardcodes brand color/radius |
-| AC-4  | Single-token brand-swap stays true | PASS | All values under `.theme-storefront` + font binding; doc block rewritten |
-| AC-5  | Typography upgraded, real `--font-heading`, es-MX subsets | PASS | Libre Caslon Text via next/font, latin-ext, `swap`; storefront-scoped binding |
-| AC-6  | All storefront surfaces reskinned | PASS | ~48 surface files + `/sillas` h1 (fixed m-1) reflect the world |
-| AC-7  | Chrome reflects identity, WhatsApp affordance preserved | PASS | FAB uses `bg-whatsapp` green token; testids/affordances intact |
-| AC-8  | Image-slot system, catalog slot defined | PASS | hero + editorial band wired; catalog banner now wired (M-1 fix) |
-| AC-9  | Licensed imagery, no fabricated proof | PASS | Unsplash, SOURCES.md; editorial copy is a curation claim only |
-| AC-10 | Host allow-list | PASS | All assets local `/public`; no host change |
-| AC-11 | /admin visually unchanged | PASS | admin body has no `.theme-storefront`; no admin/ui file edited |
-| AC-12 | Scope mechanism explicit + documented | PASS | `.theme-storefront` scope; documented in globals.css + DESIGN.md |
-| AC-13 | WCAG AA, focus rings, glyph+text status | PASS | DESIGN.md pairings; text-over-image on cobalt scrim; warning=glyph+text |
-| AC-14 | prefers-reduced-motion honored | PASS | motion layer verbatim; new components use RM-gated `.enter-fade` |
-| AC-15 | No perf regression, correct next/image | PASS | hero `priority`; slots reserve aspect boxes; dead 294 KB asset now consumed (M-1) |
-| AC-16 | Bilingual parity | PASS | 527 keys symmetric incl. new `catalog.banner.imageAlt` |
-| AC-17 | Money display unchanged | PASS | formatMXN/tabular-nums/compare-at line-through untouched (e2e verified) |
-| AC-18 | Mobile-first responsiveness | PASS | mobile column-count e2e passes; slots stack |
-| AC-19 | Test suite green | PASS | tsc clean, eslint clean, unit 1729/1729, targeted e2e green (warm) |
+| #     | Criterion                                              | Status | Evidence                                                                                                   |
+| ----- | ------------------------------------------------------ | ------ | ---------------------------------------------------------------------------------------------------------- |
+| AC-1  | Renders at both locales in storefront shell            | PASS   | `page.tsx` bespoke route; layout gates unknown locale via `notFound()`; sections in `.theme-storefront`    |
+| AC-2  | Persuade structure (hero/value/process/form)           | PASS   | `page.tsx:175-235` — Hero → B2BPillars → B2BProcess → (brands) → QuoteForm; CTA `#cotizacion` anchor       |
+| AC-3  | Zero fabricated proof                                  | PASS   | Grep of `empresas` copy: only team-size ranges + "10 digits" placeholder; no counts/testimonials/logos    |
+| AC-4  | 6 fields incl. constrained team-size `<select>`        | PASS   | `quote-form.tsx` fields; `SelectField` over `QUOTE_TEAM_SIZES`; all labels from i18n both locales           |
+| AC-5  | Valid submit relays via `sendQuoteRelay`/`renderQuoteRelay`, replyTo=visitor | PASS | `dispatch.ts:325` `replyTo: input.fromEmail`; `quote-relay.ts` renders all 6 fields |
+| AC-6  | Full serializable state matrix                         | PASS   | `quote-form-state.ts` union; form effects clear+focus+auto-hide / preserve on failure; error never leaks reason |
+| AC-7  | Abuse controls in order (honeypot→validate→rate-limit) | PASS   | `actions.ts:52-90`; dedicated limiter instance `rate-limit.ts:22`; server-only `QUOTE_RATE_LIMIT_DISABLED` hatch |
+| AC-8  | Nav + footer links, both locales, zero dead            | PASS   | `nav-items.ts:23`; `site-footer.ts:37`; `nav-items.test.ts` asserts `offices → /empresas`                   |
+| AC-9  | Per-page `generateMetadata` both locales               | PASS   | `page.tsx:50-62` locale-resolved title+description, no shared helper (matches contact precedent)            |
+| AC-10 | DESIGN.md compliance; admin firewall                   | PASS   | Cobalt tiles/roman-caps; `string\|null` hero slot degrades to Building glyph; `.enter-fade`/`.stagger` reduced-motion-gated; no admin/`ui/*` edit |
+| AC-11 | WCAG AA; labeled fields + `aria-describedby`; native select | PASS | `aria-invalid`/`aria-describedby` wired; native `<select>` (arrow restored, M-1); status = glyph+text        |
+| AC-12 | No overflow at 375/768                                  | PASS   | `grid-cols-1 sm:grid-cols-2`, `max-w-(--breakpoint-xl)`, `break-words`; e2e asserts no-overflow (per dev)   |
+| AC-13 | Exact bilingual parity; keys-used updated               | PASS   | Parity script: 0 asymmetry, 62 `empresas` keys; keys-used registers all + nav/footer keys                   |
+| AC-14 | Unit tests + e2e; tsc/eslint/suite green                | PASS   | 1920/1920 unit; action branch matrix exhaustive; `tsc`=0, `eslint`=0 post-fix                               |
 
 ## Edge Case Verification
 
-| #   | Edge Case | Status | Evidence |
-| --- | --------- | ------ | -------- |
-| 1   | Shared-seam bleed into admin | HANDLED | `.theme-storefront` on storefront body only |
-| 2   | Shared ui-primitive drift | HANDLED | No `ui/*` file edited; primitives inherit via scope |
-| 3   | Null image slot | HANDLED | Hero/editorial/banner all degrade to blank cobalt tile, aspect box reserved |
-| 4   | es-MX glyphs in display face | HANDLED | Libre Caslon Text latin-ext |
-| 5   | Text-over-image contrast | HANDLED | Cobalt scrim 8.37:1; catalog banner carries no overlaid text |
-| 6   | e2e testid/structural breakage | HANDLED | line-through + honeypot + column-count e2e all pass; no testid removed |
-| 7   | Dark mode divergence | HANDLED | `.dark` decommissioned for storefront, retained as admin's world, documented |
-| 8   | global-error.tsx token-free exception | HANDLED | Not edited; intentional exception documented |
-| 9   | Semantic amber/emerald | HANDLED | All promoted to `--warning`/`--success`; grep confirms none left; oxxo test updated in lockstep |
-
-## Flaky-test investigation
-
-The 2 catalog nav-click e2e tests (`page 1 canonical…navigates`, `English category browse works`) fail on a **cold** dev server and pass on a **warm** one (re-run: both green in ~5 s). Root cause is Playwright's `webServer: npm run dev` racing Next.js on-demand route compilation on first navigation — **not** the reskin. Verified `category-tree.tsx`'s `href={categoryPath(category.slug)}` and its `data-testid` are UNCHANGED by the commit (only `rounded-lg`→`rounded-md` + heading classes changed). The added `next/font` family uses `display: "swap"`, so it does not block navigation. Documented as pre-existing/environmental; no fix warranted (fixing would mean switching the e2e webServer to a production build — out of scope for this ticket).
+| # | Edge Case                              | Status  | Evidence                                                                                     |
+| - | -------------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| 1 | Team-size enum tampering               | HANDLED | `submit-guard.ts:141` `isQuoteTeamSize`; action test `teamSizeInvalid` / empty→`teamSizeRequired` |
+| 2 | Honeypot filled                        | HANDLED | `actions.ts:52` fake success + `console.warn`, no send; test asserts even with other invalid fields |
+| 3 | Owner email unconfigured / send fail   | HANDLED | `dispatch.ts:326` `{ok:false,reason:"owner address unavailable"}` → `{status:"error"}`, reason logged only |
+| 4 | Rate-limit flood, isolated from contact| HANDLED | Dedicated `limiter` instance (`rate-limit.ts:22`); isolation asserted both directions (per dev)  |
+| 5 | Whitespace / oversized / control-char  | HANDLED | Trim→required; `needsTooLong` cap; `stripControlChars` on company+name (mirrors contact, verified) |
+| 6 | Missing/unknown locale, empty tables   | HANDLED | Layout `notFound()` gates `/zz/empresas`; copy-driven (no `static_pages`); `readB2BBrands`→`[]`  |
+| 7 | `prefers-reduced-motion`               | HANDLED | `.enter-fade`/`.stagger` have reduce blocks (globals.css:426,542); no new keyframes             |
+| 8 | JS-disabled / slow network             | HANDLED | Real `<form action>`; server re-validates trimmed values; pitch is server-rendered              |
 
 ## Fix Summary
 
-- Critical: 0/0
-- Major: 1/1 fixed
-- Minor: 1/2 fixed, 1 skipped (false-positive hook finding, classified)
+- Critical: 0/0 fixed
+- Major: 1/1 fixed (M-1 select affordance), 0 skipped
+- Minor: 0 fixed, 2 skipped (m-1 benign/matches precedent; m-2 DRY-with-judgment, backlog at 3rd copy)
 
 ## Quality Score: 9/10
 
-A genuinely strong reskin: the firewall — the one thing that could sink this ticket — is airtight, token discipline is clean, i18n is symmetric, and every structural e2e signal survives. The single MAJOR (dead config slot + dead 294 KB asset with a DESIGN.md↔code mismatch) is the kind of "documented but not wired" gap that a lighter review misses; it is now fixed and the asset earns its weight. Not a 10 only because that slot shipped dead in S3 and the flaky e2e webServer setup remains an environmental foot-gun (out of scope here, flagged for T14).
+Disciplined, faithful reuse of two shipped stacks; the security-critical path (validate + enum +
+control-char strip + escape + error-reason suppression + limiter isolation) is correct and
+exhaustively tested. One point off for the M-1 spec-deviating select-affordance strip that
+shipped undocumented — a real (if small) UX regression the dev summary did not flag. Fixed inline.
 
 ## Recommendation: APPROVE
 
-All critical/major issues are fixed inline and verified. The admin firewall, token discipline, typography, contrast, imagery, i18n parity, money display, and responsiveness all pass. Proceed to S5 (QA).
+All critical/major issues are fixed inline and verified (`tsc`=0, `eslint`=0, 1920/1920 unit
+tests green). Both skipped minors are justified (matches shipped precedent / DRY-with-judgment
+deferred to the third copy). Ready for S5 QA.

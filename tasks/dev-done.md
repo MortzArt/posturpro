@@ -101,3 +101,21 @@ relay template + dispatch seam, nav/footer/i18n wiring) was authored; everything
 
 ## Dependencies Added
 - **None.** No npm install, no migration, no `next.config.ts` change, no admin/`ui/*`/`:root`/`sans` edit (firewall holds).
+
+## Review + Fix Pass (ReviewFix Stage)
+
+### Issues Found & Fixed
+
+| ID  | Severity | Title | Status | File | Fix Applied |
+| --- | -------- | ----- | ------ | ---- | ----------- |
+| M-1 | MAJOR | Team-size `<select>` stripped of native dropdown affordance | FIXED | `src/app/[locale]/empresas/quote-form.tsx:461` | Removed `appearance-none bg-none pr-3` → plain `fieldClasses`; native OS arrow restored (ui-design.md §SelectField: "native arrow is acceptable"). `pr-3` was redundant with `fieldClasses`' `px-3`. Only className changed; no test asserted the removed classes. |
+| m-1 | MINOR | Honeypot short-circuit is a benign timing oracle | SKIPPED | `src/app/[locale]/empresas/actions.ts:52` | Identical to the shipped/QA'd contact action (spec mandates "mirror contact verbatim"); crude-bot filter, not a timing-resistant control. Noted, not a regression. |
+| m-2 | MINOR | `sendQuoteRelay`/`renderQuoteRelay` are a 2nd copy of the contact relay grammar | SKIPPED | `src/lib/email/dispatch.ts:325`, `src/lib/email/templates/quote-relay.ts` | Ticket specified the clone (T9/T13 discipline). Extract a shared `sendOwnerRelay(input, render)` + `quotedBodyHtml` at the THIRD owner-relay (DRY-with-judgment per CLAUDE.md), not at two copies. Backlog. |
+
+### Summary
+
+- Critical: 0/0 fixed
+- Major: 1/1 fixed, 0 skipped
+- Minor: 0/2 fixed, 2 skipped (both justified: matches shipped precedent / DRY-with-judgment deferred to 3rd copy)
+
+**Verification after fix**: `tsc --noEmit` = 0, `eslint` (changed files) = 0, full unit suite **1920/1920** (112 files) green. The security-critical path (validate + `stripControlChars` mirror + enum server-boundary + `escapeHtml` on every field + error-reason suppression + dedicated-limiter isolation) was verified in code, not trusted from claims. **Verdict: APPROVE, 9/10.**
