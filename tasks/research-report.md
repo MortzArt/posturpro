@@ -1,148 +1,287 @@
-# Research Report: T15 — Premium visual identity & image-rich refresh
+# Research Report: T16 — B2B landing page (offices, quote form)
 
-> One-pass codebase inventory for S2 (impeccable new-work / ultradesign). S2 owns choosing the visual world; this report maps the terrain that world plugs into: the token seam, every brand-feel surface, the shared-with-admin firewall, the image infrastructure, the font blast radius, the test surface at risk, and the constraints.
+> One-pass codebase inventory for the standard pipeline. The page reuses two shipped stacks:
+> the **T13 contact-relay** flow (form → action → guard → rate-limit → email template →
+> dispatch) and the **T15 Casa de Azulejo** world (home components, image slots, motion). This
+> report maps exactly what is reused verbatim vs. extended, and the seams where new code plugs
+> in. All paths absolute; line numbers exact at time of scan.
 
 ## Codebase Analysis
 
 ### Existing Patterns
 
-- **Single centralized token seam.** All brand color + radius live in ONE `:root` (+ `.dark`) block — `src/app/globals.css:51-131`. Every value is grayscale `oklch(L 0 0)` (create-next-app neutral). `--radius: 0.625rem` drives a derived radius scale (`--radius-sm..4xl`, globals.css:42-48). This is the swap seam; the world S2 commits replaces these values. Reuse: overwrite the `:root`/`.dark` values, keep the token NAMES so no component edit is needed (AC-4).
-- **Token-utility discipline (brand color).** ~95% of storefront components flow brand color through token utilities (`bg-background`, `text-foreground`, `bg-primary`, `border-border`, `text-muted-foreground`, `bg-card`, `ring-ring`, `bg-destructive`). Verified across header (`site-header.tsx`), footer (`site-footer.tsx`), hero (`hero.tsx`), product-card (`product-card.tsx`), 404 (`not-found.tsx`), WhatsApp FAB (`whatsapp-button.tsx:54` = `bg-primary text-primary-foreground`). Reuse: the reskin is mostly a token-value swap, not a per-component color rewrite.
-- **Shipped motion layer (KEEP — Emil authority).** ~20 CSS classes in `globals.css:145-838` (`.enter-fade`, `.stagger`, `.card-lift`, `.link-arrow`, `.gallery-image`, `.price-value`, `.cart-*`, `.drawer-*`, `.select-content-motion`, `.dialog-content-motion`, `.reorder-item`, `.fab-pop`, `.toggle-*`, `.nav-hover`), plus easing tokens `--ease-out`/`--ease-in-out`/`--ease-drawer` (globals.css:85-87). All `transform`/`opacity` only, `ease-out` enter, `prefers-reduced-motion`-gated, hover-capability-gated. CLAUDE.md division: **impeccable owns look, Emil owns motion** — preserve this layer verbatim; the reskin restyles color/type/imagery, not motion.
-- **Config-driven image slots with graceful degrade.** `HERO_IMAGE`/`SHOWROOM_MAP_IMAGE`/`SHOWROOM_MAP_URL` are `string | null` in `src/lib/config/static-pages.ts:116,139,132`. Consumers render `next/image` when present, else a token-tinted glyph panel (`hero.tsx:77-112` `HeroMedia`; product-card `product-card.tsx:74-90`). This is the EXACT pattern new lifestyle/editorial slots must extend (AC-8).
-- **Pre-resolved-labels / server-component discipline.** Presentational components (product-card, stock-badge, hero) take pre-resolved localized strings as props and do no i18n themselves (SRP). New editorial/image components should follow: strings resolved in the `page.tsx`/RSC and passed in.
-- **Tailwind v4 CSS-first config.** No `tailwind.config.*` — theme is `@theme inline` in globals.css (lines 7-49) + `postcss.config.mjs` + `components.json`. Tokens are CSS variables consumed by utilities. There is no JS token file to edit.
+- **Public unauthenticated write path with layered abuse controls** — the canonical example is
+  `submitContactForm` (`/Users/MortzArt/Documents/projects/posturpro/src/app/[locale]/contacto/actions.ts:38`).
+  Order: honeypot (`:50`) → validation (`:57`) → rate-limit (`:82`) → relay (`:88`), never
+  throws to client (`relayContactMessage` `:96` catches `{ok:false}` and exceptions, logs the
+  raw reason server-side, surfaces only a generic `{status:"error"}`). **Reuse strategy:** copy
+  this file to `empresas/actions.ts` as `submitQuoteForm`, swap the guard/limiter/relay calls.
+- **PURE, I/O-free validation guard** — `validateContactSubmission`
+  (`src/lib/contact/submit-guard.ts:70`) trims, strips control chars (`stripControlChars` `:42`,
+  a header-injection defense for fields flowing into the email subject), length-caps, and
+  shape-checks email via `EMAIL_PATTERN`. Returns `{ok, values, fieldErrors}` with typed
+  field-key/error-key unions (`:21`, `:32`). **Reuse strategy:** clone to
+  `src/lib/quote/submit-guard.ts`; ADD a `teamSize` membership check against `QUOTE_TEAM_SIZES`
+  (the one genuinely new validation — an enum, not a length/shape check).
+- **Dedicated per-form sliding-window rate limiter** — `contact/rate-limit.ts:20` builds its
+  OWN `createSlidingWindowLimiter` instance (own map, own key-space) so contact traffic never
+  shares a bucket with checkout/Q&A; a `CONTACT_RATE_LIMIT_DISABLED=1` server-only env hatch
+  (`:40`) lets tests submit repeatedly. **Reuse strategy:** clone to `src/lib/quote/rate-limit.ts`
+  with a fresh instance + `QUOTE_RATE_LIMIT_DISABLED=1` — a separate instance is REQUIRED so the
+  quote form and contact form throttle independently (edge 4).
+- **Serializable form-state contract outside the `"use server"` module** —
+  `contacto/contact-form-state.ts` holds `ContactFormState`/`ContactFormValues`/
+  `initialContactFormState`. A `"use server"` file may export ONLY async functions, so the type
+  + initial object must live in a sibling module. **Reuse strategy:** clone to
+  `empresas/quote-form-state.ts`.
+- **`useActionState` client form with a full state matrix** — `contacto/contact-form.tsx` is the
+  gold template: off-screen honeypot (`:151`, `absolute left-[-9999px]` + `aria-hidden` +
+  `tabIndex=-1` + `autoComplete="off"`), first-invalid focus effect (`:122`), success
+  clear+focus+auto-hide effect (`:102` using `CONTACT_SUCCESS_FEEDBACK_MS`), `FormBanner`
+  (rate-limited = `bg-warning/10`, error = `text-destructive`, both `role="alert"`),
+  `SuccessBanner` (`role="status"`), live `CharacterCounter`, reusable `fieldClasses`
+  string (`:67`, `min-h-11 rounded-md border border-border … aria-invalid:border-destructive`),
+  `Field` subcomponent. **Reuse strategy:** clone to `empresas/quote-form.tsx`; the ONLY new UI
+  primitive is a labeled native `<select>` for team size (the `Field` component handles
+  text/email inputs; add a small `SelectField` or inline the `<select>` with the same
+  `fieldClasses`).
+- **Copy-driven marketing page (NOT DB-backed)** — the homepage
+  (`src/app/[locale]/page.tsx`) reads all copy from the `home` i18n namespace via
+  `getTranslations("home")`, composes `Hero`/`EditorialBand`/`FeaturedProducts`/`FeaturedBrands`
+  in `<section>` wrappers (`max-w-(--breakpoint-xl) px-4 py-16 md:px-6 md:py-24 lg:px-8`), and
+  sets `generateMetadata` from the `metadata` namespace. **Reuse strategy:** the B2B page mirrors
+  this exactly — copy from a new `empresas` namespace, no DB read, no `static_pages` row. This
+  is why the page renders even with empty content tables (edge 6).
+- **Pure email template + dispatch seam** — templates are `(input, chrome) => RenderedEmail`,
+  pure, unit-testable (`src/lib/email/templates/types.ts:9`). `renderContactRelay`
+  (`src/lib/email/templates/contact-relay.ts:38`) is es-MX-only (a relay TO the owner), quotes
+  the message verbatim via `quotedMessageHtml` (`:29`, `escapeHtml` + `\n`→`<br/>`), and builds
+  a `Mensaje de contacto de {name}` subject. Dispatch seam `sendContactRelay`
+  (`src/lib/email/dispatch.ts:290`): resolve owner address or `{ok:false,"owner address
+  unavailable"}`, render, `sendWithTimeout`, `replyTo = input.fromEmail`, NO ledger (not
+  order-scoped). **Reuse strategy:** NEW `quote-relay.ts` template (fields differ — see
+  "Key Decisions") + NEW `sendQuoteRelay` seam beside `sendContactRelay`.
 
 ### Relevant Files
 
 | File | Purpose | Relevance | Action |
-| ---- | ------- | --------- | ------ |
-| `src/app/globals.css` | Token `:root`/`.dark`, `@theme`, motion layer | THE token seam + motion authority | **Modify** (swap token values, add `--font-heading`, update Brand-Tokens doc block; keep motion verbatim) |
-| `src/app/fonts.ts` | `sans = Inter` bound to `--font-sans` | Font seam; SHARED with admin+404 | **Modify** (add premium pairing, es-MX subsets, scope from admin) |
-| `src/app/[locale]/layout.tsx` | Storefront root: `<html lang>`, font wire, shell | Firewall boundary; direction-contract host | **Modify** (storefront-scoped theme/font; AC-2 comment) |
-| `src/app/admin/layout.tsx` | Admin root: imports `sans`, uses `bg-background`/`font-sans` | SHARED SEAM — must NOT change appearance | **Reference** (firewall target; do not edit) |
-| `next.config.ts` | `images.remotePatterns` (picsum + supabase) | Allow-list for new image hosts | **Modify** (if remote placeholders) |
-| `src/lib/config/static-pages.ts` | `HERO_IMAGE`/showroom slots, homepage tunables | Image-slot config home | **Modify** (add new lifestyle slots) |
-| `src/lib/config/shared.ts` | `SEED_IMAGE_BASE_URL`, `SEED_STORE_NAME` | Product-image placeholder source (picsum) | **Reference** |
-| `src/app/[locale]/page.tsx` | Homepage (hero + featured products + brands) | Primary Persuade surface | **Modify** (apply world; add editorial band per DESIGN.md) |
-| `src/components/home/{hero,featured-products,featured-brands,section-header}.tsx` | Homepage components | Hero is the first-viewport thesis | **Modify** (+ possibly **Create** editorial band) |
-| `src/components/layout/{site-header,site-footer,mobile-nav,language-toggle,whatsapp-button}.tsx` + `nav-items.ts` | Persistent chrome (every page) | Brand-feel; testids to preserve | **Modify** |
-| `src/components/catalog/*` (product-card, product-grid, index-tile, brand-logo, filter-*, toolbar, breadcrumbs, stock-badge, no-results, empty-state, pagination, catalog-skeleton) | Catalog + PLP + brand/category/style surfaces | Highest-reuse components | **Modify** |
-| `src/components/product/*` (product-gallery, product-purchase-panel, product-specs, product-qa, qa-form, recently-viewed, pdp-skeleton) | PDP | Image-rich; gallery + purchase panel | **Modify** |
-| `src/components/cart/*` + `src/app/[locale]/carrito/page.tsx` | Cart shell | Free-shipping progress (emerald), badges | **Modify** |
-| `src/components/checkout/*` + checkout routes | Checkout shell + confirmation | Amber/emerald semantic colors concentrated here | **Modify** |
-| `src/components/content/static-page-body.tsx` + `[pageSlug]`/`contacto`/`showroom` routes | 9 static pages | Read-mode surfaces | **Modify** |
-| `src/app/[locale]/{not-found,error}.tsx` | 404 / error states | Restyle to new world | **Modify** |
-| `src/app/global-error.tsx` | Catastrophic root boundary | Hardcoded hex + system-ui BY DESIGN | **Reference** (intentional exception, edge 8) |
-| `src/components/ui/{button,badge,alert-dialog,dialog,tabs}.tsx` | shadcn primitives | SHARED with admin (24/8/5/4/2 imports) | **Reference / careful** (token-only; don't bake brand looks in) |
-| `src/messages/{es-MX,en}.json` | i18n copy (614 lines each) | New visible copy in lockstep | **Modify** (only if new copy) |
-| `e2e/*.spec.ts` (storefront) | e2e assertions | Testids + structural signals to preserve | **Reference / reconcile** |
+| --- | --- | --- | --- |
+| `src/app/[locale]/contacto/actions.ts` | Contact server action, branch matrix | Direct template for `submitQuoteForm` | Reference |
+| `src/app/[locale]/contacto/contact-form.tsx` | Client form, full state matrix | Direct template for `quote-form.tsx` | Reference |
+| `src/app/[locale]/contacto/contact-form-state.ts` | Serializable state contract | Template for `quote-form-state.ts` | Reference |
+| `src/app/[locale]/contacto/page.tsx` | Bespoke page RSC + `generateMetadata` + label bag | Template for the page shell | Reference |
+| `src/lib/contact/submit-guard.ts` | Pure validation + honeypot | Template for `quote/submit-guard.ts` | Reference |
+| `src/lib/contact/rate-limit.ts` | Dedicated limiter instance + hatch | Template for `quote/rate-limit.ts` | Reference |
+| `src/lib/config/contact.ts` | Field caps + rate tunables | Template for `config/quote.ts` | Reference |
+| `src/lib/email/templates/contact-relay.ts` | Pure es-MX owner relay template | Template for `quote-relay.ts` | Reference |
+| `src/lib/email/dispatch.ts` | Dispatch seams (`sendContactRelay` `:290`) | ADD `sendQuoteRelay` beside it | **Modify** |
+| `src/lib/rate-limit/sliding-window.ts` | Shared audited limiter core | `createSlidingWindowLimiter` reused as-is | Reference |
+| `src/lib/config.ts` | Barrel (`export * from "./config/*"`) | Add quote re-export | **Modify** |
+| `src/components/home/hero.tsx` | Hero (headline/CTA/media, null-degrade) | Compose or model B2B hero | Reference |
+| `src/components/home/editorial-band.tsx` | Cartouche band + cobalt caption/scrim | Compose for a value/process band | Reference |
+| `src/components/home/section-header.tsx` | Roman-caps section title + `.link-arrow` | Compose section headers | Reference |
+| `src/lib/config/imagery.ts` | `string\|null` image slots | Optional `B2B_HERO_IMAGE` slot | Modify (opt) |
+| `src/app/globals.css` | Motion layer (`.enter-fade` 414, `.link-arrow` 468, `.card-lift` 492, `.stagger` 530) | Reuse classes verbatim | Reference |
+| `src/components/layout/nav-items.ts` | `NAV_ITEMS` + closed `key` union | Add `offices` item | **Modify** |
+| `src/components/layout/site-header.tsx` | Desktop nav (iterates `NAV_ITEMS` `:53`) | Auto-picks up new item | Reference |
+| `src/components/layout/mobile-nav.tsx` | Mobile drawer (iterates `NAV_ITEMS` `:245`) | Auto-picks up new item | Reference |
+| `src/components/layout/site-footer.tsx` | Footer link groups (`STORE/HELP/LEGAL_LINKS` :36-49) | Add `offices` link | **Modify** |
+| `src/messages/es-MX.json`, `en.json` | i18n dictionaries (15 namespaces) | Add `empresas` namespace + nav/footer keys | **Modify** |
+| `src/messages/keys-used.test.ts` | `CONSUMED_KEYS` allowlist (`:33`) | Register new keys | **Modify** |
+| `src/i18n/routing.ts` | Locales `["es-MX","en"]`, `as-needed` prefix | Confirms `/empresas` + `/en/empresas` | Reference |
+| `src/lib/config/static-pages.ts` | `RESERVED_SLUGS` (`:46`), `[pageSlug]` guard | Confirms no collision | Reference |
+| `src/app/[locale]/[...rest]/page.tsx` | 404 catch-all | Static `empresas/` segment out-precedences it | Reference |
+| `playwright.config.ts` | e2e webServer (`npm run dev`, env hatch `:20`) | Template for the quote e2e env | Reference |
 
 ### Data Flow
 
-This is a presentation-layer task — the data flow is unchanged; what changes is how it's PAINTED.
+Quote submission (mirrors the contact flow exactly, with new field set):
 
-1. **Token flow:** `globals.css :root` CSS variables → `@theme inline` maps them to Tailwind color utilities → components apply `bg-primary`/`text-foreground`/etc. → rendered. Swapping `:root` values re-paints everything downstream with no component edit. (Blast radius includes admin — see firewall below.)
-2. **Font flow:** `next/font(Inter)` in `fonts.ts` → `sans.variable` (`--font-sans`) applied on `<html className={sans.variable}>` in BOTH `[locale]/layout.tsx:73` AND `admin/layout.tsx:28` → `html { font-sans }` (globals.css:141) → every text node. `--font-heading` currently `= var(--font-sans)` (globals.css:12); `dialog.tsx`/`alert-dialog.tsx` consume `font-heading` (shared with admin).
-3. **Image flow (products):** DB `product_images` → catalog queries → `coverImageUrl`/gallery URLs (picsum placeholders via `SEED_IMAGE_BASE_URL`) → `next/image` (host allow-listed in `next.config.ts`). Null → glyph placeholder.
-4. **Image flow (editorial/lifestyle — NEW):** config `string | null` slot (`src/lib/config/`) → RSC passes to component → `next/image` when set, token panel when null. No DB involvement — these are chrome/marketing assets, correctly config-driven not DB-driven.
+1. **User** fills the quote form on `/empresas` (or `/en/empresas`) and submits.
+2. **Client** — `<form action={formAction}>` in `quote-form.tsx`; `useActionState` invokes the
+   server action with `FormData` (`company`, `name`, `email`, `phone`, `teamSize`, `needs`,
+   `company_url` honeypot).
+3. **Server action** `submitQuoteForm` (`empresas/actions.ts`):
+   a. `isQuoteHoneypotTripped(company_url)` → if filled: `console.warn` + fake
+      `{status:"success"}`, **return** (no send).
+   b. `validateQuoteSubmission(...)` → trims, strips control chars, checks required/length/email
+      shape + **teamSize ∈ QUOTE_TEAM_SIZES**; if `!ok`: `{status:"invalid", fieldErrors,
+      values}`, **return** (no send).
+   c. `clientIp()` (`@/lib/request/client-ip`) → `checkQuoteRateLimit(ip)`; if false:
+      `{status:"rate-limited", values}`, **return** (no send).
+   d. `sendQuoteRelay({company, fromName, fromEmail, phone, teamSize, needs})`.
+4. **Dispatch** `sendQuoteRelay` (`dispatch.ts`): `ownerAddressOrNull()` → if null:
+   `{ok:false,"owner address unavailable"}`. Else `renderQuoteRelay(input, chrome)` →
+   `sendWithTimeout({to: owner, subject, html, text, replyTo: fromEmail})`.
+5. **Provider** `sendEmail` (`@/lib/email/provider`) → Resend JSON API (or dev-preview
+   short-circuit when `EMAIL_DEV_PREVIEW=1`).
+6. **Back up the stack:** `{ok:true}` → action returns `{status:"success"}` (form clears);
+   `{ok:false}`/throw → logged server-side, `{status:"error"}` (values preserved). No DB write
+   at any point — the request exists only as an email to the owner.
 
 ### Similar Features (Reference Implementations)
 
-- **`Hero` (`src/components/home/hero.tsx`)** — the canonical image-slot: `imageUrl: string \| null` prop, `HeroMedia` renders `next/image` (fill, `priority`, `sizes`, `object-cover`, reserved `aspect-[4/3]`) or a token glyph panel. New lifestyle bands copy this grammar. Key patterns: reserved aspect box (no CLS), `.enter-fade` mount, `aria-hidden` glyph fallback, `data-testid` on fallback.
-- **`ShowroomLocation` / showroom page** — second image-slot instance (`SHOWROOM_MAP_IMAGE`/`SHOWROOM_MAP_URL` null-degrade). Reference for "config slot + graceful omit."
-- **`StockBadge` (`stock-badge.tsx`)** — the glyph+text status convention (icon + label, color never the only signal). Reference for how the reskin must keep amber/emerald semantics AA-safe (edge 9, AC-13).
-- **`ProductCard` (`product-card.tsx`)** — the most-reused component; token-clean, `.card-lift`/`.stagger` motion, `formatMXN` price + `line-through` compare-at (a structurally-asserted e2e signal). The reskin's card treatment sets the catalog's whole feel.
-- **T13 precedent** — the last standard-tier UI task (homepage + static pages). Its dev-done/ui-design notes (pipeline-state) show the discipline: reuse shipped motion classes, no new deps, config-driven placeholders, lockstep i18n, testids preserved.
+- **T13 Contact page** (`src/app/[locale]/contacto/*` + `src/lib/contact/*` +
+  `src/lib/email/templates/contact-relay.ts`) — near-identical shape. Key patterns to follow:
+  the 4-step action ordering, the PURE guard with typed unions, the dedicated limiter instance
+  + disable hatch, the state-contract-outside-`use server` split, the full client state matrix,
+  the es-MX owner-relay template with verbatim-escaped body + `replyTo`. This is the primary
+  reference — the quote flow is a field-set variation of it.
+- **T13 Homepage** (`src/app/[locale]/page.tsx` + `src/components/home/*`) — the copy-driven,
+  i18n-namespace, section-composition, per-page `generateMetadata` pattern for the page body.
+- **T15 EditorialBand** (`src/components/home/editorial-band.tsx`) — the cobalt cartouche +
+  caption-bar-as-AA-scrim pattern for any B2B value/process band with overlaid copy.
+- **Q&A form** (`src/components/product/qa-form.tsx`) — the ORIGINAL source the contact form
+  copied; a second reference if a subtlety in the contact form is unclear.
 
 ## Dependency Analysis
 
 ### Existing Dependencies to Leverage
 
-- **`next/font/google`** (Inter today) — add the committed premium pairing here; self-hosted, no external request, supports subsetting for es-MX glyphs. Version: bundled with Next.
-- **`next/image`** — all imagery; allow-list via `next.config.ts`. Already used in hero, product-card, product-grid, gallery, cart-line, checkout-summary, showroom.
-- **`@hugeicons/react` + `@hugeicons/core-free-icons`** — the ONLY icon set (CLAUDE.md: never mix). Glyph placeholders + any new iconography draw from here.
-- **`tailwindcss` v4** (`tw-animate-css`, `shadcn/tailwind.css`) — CSS-first theming via `@theme inline`.
-- **`cn()` (`@/lib/utils`)** — conditional classes (CLAUDE.md convention).
-- **Impeccable scripts** — `concept-seed.mjs`, `serve-question.mjs`, `context.mjs`, `detect.mjs`, and **`generate-image.mjs`** (image generation IS available → AC-9 can generate placeholders; new-work §7 requires visualize/comp step). Located in `.claude/skills/impeccable/scripts/`.
+- `next-intl` — `getTranslations`/`setRequestLocale`/`hasLocale`, `Link` from
+  `@/i18n/navigation`. Version: repo-pinned.
+- `@hugeicons/react` + `@hugeicons/core-free-icons` — icons (Building/Chair/Alert02/
+  CheckmarkCircle02/ArrowRight01). NEVER mix icon sets (CLAUDE.md rule).
+- `next/image` — cartouche image slots (fill + sizes + aspect box).
+- `src/lib/rate-limit/sliding-window.ts::createSlidingWindowLimiter` — the shared audited
+  limiter core (no copy).
+- T9 email layer — `wrapEmail`/`renderHeading`/`renderParagraph`/`renderCallout`
+  (`@/lib/email/layout`), `escapeHtml` (`@/lib/email/render`), `EMAIL_COLORS`/`EMAIL_TYPOGRAPHY`
+  (`@/lib/email/brand`), `sendWithTimeout`/`ownerAddressOrNull` (private to `dispatch.ts`).
+- `@/lib/request/client-ip::clientIp` — best-effort IP for the limiter.
+- `EMAIL_PATTERN` (`src/lib/config/checkout.ts:132`) — shared email shape check.
 
 ### New Dependencies Needed
 
-- **None expected.** At most a second `next/font` family import (no npm package). If the committed world needs a non-Google face, deliver as a local font file via `next/font/local` (still no external CDN). Any new package must be justified in dev-done and respect the CSP/no-external-request posture.
+- **None.** No npm install, no new external service.
 
 ### Internal Dependencies
 
-- **`@/app/fonts` → `[locale]/layout.tsx` + `admin/layout.tsx` + `not-found.tsx`** — implication: the `sans` export is a SHARED font seam; changing it changes admin. The premium storefront face must NOT flow through the unchanged shared export unless admin is explicitly held to the old face.
-- **`globals.css :root` tokens → every surface incl. admin** — implication: admin's `bg-background`/`text-foreground`/`font-sans` resolve from the SAME `:root`. A global token swap re-skins admin. Firewall requires storefront-scoped tokens/wrapper OR admin holding its own token subset.
-- **`src/components/ui/*` → storefront AND admin** — implication: restyling a shared primitive changes both surfaces. Keep primitives token-driven; apply brand treatment at the storefront call-site.
-- **`--font-heading` → `dialog.tsx`/`alert-dialog.tsx` (shared)** — implication: introducing a real display `--font-heading` changes admin dialog/alert titles too unless scoped.
+- `submitQuoteForm` (action) → `quote/submit-guard`, `quote/rate-limit`, `email/dispatch`,
+  `request/client-ip`, `quote-form-state`. Implication: same clean seam layering as contact;
+  each dependency is independently unit-testable.
+- `quote-form.tsx` (client) imports `submitQuoteForm` (action) + `quote-form-state` (type/
+  initial). Implication: the state contract MUST stay outside the `"use server"` module.
+- `config/quote.ts` is imported by the guard, the limiter, AND the client form (field maxes +
+  `QUOTE_TEAM_SIZES` for the `<select>`). Implication: `QUOTE_TEAM_SIZES` is the single source
+  of truth binding the `<select>` options to the server-side enum check — do not duplicate the
+  list in JSX.
+- `nav-items.ts::NavItem["key"]` is a CLOSED union consumed by `site-header.tsx` +
+  `mobile-nav.tsx` + `nav-items.test.ts`. Implication: adding `offices` requires editing the
+  union type (a compile error otherwise) — a deliberate, type-safe seam.
 
 ## External Research
 
 ### API Documentation
 
-- N/A — no external APIs. This is a presentation task with no network integrations.
+- **None required.** No new external API. The email provider (Resend, via
+  `@/lib/email/provider`) is already wired and abstracted; the quote relay reuses it through
+  `sendWithTimeout`. Resend's JSON API is not a raw-SMTP header-injection vector, but the guard
+  still strips control chars defensively (as the contact guard does).
 
 ### Library Documentation
 
-- **`next/font`** — use `subsets` covering Latin + Latin-Extended (es-MX needs `á é í ó ú ñ ¿ ¡`, ~160 occurrences in messages). `display: "swap"` (already used). Prefer variable fonts for weight range without extra bundle. Bind to a CSS variable and apply via `className={font.variable}` scoped to the storefront root for the firewall.
-- **`next/image`** — new hosts go in `images.remotePatterns` (protocol/hostname/pathname), mirroring the existing picsum + supabase entries in `next.config.ts:43-60`. Local `/public` assets need no allow-list. Reserve aspect boxes (`aspect-[…]` + `fill`) to avoid CLS; `priority` only on the LCP hero.
-- **impeccable `new-work.md`** — S2's playbook: name mechanism/audience/scene, list 7 concrete visual systems (≥3 material families), turn into directions, run `concept-seed.mjs --scope direction`, present ONE committed direction + challengers + canon via `serve-question.mjs` (or structured tool if headless), generate comp sketches through the shared frame, build with full commitment, run finish reviewer fresh, write DESIGN.md from the BUILT world. The direction contract (5 blocks + FINISH line) goes in the emitted markup (AC-2).
+- **next-intl** (already in use): `localePrefix: "as-needed"` means es-MX serves `/empresas`
+  prefix-free and English serves `/en/empresas`; next-intl auto-emits `hreflang` alternates.
+  `generateMetadata` must resolve the locale via `hasLocale(routing.locales, locale)` with a
+  `routing.defaultLocale` fallback (homepage `:39`, contact `:30` pattern) to avoid a 500 on an
+  unknown locale.
+- **Next.js App Router** (already in use): a static route segment (`empresas/`) is resolved
+  before the dynamic `[pageSlug]` and the `[...rest]` catch-all, so no `RESERVED_SLUGS` edit is
+  needed. The page is a server component; only `quote-form.tsx` is `"use client"`.
 
 ## Risk Assessment
 
 ### Technical Risks
 
 | Risk | Likelihood | Impact | Mitigation |
-| ---- | ---------- | ------ | ---------- |
-| **Brand palette/font bleeds into admin via the shared `:root`/`sans`/ui-primitive seam** (THE headline risk) | High | High | Scope the new tokens + display font to the storefront root (`[locale]/layout.tsx` wrapper/selector), not the global `:root` or `sans` export; keep `src/components/ui/*` token-driven; screenshot `/admin` before/after (AC-11/12, edge 1/2) |
-| Display face lacks es-MX glyph coverage → broken accents mid-word | Med | High | Select faces with Latin-Extended; correct `next/font` subsets; verify on a "ñ/í/¿…?" heading (edge 4, AC-5) |
-| Text-over-image drops below AA (esp. when a real photo later swaps in) | Med | High | Committed overlay/scrim strategy guaranteeing AA regardless of image luminance (edge 5, AC-13) |
-| Semantic amber/emerald (~12 files) clash with the new palette or get half-migrated | Med | Med | One consistent decision (keep as status semantics OR promote to `--warning`/`--success`), applied across all files, glyph+text + AA preserved (edge 9) |
-| Stale `.dark` neutral values leave a broken dark experience | Med | Med | Re-commit `.dark` to the new world OR decommission it intentionally; document in DESIGN.md (edge 7) |
-| e2e breaks on a renamed testid or dropped structural signal (line-through / grid / honeypot) | Low | Med | Preserve asserted testids + structural signals; reconcile+justify any rename (edge 6, AC-19). NOTE: e2e asserts NO colors/fonts → visual reskin is otherwise e2e-safe |
-| New font/asset regresses LCP/CLS | Low | Med | `next/font` self-hosted + subset; reserve aspect boxes; `priority` only on LCP hero (AC-15) |
-| Fabricated proof creeps in (testimonials, review counts) via "image-rich" enthusiasm | Low | High | Hard rule (AC-9, PRODUCT.md): synthetic imagery labeled/structural; zero invented claims |
+| --- | --- | --- | --- |
+| Team-size accepted as free text / tampered enum reaches the relay | Med | Med | `QUOTE_TEAM_SIZES` membership check in the PURE guard (server boundary); native `<select>` on the client is convenience only. Unit-test the tamper case (edge 1). |
+| Fabricated proof creeps into persuasive B2B copy (logos/testimonials/"trusted by N") | Med | High | AC-3 is a hard gate; copy uses real seeded brands or honest "multi-marca" claims only; image slots default to licensed-stock or null. Review + hacker stages grep for social-proof numbers. |
+| Quote limiter shares state with contact limiter → cross-throttling | Low | Med | Separate `createSlidingWindowLimiter` INSTANCE (own map/key-space), exactly as contact vs checkout/Q&A. Assert independence in tests. |
+| Firewall regression (admin restyled) via a stray shared-primitive edit | Low | High | The page composes storefront-scoped components only; no `src/components/ui/*`, `:root`, or shared-`sans` edit. Firewall e2e (`theme-firewall.spec.ts`) already guards this. |
+| New i18n keys asymmetric between locales → parity test fails | Med | Low | Add keys to both files in lockstep; update `CONSUMED_KEYS`; run message-parity + keys-used tests (AC-13). |
+| Nav `key` union not extended → tsc error / silent label miss | Low | Low | Extend `NavItem["key"]` with `offices` and add `nav.items.offices` in both locales (tsc + keys-used catch it). |
+| Success path not exercisable in CI (owner email unset by default) | Med | Low | Set `EMAIL_OWNER_ADDRESS=dummy` + `EMAIL_DEV_PREVIEW=1` + `QUOTE_RATE_LIMIT_DISABLED=1` for the success test; default e2e asserts the correct error-on-submit (edge 3), exactly as T13 QA did. |
 
 ### Performance Considerations
 
-- **Fonts:** adding a display + body pairing risks bundle growth. Mitigate with `next/font` subsetting (Latin + Latin-Extended only), variable fonts, `display: "swap"`. No runtime web-font CDN.
-- **Imagery:** image-rich = more/larger images. Enforce `next/image` `sizes`, `priority` on LCP hero only, reserved aspect boxes (no CLS), and modern formats via `next/image` defaults. T14 owns the deeper image-perf pass, but T15 must not regress.
-- **Motion:** the existing layer is compositor-friendly (`transform`/`opacity`) and RM-gated — no perf risk if preserved; do not introduce layout-animating motion.
+- The page is server-rendered copy + one client island; no client data fetching. `next/image`
+  slots reserve their aspect box (zero CLS). The limiter is O(1) amortized in-memory. No N+1,
+  no DB read on the page (unlike the homepage's featured queries — the B2B page needs none).
 
 ### Security Considerations
 
-- **CSP / external requests:** prefer `/public` local assets or `next/font` self-hosting over external CDNs (matches the repo's no-external-request posture — the showroom map deliberately uses a plain `<img>`/deep-link, no SDK). Any new remote image host is explicitly allow-listed in `next.config.ts` (AC-10).
-- **No new attack surface:** zero new inputs, endpoints, or data paths. `global-error.tsx` already never leaks error/stack. `StaticPageBody` renders escaped children (no `dangerouslySetInnerHTML`) — the reskin must not introduce raw HTML injection.
-- **No secrets:** no `NEXT_PUBLIC_`-prefixed secret, no secret in tokens/assets.
+- **Public unauthenticated write** → same threat model as contact: honeypot (crude bots),
+  per-IP sliding window (flood/DoS, with a `maxKeys` cardinality bound), input trim+cap+
+  control-char strip (header-injection / oversized-payload defense), and the template
+  HTML-escapes the body. The visitor's email becomes `replyTo`, never a header the visitor
+  controls directly.
+- **No secret exposure** — the disable hatch is a server-only env var (never `NEXT_PUBLIC_`),
+  so production always enforces the limit. Owner address is read server-side only.
+- **No PII persistence** — the request is relayed by email and not stored, minimizing data
+  footprint (a deliberate Phase-1 posture; a future quotes table would need RLS + retention
+  thinking).
 
 ## Implementation Recommendations
 
 ### Suggested Order of Implementation
 
-1. **Run the impeccable new-work flow (S2)** — decide the world first; nothing paints before the direction is dealt and committed (new-work §3-4 is a hard gate). Generate comp sketches, get the direction, then build.
-2. **Establish the storefront firewall FIRST** — before swapping any token/font, decide and wire the scope mechanism (storefront-scoped tokens/font wrapper vs global `:root` with admin opt-out). Everything downstream depends on this being right, and it's the highest-impact risk. Screenshot admin as the baseline.
-3. **Swap the token world** in `globals.css` (or the storefront-scoped layer) — palette, radius, `--font-heading` binding; update the Brand-Tokens doc block. Verify storefront re-paints and admin is untouched.
-4. **Wire the typography** (`fonts.ts` + storefront root) with es-MX subsets; verify accented headings.
-5. **Apply per-surface, shell-first** — header/footer/mobile-nav/WhatsApp (every page), then homepage (hero + editorial band), then catalog/PLP, PDP, cart, checkout shell, static pages, 404/error. Reconcile the ~12 semantic-color files consistently in this pass.
-6. **Build the image-slot system** — extend config slots, add `/public` (or allow-listed host) placeholders (generated via `generate-image.mjs` or licensed stock), verify null-degrade on every slot.
-7. **a11y/perf/parity sweep** — AA on every surface incl. text-over-image, RM honored, mobile 320-1280 no-overflow, i18n lockstep, money display intact.
-8. **Test-suite green + admin-firewall verification** — `tsc`/eslint/unit/integration/e2e; before/after admin screenshots; write DESIGN.md from the built world (impeccable documenter).
+1. `src/lib/config/quote.ts` (+ barrel re-export) — first, because the guard, limiter, and form
+   all depend on `QUOTE_TEAM_SIZES` and the caps. No dependencies of its own.
+2. `src/lib/quote/submit-guard.ts` + test — pure, isolated; the enum check is the only new
+   logic. Depends only on config.
+3. `src/lib/quote/rate-limit.ts` + test — clone of the contact limiter with a fresh instance.
+4. `src/lib/email/templates/quote-relay.ts` + test — pure template; depends on the email layer.
+5. `src/lib/email/dispatch.ts` — add `sendQuoteRelay` (depends on the template).
+6. `empresas/quote-form-state.ts` → `empresas/actions.ts` (+ test) → `empresas/quote-form.tsx`
+   — the state contract, then the action wiring the guards/limiter/relay, then the client form.
+7. `empresas/page.tsx` — compose the pitch sections + render the form; add `generateMetadata`.
+8. i18n: add the `empresas` namespace + `nav.items.offices` + `footer.links.offices` to both
+   files; update `CONSUMED_KEYS`.
+9. `nav-items.ts` (+ test) and `site-footer.tsx` — wire the nav/footer links (page must exist
+   first so the links aren't dead).
+10. `e2e/empresas-quote.spec.ts` — both-locale render, nav/footer link, form + honeypot +
+    validation + default error-on-submit. Then run tsc/eslint/unit/parity gates.
 
-### Key Decisions (for S2/dev — NOT pre-empting the visual world)
+### Key Decisions
 
-- **Firewall mechanism** (recommended: storefront-scoped brand tokens + display font applied under `[locale]/layout.tsx`, admin keeps the neutral/own token+font world). This is the cleanest way to guarantee AC-11 without touching a single admin file.
-- **Semantic colors** — recommend keeping amber/emerald as orthogonal, glyph+text status semantics (they encode meaning, not brand) OR promoting to `--warning`/`--success` tokens; decide once, apply everywhere.
-- **Dark mode** — recommend an explicit decision (commit a real dark theme or decommission `.dark`); do not ship half-migrated neutral dark values.
-- **WhatsApp FAB color** — if the brand primary is no longer green, give the FAB a dedicated recognizable-WhatsApp token rather than leaving it `bg-primary`.
+- **Slug: `/empresas`** (es-MX-primary, both locales via `as-needed` prefix). Recommended over
+  `/b2b` or `/oficinas` because it is the natural Spanish term for the audience, reads as a
+  first-class marketing destination, and does not collide with `RESERVED_SLUGS` or any existing
+  route. English serves the same slug under `/en/empresas` (the label localizes, not the path —
+  consistent with every other storefront route).
+- **Email template: NEW `renderQuoteRelay`, not a reuse of `renderContactRelay`.** The contact
+  template hardcodes a name/email/subject/message body layout (`contact-relay.ts:47`). The
+  quote has a DIFFERENT field set (company, contact, email, phone, team size, needs) and a
+  different subject (`Solicitud de cotización de {company}`). A new pure template following the
+  identical structure is cleaner and safer than overloading the contact template with optional
+  fields; it keeps each template a simple, unit-testable pure function (the T9 discipline). NEW
+  `QuoteRelayInput` type lives in the new template file; NEW `sendQuoteRelay` seam beside
+  `sendContactRelay` in `dispatch.ts`.
+- **Rate limit: SEPARATE key-space (own limiter instance).** Not a shared limiter — the quote
+  form and contact form must throttle independently (a legitimate contact message must not be
+  blocked by quote-form abuse, and vice versa). Same pattern as contact-vs-checkout.
+- **Copy-driven, not DB-backed.** The page reads a new `empresas` i18n namespace (like the
+  homepage), NOT a `static_pages` row. No migration, no seed change, renders with empty content
+  tables.
+- **Team size = constrained enum, not free text.** `QUOTE_TEAM_SIZES` (e.g.
+  `["1-10","11-50","51-200","200+"]`) single-sources the `<select>` options AND the server
+  membership check — the one genuinely new validation vs. the contact guard.
 
 ### Anti-Patterns to Avoid
 
-- **Don't** swap the global `:root` tokens or the shared `sans` export and call it done — that bleeds into admin (AC-11 FAIL). Scope to the storefront.
-- **Don't** bake brand looks into `src/components/ui/*` primitives — admin imports them; keep them token-driven.
-- **Don't** prescribe/lock the palette or typeface in planning — the new-work roll (S2) must run; writing artifact code before `concept-seed.mjs` is dealt is a contract violation per new-work §3.
-- **Don't** fabricate proof — no invented testimonials, review counts, sales figures, or press; synthetic imagery is labeled/structural (PRODUCT.md, AC-9).
-- **Don't** touch the motion layer — impeccable owns look, Emil owns motion; the shipped classes stay.
-- **Don't** render `next/image` from a non-allow-listed host — build/runtime error (AC-10).
-- **Don't** drop the compare-at `line-through`, change the catalog grid structure, move the honeypot, or rename asserted testids — those are the only reskin-fragile e2e signals (AC-19, edge 6).
-- **Don't** introduce layout-animating motion or an external font/asset CDN — perf + CSP posture.
+- Don't reuse `renderContactRelay`/`sendContactRelay` with a stuffed message — instead write a
+  dedicated `renderQuoteRelay`/`sendQuoteRelay` so each stays a simple pure function.
+- Don't share the contact rate-limiter instance — instead create a dedicated quote instance, or
+  quote abuse will silently throttle real contact messages.
+- Don't trust the client `<select>` value — instead validate `teamSize ∈ QUOTE_TEAM_SIZES` in
+  the PURE server guard (edge 1).
+- Don't fabricate proof to make the pitch persuasive — instead lean on the three real pillars,
+  real seeded brands, and honest volume framing (PRODUCT.md hard rule, AC-3).
+- Don't add the nav/footer link before the page exists — instead ship the route first, then the
+  links, so there is never a dead link (AC-8).
+- Don't put the `QuoteFormState` type inside the `"use server"` action module — it must live in
+  a sibling `quote-form-state.ts` (a `"use server"` file exports only async functions).
+- Don't edit `src/components/ui/*`, `:root`, or the shared `sans` export — the firewall must
+  hold (admin unchanged, AC-10).

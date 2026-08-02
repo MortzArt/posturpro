@@ -1,9 +1,17 @@
 # Pipeline State
-Task: T15 — Premium visual identity & image-rich refresh
+Task: T16 — B2B landing page (offices, quote form)
 Tier: standard
-Stage: COMPLETE
-Agent: — (standard pipeline done; QA is the gate)
-Last Updated: 2026-08-02 15:40
+Stage: 2
+Agent: ultradesign
+Last Updated: 2026-08-02 17:05
+Notes: S1 (PlanResearch, ultraplanner-research) COMPLETE. tasks/next-ticket.md + tasks/research-report.md written for T16. Complexity=MEDIUM, Feature Type=full-feature. Recommended slug=/empresas (both locales; NO RESERVED_SLUGS/[pageSlug]/[...rest] collision — static segment wins). Email decision: NEW pure renderQuoteRelay template + NEW sendQuoteRelay dispatch seam (contact-relay hardcodes name/email/subject/message; quote has company/contact/email/phone/teamSize/needs + different subject). Rate limit: SEPARATE createSlidingWindowLimiter INSTANCE (own key-space) so quote never shares a bucket with contact. Page is COPY-DRIVEN from a new `empresas` i18n namespace (like the homepage), NOT a static_pages DB row — no migration, renders with empty tables. Team size = constrained enum QUOTE_TEAM_SIZES single-sourced for the <select> + the server guard membership check (the one genuinely-new validation). No new deps, no migration, no admin/ui-primitive edits (firewall holds).
+  * REUSE MAP (verbatim clone targets): action=contacto/actions.ts; client=contacto/contact-form.tsx (add labeled native <select> for team size, else same fieldClasses/honeypot/state-matrix); state=contact-form-state.ts; guard=lib/contact/submit-guard.ts (+ QUOTE_TEAM_SIZES check); limiter=lib/contact/rate-limit.ts; config=lib/config/contact.ts; template=lib/email/templates/contact-relay.ts (NEW quote-relay.ts); page shell + generateMetadata = contacto/page.tsx + homepage page.tsx.
+  * COMPOSE (T15 world): src/components/home/{hero,editorial-band,section-header}.tsx (props+null-degrade in report); image slots imagery.ts string|null; motion globals.css .enter-fade(414)/.link-arrow(468)/.card-lift(492)/.stagger(530); cobalt cartouche + caption-bar-as-AA-scrim (EditorialBand grammar).
+  * WIRING: nav-items.ts NAV_ITEMS + closed key union → add {key:"offices",href:"/empresas"} (flows to site-header desktop + mobile-nav drawer auto); site-footer.tsx add offices link; both msg files empresas.* + nav.items.offices + footer.links.offices in lockstep; keys-used.test.ts CONSUMED_KEYS update.
+  * TEST: e2e webServer=npm run dev (playwright.config.ts) with env hatch pattern; success path exercisable via EMAIL_OWNER_ADDRESS=dummy + EMAIL_DEV_PREVIEW=1 + QUOTE_RATE_LIMIT_DISABLED=1; default e2e asserts error-on-submit (owner addr unset). 4 new unit test files + 1 e2e mirroring the contact suite.
+  * S2 (ultradesign) SCOPE: this page lives INSIDE the committed Casa de Azulejo world (DESIGN.md) — Persuade mode. Do NOT run a fresh new-work direction roll; the world is decided. Design the section skeleton (hero pitch → why-PosturPro-for-offices [3 pillars] → how-it-works/quote process → optional brand-breadth strip via REAL seeded brands → quote form), the quote-form layout + team-size <select> treatment, and any image slot, all in cobalt/grout/roman-caps/cartouche + shipped motion. HONEST COPY ONLY — zero fabricated proof. Write tasks/ui-design.md.
+
+=== T16 S1 (PlanResearch) COMPLETE — prior T15 notes below are the world reference ===
 
 === T15 COMPLETE — QA PASS (Stage S5, ultraqa, standard tier, confidence HIGH, 2026-08-02) ===
 - STANDARD PIPELINE COMPLETE: PlanResearch → UI Design (impeccable new-work) → Dev (7329b78) → ReviewFix (77a7781, APPROVE 9/10) → QA PASS (this stage). QA is the quality gate for the standard tier (no verify stage) → T15 SHIPS. Marked [x] in BUILD_PLAN.
