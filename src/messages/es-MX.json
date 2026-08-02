@@ -82,6 +82,9 @@
   "catalog": {
     "title": "Sillas",
     "subtitle": "Toda nuestra colección de sillas ergonómicas.",
+    "banner": {
+      "imageAlt": "Un espacio de trabajo iluminado con una silla ergonómica"
+    },
     "breadcrumb": {
       "ariaLabel": "Ruta de navegación",
       "home": "Inicio",

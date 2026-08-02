@@ -12,7 +12,9 @@ import {
 } from "@/lib/catalog/search-params";
 import { loadFacetOptions } from "@/lib/catalog/facets";
 import { buildActiveFilterChips } from "@/lib/catalog/active-filter-chips";
+import { CATALOG_BANNER_IMAGE } from "@/lib/config/imagery";
 import { Breadcrumbs } from "@/components/catalog/breadcrumbs";
+import { CatalogBanner } from "@/components/catalog/catalog-banner";
 import { CatalogShell } from "@/components/catalog/catalog-shell";
 import { SearchResults } from "@/components/catalog/search-results";
 import type { CatalogFilters, SortKey } from "@/lib/catalog/search.types";
@@ -134,13 +136,25 @@ export default async function CatalogListPage({
         ]}
       />
       <header className="mb-6 mt-2 flex flex-col gap-2 md:mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+        <h1 className="font-heading text-2xl font-semibold uppercase tracking-wide sm:text-3xl">
           {t("title")}
         </h1>
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground sm:text-base">
           {t("subtitle")}
         </p>
       </header>
+
+      {/* The catalog index art slot (Casa de Azulejo, AC-8) — a framed cartouche
+       * that opens the tile wall. Shown only on the unfiltered index (the hall
+       * entrance), not on filtered/searched result views. Degrades to a blank
+       * cobalt tile when its config asset is `null` (edge 3). Sits above the
+       * grid, so the e2e column-count assertion is unaffected. */}
+      {!active ? (
+        <CatalogBanner
+          imageUrl={CATALOG_BANNER_IMAGE}
+          imageAlt={t("banner.imageAlt")}
+        />
+      ) : null}
 
       <CatalogShell
         filters={filters}

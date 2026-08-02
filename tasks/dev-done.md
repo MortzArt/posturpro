@@ -125,3 +125,25 @@ product behavior changed.
 
 ## Dependencies Added
 None. No new npm package (second `next/font/google` family only), no migration, no `next.config.ts` change.
+
+## Review + Fix Pass (S4 ReviewFix Stage)
+
+### Issues Found & Fixed
+
+| ID  | Severity | Title | Status | File | Fix Applied |
+| --- | -------- | ----- | ------ | ---- | ----------- |
+| M-1 | MAJOR | `CATALOG_BANNER_IMAGE` slot + 294 KB asset were dead (never rendered) | FIXED | `src/lib/config/imagery.ts:24`, `public/images/catalog/workspace-banner.jpg` | New `catalog-banner.tsx` (21/9 cobalt cartouche, null-degrades to blank tile, no `priority`); rendered in `/sillas/page.tsx` above the grid, gated on `!active`; added symmetric `catalog.banner.imageAlt` i18n key. The shipped asset now earns its weight; DESIGN.md↔code mismatch closed. |
+| m-1 | MINOR | `/sillas` `<h1>` was residual-neutral (not roman-caps heading world) | FIXED | `src/app/[locale]/sillas/page.tsx:137` | `font-heading uppercase tracking-wide` applied for AC-6 consistency (Boy-Scout, while editing for M-1). |
+| m-2 | MINOR | impeccable `broken-image` hook finding on the new banner | SKIPPED | `src/components/catalog/catalog-banner.tsx:15` | False positive — `src` binds a real `/public` asset; `null` branch renders a token fallback tile, never a broken `<img>`. Same null-degrade grammar as Hero/EditorialBand; detector can't resolve the config value statically. No suppression added. |
+
+### Firewall / discipline independently verified (no issues)
+Admin body carries no `.theme-storefront` (admin resolves untouched neutral `:root`); no `admin/` or `ui/*` file edited. Radix portals mount into the themed storefront `<body>` (inherit cobalt) while admin's separate body stays neutral. Font seam: `--font-heading-family` defaults to Inter in `:root`, overridden only under scope — no cycle. Token grep clean (no hardcoded brand color / raw amber-emerald). i18n symmetric (527 keys). Structural e2e signals (compare-at `line-through`, honeypot off-screen, catalog column-count=2) verified green on a warm server.
+
+### Flaky tests (dev-flagged) — investigated
+The 2 catalog nav-click e2e tests fail cold / pass warm (re-run green in ~5 s). Root cause: Playwright `webServer: npm run dev` racing Next.js on-demand route compilation on first navigation — pre-existing/environmental, NOT the reskin (`category-tree.tsx` link target + testid unchanged; new font is `display:"swap"`, non-blocking). No fix warranted here; flag the e2e-vs-dev-server setup for T14 hardening.
+
+### Summary
+- Critical: 0/0 fixed
+- Major: 1/1 fixed
+- Minor: 1/2 fixed, 1 skipped (classified false positive)
+- Verification after fixes: `tsc --noEmit` clean · `eslint` clean · unit 1729/1729 · i18n symmetric · targeted catalog + PDP e2e green (warm). Quality score 9/10. Verdict: APPROVE → S5 (QA).

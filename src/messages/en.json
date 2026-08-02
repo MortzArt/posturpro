@@ -82,6 +82,9 @@
   "catalog": {
     "title": "Chairs",
     "subtitle": "Our full collection of ergonomic chairs.",
+    "banner": {
+      "imageAlt": "A daylit workspace with an ergonomic chair"
+    },
     "breadcrumb": {
       "ariaLabel": "Breadcrumb",
       "home": "Home",
