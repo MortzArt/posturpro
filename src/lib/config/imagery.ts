@@ -23,3 +23,13 @@ export const EDITORIAL_BAND_IMAGE: string | null =
 /** Catalog index banner art (21/9) — optional art slot on the `/sillas` index. */
 export const CATALOG_BANNER_IMAGE: string | null =
   "/images/catalog/workspace-banner.jpg";
+
+/**
+ * B2B `/empresas` hero image (4/3, matches `HeroMedia`). A bright cool-neutral
+ * office workspace furnished with task chairs — the audience's scene, inside the
+ * cobalt cartouche frame. `null` degrades to the `HeroMedia` blank tile with a
+ * BUILDING glyph (so the fallback reads "offices", not "single product"). Never
+ * proof imagery (T16 AC-3, PRODUCT.md hard rule).
+ */
+export const B2B_HERO_IMAGE: string | null =
+  "/images/b2b/office-workspace.jpg";

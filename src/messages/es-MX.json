@@ -13,7 +13,8 @@
       "catalog": "Sillas",
       "brands": "Marcas",
       "styles": "Estilos",
-      "contact": "Contacto"
+      "contact": "Contacto",
+      "offices": "Empresas"
     }
   },
   "toggle": {
@@ -40,7 +41,8 @@
       "contact": "Contacto",
       "privacy": "Aviso de privacidad",
       "terms": "Términos y condiciones",
-      "showroom": "Visita nuestro showroom"
+      "showroom": "Visita nuestro showroom",
+      "offices": "Empresas"
     },
     "rights": "© {year} {storeName}. Todos los derechos reservados."
   },
@@ -618,5 +620,113 @@
     },
     "viewOnMaps": "Ver en mapas",
     "mapAlt": "Mapa de la ubicación del showroom"
+  },
+  "empresas": {
+    "metadata": {
+      "title": "Cotizaciones para empresas · PosturPro",
+      "description": "Equipa el espacio de trabajo de tu equipo con sillas ergonómicas de múltiples marcas. Solicita una cotización por volumen — sin precios de autoservicio, atención directa."
+    },
+    "hero": {
+      "title": "Equipa a tu equipo con sillas que cuidan su postura",
+      "subtitle": "Amueblamos oficinas con sillas ergonómicas de varias marcas. Cuéntanos el tamaño de tu equipo y te preparamos una cotización a la medida.",
+      "cta": "Solicitar cotización",
+      "secondary": "¿Cómo funciona?",
+      "imageAlt": "Espacio de trabajo de oficina equipado con sillas ergonómicas"
+    },
+    "value": {
+      "heading": "Por qué PosturPro para oficinas",
+      "pillars": {
+        "ergonomics": {
+          "title": "Autoridad en ergonomía",
+          "body": "Curamos cada silla por cómo trata el cuerpo de quien se sienta en ella toda la jornada — postura primero, no solo estética."
+        },
+        "brands": {
+          "title": "La selección más amplia",
+          "body": "Varias marcas de sillas bajo un mismo techo, para que encuentres la opción correcta para cada rol de tu equipo."
+        },
+        "value": {
+          "title": "Precio por volumen",
+          "body": "Calidad premium a mejor precio, con una cotización pensada para el número de personas que vas a equipar."
+        }
+      }
+    },
+    "process": {
+      "heading": "Cómo funciona",
+      "steps": {
+        "request": {
+          "title": "Solicita tu cotización",
+          "body": "Llena el formulario con el tamaño de tu equipo y lo que necesitas. Sin compromiso."
+        },
+        "reply": {
+          "title": "Te contactamos",
+          "body": "Una persona del equipo revisa tu solicitud y te responde directamente — sin precios automáticos."
+        },
+        "quote": {
+          "title": "Cotización a la medida",
+          "body": "Recibes una propuesta de sillas y precio pensada para tu oficina y tu presupuesto."
+        }
+      }
+    },
+    "brands": {
+      "heading": "Marcas que manejamos",
+      "viewAll": "Ver todas las marcas"
+    },
+    "form": {
+      "heading": "Solicita tu cotización",
+      "intro": "Respondemos por correo. Entre más nos cuentes, mejor será la cotización.",
+      "company": {
+        "label": "Empresa",
+        "placeholder": "Nombre de tu empresa"
+      },
+      "name": {
+        "label": "Nombre de contacto",
+        "placeholder": "¿Con quién hablamos?"
+      },
+      "email": {
+        "label": "Correo electrónico",
+        "placeholder": "tucorreo@empresa.com"
+      },
+      "phone": {
+        "label": "Teléfono",
+        "optional": "(opcional)",
+        "placeholder": "10 dígitos"
+      },
+      "teamSize": {
+        "label": "Tamaño del equipo",
+        "placeholder": "Selecciona un rango",
+        "options": {
+          "1-10": "1–10 personas",
+          "11-50": "11–50 personas",
+          "51-200": "51–200 personas",
+          "200+": "Más de 200 personas"
+        }
+      },
+      "needs": {
+        "label": "¿Qué necesitas?",
+        "placeholder": "Cuéntanos cuántas sillas, para qué roles, y cualquier preferencia de marca o presupuesto."
+      },
+      "charCount": "{count}/{max}",
+      "submit": "Solicitar cotización",
+      "submitting": "Enviando…",
+      "retry": "Reintentar",
+      "honeypot": "No llenar este campo",
+      "success": "¡Solicitud enviada! Te contactaremos pronto.",
+      "errorGeneric": "No pudimos enviar tu solicitud, inténtalo de nuevo.",
+      "rateLimited": "Espera un momento antes de enviar otra solicitud.",
+      "errors": {
+        "companyRequired": "Escribe el nombre de tu empresa.",
+        "companyTooLong": "El nombre es demasiado largo.",
+        "nameRequired": "Escribe un nombre de contacto.",
+        "nameTooLong": "El nombre es demasiado largo.",
+        "emailRequired": "Escribe tu correo electrónico.",
+        "emailInvalid": "Ese correo no parece válido.",
+        "emailTooLong": "El correo es demasiado largo.",
+        "phoneTooLong": "El teléfono es demasiado largo.",
+        "teamSizeRequired": "Elige el tamaño de tu equipo.",
+        "teamSizeInvalid": "Elige una opción de la lista.",
+        "needsRequired": "Cuéntanos qué necesitas.",
+        "needsTooLong": "El mensaje es demasiado largo."
+      }
+    }
   }
 }

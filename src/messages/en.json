@@ -13,7 +13,8 @@
       "catalog": "Chairs",
       "brands": "Brands",
       "styles": "Styles",
-      "contact": "Contact"
+      "contact": "Contact",
+      "offices": "For business"
     }
   },
   "toggle": {
@@ -40,7 +41,8 @@
       "contact": "Contact",
       "privacy": "Privacy notice",
       "terms": "Terms",
-      "showroom": "Visit our showroom"
+      "showroom": "Visit our showroom",
+      "offices": "For business"
     },
     "rights": "© {year} {storeName}. All rights reserved."
   },
@@ -618,5 +620,113 @@
     },
     "viewOnMaps": "View on maps",
     "mapAlt": "Map of the showroom location"
+  },
+  "empresas": {
+    "metadata": {
+      "title": "Volume quotes for offices · PosturPro",
+      "description": "Outfit your team's workspace with ergonomic chairs from multiple brands. Request a volume quote — no self-serve pricing, a direct reply."
+    },
+    "hero": {
+      "title": "Equip your team with chairs that protect their posture",
+      "subtitle": "We furnish offices with ergonomic chairs from several brands. Tell us your team size and we'll prepare a quote tailored to you.",
+      "cta": "Request a quote",
+      "secondary": "How it works",
+      "imageAlt": "Office workspace furnished with ergonomic chairs"
+    },
+    "value": {
+      "heading": "Why PosturPro for offices",
+      "pillars": {
+        "ergonomics": {
+          "title": "Ergonomics authority",
+          "body": "We curate every chair for how it treats the body of the person sitting in it all day — posture first, not just looks."
+        },
+        "brands": {
+          "title": "The widest selection",
+          "body": "Several chair brands under one roof, so you can find the right option for every role on your team."
+        },
+        "value": {
+          "title": "Value at volume",
+          "body": "Premium quality at a better price, with a quote sized to the number of people you're outfitting."
+        }
+      }
+    },
+    "process": {
+      "heading": "How it works",
+      "steps": {
+        "request": {
+          "title": "Request your quote",
+          "body": "Fill in the form with your team size and what you need. No commitment."
+        },
+        "reply": {
+          "title": "We get in touch",
+          "body": "Someone on our team reviews your request and replies to you directly — no automated pricing."
+        },
+        "quote": {
+          "title": "A tailored quote",
+          "body": "You get a chair-and-price proposal built for your office and your budget."
+        }
+      }
+    },
+    "brands": {
+      "heading": "Brands we carry",
+      "viewAll": "View all brands"
+    },
+    "form": {
+      "heading": "Request your quote",
+      "intro": "We reply by email. The more you tell us, the better the quote.",
+      "company": {
+        "label": "Company",
+        "placeholder": "Your company name"
+      },
+      "name": {
+        "label": "Contact name",
+        "placeholder": "Who are we speaking with?"
+      },
+      "email": {
+        "label": "Email",
+        "placeholder": "you@company.com"
+      },
+      "phone": {
+        "label": "Phone",
+        "optional": "(optional)",
+        "placeholder": "10 digits"
+      },
+      "teamSize": {
+        "label": "Team size",
+        "placeholder": "Select a range",
+        "options": {
+          "1-10": "1–10 people",
+          "11-50": "11–50 people",
+          "51-200": "51–200 people",
+          "200+": "More than 200 people"
+        }
+      },
+      "needs": {
+        "label": "What do you need?",
+        "placeholder": "Tell us how many chairs, for which roles, and any brand or budget preferences."
+      },
+      "charCount": "{count}/{max}",
+      "submit": "Request a quote",
+      "submitting": "Sending…",
+      "retry": "Try again",
+      "honeypot": "Do not fill this field",
+      "success": "Request sent! We'll be in touch soon.",
+      "errorGeneric": "We couldn't send your request. Please try again.",
+      "rateLimited": "Please wait a moment before sending another request.",
+      "errors": {
+        "companyRequired": "Enter your company name.",
+        "companyTooLong": "That name is too long.",
+        "nameRequired": "Enter a contact name.",
+        "nameTooLong": "That name is too long.",
+        "emailRequired": "Enter your email.",
+        "emailInvalid": "That email doesn't look valid.",
+        "emailTooLong": "That email is too long.",
+        "phoneTooLong": "That phone number is too long.",
+        "teamSizeRequired": "Choose your team size.",
+        "teamSizeInvalid": "Choose an option from the list.",
+        "needsRequired": "Tell us what you need.",
+        "needsTooLong": "That message is too long."
+      }
+    }
   }
 }

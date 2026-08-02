@@ -30,6 +30,7 @@ import { renderCancelled } from "@/lib/email/templates/cancelled";
 import { renderRefundIssued } from "@/lib/email/templates/refund-issued";
 import { renderNewOrderOwner } from "@/lib/email/templates/new-order-owner";
 import { renderContactRelay, type ContactRelayInput } from "@/lib/email/templates/contact-relay";
+import { renderQuoteRelay, type QuoteRelayInput } from "@/lib/email/templates/quote-relay";
 import type {
   CancelledEmailInput,
   EmailChrome,
@@ -310,6 +311,40 @@ export async function sendContactRelay(input: ContactRelayInput): Promise<Dispat
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : "unknown";
     console.error(`[email] contact relay threw: reason=${message}`);
+    return { ok: false, reason: message };
+  }
+}
+
+/**
+ * Relay a B2B quote-request to the store owner. // T16 wiring seam — called from
+ * the `/empresas` quote-form action. Not order-scoped, so it does NOT use the
+ * email_sends ledger (no order id); the caller owns its own rate limiting (T16,
+ * a DEDICATED quote limiter). The visitor's email becomes the reply-to so the
+ * owner can respond directly. Mirrors `sendContactRelay` exactly.
+ */
+export async function sendQuoteRelay(input: QuoteRelayInput): Promise<DispatchResult> {
+  const ownerAddress = ownerAddressOrNull();
+  if (!ownerAddress) {
+    return { ok: false, reason: "owner address unavailable" };
+  }
+  try {
+    const chrome: EmailChrome = { storeName: await resolveStoreName(), orderUrl: "" };
+    const rendered = renderQuoteRelay(input, chrome);
+    const result = await sendWithTimeout({
+      to: ownerAddress,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
+      replyTo: input.fromEmail,
+    });
+    if (!result.ok) {
+      console.error(`[email] quote relay send failed: reason=${result.reason}`);
+      return { ok: false, reason: result.reason };
+    }
+    return { ok: true, sent: true };
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : "unknown";
+    console.error(`[email] quote relay threw: reason=${message}`);
     return { ok: false, reason: message };
   }
 }

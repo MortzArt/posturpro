@@ -13,12 +13,13 @@ import esMX from "@/messages/es-MX.json";
 import en from "@/messages/en.json";
 
 describe("NAV_ITEMS", () => {
-  it("declares the four primary nav items in order", () => {
+  it("declares the five primary nav items in order", () => {
     expect(NAV_ITEMS.map((item) => item.key)).toEqual([
       "catalog",
       "brands",
       "styles",
       "contact",
+      "offices",
     ]);
   });
 
@@ -38,6 +39,7 @@ describe("NAV_ITEMS", () => {
       brands: "/marcas",
       styles: "/estilos",
       contact: "/contacto",
+      offices: "/empresas",
     });
   });
 

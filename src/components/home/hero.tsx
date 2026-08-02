@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { Chair01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { Link } from "@/i18n/navigation";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,12 @@ interface HeroProps {
   secondaryHref: string;
   imageUrl: string | null;
   imageAlt: string;
+  /**
+   * Blank-tile glyph shown when `imageUrl` is null. Defaults to the chair glyph
+   * (homepage); the B2B page passes a building glyph so the fallback reads
+   * "offices", not "single product".
+   */
+  fallbackIcon?: IconSvgElement;
 }
 
 export function Hero({
@@ -35,6 +41,7 @@ export function Hero({
   secondaryHref,
   imageUrl,
   imageAlt,
+  fallbackIcon = Chair01Icon,
 }: HeroProps) {
   return (
     <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-12">
@@ -68,18 +75,20 @@ export function Hero({
         </div>
       </div>
 
-      <HeroMedia imageUrl={imageUrl} imageAlt={imageAlt} />
+      <HeroMedia imageUrl={imageUrl} imageAlt={imageAlt} fallbackIcon={fallbackIcon} />
     </div>
   );
 }
 
-/** The hero media column: real image, or a token-tinted chair-glyph panel. */
+/** The hero media column: real image, or a token-tinted glyph panel. */
 function HeroMedia({
   imageUrl,
   imageAlt,
+  fallbackIcon,
 }: {
   imageUrl: string | null;
   imageAlt: string;
+  fallbackIcon: IconSvgElement;
 }) {
   if (imageUrl) {
     return (
@@ -102,7 +111,7 @@ function HeroMedia({
       className="order-2 flex aspect-[4/3] w-full items-center justify-center rounded-md border border-primary/30 bg-muted"
     >
       <HugeiconsIcon
-        icon={Chair01Icon}
+        icon={fallbackIcon}
         size={72}
         strokeWidth={1.5}
         className="text-muted-foreground/40"

@@ -33,7 +33,10 @@ import { cn } from "@/lib/utils";
  * `/devoluciones` (matching the seeded page set). Showroom hangs off the
  * store-info block as a contextual link, not a policy column.
  */
-const STORE_LINKS = [{ key: "about", href: "/sobre-nosotros" }] as const;
+const STORE_LINKS = [
+  { key: "offices", href: "/empresas" },
+  { key: "about", href: "/sobre-nosotros" },
+] as const;
 
 const HELP_LINKS = [
   { key: "faq", href: "/preguntas-frecuentes" },

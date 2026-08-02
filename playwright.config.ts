@@ -27,6 +27,11 @@ export default defineConfig({
     // deploys — production always enforces the limit. If the authoritative e2e
     // run uses a separately-started prod server (NEXT_QA_DIST_DIR + next start),
     // export CHECKOUT_RATE_LIMIT_DISABLED=1 on that command too.
-    env: { CHECKOUT_RATE_LIMIT_DISABLED: "1" },
+    env: {
+      CHECKOUT_RATE_LIMIT_DISABLED: "1",
+      // Same rationale for the B2B quote form's dedicated per-IP limiter: the
+      // e2e submits several quotes from one localhost IP within a window.
+      QUOTE_RATE_LIMIT_DISABLED: "1",
+    },
   },
 });

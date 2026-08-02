@@ -10,7 +10,7 @@
  */
 export interface NavItem {
   /** Dictionary key under `nav.items`. */
-  readonly key: "catalog" | "brands" | "styles" | "contact";
+  readonly key: "catalog" | "brands" | "styles" | "contact" | "offices";
   /** Locale-agnostic destination path. */
   readonly href: string;
 }
@@ -20,4 +20,5 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { key: "brands", href: "/marcas" },
   { key: "styles", href: "/estilos" },
   { key: "contact", href: "/contacto" },
+  { key: "offices", href: "/empresas" },
 ] as const;
