@@ -31,6 +31,20 @@ export type ContactFieldErrorKey =
 /** Which form field an error belongs to. */
 export type ContactFieldKey = "name" | "email" | "subject" | "message";
 
+/**
+ * Strip control characters (CR/LF, tabs, and other C0/C1 controls) from a value
+ * that flows into an email SUBJECT/header context (name, subject). Resend's JSON
+ * HTTP API is not a raw-SMTP header-injection vector, but interior newlines would
+ * still produce a mangled subject line — collapse them defensively so the relay
+ * subject is always a single clean line. Applied AFTER trim, so leading/trailing
+ * whitespace is already gone.
+ */
+function stripControlChars(value: string): string {
+  // C0 (\u0000-\u001F) + DEL (\u007F) + C1 (\u0080-\u009F) controls ->
+  // collapsed to a single space so a mangled subject line is impossible.
+  return value.replace(/[\u0000-\u001F\u007F-\u009F]+/g, " ").trim();
+}
+
 /** Trimmed, validated values safe to relay when `ok` is true. */
 export interface ContactValues {
   name: string;
@@ -59,9 +73,11 @@ export function validateContactSubmission(
   rawSubject: string,
   rawMessage: string,
 ): ContactValidationResult {
-  const name = rawName.trim();
+  // Name + subject flow into the relay email SUBJECT line — strip control chars
+  // (belt-and-suspenders vs. a mangled/injected header) as well as trimming.
+  const name = stripControlChars(rawName.trim());
   const email = rawEmail.trim();
-  const subject = rawSubject.trim();
+  const subject = stripControlChars(rawSubject.trim());
   const message = rawMessage.trim();
   const fieldErrors: ContactValidationResult["fieldErrors"] = {};
 

@@ -1,11 +1,19 @@
 # Pipeline State
 Task: T13 — Static pages & homepage
 Tier: standard
-Stage: 4
-Agent: ultrareviewfix
+Stage: 5
+Agent: ultraqa
 Complexity: medium
 Feature Type: full-stack (full-feature)
-Last Updated: 2026-08-02 02:20
+Last Updated: 2026-08-02 02:31
+Notes: S4 (ReviewFix, ultrareviewfix) COMPLETE — APPROVE, 9.5/10. 0 critical, 0 major, 1 minor found+FIXED inline (m-1: interior CR/LF control chars in contact name/subject reaching the relay email SUBJECT line — not exploitable via Resend JSON API, but hardened defensively). FIX: new pure stripControlChars() in src/lib/contact/submit-guard.ts applied to name+subject after trim (control run → single space → trim); control-only name strips to "" → nameRequired. +2 characterization tests in submit-guard.test.ts. VERIFIED INDEPENDENTLY (not trusted): tsc --noEmit clean; eslint clean; full unit suite 1700/1700 (was 1698, +2); message parity 434/434 zero-asymmetry (flatten-diff); RLS 0005:216 confirmed grants anon SELECT on static_page translations (en overlay genuinely resolves, AC-4 real not silently-falling-back); translations unique key 0004:54 matches seed onConflict (idempotent); every AC (20/20) verified in code + every edge (10/10) handled. Contact backend mirrors checkout/Q&A abuse controls verbatim; StaticPageBody escaped-children (no dangerouslySetInnerHTML); homepage featured = bounded slices via single Promise.all (no N+1); zero dead footer/nav links; animation CSS meets STANDARDS.md. Findings in tasks/review-findings.md (overwrote T12). Next: Stage 5 QA (ultraqa) — action-level integration coverage for submitContactForm (honeypot/invalid/rate-limited/error/success mapping), the [pageSlug] notFound paths, en-overlay fallback; success path exercisable via EMAIL_OWNER_ADDRESS=dummy + EMAIL_DEV_PREVIEW=1 + CONTACT_RATE_LIMIT_DISABLED=1 (server-only import blocks the action from the default jsdom test env — QA must mock server-only or use a node-env test, as dispatch.test.ts does).
+
+=== S4 REVIEWFIX NOTES (QA must honor) ===
+- ONLY code change this stage: src/lib/contact/submit-guard.ts (added stripControlChars + applied to name/subject) + src/lib/contact/submit-guard.test.ts (+2 tests). Nothing else touched — all other S3 files reviewed and accepted as-is.
+- submitContactForm action layer (actions.ts) is thin pure branch-mapping (honeypot→success / validate→invalid / rate-limit→rate-limited / relay ok→success !ok/throw→error) — NOT unit-covered at the action level yet (guard + rate-limit + dispatch branches ARE covered separately). QA should add action-level integration/e2e to close that seam.
+- name/subject now guaranteed single-line clean (no CR/LF) reaching renderContactRelay subject; message still passed VERBATIM (template escapes). No behavior change to valid single-line inputs.
+
+=== S3 DEV NOTES (reviewfix must honor) ===
 Notes: S3 (Dev, ultradev) COMPLETE. 22 files created + 8 modified. Full inventory + AC map in tasks/dev-done.md. tsc --noEmit clean; eslint clean (all touched files + full src/app); unit 1698/1698 (102 files, +105 from T12's 1593 incl. 22 new contact/parse-body/rate-limit tests + expanded seed-invariants). Reseeded local DB idempotently: 9 static_pages + 18 translations. LIVE spot-check on :3000 dev server — all 20 surfaces 200 with correct h1 (10 es-MX + 10 en via translation overlay); unknown/reserved slug → in-shell 404; existing routes (/sillas /marcas /categorias /estilos) still 200 (segment precedence intact); 9 footer links all resolve 200 (ZERO dead links, AC-10); FAQ h2 ids slugified+deep-linkable; contact form + honeypot render; showroom map degrades to token panel (SHOWROOM_MAP_URL null → link omitted, address/hours always render); hero degrades to chair-glyph panel (HERO_IMAGE null, no broken img); both featured sections render (non-empty catalog). NO deviations from ui-design.md. Standard tier → next is Stage 4 ReviewFix (ultrareviewfix).
 
 === S3 DEV NOTES (reviewfix must honor) ===

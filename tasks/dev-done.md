@@ -109,3 +109,26 @@ Standard tier, Stage 4 (Dev). Full-stack. 22 files created + 8 modified. Zero TO
 
 ## Dependencies Added
 - **None.** Reuses `next-intl`, `sendContactRelay`, `createSlidingWindowLimiter`, `createPublicClient`, catalog queries, and shipped card/tile/grid/breadcrumb/button components + shipped motion classes.
+
+## Review + Fix Pass (ReviewFix Stage — S4, ultrareviewfix)
+
+### Issues Found & Fixed
+
+| ID  | Severity | Title | Status | File | Fix Applied |
+| --- | -------- | ----- | ------ | ---- | ----------- |
+| m-1 | MINOR    | Interior CR/LF control chars in `name`/`subject` reach the relay email subject line | FIXED | `src/lib/contact/submit-guard.ts:34-47,77-82` | Added pure `stripControlChars()` (collapses any C0/DEL/C1 run to a single space, then trims); applied to `name` + `subject` after trim, before length/required checks. Control-only name → `""` → `nameRequired`. Not exploitable via Resend's JSON HTTP API (no SMTP header injection), but hardens subject-line hygiene. +2 characterization tests in `submit-guard.test.ts`. |
+
+### Summary
+
+- Critical: 0/0 fixed
+- Major: 0/0 fixed
+- Minor: 1/1 fixed, 0 skipped
+
+### Verification (independent, not trusted)
+
+- `npx tsc --noEmit`: clean
+- `npx eslint` (all touched T13 files): clean
+- Unit suite: **1700/1700** (was 1698; +2 new contact-guard hardening cases)
+- Message parity: es-MX / en both 434 keys, zero asymmetry (flatten-diff)
+- RLS `translations_anon_select` (`0005:216`) confirmed grants anon SELECT on `static_page` translation rows → the `en` overlay genuinely resolves (AC-4 is real, not a silent Spanish fallback)
+- Verdict: **APPROVE**, quality **9.5/10**. All 20 ACs met in code, all 10 edge cases handled. Full findings in `tasks/review-findings.md`.

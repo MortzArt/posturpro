@@ -83,6 +83,27 @@ describe("validateContactSubmission", () => {
     expect(result.ok).toBe(false);
     expect(result.fieldErrors.message).toBe("messageTooLong");
   });
+
+  it("strips CR/LF + control chars from name and subject (subject-line hygiene)", () => {
+    const result = validateContactSubmission(
+      "Ana\r\nBcc: victim@example.com",
+      okEmail,
+      "Hola\nSubject-Injected",
+      "Un mensaje válido",
+    );
+    expect(result.ok).toBe(true);
+    // Control runs collapse to a single space; no residual newline survives.
+    expect(result.values.name).toBe("Ana Bcc: victim@example.com");
+    expect(result.values.subject).toBe("Hola Subject-Injected");
+    expect(result.values.name).not.toContain("\n");
+    expect(result.values.subject).not.toContain("\n");
+  });
+
+  it("treats a control-char-only name as required (stripped to empty)", () => {
+    const result = validateContactSubmission("\r\n\t", okEmail, "", "Hola");
+    expect(result.ok).toBe(false);
+    expect(result.fieldErrors.name).toBe("nameRequired");
+  });
 });
 
 describe("isContactHoneypotTripped", () => {
