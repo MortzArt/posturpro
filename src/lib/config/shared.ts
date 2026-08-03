@@ -64,7 +64,9 @@ export const DEFAULT_LOCALE = "es-MX" as const;
  * the intentional guard that prevents a broken `wa.me/` link with no number
  * (T2 edge case 7). Do not prefix with `+`; `wa.me` wants bare digits.
  */
-export const WHATSAPP_PHONE_E164 = "" as const;
+// PLACEHOLDER number (owner, 2026-08-03): enables the button for testing; the
+// owner will swap in the store's real WhatsApp number before launch.
+export const WHATSAPP_PHONE_E164 = "5215512345678" as const;
 
 /**
  * Prefilled Spanish message inserted into the `wa.me` deep link (URL-encoded at
