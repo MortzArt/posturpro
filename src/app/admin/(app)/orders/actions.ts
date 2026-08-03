@@ -16,7 +16,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { UUID_PATTERN } from "@/lib/config";
 import { ADMIN_ORDERS_PATH } from "@/lib/admin/constants";
 import { parseStatusTransition } from "@/lib/admin/orders/order-status-input";
-import { advanceOrderTo } from "@/lib/admin/orders/order-status-write";
+import { advanceOrderTo, markOrderPaidOffline } from "@/lib/admin/orders/order-status-write";
 import { parseTrackingInput } from "@/lib/admin/orders/order-tracking-input";
 import { saveOrderTracking } from "@/lib/admin/orders/order-tracking-write";
 import { cancelOrder as cancelOrderWrite } from "@/lib/admin/orders/order-cancel-write";
@@ -38,6 +38,7 @@ import type {
   CancelOrderActionResult,
   RefundOrderActionResult,
   AddNoteActionResult,
+  MarkPaidActionResult,
 } from "@/lib/admin/orders/order-action-types";
 
 /**
@@ -103,6 +104,27 @@ export async function advanceStatus(
   }
   revalidateOrder(orderId);
   return { ok: true, emailSent: result.emailSent };
+}
+
+/**
+ * Record that an order was paid outside Mercado Pago (cash / transfer / on
+ * delivery). Flips payment_status → paid via the payment-only advance path,
+ * stamps payment_method='manual', writes an audit row; sends no email. Idempotent
+ * (an already-paid/refunded order returns `already-paid`).
+ */
+export async function markPaidOffline(orderId: string): Promise<MarkPaidActionResult> {
+  await requireSession();
+  if (!UUID_PATTERN.test(orderId)) {
+    return { ok: false, reason: "not-found" };
+  }
+  const result = await markOrderPaidOffline(orderId);
+  if (!result.ok) {
+    if (result.reason === "not-found") return { ok: false, reason: "not-found" };
+    if (result.reason === "already-paid") return { ok: false, reason: "already-paid" };
+    return { ok: false, reason: "error" };
+  }
+  revalidateOrder(orderId);
+  return { ok: true };
 }
 
 /** Persist the tracking fields (number/carrier/url). */

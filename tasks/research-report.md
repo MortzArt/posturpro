@@ -1,112 +1,190 @@
-# Research Report: T17 — Admin manual / phone order entry
+# Research Report: T18 — Admin customer detail page
 
-> One-pass codebase inventory for the standard pipeline. T17 rides on shipped stacks — the T7 atomic checkout (`create_order`), the T8/T9 payment + email plumbing (`advance_order_status`, `dispatch.ts`), and the T12 admin-orders grammar (`requireSession`-first actions, paired input/write libs, `AdminPage` `actions` slot). The genuinely new work is a catalog product/variant picker, the `contact_email` NOT-NULL resolution, and recipient-safe email sends. Every load-bearing claim below is cited to `file:line`.
+## The definitive customer-keying answer (the critical question)
 
----
+**Customers are keyed by `customers.id` (UUID PK). Not by email, not by phone.**
+
+Evidence chain (all read this pass):
+
+1. **List grouping key** — `src/lib/admin/orders/customer-list-query.ts:107-124`
+   (`readOrderCounts`) calls the `admin_customer_order_counts` RPC with the page's
+   **`customers.id` array** and maps the result by `customer_id`. The list row
+   (`AdminCustomerRow`, line 16-22) is keyed on `customers.id`.
+
+2. **The RPC's aggregation key** — `supabase/migrations/0013_admin_customer_order_counts.sql`:
+   ```sql
+   select o.customer_id, count(*) as order_count
+   from public.orders o
+   where o.customer_id = any(p_customer_ids)
+   group by o.customer_id;
+   ```
+   The count is `orders GROUP BY customer_id` — a `customers.id`/`orders.customer_id`
+   FK join, **never email/phone**.
+
+3. **The FK** — `supabase/migrations/0003_commerce.sql:28`:
+   `customer_id uuid references customers (id) on delete set null`, with
+   `orders_customer_id_idx` on `orders(customer_id)` (line 78).
+
+4. **One customer row PER ORDER** (the fact that makes the screenshot make sense) —
+   `supabase/migrations/0008_checkout.sql:200-208`, the `create_order` RPC:
+   ```sql
+   -- 3. Guest customer record (AC-11). No accounts in Phase 1 — one row per order.
+   insert into public.customers (email, full_name, phone)
+     values (payload->>'contact_email', payload->>'shipping_full_name',
+             nullif(payload->>'contact_phone', ''))
+     returning id into v_customer_id;
+   ```
+   There is **no `ON CONFLICT`, no lookup-by-email, no dedup**. Every checkout AND every
+   manual order (which also goes through `create_order`, see
+   `src/lib/admin/orders/manual-order-write.ts:203`) mints a fresh `customers` row.
+
+**What this means for the detail page — the resolution of every concern in the brief:**
+
+- The screenshot's repeated `manual-buyer@example.com` rows are **distinct `customers.id`
+  rows**, each with its own single order. The list counts them separately *correctly*.
+- **Recommended route param: `customers.id` (the raw UUID).** Not an encoded email/phone
+  key. The detail page does `orders WHERE customer_id = {id}` and its count **equals the
+  list's count by construction** (identical GROUP BY key). No encoding, no ambiguity, and
+  it mirrors the order detail's `/[id]` param exactly.
+- Email-less manual customers use the sentinel `sin-correo@pedido-manual.invalid`
+  (`src/lib/email/recipient.ts:30`, `NO_EMAIL_PLACEHOLDER`) in `customers.email` /
+  `orders.contact_email`. Because keying is by `customers.id`, **phone-distinct sentinel
+  customers are already never collapsed** — no special handling needed for isolation. The
+  only work is *rendering*: pass the email through `isMailableAddress()` so the sentinel
+  shows "Sin correo".
+- The customer's order count is, in practice, **1** for almost every customer (one row per
+  order). The page must render count-1 and count-N correctly and never hardcode "1".
+
+> **Note on the brief's phrasing.** The brief referenced a `no-email@manual-order.invalid`
+> sentinel; the actual constant is `sin-correo@pedido-manual.invalid`. And the brief's
+> worry about "distinct phone customers who share the sentinel" is a non-issue under
+> `customers.id` keying — they are already distinct rows. Both confirmed by direct read.
 
 ## Codebase Analysis
 
-### Existing Patterns (reuse strategy)
+### Existing Patterns
 
-- **Atomic order creation** — `create_order(payload jsonb)` in `supabase/migrations/0008_checkout.sql:96` (`security definer`, `set search_path=''`, `grant execute … to service_role` at `:281`; `revoke all … from public` at `:280`). Reuse: call it verbatim from a new admin action; it doesn't inspect caller identity beyond the grant, and admin actions already use the service_role key (T12).
-- **Server-side price/stock revalidation** — `revalidateLines(submitted)` in `src/lib/checkout/checkout-read.ts:147`. Reuse as the "same trust rules as checkout" line resolver (see Data Flow + Q5).
-- **Totals assembly** — `assembleOrder(lines, shipping, discountCents)` in `src/lib/checkout/order.ts:61` → `OrderTotals`; clamps discount to `[0, subtotal]`, integer cents, satisfies the DB identity CHECKs.
-- **Payment-only status advance** — `advance_order_status(…, p_order_status=NULL, …)` in `supabase/migrations/0009_payments.sql:200` (rewritten in `0010_email_transitions.sql:200+`). Reuse for "mark paid offline."
-- **Admin write-action grammar** — `src/app/admin/(app)/orders/actions.ts`: `requireSession()` first (`:76,:104,:122,:141,:163`), then write, then `revalidatePath` (`:51-52`). Copy for `createManualOrder`.
-- **Paired input/write libs** — `src/lib/admin/orders/order-status-input.ts` + `order-status-write.ts` (and refund, cancel, tracking). Copy the split: pure input module + I/O write module, each with a `.test.ts`.
-- **Header CTA slot** — `AdminPage` (`src/components/admin/admin-page.tsx:10`) accepts an `actions?: React.ReactNode` slot (`:13,:18,:32`). The products list uses it for "Nuevo producto" (`src/app/admin/(app)/products/page.tsx:53`, `data-testid="admin-products-new"`).
-- **Form primitives** — `src/components/admin/form/fields.tsx`: `TextField` (`:66`), `MoneyField` (`:134`, `$` adornment + `inputmode=decimal`), `NumberUnitField` (`:206`), `SelectField` (`:279`), `TextareaField` (`:347`), `SwitchField` (`:405` — for the confirmation opt-in), `Banner` (`:447`, tones info/error).
+- **UUID-guard → null → `notFound()`**: `src/lib/admin/orders/order-read.ts:1-12, 89+`
+  (`getAdminOrder`) guards the id with `UUID_PATTERN` (from `@/lib/config`), returns `null`
+  for a bad/missing id; the page (`.../orders/[id]/page.tsx:38-41`) calls `notFound()`.
+  Reuse strategy: `customer-read.ts` is a near-clone of this shape.
+- **Section-isolated reads (never 500)**: `order-read.ts` returns `history: null` /
+  `notes: null` on a section failure while the core order still renders. Reuse for the
+  order-history / address / totals sections of the customer read.
+- **Two-phase list read (count → ranged data)**: `customer-list-query.ts:46-60` and
+  `order-list-query.ts`. Reuse for the bounded order-history read if paginated.
+- **Grouped-count RPC (bounded, no 1000-row truncation)**: `admin_customer_order_counts`
+  (0013) + its reader `customer-list-query.ts:107`. This is the template for the optional
+  T18 aggregate RPC.
+- **`Panel` card + `AdminPage` shell**: `.../orders/[id]/page.tsx:122-128` (`Panel`) and
+  `src/components/admin/admin-page.tsx:10-39` (`title`/`description`/`actions`/`children`).
+  Reuse verbatim.
+- **Row-links-to-detail**: `src/components/admin/orders/order-table.tsx:68-97` (desktop) &
+  `100-131` (mobile) — links only the identifier cell, keeps other cells selectable, uses
+  `nav-hover` + `hover:bg-muted/40` + `focus-visible:underline` + a `data-testid`. This is
+  the exact recipe for the `customer-table.tsx` change (AC-1).
+- **Badges + redundancy suppression**: `order-table.tsx:83-88` uses `OrderStatusBadge`,
+  `PaymentStatusBadge`, `paymentBadgeIsRedundant(orderStatus, paymentStatus)`
+  (`order-status-meta.ts:110`). Reuse for the order-history rows.
+- **Email-sentinel rendering**: `.../orders/[id]/page.tsx:74, 133-142` gates on
+  `isMailableAddress(order.contactEmail)` → shows the address or the italic "Sin correo".
+  Reuse verbatim for AC-3.
+- **List error branch**: `.../orders/customers/page.tsx:31-50` — `try/catch` around the
+  read → `role="alert"` panel with a Reintentar link. Reuse for the detail top-level error.
+- **Money**: `src/lib/money.ts:26` `formatMXN(cents: number)` — integer centavos in, es-MX
+  string out, throws on non-finite-integer. Aggregate in cents, format only at the edge.
+- **Relative dates**: `src/lib/admin/format.ts:31` `formatRelativeDate(iso, now?)`.
 
 ### Relevant Files
 
 | File | Purpose | Relevance | Action |
 | ---- | ------- | --------- | ------ |
-| `supabase/migrations/0008_checkout.sql` | `create_order` RPC + `order_number_seq` | THE creation path; reused as-is | Reference |
-| `supabase/migrations/0009_payments.sql` | `advance_order_status` (payment-only) | Mark-paid path | Reference |
-| `supabase/migrations/0010_email_transitions.sql` | `email_transition_kind`, transition_kind column | `transition_kind='paid'` derivation | Reference |
-| `supabase/migrations/0003_commerce.sql` | orders/customers/order_items schema | `contact_email`/`email` NOT NULL; `payment_method` col | Reference |
-| `src/lib/checkout/checkout-read.ts` | `revalidateLines`, `SubmittedLine`, `ValidatedLine`, `LineIssue` | Reusable trust boundary (price+stock) | Reference/Reuse |
-| `src/lib/checkout/order.ts` | `assembleOrder`, `OrderLine`, `formatOrderNumber` | Totals snapshot | Reference/Reuse |
-| `src/lib/checkout/address.ts` | Mexican CP/state validators | Reuse for shipping validation (AC-4) | Reuse |
-| `src/lib/email/dispatch.ts` | all customer sends | Add recipient-safety guard (AC-13) | Modify |
-| `src/app/[locale]/checkout/actions.ts` | reference create flow (RPC + post-create emails at `:270-271`) | Shows unconditional confirmation send to mirror-then-diverge | Reference |
-| `src/app/admin/(app)/orders/page.tsx` | order list; `actions` = Clientes only | Add "Nuevo pedido" CTA | Modify |
-| `src/app/admin/(app)/orders/actions.ts` | admin order actions | Add `createManualOrder` | Modify |
-| `src/lib/admin/orders/order-read.ts` | `AdminOrderDetail` (has `paymentMethod`, `:68/:284`) | Source badge source of truth | Reference |
-| `src/lib/admin/orders/order-list-query.ts` | list select (no `payment_method`, `:124`) | Optional: add for list badge | Modify (optional) |
-| `src/lib/admin/orders/order-status-meta.ts` | badge labels/glyphs | Add source badge | Modify |
-| `src/lib/admin/orders/order-constants.ts` | admin order consts | Add `MANUAL_ORDER_PAYMENT_METHOD` | Modify |
-| `src/components/admin/form/fields.tsx` | field primitives | Build the form from these | Reuse |
-| `src/components/product/variant-selector.tsx` | storefront variant selector | Interaction pattern for the picker | Reference |
-| `src/components/admin/products/product-filters.tsx` / list-query | catalog search grammar | Product search in the picker | Reference |
-| `src/app/admin/(app)/orders/new/*` | NEW route + form | The feature | Create |
-| `src/lib/admin/orders/manual-order-{input,write}.ts` | NEW input/write pair | The logic | Create |
+| `src/lib/admin/orders/customer-list-query.ts` | List read + count RPC caller | Keying source of truth; clone conventions | Reference |
+| `supabase/migrations/0013_admin_customer_order_counts.sql` | Grouped-count RPC | Proves keying + count semantics; RPC template | Reference |
+| `supabase/migrations/0008_checkout.sql` | `create_order` RPC | Proves one-row-per-order, no dedup | Reference |
+| `supabase/migrations/0003_commerce.sql` | `customers`/`orders` schema | Columns + FK + `orders_customer_id_idx` | Reference |
+| `src/lib/admin/orders/order-read.ts` | Single-order detail read | The clone base for `customer-read.ts` | Reference |
+| `src/app/admin/(app)/orders/[id]/page.tsx` | Order detail page | The clone base for the customer detail page | Reference |
+| `src/app/admin/(app)/orders/customers/page.tsx` | Customers list page | Error branch + shell pattern | Reference |
+| `src/components/admin/orders/customer-table.tsx` | Customers table | Make rows link (AC-1) | **Modify** |
+| `src/components/admin/orders/order-table.tsx` | Order table | Row-link recipe (desktop+mobile) | Reference |
+| `src/lib/admin/orders/order-status-meta.ts` | Badges/meta + `paymentBadgeIsRedundant` + `isManualOrder` | Order-history row badges | Reference |
+| `src/lib/email/recipient.ts` | `isMailableAddress` + `NO_EMAIL_PLACEHOLDER` | Email-sentinel rendering (AC-3) | Reference |
+| `src/lib/money.ts` / `src/lib/admin/format.ts` | `formatMXN` / `formatRelativeDate` | Totals + dates | Reference |
+| `src/components/admin/admin-page.tsx` | `AdminPage` shell | Page wrapper | Reference |
+| `src/lib/admin/constants.ts` | `ADMIN_CUSTOMERS_PATH` / `ADMIN_ORDERS_PATH` | URLs for links/back-link | Reference |
+| `src/lib/supabase/types/rpc.ts` | RPC Args/Return types | Add types IF the aggregate RPC is chosen | Modify (conditional) |
+| `tests/integration/admin-customer-counts.integration.test.ts` | Count RPC integration test | The clone base for the new integration test | Reference |
+| `src/app/admin/(app)/orders/customers/[id]/page.tsx` | The new route | — | **Create** |
+| `src/lib/admin/orders/customer-read.ts` | The new read | — | **Create** |
 
-### Data Flow (manual order creation)
+### Data Flow
 
 ```
-Admin @ /admin/orders/new
-  → picks product(s) via search → variant-selector → qty  (client shows live stock + server-recalc price at pick time)
-  → fills contact (email OPTIONAL) + shipping + shipping-override + payment-choice + confirm opt-in
-  → submit (idempotency key minted on load) → server action createManualOrder(formData)
-      → requireSession()                                            [AC-2]
-      → manual-order-input.parse/validate (pure)                    [AC-3,4,5,6-input,11,edges 2/6]
-      → manual-order-write:
-          → revalidateLines([{productId,variantId,quantity}])       [AC-7, edges 1(pre)/5]
-              ↳ re-reads products/variants BY ID (createAdminClient)
-              ↳ unitPrice = variant.price_override_cents ?? product.price_cents   (checkout-read.ts:242)
-              ↳ stock >= qty else issue                             (checkout-read.ts:206/243)
-              → issues? return {lineIssues} (no order)
-          → assembleOrder(validatedLines, shipping, 0)              [AC-8] → totals
-          → resolve contact_email (real OR store/sentinel)          [AC-11 decision]
-          → create_order(payload{idempotency_key, contact_*, shipping_*, totals, locale:'es-MX', items})  [AC-9,10]
-              ↳ guarded per-line decrement WHERE stock>=qty         (0008:152) — race-safe (edge 1 hard stop)
-              ↳ order_number = 'PP-'||lpad(nextval(order_number_seq)) (0008:211)
-              ↳ customers + orders + order_items + history(transition_kind) inserted in one tx
-              ↳ returns {order_id, order_number, confirmation_token, reused}
-          → stamp orders.payment_method='manual'                    [AC-14]  (create_order doesn't accept it)
-          → if payment-choice=paid:
-              advance_order_status(order_id, NULL, 'paid', 'manual', NULL, note)  [AC-15] → transition_kind='paid'
-          → if confirm-opt-in AND valid email: sendOrderConfirmation(order_id)     [AC-12] (recipient-safe)
-      → revalidatePath(list + detail) → redirect /admin/orders/[id]  [AC-17]
+Operator clicks a Customers-list row (customer-table.tsx <Link href=/admin/orders/customers/{id}>)
+  → App Router matches src/app/admin/(app)/orders/customers/[id]/page.tsx
+    → (app) layout hasValidAdminSession() guard (redirect to /admin/login if invalid)  [AC-11]
+    → page awaits params.{id}
+    → getAdminCustomer(id)  (customer-read.ts, server-only, admin/service-role client)
+        1. UUID_PATTERN.test(id) → false ⇒ return null ⇒ notFound()               [AC-10]
+        2. select id,email,full_name,phone from customers where id=id → none ⇒ null ⇒ notFound()
+        3. select id,order_number,created_at,total_cents,status,payment_status,
+             contact_email,contact_phone,shipping_* from orders
+             where customer_id=id order by created_at desc limit CUSTOMER_ORDER_HISTORY_LIMIT
+           (uses orders_customer_id_idx)  → history rows                          [AC-4]
+        4. aggregate: count / sum(total_cents) / min,max(created_at)
+             — either a 2nd bounded query with head+aggregate OR the 0014 RPC     [AC-7,8,9]
+        5. derive distinct shipping-address tuples from the orders                [AC-6]
+        (each section read isolated: failure → null section, page still renders)  [AC-13]
+    → RSC renders AdminPage → identity header → Lifetime totals → Order history
+       (rows link to ${ADMIN_ORDERS_PATH}/{order.id}) → Contact & addresses       [AC-2,5]
 ```
 
 ### Similar Features (Reference Implementations)
 
-- **Checkout order creation** — `src/app/[locale]/checkout/actions.ts` is the closest sibling: it revalidates lines, assembles totals, calls `create_order`, then fires `sendOrderConfirmation(orderId)` + `sendNewOrderOwnerAlert(orderId)` at `:270-271`. T17 is "checkout, but admin-initiated, email-optional, and possibly pre-paid." Key divergences: confirmation is opt-in (not unconditional), no MP preference/redirect, `payment_method='manual'`, optional immediate paid-marking.
-- **T12 cancel_order flow** — `src/lib/admin/orders/order-cancel-write.ts` + `tests/integration/admin-orders-cancel.integration.test.ts` show the exact integration-test shape (service-role client, insert fixtures, call RPC, assert stock + history, cleanup) to mirror for AC-19.
-- **Products "new" page** — `src/app/admin/(app)/products/new/page.tsx` shows the RSC-shell → client-form-island pattern (`useActionState`) to mirror for the new route.
-
----
+- **Order detail** (`.../orders/[id]/page.tsx` + `order-read.ts`) — the closest analog:
+  a UUID-param admin detail page reading one entity + related rows, `notFound()` on miss,
+  section-isolated, composed of `Panel`s. **Follow this structure almost verbatim.**
+- **Customers list** (`.../orders/customers/page.tsx` + `customer-list-query.ts`) — the
+  entity, the client, the error branch, the es-MX copy voice.
+- **Order table** (`order-table.tsx`) — the row-link + badge + `formatMXN`/`formatRelativeDate`
+  recipe the order-history section reuses directly.
+- **Count-RPC integration test** (`admin-customer-counts.integration.test.ts`) — the exact
+  `serviceClient()` + tracked-cleanup + seed-helper structure for the new integration test.
 
 ## Dependency Analysis
 
 ### Existing Dependencies to Leverage
 
-- `@/lib/checkout/checkout-read` `revalidateLines` — the trust boundary; no admin-specific variant needed.
-- `@/lib/checkout/order` `assembleOrder` / `formatOrderNumber` — totals + display number.
-- `@/lib/checkout/address` — Mexican CP/state validators (AC-4).
-- `@/lib/email/dispatch` — sends (to be recipient-hardened).
-- `@/lib/admin/rpc` — typed args for `create_order` + `advance_order_status`.
-- `@/components/admin/form/fields` + `admin-page` + `dropdown` — UI.
-- `@/lib/config/checkout` `EMAIL_PATTERN` — validate the optional email + drive the recipient-safety guard.
+- `@/lib/supabase/admin` (`createAdminClient`) — service-role read (RLS-bypass), same as
+  every other admin read.
+- `@/lib/config` (`UUID_PATTERN`, `ADMIN_PRODUCTS_PER_PAGE`).
+- `@/lib/money` (`formatMXN`), `@/lib/admin/format` (`formatRelativeDate`).
+- `@/lib/email/recipient` (`isMailableAddress`, `NO_EMAIL_PLACEHOLDER`).
+- `@/lib/admin/orders/order-status-meta` (`paymentBadgeIsRedundant`; optionally `isManualOrder`
+  + `SourceBadge` if the history rows should mark manual orders).
+- `next/navigation` (`notFound`), `next/link` (`Link`), `@hugeicons/*` (icons).
+- `@/components/admin/orders/{order-status-badge,payment-status-badge,list-pagination}`.
 
 ### New Dependencies Needed
 
-- **None.** No new npm packages; no new migration (contact_email resolved without schema change — see Key Decisions).
+- **None.**
 
 ### Internal Dependencies
 
-- `create_order` and `advance_order_status` are `service_role`-only (`0008:281`, `0009:504`). The admin action must call them through the service-role client (as T12 does) — never anon/authenticated. Implication: the write module lives in `src/lib/admin/orders/` and is exercised in integration tests via the `server-only`→`empty.js` alias (`vitest.integration.config.ts`).
-- `create_order` does NOT accept `payment_method` in its payload (0008:214-224 inserts `status,'pending_payment'` / `payment_status,'pending'` only). Implication: source-marking (`payment_method='manual'`) is a **post-create step** — either a direct UPDATE, or carried by the `advance_order_status` paid call (which accepts `p_payment_method`). For a pending-payment manual order, a small UPDATE stamps it; for a paid one, the advance call stamps it. Single-source both on `MANUAL_ORDER_PAYMENT_METHOD`.
-
----
+- `customer-read.ts` depends on `createAdminClient` + `UUID_PATTERN` — implication: it is
+  `server-only` and must NOT be imported by any client component (same rule the other read
+  modules follow).
+- `customer-table.tsx` (currently a pure presentational server component) will depend on
+  `next/link` + `ADMIN_CUSTOMERS_PATH` after the change — trivial, both already used in
+  sibling files.
 
 ## External Research
 
-- **None required.** No external API/library work — Mercado Pago is deliberately NOT invoked for manual orders (that's the whole point: charge-later / offline-paid). The email provider (Resend, via `dispatch.ts`) is already integrated; T17 only adds a recipient guard in front of it. No web/doc lookup needed.
-
----
+- **None required.** No external API or library surface — this is an internal read on
+  existing Supabase tables using primitives already in the repo. (Supabase PostgREST's
+  1000-row default cap is the only external behavior that matters, and it is already
+  handled everywhere via bounded reads + aggregate RPCs — the reason 0013 exists.)
 
 ## Risk Assessment
 
@@ -114,57 +192,85 @@ Admin @ /admin/orders/new
 
 | Risk | Likelihood | Impact | Mitigation |
 | ---- | ---------- | ------ | ---------- |
-| Email-less order later triggers a T12 status email → provider error/log spam / possible unhandled throw | High (if unaddressed) | Med | AC-13: `resolveCustomerRecipient` guard in `dispatch.ts` → benign `{ok:true,sent:false}` skip; unit-test the skip branch; integration-test a shipped-style resolve on an email-less order. |
-| Contact_email NOT NULL on TWO tables blocks email-less creation | High | High (blocks the feature) | Resolve via store/sentinel placeholder (no migration) — see Key Decisions; guard ensures the placeholder never receives mail. |
-| Stale price/stock between pick and submit → wrong charge or oversell | Med | High (money/inventory) | `revalidateLines` on submit ignores client prices; `create_order` guarded decrement is the hard floor (edge 1); price-changed aborts (edge 5). |
-| Double-submit creates two orders / double stock decrement | Med | High | Per-submission idempotency key → `create_order` `reused:true`; in-flight submit disable. |
-| Source-marking forgotten because `create_order` ignores `payment_method` | Med | Low | Explicit post-create stamp (UPDATE or via the paid advance); unit-assert `payment_method='manual'`; integration-assert. |
-| Zero-item order → $0 line-less order | Low | Med | Input validation rejects before `create_order` (edge 2). |
-| Paid-step fails after successful create → inconsistent perception | Low | Low | Do NOT roll back the order; surface "created but not marked paid, fix on detail"; order is valid + refundable/advanceable via T12. |
+| Detail count disagrees with list count (AC-9 fail) | Low | High | Both key on `customers.id`/`orders.customer_id`; the integration test asserts equality against the same RPC. Do not filter by status/payment in the count. |
+| Aggregating totals by tallying only the fetched (capped) history page | Med | Med | Compute count/sum/first/last via a **separate aggregate** query or the 0014 RPC over ALL rows, never over the limited history slice (edge 3). |
+| Accidentally aggregating by email (collapsing distinct customers) | Low | High | Query strictly `where customer_id = {id}`. Never `where email = ...`. Called out in ticket + tests (edge 2). |
+| Float money math on total spent | Low | Med | Sum integer `total_cents`; `formatMXN` only at render (AC-8). |
+| Rendering the sentinel invalid email as literal text | Med | Low | Route every email through `isMailableAddress()` (AC-3), reusing the order-detail branch. |
+| Mobile horizontal overflow from long email/address (the T12 crit) | Med | Med | `min-w-0` + `break-words` on every free-text field; card list < 640px. |
+| `[id]` route collision with the sibling order `[id]` | None | — | Different directory (`customers/[id]` vs `orders/[id]`); App Router segments are independent. No collision. |
 
 ### Performance Considerations
 
-- `revalidateLines` batches product + variant reads into two `in(...)` queries (`checkout-read.ts:159`) — a manual order has few lines; negligible cost.
-- Product-picker search reuses the admin catalog list query (already paginated/bounded); debounce the search input as `product-filters` does.
+- **History read** is bounded (`LIMIT CUSTOMER_ORDER_HISTORY_LIMIT`) and index-backed by
+  `orders_customer_id_idx` — O(limit), independent of total order volume.
+- **Aggregate** (count/sum/min/max) is a single grouped scan on the same index; at Phase-1
+  volumes (and the one-row-per-order reality where most customers have 1 order) this is
+  trivial. An RPC pushes it fully into PG (recommended for exactness — see Key Decisions).
+- Page is `dynamic = "force-dynamic"` (live read), consistent with all admin surfaces.
 
 ### Security Considerations
 
-- **Auth**: page + action both `requireSession()` first (AC-2), matching T12 AC-30. No `/api` route (server action only), so no self-guard route handler needed.
-- **Trust boundary**: client-sent prices are never trusted; `revalidateLines` re-reads from DB (same as checkout) — an admin cannot set an arbitrary price in v1 (price override is Out of Scope, so no privileged-price path to abuse).
-- **Injection/XSS**: all free-text (names, address, notes) is snapshotted into the order and rendered by the existing T12 detail/packing-slip which already HTML-escape hostile data (T12 hacker stage verified). No new render surface for untrusted text beyond the picker's own catalog data (trusted).
-- **Placeholder email**: the sentinel/store-address substitution must never be a real customer's address and must be filtered by the recipient guard so it is never emailed — verified by the AC-13 guard + tests.
-
----
+- **Auth**: page under `(app)` → layout `hasValidAdminSession()` guard (defense-in-depth:
+  middleware → layout). No new route handler, so no `/api` self-guard gap (AC-11).
+- **Injection**: `id` is UUID-guarded before any query; all queries are parameterized
+  PostgREST `.eq("customer_id", id)` — no string interpolation. No user-supplied search on
+  this page.
+- **PII exposure**: the page shows customer email/phone/address — this is exactly the
+  admin-only data already exposed on the order detail; no new exposure class, and it never
+  reaches a client bundle (server-only read, RSC render).
+- **Optional RPC**: if added, follow 0013's posture verbatim — `security definer`, pinned
+  empty `search_path`, `revoke ... from public` + `grant execute ... to service_role`.
 
 ## Implementation Recommendations
 
 ### Suggested Order of Implementation
 
-1. **`dispatch.ts` recipient-safety guard (AC-13)** — first, because it's an independent, cross-cutting hardening that unblocks the email-less path and de-risks the whole feature; add its unit test. (Also quietly benefits any future email-less order.)
-2. **`manual-order-input.ts` (pure) + tests** — the validation contract; no I/O, fast to TDD (edges 2/4/6, email branching, payment-choice).
-3. **`manual-order-write.ts` + tests** — orchestration over `revalidateLines`/`assembleOrder`/`create_order`/`advance_order_status`; mock deps in unit, real in integration.
-4. **`createManualOrder` action + orders `order-constants` + source badge meta** — wire the write into the admin action grammar; `payment_method='manual'` single-sourced.
-5. **Route + form + product/variant picker UI** — the largest new surface; build from `fields.tsx` + `variant-selector` pattern; states per UX Requirements.
-6. **"Nuevo pedido" CTA + detail badge (+ optional list column/filter)** — small wiring.
-7. **Integration test (AC-19) + admin e2e (AC-20)** — end-to-end proof against local Supabase / DEV-server admin project.
+1. **`customer-read.ts` + its unit test** — the pure/isolated read logic first; establishes
+   `AdminCustomerDetail` shape (identity, history rows, aggregate, distinct addresses).
+   Why first: everything else consumes its types.
+2. **Integration test** (`admin-customer-detail.integration.test.ts`) — clone the count
+   test; seed a customer + N varied orders; assert count/sum/first-last/address-dedup + the
+   count-equals-`admin_customer_order_counts` invariant. Why here: locks the keying + AC-9
+   before the UI is built.
+3. **`customers/[id]/page.tsx`** — compose the page from `customer-read` + existing
+   primitives (`Panel`, badges, `formatMXN`, `formatRelativeDate`, `isMailableAddress`).
+   `notFound()` + top-level `try/catch` error branch. Depends on step 1's types.
+4. **`customer-table.tsx` row-link change** + its unit test — last, once the target route
+   exists so no link is dead. Assert the `href` and `data-testid`.
+5. **`loading.tsx`** for the route (small skeleton) — polish.
 
 ### Key Decisions
 
-- **RPC decision — REUSE, don't fork.** Use `create_order` as-is (it's `service_role`-callable and admin-agnostic); do NOT write a sibling `create_manual_order` RPC. Source-marking and paid-marking are post-create steps (`payment_method` UPDATE / `advance_order_status`), which keeps the atomic creation path single-sourced and avoids a new migration. This honors the T12 ADR ("inventory/money-critical multi-row mutation = one SECURITY DEFINER RPC") — we reuse that RPC rather than add compensation logic.
-- **contact_email decision — required-with-store/sentinel fallback, NO migration (recommended).** Keep both NOT NULL columns; when email is blank, substitute a single well-defined non-delivering placeholder (store contact email from Store Settings, or a documented `no-reply` sentinel) so `create_order` succeeds, AND extend the AC-13 recipient guard to treat that placeholder as "no recipient" so it's never emailed. Tradeoffs of the alternatives:
-  - *Nullable migration (rejected):* cleanest semantically but touches TWO NOT NULL columns (`orders.contact_email`, `customers.email`) + every downstream reader/typing that assumes `string` (order-read, email data, packing slip, customer list) — a wide, medium-risk change for a phone-order edge; also `create_order` inserts `contact_email` verbatim and would need `nullif`. Highest blast radius.
-  - *Raw sentinel visible everywhere (rejected):* a literal like `phone@no-email.local` in `contact_email` shows up in the order-list search/display (`order-list-query.ts:61,124`) and the customer list — ugly and confusing for the owner.
-  - *Store-address fallback + guard (recommended):* satisfies the constraint invisibly, reuses the store's own known-safe address, and the recipient guard guarantees no send. Lowest blast radius, zero migration. Document the choice so the detail can label "sin correo" rather than show the placeholder.
-- **Offline-paid decision — `advance_order_status` payment-only, NO payment-received email.** Mark paid via `advance_order_status(order_id, NULL, 'paid', 'manual', NULL, note)` → `transition_kind='paid'`. Do NOT send `sendPaymentReceived`: it's dedupe-keyed on `mp_payment_id` (absent for manual orders) and `fireTransitionEmail` (`order-status-write.ts:110`) intentionally sends nothing for `paid`. The owner took the payment in person/by phone, so a "we received your payment" email is redundant/confusing. The only optional customer email is the AC-12 confirmation.
-- **Source marker — `payment_method='manual'`, not a new column.** `payment_method` is nullable, already read into the detail (`order-read.ts:68/284`), and free to badge. A dedicated `source`/`channel` column is deferred to Phase 2 if manual orders proliferate.
-- **Price/stock trust — reuse `revalidateLines` verbatim; no admin price override in v1.** Catalog prices only; flag override as future. This keeps the admin path's trust rules byte-identical to checkout.
+- **Route param = raw `customers.id` UUID** (not an encoded email/phone key). Recommended
+  because it makes the detail's order set == the list row's set by construction, mirrors
+  the order detail's `/[id]`, and needs no encode/decode. This is THE decision the brief
+  asked for.
+- **Aggregate strategy — recommend a small `0014` aggregate RPC** returning
+  `(order_count, total_cents, first_order_at, last_order_at)` for one customer id, mirroring
+  0013's posture. Why over an in-app query: it computes over ALL orders (never truncates),
+  keeps the total exact regardless of history-page size (edge 3), and is one round-trip.
+  **Acceptable alternative** (avoids a migration): a second bounded query using PostgREST's
+  aggregate selection / `head:true count` + a `min/max/sum` — but summing `total_cents`
+  over an unbounded set via PostgREST risks the same 1000-row cap the project already fought
+  in 0013, so the RPC is the cleaner, consistent choice. **Ticket allows either; RPC preferred.**
+- **Headline total = sum of ALL the customer's order totals** (not paid-only), so the detail
+  reconciles with the visible history and the list count (edge 1). A paid-only figure, if
+  desired, is a separate labeled line.
+- **Distinct addresses** de-duped on the full shipping tuple, most-recent-first (edge 4).
+- **Manual-order marking**: optional but nice — render a `SourceBadge` on history rows where
+  `isManualOrder(payment_method)` (needs `payment_method` in the history select). Low effort;
+  defer if it complicates the read.
 
 ### Anti-Patterns to Avoid
 
-- **Don't** trust client-sent line prices — always `revalidateLines` on the server (checkout's rule; `checkout-read.ts` comment at `:4-11`). Instead recompute from live DB.
-- **Don't** add a nullable migration for the email edge before trying the store/sentinel fallback — it's a wide, risky change for a narrow case.
-- **Don't** send `sendPaymentReceived` for a manual paid order (no `mp_payment_id`, redundant to the owner).
-- **Don't** roll back a successfully-created order if the post-create paid/confirmation step fails — the order is valid; surface the sub-failure and let the owner fix it on the detail (matches T12's "email-fail ≠ rollback" posture).
-- **Don't** push an empty/placeholder `to` to the email provider — guard it (AC-13). The current sends only guard `order unreadable` (`dispatch.ts:155/170/195/218/239/256/274`), not recipient validity.
-- **Don't** invent a new order-creation RPC — reuse `create_order`; source/paid marking are post-create steps.
-- **Don't** allow a zero-item order to reach `create_order` — validate `items.length >= 1` at the input layer (edge 2).
+- **Don't** key the detail on email or phone — it would collapse the distinct
+  one-row-per-order customers and break AC-9. Key on `customers.id`.
+- **Don't** compute totals from the (capped) fetched history page — aggregate over all rows.
+- **Don't** filter the count/total to paid orders — it would disagree with the list count.
+- **Don't** render `order.contact_email` raw — the sentinel must map to "Sin correo".
+- **Don't** add a client component or a server action — this is a pure read; no mutation, no
+  island, no `requireSession` in the page (that's for actions; the layout guards pages).
+- **Don't** declare the new RPC's types as `interface` in `rpc.ts` — must be `type` aliases
+  (the T8 gotcha that collapses the Database generic to `never`).
+- **Don't** forget `min-w-0` + `break-words` — the T12 mobile-overflow critical fix applies.

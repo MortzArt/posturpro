@@ -12,6 +12,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { UUID_PATTERN } from "@/lib/config";
 import { advanceOrderStatus } from "@/lib/payments/advance-order";
+import { MANUAL_ORDER_PAYMENT_METHOD } from "@/lib/admin/orders/order-constants";
 import { sendShipped, sendCancelled } from "@/lib/email/dispatch";
 import type { OrderStatus, PaymentStatus } from "@/lib/supabase/database.types";
 
@@ -70,6 +71,51 @@ export async function advanceOrderTo(
   // Branch the email ONLY on the RPC-returned transition_kind (single-sourced).
   const emailSent = await fireTransitionEmail(orderId, advance.result.transition_kind, current);
   return { ok: true, emailSent };
+}
+
+/** Outcome of a mark-paid-offline attempt (never throws to the caller). */
+export type MarkPaidResult =
+  | { ok: true }
+  | { ok: false; reason: "not-found" | "already-paid" | "write-failed" };
+
+/**
+ * Record that an order's payment arrived OUTSIDE Mercado Pago (cash, transfer,
+ * on delivery) — T17 offline-paid, but applied to an existing order. Uses the
+ * SAME payment-only `advance_order_status` path as the webhook/refund/manual-
+ * order flows (never a raw column write): `p_order_status=null` leaves the
+ * fulfillment lifecycle untouched, `p_payment_status='paid'` flips the payment
+ * flag and writes a `transition_kind='paid'` audit row, and `payment_method`
+ * is stamped `'manual'` so the source is honest. No customer email fires (an
+ * offline payment has nothing MP-facing to confirm). Idempotent: an order whose
+ * payment is already `paid`/`refunded` returns `already-paid` and is not touched.
+ */
+export async function markOrderPaidOffline(orderId: string): Promise<MarkPaidResult> {
+  if (!UUID_PATTERN.test(orderId)) {
+    return { ok: false, reason: "not-found" };
+  }
+  const current = await readCurrentOrder(orderId);
+  if (!current) {
+    return { ok: false, reason: "not-found" };
+  }
+  if (current.paymentStatus === "paid" || current.paymentStatus === "refunded") {
+    return { ok: false, reason: "already-paid" };
+  }
+  const advance = await advanceOrderStatus({
+    p_order_id: orderId,
+    p_order_status: null, // payment-only: do NOT change the fulfillment lifecycle
+    p_payment_status: "paid",
+    p_payment_method: MANUAL_ORDER_PAYMENT_METHOD,
+    p_mp_payment_id: null,
+    p_note: null,
+  });
+  if (!advance.ok) {
+    console.error(`[admin-orders] mark-paid failed for ${orderId}: ${advance.error}`);
+    return { ok: false, reason: "write-failed" };
+  }
+  if (advance.result.reason === "order_not_found") {
+    return { ok: false, reason: "not-found" };
+  }
+  return { ok: true };
 }
 
 /** Read the current payment_status + tracking for the advance + shipped email. */

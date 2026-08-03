@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight02Icon, MoneyBag02Icon, Cancel01Icon, PrinterIcon } from "@hugeicons/core-free-icons";
+import { ArrowRight02Icon, MoneyBag02Icon, Cancel01Icon, PrinterIcon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -14,7 +14,7 @@ import {
 import { RefundModal } from "@/components/admin/orders/refund-modal";
 import { CancelOrderDialog } from "@/components/admin/orders/cancel-order-dialog";
 import { ORDER_STATUS_META, ALLOWED_NEXT_STATUSES, ORDER_STATUS_RANK } from "@/lib/admin/orders/order-status-meta";
-import { advanceStatus } from "@/app/admin/(app)/orders/actions";
+import { advanceStatus, markPaidOffline } from "@/app/admin/(app)/orders/actions";
 import { ADMIN_ORDERS_PATH } from "@/lib/admin/constants";
 import type { OrderStatus, PaymentStatus } from "@/lib/supabase/database.types";
 
@@ -84,7 +84,7 @@ export function OrderDetailActions({
               aria-label="Avanzar estado"
               data-testid="advance-status-trigger"
               disabled={pending}
-              className="inline-flex h-8 w-auto shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-foreground px-3 text-xs font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50 sm:size-auto sm:h-8"
+              className="inline-flex h-8 w-auto shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-transparent bg-foreground px-3 text-xs font-medium text-background transition-colors hover:bg-[color-mix(in_oklch,var(--foreground),var(--background)_22%)] focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-50 sm:size-auto sm:h-8"
             >
               <HugeiconsIcon icon={ArrowRight02Icon} size={14} strokeWidth={2} aria-hidden />
               {pending ? "Avanzando…" : "Avanzar estado"}

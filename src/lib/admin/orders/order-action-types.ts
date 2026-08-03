@@ -30,3 +30,8 @@ export type RefundOrderActionResult =
 export type AddNoteActionResult =
   | { ok: true }
   | { ok: false; reason: "empty" | "too-long" | "not-found" | "error" };
+
+/** Outcome of `markPaidOffline` (record a non-MP payment). */
+export type MarkPaidActionResult =
+  | { ok: true }
+  | { ok: false; reason: "already-paid" | "not-found" | "error" };
