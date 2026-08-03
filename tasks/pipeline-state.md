@@ -1,10 +1,16 @@
 # Pipeline State
 Task: T14 — SEO, analytics & launch hardening
 Tier: full-cycle
-Stage: 11
-Agent: ultrahacker
-Last Updated: 2026-08-04 00:15
+Stage: 12
+Agent: ultraverify
+Last Updated: 2026-08-04 00:45
 Notes: LAST build task. Full-cycle. T14 is deploy-readiness — after it, owner deploys to Vercel + hosted Supabase for client QA. Go-live also gated on T8 Phase 5 owner sign-off.
+
+=== T14 S11 (Hacker, ultrahacker) COMPLETE — PASS, Chaos Score 1/10, 0 T14 bugs (2026-08-04) ===
+- 1 finding, PRE-EXISTING + FIREWALLED (not fixed, by design): >8100-char URL path on taxonomy [slug] → controlled REDACTED 500 (getCategory fail() throws past PostgREST URI limit → error.tsx boundary). Not T14 code (T3/T5 fail()/unstable_cache predate; force-dynamic only made it reachable and strictly improved prior behavior); NOT deploy-reachable (Vercel edge rejects >8KB paths with 414 before the function); zero internal/DB/secret/stack leak verified. Fixing (throw→notFound) would mask real DB errors as 404s. Logged Phase-2 improvement #10 (page-level length guard).
+- CHAOS MATRIX PASS: page-param garbage (-1/abc/huge/array/dup) → 200 clamped; unknown/emoji/unicode slugs → real 404; %00/%2e%2e collapse safely (no traversal); POST/PUT/DELETE on sitemap/robots → 405; bogus locales → 404; wrong-case locale → 307; 21 parallel requests all 200 zero log errors; all 30 products valid JSON-LD zero undefined leaks; sitemap 118 unique locs; counters no raw-key leak; ZERO dead UI both locales.
+- GATES: tsc=0, unit 2041/2041, build exit 0 (3 taxonomy ƒ Dynamic). Tree clean, no test rows inserted, throwaway dirs removed. 10 product improvements for Phase 2 in tasks/hacker-report.md.
+- Next: Stage 12 (Verify, ultraverify) — final SHIP/NO-SHIP gate.
 
 === T14 S9 (Security, ultrasecurity) COMPLETE — SECURE, grade A, deploy NOT blocked (2026-08-04) ===
 - Whole-store final review w/ evidence: 0 Critical, 0 High, 1 Medium, 2 Low, 0 secrets.

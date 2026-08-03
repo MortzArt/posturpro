@@ -1,134 +1,189 @@
-# Hacker Report: T12 — Admin Order Management
+# Hacker Report: T14 — SEO, Analytics & Launch Hardening
 
-> Stage 11 (ultrahacker). Full-cycle, complexity HIGH. Live chaos against the real
-> T12 admin surface (localhost:3000) driven by Playwright + direct SQL edge-data
-> seeding. MP left unreachable/unexercised (owner's Phase-5 refund pass reserved) —
-> the refund path was chaosed up to but NOT through the money-moving REEMBOLSAR
-> submit. DB left in a sane state (see DB State Note).
+Stage 11 (Chaos Gremlin) — the LAST bug hunt before the Vercel + hosted-Supabase
+client-QA deploy. Run against a **prod build** (`NEXT_PUBLIC_SITE_URL=https://posturpro.mx`,
+`NEXT_QA_DIST_DIR=.next-hacker`) + `next start` on the seeded local DB. Focus: the
+T14-touched surfaces (taxonomy `[slug]` `force-dynamic`, sitemap, robots, JSON-LD,
+canonical/hreflang, contact counter) under hostile/weird input.
 
 ## Summary
-
 - Dead UI found: **0**
-- Visual bugs: **0** (the floating "N" is the Next.js dev-mode indicator, not app UI — ruled out; dev-only)
-- Logic bugs: **0**
-- Missing states: **0** (loading/empty/error/404/0-item/no-orders all present)
-- Robustness gaps found & FIXED: **1** (unbounded status-history note — cancel reason / advance note)
-- Items fixed: **1**
-- Product improvements suggested: **5**
+- Visual bugs: **0** (SEO surfaces render no visible UI; contact counter renders `0/2000`)
+- Logic bugs (T14-introduced): **0**
+- Race conditions: **0** (21 parallel hits → all 200, zero server-log errors)
+- Missing states: **0**
+- Items fixed: **0** (nothing T14-introduced was broken; see firewall note)
+- Pre-existing edges documented (NOT fixed, firewall): **1** (>8 KB URL-path 500)
+- Product improvements suggested: **10**
 
-The T12 surface is **exceptionally robust**. The upstream stages (Review/Fix/QA/UX)
-had already closed the big-ticket items (mobile horizontal overflow, refund
-`emailSent` propagation, customer-count truncation, dashboard count/link parity).
-Every chaos vector below — URL tampering, garbage input, two-tab races, XSS,
-malformed ids, empty sets, viewport 320→200%-zoom — was handled correctly. The
-single new finding is a defense-in-depth consistency gap, not an exploitable break.
+## Chaos Matrix Results
+
+### 1. URL garbage on T14 routes — all controlled 200/404, zero uncontrolled 500s
+
+| Probe | Result | Verdict |
+|-------|--------|---------|
+| `/categorias/oficina`, `/marcas/ergovita`, `/estilos/ejecutiva` (es-MX + en) | 200 | PASS — AC-A2 fix holds; route table shows all 3 as `ƒ Dynamic` |
+| `?page=-1`, `?page=0`, `?page=abc`, `?page=999999999999`, `?page=9e9`, `?page=%20` | 200 | PASS — pagination clamps deterministically to `[1,lastPage]` |
+| `?page=1&page=2` (duplicated), `?page[]=2` (array param) | 200 | PASS — `canonicalPageKey` takes `raw[0]`, clamps |
+| `?page=2` | 200 | PASS — real page-2 grid served |
+| unknown category/brand/style slug | 404 | PASS — real `notFound()` status |
+| emoji slug `/categorias/🪑`, unicode `/categorias/café` | 404 | PASS |
+| `%00` (null byte), `%2e%2e` (`..`) | 200 | PASS — middleware collapses empty segment to `/categorias` **index** (real page, h1 "Categorías"); NOT a category-detail 500, NOT path traversal |
+| encoded traversal `/categorias/%2e%2e/%2e%2e/admin` | 307 | PASS — no admin leak |
+| 100–8000-char slug | 404 | PASS |
+| **>8100-char slug** | **500** | pre-existing edge — see Finding 1 |
+
+### 2. sitemap.xml / robots.txt
+
+| Probe | Result | Verdict |
+|-------|--------|---------|
+| `GET /sitemap.xml` | 200 `application/xml`, **XML well-formed** (`xmllint` clean), **118 `<loc>` = 118 unique**, zero `undefined`/`null`/`NaN`/`localhost` leaks | PASS |
+| `GET /robots.txt` | 200 `text/plain`, all disallows present (`/admin`, `/api/`, cart/checkout ×2 locales, faceted `/sillas?` ×2), absolute `Sitemap:` pointer | PASS |
+| `?query` string on both | 200 | PASS |
+| `POST/PUT/DELETE/PATCH/OPTIONS /sitemap.xml` | **405** | PASS — non-idempotent methods rejected |
+| `HEAD /sitemap.xml`, `HEAD /robots.txt` | 200 | PASS |
+| `Range: bytes=0-10` on sitemap | 200 (full body) | PASS — no crash |
+| Googlebot UA / empty UA / `Accept: image/png` / `Accept-Language: zz-ZZ` | 200 | PASS |
+
+### 3. Locale garbage
+
+| Probe | Result | Verdict |
+|-------|--------|---------|
+| `/zz/...`, `/en-GB/...`, `/xx` | 404 | PASS — in-shell 404, not 500 |
+| `/EN/...` (uppercase), `/es-mx/...` (lowercase) | 307 → `/en/...` / clean | PASS — safe canonical redirect, no loop |
+
+### 4. JSON-LD correctness under adversarial data (all 30 seeded products scanned)
+
+| Check | Result |
+|-------|--------|
+| Valid `Product` LD (name, url, image, brand, offers) per product | **30/30 valid** (JSON.parse clean) |
+| Literal `undefined` / `":null"` / `NaN` leaking into output | **0** |
+| `offers` price is major-unit decimal (`"10499.00"`), currency MXN, availability from stockState | correct |
+| Missing-optional handling (null image/brand/description, zero price, out-of-stock) | conditionally spread — field omitted, never emitted as string |
+| `BreadcrumbList` LD (positions 1-based, last crumb omits `item`) | correct on PDP + all 3 taxonomy pages |
+| Home `Organization` + `WebSite` LD | valid |
+| `<script>` escaping (`escapeForScriptSafe` → `<`, U+2028/9) | applied; no `</script>` breakout path found |
+
+### 5. Race / timing (force-dynamic = every nav hits the server)
+
+| Probe | Result |
+|-------|--------|
+| 20 parallel `?page=N` taxonomy hits + 1 sitemap | **21/21 → 200**, zero 500s, no pool-exhaustion |
+| Rapid nav: 5 categories × 3 pages sequential | **15/15 → 200** |
+| Server-log scan after full chaos burst | **0 error / unhandled-rejection / `DYNAMIC_SERVER_USAGE` lines** |
+
+### 6. Contact / empresas counter under weird input
+
+| Check | Result |
+|-------|--------|
+| SSR counter renders `0/2000` (es-MX + en), NOT the raw `charCount` key or `{count}/{max}` | PASS (AC-A3) |
+| `charCount` / `{count}/{max}` appears ONLY in serialized RSC props (the template), never a visible span | PASS (AC-A4) |
+| empresas twin (`quote-counter`) | renders `0/2000` |
+| Counter math vs. multi-byte emoji / RTL | sound — `value.length` (UTF-16 units) is consistent with the `maxLength` cap the browser enforces on the same field; no overflow, no layout break |
+
+## Findings
+
+### Finding 1 (PRE-EXISTING — documented, NOT fixed per firewall)
+**>8100-character URL path on a taxonomy `[slug]` route returns HTTP 500.**
+
+- **Repro:** `GET /categorias/<8200×'a'>` → 500 (also `/marcas/...`, `/estilos/...`).
+  Threshold ≈ 8100 chars (8 KB). ≤8000 chars → clean 404.
+- **Root cause:** the ~8 KB slug makes the PostgREST query URI (`?slug=eq.<8KB>`)
+  exceed PostgREST's URI limit → `error` returned → `fail()` in
+  `src/lib/catalog/read-primitives.ts:36` throws the **redacted** `Catalog read
+  failed: category:<slug>`, which the route's `error.tsx` boundary renders as a
+  localized panel (HTTP 500). The `unstable_cache` tag-length warning also fires.
+- **Why this is NOT a T14 bug (firewall):** `getCategory` / `fail()` / the
+  `unstable_cache` tagging are pre-existing T3/T5 catalog code with a deliberate,
+  tested error contract (a hard DB read failure → `error.tsx` panel, edge case 9).
+  T14's `force-dynamic` merely makes this reachable at request time — and it is a
+  strict IMPROVEMENT: **before** the T14 fix, ALL taxonomy requests (valid or not)
+  returned 500 (`DYNAMIC_SERVER_USAGE`).
+- **Why it is not a deploy risk:** an >8 KB URL path is beyond standard proxy
+  header limits — Vercel's edge (and nginx `large_client_header_buffers`, default
+  8 KB) rejects such a request with **414** before the function ever runs. The bare
+  local `next start` has no such guard, so the request reaches the function and
+  produces a controlled, **redacted** error-boundary render (verified: **zero**
+  internal detail — no `Catalog read failed`, no DB host/port, no stack, no
+  secrets — leaks to the DOM; body is Next's production error page).
+- **Why NOT fixed:** turning the `fail()` throw into a `notFound()` would mask
+  GENUINE DB errors (RLS/network) as 404s and regress the tested T3 error-state
+  design. The correct owner is a future ticket if desired: add a length guard
+  (e.g. treat `slug.length > MAX_SLUG_LEN` as `notFound()`) in the taxonomy pages
+  BEFORE the cached read — a page-level guard, not a change to the catalog contract.
+  Recommended as Phase-2 improvement #10 below.
+
+### Everything else: clean
+- Subagent read-audit of all 8 T14 pages + breadcrumbs found **no dead UI, no
+  logic bug, no notFound/metadata gap**. Every breadcrumb / 404-CTA / footer link
+  resolves in BOTH locales (es-MX unprefixed, en `/en/...`) — spot-verified live
+  (`/categorias`↔`/en/categorias`, taxonomy index routes, `not-found-home` CTA,
+  empresas hash-anchor CTAs `#cotizacion`/`#como-funciona` hit real section ids).
+- One low-severity symmetry note (NOT a bug, no live defect): PDP `generateMetadata`
+  passes `primaryImage.url` to OG `images` without an `absoluteUrl()` wrap, whereas
+  the home page wraps `absoluteUrl(HERO_IMAGE)`. Safe today (every image URL in the
+  DB is absolute by construction — seed `picsum.photos/...`, admin uploads persist
+  Supabase `getPublicUrl().publicUrl`). Flagged for defense-in-depth only; left
+  unchanged (no defect to fix, reported for the owner rather than silently patched
+  at the deploy gate).
 
 ## Dead UI
-
 | # | Element | File:Line | Issue | Fixed? |
 |---|---------|-----------|-------|--------|
-| — | (none) | — | Every button/link/menu on list, detail, customer list, packing slip, row-actions ⋮ menu, filters, dialogs is wired. 0 `href="#"`/dead links across detail (8 links), list (13), customers (6). | ✅ n/a |
+| — | (none found) | — | Every link/button/CTA on T14-touched pages resolves in both locales | n/a |
 
 ## Visual Bugs
-
 | # | Issue | File:Line | Viewport | Fixed? |
 |---|-------|-----------|----------|--------|
-| — | No horizontal overflow at 320 / 375 / desktop on list, detail (incl. long-content + XSS + RTL order), customers, packing slip. Long strings `break-words`; hostile customer name truncates with ellipsis in the list. | — | 320–1280 | ✅ n/a |
-| i | The dark circular **"N"** overlapping the bottom-left (all admin pages) is the **Next.js dev-mode indicator** (dev-only shadow-DOM portal), NOT app markup. Does not ship to production. | — | all | Not a bug |
+| — | (none) | — | — | n/a — SEO surfaces render no visible UI; counter legible at `0/2000` |
 
 ## Logic Bugs
-
 | # | Bug | File:Line | Steps to Reproduce | Fixed? |
 |---|-----|-----------|---------------------|--------|
-| — | Two-tab advance race → **exactly one** history row (RPC `FOR UPDATE` + idempotent `noop_same_status`); both tabs report success, no double email. | `advance_order_status`/`cancel_order` RPC | Open same order in 2 tabs, advance to `paid` simultaneously | ✅ already safe |
-| — | Double-click advance / note-save → single write (button disabled during `useTransition`; menu closes). Verified 1 history row, 1 note. | `order-detail-actions.tsx`, `internal-notes.tsx` | Rapid double-click confirm | ✅ already safe |
-| — | Rapid filter toggling during pagination → converges to a consistent state, no 500, page resets. | `order-filters.tsx` | Toggle status select 6× fast | ✅ already safe |
-| — | Back/forward mid-flow → detail re-renders intact. | — | list → detail → back → forward | ✅ already safe |
+| 1 | >8 KB URL path → 500 (not 404) | `src/lib/catalog/read-primitives.ts:36` (pre-existing T3/T5) | `curl /categorias/<8200 chars>` | ❌ pre-existing, firewalled (see Finding 1); edge-rejected 414 in prod |
 
 ## Missing States
+| # | Component | Missing State | File:Line | Added? |
+|---|-----------|---------------|-----------|--------|
+| — | (none) | Loading (skeleton), empty (`EmptyState`), error (`error.tsx`), 404 (`notFound`) all present and verified | — | n/a |
 
-| # | Component | State | File:Line | Present? |
-|---|-----------|-------|-----------|----------|
-| 1 | Orders list | Empty (`admin-orders-empty`), page-beyond-range clamp, zero-result search | `order-empty-state.tsx`, `order-list-query.ts` | ✅ |
-| 2 | Order detail | 0-item order ("Artículos (0)", $0.00), no-history ("Sin historial."), no-notes ("Sin notas."), notes/history section-read-failure banners | `orders/[id]/page.tsx`, `internal-notes.tsx` | ✅ |
-| 3 | Detail 404 | Non-UUID (`banana`), malformed (`aaaa-…-8000`), non-existent UUID, `<script>` → localized 404 "Página no encontrada", never 500 (AC-7) | `orders/[id]/page.tsx`, `order-read.ts` | ✅ |
-| 4 | Customers | No-orders customer (count 0), empty search set | `customer-table.tsx` | ✅ |
-| 5 | Packing slip | 0-item ("Sin artículos."), cancelled ("CANCELADO" band), 401 unauth | `packing-slip.ts`, `packing-slip/route.ts` | ✅ |
-
-## Security / Injection (all defended)
-
-- **XSS:** `<script>alert(1)</script>` in customer name, `<img src=x onerror=alert(1)>` in
-  product name, `<script>` in SKU — all render as **literal escaped text** on the detail
-  page AND the raw-HTML packing slip. Zero `alert()` dialogs fired. (React escaping +
-  `packing-slip.ts` escaper.)
-- **SQL/PostgREST injection:** `'; DROP TABLE orders;--` and `%_()*.:\,` in order search
-  and customer search are meta-char-stripped (`order-list-query.ts` m-3 defense) → benign
-  no-match, no error.
-- **URL param tampering:** `?page=-1|0|banana|99999|1e9` clamp; `?status=garbage`,
-  `?payment=' OR 1=1`, `?new=banana`, repeated `?status=paid&status=cancelled`,
-  `?page[]=…` arrays → all bounded by `parseOrderListFilters` (200, correct sets, no 500).
-- **Auth:** unauth `/admin/orders*` and `/admin/orders/customers` → 307 → login;
-  post-logout access → login. `javascript:` tracking URL rejected server-side.
-- **Refund modal:** garbage amounts (`abc`,`1.5`,`-100`,emoji,`0`,`1e9`,whitespace) disable
-  Continue; over-refund pre-checked; confirm gated on `REEMBOLSAR` (lowercase accepted);
-  modal resets (fresh idempotency key) on reopen. No MP call made.
-
-## Fix Applied (1)
-
-**[ROBUSTNESS] Unbounded status-history note (cancel reason + manual-advance note).**
-`order_status_history.note` is `text` with **no DB length CHECK**, and both
-`cancel_order` (RPC) and `advanceOrderStatus` insert the caller-supplied note
-verbatim. The cancel reason is ALSO emailed to the customer. The client textareas
-cap at 2000 via `maxLength`, but that is a client-only guard (bypassable by a
-scripted/compromised client, and inconsistent with `order_internal_notes`, which
-has a `1..2000` DB CHECK). A large note would persist forever and be emailed
-unbounded.
-
-- `src/lib/admin/orders/order-constants.ts` — added `STATUS_NOTE_MAX_LENGTH = 2000`
-  with a doc note explaining the missing DB CHECK and the trim-to-cap (not reject) policy.
-- `src/app/admin/(app)/orders/actions.ts` — new `boundStatusNote()` helper (trim →
-  null-if-empty → `slice(0, cap)`); applied in `advanceStatus` (replacing the inline
-  trim) and `cancelOrder`. Bounds the note server-side before it reaches the RPC/email.
-- `src/components/admin/orders/cancel-order-dialog.tsx` — reason textarea `maxLength`
-  now references `STATUS_NOTE_MAX_LENGTH` (semantic clarity; same 2000 value).
-
-**Verified live:** cancelled a 0-item order with a 2000-char reason → history note
-stored at 1999 chars (trimmed+clamped), status `cancelled`, no error on the empty
-stock-restore path. `tsc` clean · eslint clean · orders unit 102/102 · admin unit 294/294.
-
-## Product Improvements (backlog — not implemented)
-
+## Product Improvements (Phase 2 — do NOT implement now)
 | # | Improvement | Impact | Effort | Priority |
 |---|-------------|--------|--------|----------|
-| 1 | **Live character counter** on the internal-note / cancel-reason / advance-note textareas (e.g. `1980 / 2000`). Users currently discover the 2000 cap only by silent `maxLength` truncation; a counter prevents surprise mid-compose. | Med | S | P2 |
-| 2 | **Multi-payment refund UI for PP-000005-style orders** (3 duplicate approved MP payments). Today refund targets a single `mp_payment_id`; the extra charges are a manual MP-dashboard action. A per-payment refund picker (list each approved payment + its refundable balance) would close the only manual-money gap and prevent "why is $X still charged?" support tickets. | High | M | P1 |
-| 3 | **Bulk actions on the orders list** (multi-select → "Advance to preparing", "Print packing slips", "Export"). Fulfilling 25 orders one-detail-page-at-a-time is the Owner's most repetitive daily task; a select-column + action bar is a 10x speedup for launch-day volume. | High | M | P1 |
-| 4 | **Undo window for cancel** (5-second "Pedido cancelado — Deshacer" toast that re-advances + re-decrements before the cancelled email is dispatched). Cancel is destructive (stock restore + customer email); a soft undo prevents fat-finger cancellations from mailing customers. | High | M | P2 |
-| 5 | **Keyboard-first order triage:** `/` focuses search, `j/k` move row selection, `Enter` opens detail, `e` advances status, `p` prints slip. Power-Owner throughput; matches the Linear-tier bar the UX audit set. | Med | M | P3 |
+| 1 | **`noindex` + canonical on taxonomy INDEX pages** — so garbage URLs (`%00`, `%2e%2e`) that collapse to the index don't get indexed as duplicate content of the real detail listing | Med (SEO) | S | P2 |
+| 2 | **`sitemap` `lastModified` + `changeFrequency`/`priority`** — entries carry only `<loc>`+hreflang today; adding `lastmod` from product `updated_at` helps crawlers prioritize fresh products | Med (SEO) | M | P2 |
+| 3 | **Product `AggregateRating` / `review` JSON-LD** once reviews exist — unlocks star rich-results, a major B2C CTR lift | High (SEO/CTR) | M | P2 |
+| 4 | **Vercel Analytics (cookieless)** — wire `@vercel/analytics` behind the env flag already recommended in the deploy checklist; zero-cookie so no consent banner needed | High | S | P1 |
+| 5 | **Security headers / CSP layer (AC-B6)** — the one gap the security inventory flagged; a CSP is also the prerequisite for any 3rd-party analytics/monitoring script | High (security) | M | P1 |
+| 6 | **`@sentry/nextjs` error monitoring** — so a request-time 500 like Finding 1 is caught in prod telemetry instead of only local logs | High | S | P1 |
+| 7 | **OG image per PDP via `opengraph-image.tsx`** — a branded social card (product photo + name + price) instead of the default site OG; big share-CTR win | Med | M | P3 |
+| 8 | **Visible breadcrumb UI on PDP** — the `BreadcrumbList` JSON-LD exists but the PDP renders no VISIBLE breadcrumb; adding it improves navigation + matches the taxonomy pages | Med (UX) | S | P2 |
+| 9 | **`Product.sku` / `gtin` / `mpn` in JSON-LD** — required for Google Merchant / Shopping eligibility; add once SKUs are modeled | Med | M | P3 |
+| 10 | **Slug-length guard on taxonomy pages** — `if (slug.length > MAX_SLUG_LEN) notFound()` BEFORE the cached read, so a pathological URL returns a clean 404 even without an edge proxy (defense-in-depth for Finding 1; keeps the T3 `fail()` contract intact for genuine DB errors) | Low | S | P3 |
 
-## Chaos Score: 1 / 10
+## Fixes Applied
+- **None.** No T14-introduced defect was found. The single 500 (Finding 1) is
+  pre-existing catalog behavior, edge-rejected as 414 in production, and firewalled
+  per the stage rules. No working-tree changes were made.
 
-(Lower = more robust.) One non-exploitable robustness gap (unbounded history note),
-now fixed. No dead UI, no visual defects, no logic bugs, no missing states, no XSS,
-no injection, no race double-writes. The surface absorbed every hostile input,
-malformed URL, viewport extreme, and concurrent-tab race thrown at it.
+## Cleanup
+- Prod server (port 3111) killed.
+- Throwaway `.next-hacker` dist dir removed; `tsconfig.json` auto-injected
+  `.next-hacker/types` paths reverted (`git checkout`).
+- **Working tree clean** (`git status` empty). No test DB rows inserted (all
+  probing was read-only; products are RLS-denied to anon anyway).
 
-## Tests After Fixes
+## Chaos Score: 1/10
+(Target ≤ 3. The T14 SEO surfaces are exceptionally robust — every garbage/hostile
+input produced a controlled 200/404/405/307, zero uncontrolled 500s within
+real-world URL limits, zero server-log errors under concurrency, zero JSON-LD/sitemap
+data leaks. The lone 500 requires an >8 KB URL path that no real client or edge proxy
+would forward, and it degrades to a redacted error-boundary panel with no data leak.)
 
-- `tsc --noEmit`: **clean (exit 0)**
-- ESLint (touched files): **clean (exit 0)**
-- Unit (orders): **102 / 102 pass**
-- Unit (all admin — `src/app/admin` + `src/lib/admin`): **294 / 294 pass**
-- Live verification: 0-item cancel with 2000-char reason → note bounded to 1999, no error.
+## Tests After Fixes (no fixes needed — gate re-run to confirm tree health)
+- Type check: `npx tsc --noEmit` → **exit 0** (whole project)
+- Unit suite: `npx vitest run` → **2041 passed / 2041** (127 files)
+- Sitemap/robots degrade + regression tests: **7/7 passing**
+- Prod build: `next build` → **exit 0**; route table: all 3 taxonomy `[slug]` = `ƒ Dynamic`, `sitemap.xml`/`robots.txt` present
 
-## DB State Note
-
-- **Started:** the local Supabase had **0 orders / 0 customers** (a prior stage had reset
-  it; the real PP-000001..PP-000006 sandbox orders were already absent — NOT deleted by me).
-- **During:** seeded 7 `CHAOS-0000NN` orders (normal-paid, pending, shipped+tracking,
-  cancelled+history, **0-item**, **hostile/XSS/RTL/long-content**, delivered-linked-to-customer)
-  + 3 customers (one no-orders, one long-RTL name) covering every edge. A few chaos orders
-  were mutated by the tests (pending→paid, paid→preparing, empty→cancelled).
-- **Left:** **all CHAOS-* orders/items/history/notes and all seeded customers DELETED.** DB
-  is back to the pristine empty state it was found in (verified: 0/0/0/0/0). No real PP-*
-  order was touched. No MP refund API call was made.
+Status: **success**
