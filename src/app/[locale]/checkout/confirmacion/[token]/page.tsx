@@ -108,7 +108,7 @@ export default async function ConfirmationPage({ params, searchParams }: Confirm
         <Link
           href={CATALOG_PATH}
           data-testid="confirmation-keep-shopping"
-          className={cn(buttonVariants({ variant: "default" }), "cart-press h-11 gap-1.5 px-6 text-sm")}
+          className={cn(buttonVariants({ variant: "secondary" }), "cart-press h-11 gap-1.5 px-6 text-sm")}
         >
           {t("confirmation.keepShopping")}
           <HugeiconsIcon icon={ArrowRight01Icon} size={16} strokeWidth={2} aria-hidden />
