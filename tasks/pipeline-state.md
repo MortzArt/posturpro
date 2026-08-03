@@ -1,10 +1,19 @@
 # Pipeline State
 Task: T14 — SEO, analytics & launch hardening
 Tier: full-cycle
-Stage: 6
-Agent: ultrafix
-Last Updated: 2026-08-03 22:20
+Stage: 7
+Agent: ultraqa
+Last Updated: 2026-08-03 22:45
 Notes: LAST build task. Full-cycle. T14 is deploy-readiness — after it, owner deploys to Vercel + hosted Supabase for client QA. Go-live also gated on T8 Phase 5 owner sign-off.
+
+=== T14 S6 (Fix, ultrafix) COMPLETE — both MAJORs fixed + live-proven (2026-08-03) ===
+- M-1 FIXED robots.ts:26-30: added /en/checkout + /en/carrito disallows (mirror /en/sillas? approach). Full [locale] route audit: only cart/checkout funnel is disallow-listed, /sillas already mirrored, rest intentionally crawlable — no other gap. /admin + /api app-root, no /en mirror needed.
+- M-2 FIXED sitemap.ts:117-127: Set de-dupe keyed on locale-agnostic href, STATIC_HREFS first (hard-coded /contacto wins; survives unpublished DB row; future STATIC_HREFS/catalog overlap can't reintroduce).
+- MINORS: m-1 SKIPPED (& -escaping handled by Next serializer), m-2 SKIPPED (JSON-LD image absolute by construction), m-3 SKIPPED (OG type "product" not in Next typed union; would need banned as-cast), m-4 FIXED (guard test on real routing.localePrefix/defaultLocale/locales so mocked getPathname can't mask a wrong hreflang scheme).
+- NEW TESTS: src/app/robots.test.ts (4), src/app/sitemap.test.ts (3), metadata.test.ts +1. GATES: tsc=0, eslint clean, unit 2033/2033 (baseline 2025 +8).
+- LIVE PROOF (build + next start + curl): robots.txt shows both /en disallows; sitemap.xml 118 loc = 118 unique, /contacto once per locale, /showroom retained.
+- Artifacts: review-findings.md all findings FIXED/SKIPPED w/ rationale; dev-done.md fix log appended.
+- Next: Stage 7 (QA, ultraqa) — full test pass, 100% Group A acceptance criteria.
 
 === T14 S5 (Review, ultrareview) COMPLETE — APPROVE-WITH-FIXES, 8.5/10 (2026-08-03) ===
 - 0 CRITICAL, 2 MAJOR (both crawl-hygiene, NOT security), 4 MINOR. tasks/review-findings.md written. All 14 Group-A ACs PASS on behavior; A9/A10 carry the 2 majors.

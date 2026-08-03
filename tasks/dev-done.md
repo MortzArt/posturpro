@@ -143,3 +143,40 @@ against the seeded local DB — not just a green build.
 - None. All Group-A SEO uses Next.js App Router built-ins + existing next-intl.
 
 Status: **success** — all Group A criteria implemented and verified.
+
+---
+
+## Fixes Applied (Stage 6)
+
+### Issue Tracker
+| ID  | Severity | Title | Status | File | Notes |
+|-----|----------|-------|--------|------|-------|
+| C-* | CRITICAL | — | — | — | None found in review. |
+| M-1 | MAJOR | robots.txt misses `/en/...` funnel paths | FIXED | `src/app/robots.ts:26-30` | Added `/en/checkout` + `/en/carrito` (mirrors `/en/sillas?`). Audited full `[locale]` route set; only cart/checkout are disallowed, `/sillas` already mirrored, rest intentionally crawlable. `/admin`+`/api/` app-root (no mirror). |
+| M-2 | MAJOR | Sitemap emits duplicate `/contacto` | FIXED | `src/app/sitemap.ts:117-127` | `Set` de-dupe keyed on locale-agnostic href, STATIC_HREFS first so hard-coded `/contacto` wins even if DB row unpublished. Guards future overlaps too. |
+| m-1 | MINOR | `<loc>` not XML-escaped for literal `&` | SKIPPED | — | Defended by Next's sitemap serializer (XML-escapes `<loc>`); slugs are kebab-case; escaping in site-url risks double-escape. Sanctioned pattern. |
+| m-2 | MINOR | JSON-LD/OG image assumes absolute URL | SKIPPED | — | Correct today (all image URLs absolute by construction). Normalizing needs origin threaded into pure `buildProductLd` + data-URI handling — out of scope, no live defect. |
+| m-3 | MINOR | PDP OG `type: "article"` | SKIPPED | — | `type: "product"` not in Next's typed OG union; would need an `as`-cast (CLAUDE.md bans `!`/`any` escape hatches). `article` valid. Cosmetic. |
+| m-4 | MINOR | `metadata.test.ts` mocks `getPathname` | FIXED | `src/lib/seo/metadata.test.ts` | Added guard test asserting real `routing.localePrefix === "as-needed"`, `defaultLocale`, `locales`. Fails loudly if routing changes, so the mock can't silently mask a wrong hreflang scheme. |
+
+### Summary
+- Critical: 0/0 fixed (none found)
+- Major: 2/2 fixed, 0 skipped
+- Minor: 1/4 fixed, 3 skipped (all with justification: sanctioned pattern / out of scope / type-safety)
+
+### Tests Added
+- `src/app/robots.test.ts` (new, 4 tests) — regression for M-1: asserts both-locale cart/checkout disallow, app-root admin/api with no `/en` mirror, faceted both-locale, absolute Sitemap directive.
+- `src/app/sitemap.test.ts` (new, 3 tests) — regression for M-2: no duplicate `<loc>` even with `contacto` overlap, `/contacto` exactly once per locale, `/showroom` retained. Catalog data-layer mocked.
+- `src/lib/seo/metadata.test.ts` (+1 test) — m-4 hreflang mock guard on real routing config.
+
+### Test Results After Fixes
+- Unit: `npx vitest run` → **2033 passed / 2033** (125 files). Baseline was 2025/2025; +8 from the new regression + guard tests, all green.
+- Type check: `npx tsc --noEmit` → **exit 0** (whole project).
+- Lint: `eslint` on all touched files (`robots.ts`, `sitemap.ts`, `robots.test.ts`, `sitemap.test.ts`, `metadata.test.ts`) → **clean** (exit 0).
+
+### Proof the two majors are gone (live prod server)
+Built with `NEXT_PUBLIC_SITE_URL=https://posturpro.mx npm run build` (exit 0), served via `npm run start`, curled:
+- **M-1** — `curl /robots.txt` now emits `Disallow: /en/checkout` and `Disallow: /en/carrito` (alongside the pre-existing `/checkout` + `/carrito`).
+- **M-2** — `curl /sitemap.xml` → **118 `<loc>` total = 118 unique** (`uniq -d` empty, zero duplicates). `/contacto` appears exactly once per locale (`.../contacto`, `.../en/contacto`); `/showroom` retained.
+
+Status: **success** — both MAJOR findings fixed with live curl proof + regression tests; minors resolved (1 fixed, 3 skipped-with-justification). All gates green.

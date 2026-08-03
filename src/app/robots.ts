@@ -19,8 +19,15 @@ export default function robots(): MetadataRoute.Robots {
         disallow: [
           "/admin",
           "/api/",
+          // Cart/checkout funnel. These live under `src/app/[locale]/`, so they
+          // are served at the unprefixed default-locale path AND the `/en` path;
+          // robots prefix matching does NOT let `/checkout` cover `/en/checkout`,
+          // so each locale variant must be listed explicitly. `/admin` + `/api/`
+          // are app-root routes (NOT under [locale]) and need no `/en` mirror.
           "/checkout",
           "/carrito",
+          "/en/checkout",
+          "/en/carrito",
           // Faceted/searched catalog URLs (any query param on /sillas) — the
           // page already emits noindex,follow for these; keep crawlers off them.
           "/sillas?",

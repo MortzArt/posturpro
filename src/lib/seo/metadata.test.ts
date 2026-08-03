@@ -16,6 +16,7 @@ vi.mock("@/i18n/navigation", () => ({
     locale === "es-MX" ? href : `/en${href === "/" ? "" : href}`,
 }));
 
+import { routing } from "@/i18n/routing";
 import { buildAlternates, buildOpenGraph, localeUrl } from "./metadata";
 
 const ORIGIN = "https://posturpro.mx";
@@ -29,6 +30,18 @@ beforeAll(() => {
 afterAll(() => {
   if (previousSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
   else process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl;
+});
+
+describe("hreflang mock guard (m-4)", () => {
+  // The `getPathname` mock above hard-codes the `as-needed` prefix rule. If the
+  // real routing config ever switches to `localePrefix: "always"` (or similar),
+  // this suite would keep passing while shipping a wrong store-wide hreflang
+  // scheme. Fail loudly here so the mock's assumption stays honest.
+  it("real routing still uses the as-needed prefix the mock assumes", () => {
+    expect(routing.localePrefix).toBe("as-needed");
+    expect(routing.defaultLocale).toBe("es-MX");
+    expect(routing.locales).toEqual(["es-MX", "en"]);
+  });
 });
 
 describe("localeUrl", () => {

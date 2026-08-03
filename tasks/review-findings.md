@@ -54,7 +54,14 @@ content once `<` is neutralized).
   between locales.
 - **Suggested Fix**: Add `"/en/checkout"` and `"/en/carrito"` to the disallow array. (robots
   prefix matching means `/checkout` covers `/checkout/*` but NOT `/en/checkout`.)
-- **Status**: OPEN
+- **Status**: FIXED — added `/en/checkout` and `/en/carrito` to the disallow array
+  (`src/app/robots.ts:26-30`), mirroring the existing `/en/sillas?` pattern. Audited the
+  full `[locale]` route set (`carrito`, `checkout`, `categorias`, `contacto`, `empresas`,
+  `estilos`, `marcas`, `producto`, `showroom`, `sillas`, `[pageSlug]`): only the cart/checkout
+  funnel is disallow-listed; `/sillas` was already mirrored; the rest are intentionally
+  crawlable. `/admin` + `/api/` confirmed app-root (no `/en` mirror needed). Proven live:
+  `curl /robots.txt` shows `Disallow: /en/checkout` and `Disallow: /en/carrito`. Regression
+  test added (`src/app/robots.test.ts`).
 
 ### M-2: Sitemap emits a duplicate `/contacto` entry (both locales)
 - **ID**: M-2
@@ -74,7 +81,13 @@ content once `<` is neutralized).
   from `STATIC_HREFS` (already covered by the published-slugs read), OR dedupe `allHrefs`
   with a `Set` keyed on the resolved href in `sitemap()`. Prefer the `Set` so a future overlap
   between STATIC_HREFS and the catalog reads can't reintroduce the bug.
-- **Status**: OPEN
+- **Status**: FIXED — de-duped in `sitemap()` (`src/app/sitemap.ts:117-127`) via a `Set`
+  keyed on the locale-agnostic href, `STATIC_HREFS` first so the hard-coded `/contacto` always
+  wins (survives even if the DB row is unpublished; the route exists regardless). Chose the
+  `Set` over dropping the STATIC_HREFS entry so any future overlap between STATIC_HREFS and the
+  catalog reads cannot reintroduce a duplicate. Proven live: `curl /sitemap.xml` → 118 `<loc>`
+  total = 118 unique (0 duplicates); `/contacto` and `/en/contacto` each appear exactly once;
+  `/showroom` retained. Regression test added (`src/app/sitemap.test.ts`).
 
 ---
 
@@ -87,6 +100,10 @@ content once `<` is neutralized).
   a literal `&` intact. Next.js's `MetadataRoute.Sitemap` serializer XML-escapes `<loc>`
   content, so this is defended one layer up, and slugs are DB-kebab-case in practice (no `&`).
   Defensive-only; no action strictly required. Edge case 4 is otherwise satisfied.
+- **Status**: SKIPPED — already defended one layer up (Next's `MetadataRoute.Sitemap`
+  serializer XML-escapes `<loc>` content), slugs are DB-kebab-case (no `&` in practice), and
+  adding escaping in `site-url.ts` risks double-escaping the serializer's output. Sanctioned
+  pattern; no change to avoid churn/regression.
 
 ### m-2: Product JSON-LD & OG images assume absolute URLs with no guard
 - **File**: `src/lib/seo/json-ld.ts:86`, `producto/[slug]/page.tsx:96,136`
@@ -95,12 +112,20 @@ content once `<` is neutralized).
   relative image URL would emit an invalid schema.org `image`. All image URLs are absolute
   today (picsum in seed; Supabase `publicUrl` in prod), so correct now. Consider normalizing to
   absolute in `buildProductLd` to make the invariant explicit rather than latent.
+- **Status**: SKIPPED — correct today (all image URLs are absolute by construction: picsum in
+  seed, Supabase `publicUrl` in prod). Normalizing would require threading the site origin into
+  `buildProductLd` (currently origin-free/pure) and would need to correctly pass through
+  absolute + `data:` URIs, expanding scope beyond the two majors. Out of scope for this fix
+  pass; no functional defect exists.
 
 ### m-3: PDP OpenGraph `type: "article"` for a product page
 - **File**: `src/app/[locale]/producto/[slug]/page.tsx:94`
 - **Detail**: A PDP uses OG `type: "article"`. The richer value for a product is `product`, but
   Next's typed `openGraph` union favors `website`/`article` and `article` is defensible/valid.
   Cosmetic; no functional impact.
+- **Status**: SKIPPED — `type: "product"` is not in Next's typed `openGraph` discriminated
+  union, so adopting it would require an `as`-cast or type escape hatch (banned by CLAUDE.md).
+  `article` is valid and renders correctly. Cosmetic; not worth a type-safety compromise.
 
 ### m-4: `metadata.test.ts` mocks `getPathname`, under-verifying the store-wide hreflang scheme
 - **File**: `src/lib/seo/metadata.test.ts:14-17`
@@ -109,6 +134,11 @@ content once `<` is neutralized).
   change (e.g. `localePrefix: "always"`) would silently pass this test while shipping a wrong
   store-wide hreflang scheme. Dev correctly notes it is verified end-to-end by the build+curl
   gate, but the unit test gives false confidence. Consider a guard test on `routing.localePrefix`.
+- **Status**: FIXED — added a guard test (`src/lib/seo/metadata.test.ts`, `describe("hreflang
+  mock guard (m-4)")`) asserting the real `routing.localePrefix === "as-needed"`,
+  `defaultLocale === "es-MX"`, and `locales === ["es-MX", "en"]`. If routing ever switches to
+  `localePrefix: "always"` (or the locale set changes), this test fails loudly instead of the
+  mock silently masking a wrong store-wide hreflang scheme.
 
 ---
 

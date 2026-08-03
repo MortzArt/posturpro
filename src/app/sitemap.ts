@@ -116,6 +116,12 @@ async function safeRead<T>(read: () => Promise<T[]>, label: string): Promise<T[]
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const dynamicHrefs = await readDynamicHrefs();
-  const allHrefs = [...STATIC_HREFS, ...dynamicHrefs];
-  return allHrefs.flatMap((href) => entriesForHref(href));
+  // De-dupe on the locale-agnostic href BEFORE emitting per-locale entries. The
+  // published-static-pages read overlaps STATIC_HREFS (both surface `/contacto`,
+  // which is a real route regardless of its DB row), and a future overlap
+  // between STATIC_HREFS and the catalog reads must not reintroduce duplicate
+  // `<loc>` rows (AC-A9: no duplicate URLs). Keeping STATIC_HREFS first means the
+  // hard-coded routes always win, so `/contacto` survives even if unpublished.
+  const uniqueHrefs = [...new Set<LocaleAgnosticHref>([...STATIC_HREFS, ...dynamicHrefs])];
+  return uniqueHrefs.flatMap((href) => entriesForHref(href));
 }
