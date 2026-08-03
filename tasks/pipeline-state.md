@@ -1,10 +1,20 @@
 # Pipeline State
 Task: T14 — SEO, analytics & launch hardening
 Tier: full-cycle
-Stage: 7
-Agent: ultraqa
-Last Updated: 2026-08-03 22:45
+Stage: 8
+Agent: ultraux
+Last Updated: 2026-08-03 23:10
 Notes: LAST build task. Full-cycle. T14 is deploy-readiness — after it, owner deploys to Vercel + hosted Supabase for client QA. Go-live also gated on T8 Phase 5 owner sign-off.
+
+=== T14 S7 (QA, ultraqa) COMPLETE — PASS, confidence HIGH (2026-08-03) ===
+- AC 14/14 Group-A PASS, every one verified vs a REAL next build (exit 0) + next start on the seeded DB (per the S1 LESSON): A2 all 3 [slug] ƒ Dynamic, real slugs 200 both locales incl ?page=2 + ?page=99 clamped; A9 sitemap xmllint-well-formed 118 loc=118 unique + 354 hreflang; A10 robots incl both /en funnel disallows; A11 canonical+hreflang every indexable surface; A12 Product (price 8999.00 MXN major-unit, InStock)/Breadcrumb/Org/WebSite JSON-LD valid + accented-name XSS spot-check clean; A13 0 secret values across 44 client chunks; A3/A4 counter "0/2000".
+- GATES: tsc=0; eslint clean; unit 2041/2041 (127 files, +8 QA tests); prod-curl matrix all green.
+- NEW TESTS (+8): src/lib/seo/breadcrumb.test.ts (5, untested crumbsToBreadcrumbLd bridge AC-A12); src/app/sitemap-degrade.test.ts (3, untested AC-A14 DB-outage degrade — all reads reject → no throw, static-only fallback).
+- BUG-1 FOUND+FIXED (AC-A11 gap): /showroom (bespoke route, sitemap-listed) emitted NO canonical/hreflang → added identical buildAlternates 3-line pattern in src/app/[locale]/showroom/page.tsx; re-verified live (self-canonical + 3 hreflang both locales).
+- E2E (first exercise of the A5 prod webServer): 62 pass / 9 fail — NONE T14. 8× admin.spec.ts = STALE TEST (expects post-login /admin/settings; app correctly lands /admin dashboard since T12 — proved app correct via throwaway spec; T18 admin spec passes; admin out of T14 scope, spec NOT modified — STALE-TEST DEBT for S12). 1× empresas = flake (passes isolated 811ms). not-found.spec.ts (A6) fully green.
+- FOR S9: JSON-LD escaping re-verified safe; 0 secrets in bundle; the one gap = absent CSP/security-headers (B6). FOR S12: run FULL integration suite on clean CI reset (this machine has several Supabase services stopped — environmental, documented in qa-report); treat admin.spec.ts as stale-test debt not blocker; pre-existing non-T14 quirk: /producto/<unknown-slug> returns 200 (SSG notFound) not 404 — taxonomy correctly 404s.
+- Files this stage: showroom/page.tsx + 2 new test files + tasks/qa-report.md (overwrote T18).
+- Next: Stage 8 (UX, ultraux) — LIGHTWEIGHT (T14 has near-zero visible surface: contact counter fix + zero-visual-change constraints; verify no regressions, don't gold-plate).
 
 === T14 S6 (Fix, ultrafix) COMPLETE — both MAJORs fixed + live-proven (2026-08-03) ===
 - M-1 FIXED robots.ts:26-30: added /en/checkout + /en/carrito disallows (mirror /en/sillas? approach). Full [locale] route audit: only cart/checkout funnel is disallow-listed, /sillas already mirrored, rest intentionally crawlable — no other gap. /admin + /api app-root, no /en mirror needed.

@@ -5,9 +5,15 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { hasLocale } from "next-intl";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Location01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
-import { routing } from "@/i18n/routing";
-import { SHOWROOM_SLUG, SHOWROOM_MAP_URL, SHOWROOM_MAP_IMAGE } from "@/lib/config";
+import { routing, type Locale } from "@/i18n/routing";
+import {
+  SHOWROOM_SLUG,
+  SHOWROOM_MAP_URL,
+  SHOWROOM_MAP_IMAGE,
+  staticPagePath,
+} from "@/lib/config";
 import { getStaticPageBySlug } from "@/lib/content/static-pages";
+import { buildAlternates } from "@/lib/seo/metadata";
 import { Breadcrumbs } from "@/components/catalog/breadcrumbs";
 import { StaticPageBody } from "@/components/content/static-page-body";
 
@@ -32,11 +38,21 @@ export async function generateMetadata({
   params,
 }: ShowroomPageProps): Promise<Metadata> {
   const { locale } = await params;
+  const activeLocale = resolveLocale(locale);
   const t = await getTranslations({
-    locale: resolveLocale(locale),
+    locale: activeLocale,
     namespace: "showroom",
   });
-  return { title: t("metadata.title") };
+  return {
+    title: t("metadata.title"),
+    // Showroom is a bespoke, sitemap-listed (indexable) storefront route, so it
+    // needs the same self-referential canonical + es-MX/en/x-default hreflang
+    // as every other indexable surface (T14 AC-A11).
+    alternates: buildAlternates(
+      staticPagePath(SHOWROOM_SLUG),
+      activeLocale as Locale,
+    ),
+  };
 }
 
 export default async function ShowroomPage({ params }: ShowroomPageProps) {
