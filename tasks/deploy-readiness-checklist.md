@@ -41,6 +41,17 @@ with `NEXT_PUBLIC_`.
 > The four rate-limit escape hatches (`CHECKOUT_/QUOTE_/CONTACT_/ADMIN_LOGIN_RATE_LIMIT_DISABLED`)
 > must **NOT** be set in production — they exist only for the e2e test server.
 
+> **Credential rotation before go-live (Stage 9 finding, LOW — hygiene, not a leak).**
+> The local `.env.local` (gitignored, never committed — verified) holds working-format
+> values for the dev machine, and a commented-out hosted-Supabase `SUPABASE_SECRET_KEY`
+> (`sb_secret_…`). Because those values have lived in a working file: **(1)** generate a
+> fresh `ADMIN_SESSION_SECRET` (`node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))'`)
+> and a fresh `ADMIN_PASSWORD_HASH` for production; **(2)** confirm the production
+> `MERCADOPAGO_ACCESS_TOKEN` is the intended live/sandbox credential (the dev value is
+> `APP_USR-…` production-format, not `TEST-…`) and rotate it in the MP dashboard if it
+> was ever shared; **(3)** rotate the hosted `SUPABASE_SECRET_KEY` when the hosted
+> project goes live. Set all of these ONLY in the Vercel project env — never in a file.
+
 ### Group B (optional — set only when the owner chooses a vendor)
 
 - Analytics: none required for `@vercel/analytics` (enabled in the Vercel project
@@ -166,4 +177,139 @@ curl -s $BASE/producto/<seed-slug> | grep -o 'application/ld+json'      # Produc
 | Error monitoring (B3) | `@sentry/nextjs`, DSN env-driven. | Awaiting owner decision + DSN. |
 | Backup verification (B4) | PITR + daily backups + one restore test. | Do after the hosted project is live. |
 | LCP / bundle (B5) | LCP images already `priority` (hero / gallery / grid). | Verified — no change. |
-| Security headers / CSP (B6) | Add `headers()` (CSP, X-Frame-Options, HSTS, nosniff, Referrer-Policy). **Prerequisite before any third-party script.** | Scoped to Stage 9. |
+| Security headers / CSP (B6) | Add `headers()` (CSP, X-Frame-Options, HSTS, nosniff, Referrer-Policy). **Prerequisite before any third-party script.** | Ready-to-apply block written in §8 (owner-gated; do NOT block deploy). |
+
+---
+
+## 8. Security posture (Stage 9 audit — final launch review)
+
+Whole-store security audit ran at T14 (the ticket-mandated final review). **Posture
+grade: A (strong).** Verified with evidence, not assertion:
+
+- **Secrets:** ZERO hardcoded secrets in source. `.env*` is gitignored (`.gitignore`
+  lines 38/47) and **never** committed (verified `git log --all -- '*.env*'` empty).
+  No secret is `NEXT_PUBLIC_`-prefixed. Built client bundle (41 chunks) scanned:
+  zero secret values / secret env-var names. Every secret module is
+  `import "server-only"`-guarded (`supabase/admin.ts`, `payments/mp-client.ts`,
+  `email/provider.ts`, `admin/auth.ts`, `admin/session.ts`) with static
+  `secret-exposure` tests enforcing it.
+- **Admin auth:** HMAC-SHA256 signed sessions, constant-time verify in BOTH Node
+  (`timingSafeEqual`) and Edge (XOR `constantTimeEqual`), DB-backed revocation
+  counter (fail-closed on read error). Cookie flags: `httpOnly`, `sameSite=lax`,
+  `secure` in production, `path=/admin`, 8h `maxAge`. Every one of the 32 mutating
+  admin server actions calls `requireSession()`; route handlers (export,
+  packing-slip) self-guard; the `(app)` route-group layout guards all pages. Login
+  is per-IP rate-limited server-side. No auth bypass, no IDOR (single-owner model,
+  UUID-scoped reads).
+- **Mercado Pago webhook:** HMAC signature verified BEFORE any side effect (401
+  fail-closed), constant-time compare, 5-minute replay window, DB-enforced
+  idempotency (unique `(mp_payment_id, mp_status)` + claim-then-finalize), exact
+  amount reconciliation. An unauthenticated attacker cannot forge a paid order.
+- **RLS (verified LIVE against the local Docker DB, port 54322):** RLS enabled on
+  all 24 tables. `anon` is provably DENIED select/insert/update/delete on
+  `orders`, `customers`, `payments`/`payment_refunds`, `discount_codes`,
+  `order_items`, `mp_payment_events`, `email_sends`, `inventory_adjustments`,
+  `order_internal_notes`, `admin_session_version` (dual-layer: no grant + no
+  policy). `cost_price_cents` is structurally omitted from the anon-readable
+  `products_public` view. All 13 SECURITY DEFINER RPCs are `service_role`-EXECUTE
+  only with a pinned empty `search_path`; no stray `pg_default_acl` anon grant on
+  this instance. **The post-migrate anon-denial assertion in §2 is the runnable
+  guard for OTHER envs (CI/hosted) where the stray ACL can reappear — do NOT skip
+  it.**
+- **Injection / XSS:** JSON-LD is serialized then escaped (`escapeForScriptSafe`)
+  so every `<` becomes `<` and U+2028/U+2029 are escaped — independently
+  re-verified against `</script>`, `<!--`, `<img onerror>`, and raw-separator
+  payloads: all neutralized, no script breakout. Input boundaries (checkout,
+  contact, quote, Q&A, admin forms) validate/escape server-side; no T14-era
+  regression. Sitemap/robots/site-url are env-only (never read a Host header → no
+  host-header injection).
+
+### Dependency advisories (`npm audit`)
+
+`next` was bumped **16.2.9 → 16.2.12** (in-range, non-major; `tsc` + `next build`
+stay green) to pick up the patch-level fixes in 16.2.10–12. **Note:** the advisory
+DB still flags `next` (vulnerable range `>=9.3.4-canary.0` with no forward-fixed
+16.x published; the only "fix" it lists is a major downgrade to next@9, which would
+break the App Router — not viable). The runtime-facing `next` advisories (Server
+Actions SSRF, Image-Optimization DoS via SVG, middleware/proxy bypass) are
+**mitigated by the B6 CSP + security headers below** — apply B6 before go-live for
+defense-in-depth. Remaining transitive advisories (`postcss`, `sharp`,
+`brace-expansion`, `fast-uri`, `@hono/node-server`, `@tailwindcss/postcss`) are all
+build/image-toolchain deps, not independently reachable at runtime; run
+`npm audit fix` (non-`--force`) after deploy to clear the resolvable ones. **None is
+a deploy blocker.**
+
+### B6 — ready-to-apply security headers + CSP (OWNER-GATED — do NOT wire in now)
+
+The one clear gap the audit found is the absent security-header layer. It is
+**owner-choice-gated and MUST NOT block this deploy.** Below is the exact,
+copy-paste `headers()` block for `next.config.ts`. It is compatible with the
+Next.js App Router, the inline JSON-LD `<script>`s, Supabase + `picsum.photos`
+image hosts, and a future `@vercel/analytics` script.
+
+**Rollout: ship it `Content-Security-Policy-Report-Only` FIRST** (rename the header
+key to `Content-Security-Policy-Report-Only`), watch the browser console / a report
+endpoint for a full week of real traffic across both locales, then flip to the
+enforcing `Content-Security-Policy` key once clean. HSTS/nosniff/Referrer-Policy/
+Permissions-Policy/frame-ancestors can be enforced immediately — only the CSP needs
+the report-only soak.
+
+```ts
+// next.config.ts — add to the config object returned/exported.
+// NOTE: inline JSON-LD requires 'unsafe-inline' in script-src OR a nonce. A nonce
+// needs a middleware that injects it per-request AND passing it to <JsonLd>; until
+// that plumbing exists, 'unsafe-inline' for script-src is the pragmatic App-Router
+// default (Next itself also emits inline bootstrap scripts). Prefer moving to a
+// nonce before enabling any third-party <script>.
+async headers() {
+  const isProd = process.env.NODE_ENV === "production";
+  const supabaseHost = process.env.NEXT_PUBLIC_SUPABASE_URL
+    ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).origin
+    : "";
+  const csp = [
+    "default-src 'self'",
+    // Next.js App Router hydration + inline JSON-LD. Add https://va.vercel-scripts.com
+    // only if @vercel/analytics is enabled by the owner (B1).
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    // Product images: Supabase Storage + picsum seed host. data: for inlined SVGs.
+    `img-src 'self' data: https://picsum.photos https://*.picsum.photos ${supabaseHost}`.trim(),
+    "font-src 'self' data:",
+    // Supabase REST/Realtime + (if enabled) Vercel Analytics beacon.
+    `connect-src 'self' ${supabaseHost}`.trim(),
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    ...(isProd ? ["upgrade-insecure-requests"] : []),
+  ].join("; ");
+
+  const securityHeaders = [
+    // CSP: ship as report-only first (see rollout note), then rename to enforce.
+    { key: "Content-Security-Policy", value: csp },
+    // Enforce immediately — no soak needed:
+    { key: "X-Content-Type-Options", value: "nosniff" },
+    { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+    { key: "X-Frame-Options", value: "DENY" }, // legacy twin of frame-ancestors
+    {
+      key: "Permissions-Policy",
+      value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+    },
+    // HSTS: only after HTTPS is confirmed on the apex + all subdomains. Start with
+    // a short max-age, raise to 63072000 + preload once verified.
+    ...(isProd
+      ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }]
+      : []),
+  ];
+
+  return [{ source: "/:path*", headers: securityHeaders }];
+}
+```
+
+**Verify after applying (report-only phase):**
+
+```bash
+curl -sI https://<prod-domain>/ | grep -iE 'content-security-policy|strict-transport|x-content-type|referrer-policy|permissions-policy|x-frame'
+# Then load the storefront + a PDP in a browser and confirm ZERO CSP violation
+# reports for the inline JSON-LD, Supabase images, and next hydration scripts.
+```

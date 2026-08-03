@@ -1,10 +1,23 @@
 # Pipeline State
 Task: T14 — SEO, analytics & launch hardening
 Tier: full-cycle
-Stage: 9+10 (parallel)
-Agent: ultrasecurity + ultraarch
-Last Updated: 2026-08-03 23:30
+Stage: 11
+Agent: ultrahacker
+Last Updated: 2026-08-04 00:15
 Notes: LAST build task. Full-cycle. T14 is deploy-readiness — after it, owner deploys to Vercel + hosted Supabase for client QA. Go-live also gated on T8 Phase 5 owner sign-off.
+
+=== T14 S9 (Security, ultrasecurity) COMPLETE — SECURE, grade A, deploy NOT blocked (2026-08-04) ===
+- Whole-store final review w/ evidence: 0 Critical, 0 High, 1 Medium, 2 Low, 0 secrets.
+- SEC-M-1 FIXED: next 16.2.9 → 16.2.12 (in-range bump; SSRF/ImageOpt-DoS/middleware advisories). CAVEAT: advisory DB still flags next (no forward-fixed 16.x exists; only "fix" is breaking downgrade) — B6 CSP/headers block is the compensating control. SEC-L-1: .env.local (gitignored, never committed — verified) has dev creds + commented hosted sb_secret_ → rotation-before-go-live documented in checklist §1. SEC-L-2: transitive build-toolchain advisories → post-deploy npm audit fix, not runtime-reachable.
+- EVIDENCE: admin auth SECURE (HMAC constant-time Node+Edge, DB revocation, cookie flags, 32/32 mutating actions + all routes guarded, per-IP limiter, no IDOR); MP webhook SECURE (sig-before-side-effect, constant-time, 5-min replay, DB idempotency, exact amount reconciliation); RLS verified LIVE (anon denied orders/customers/payments/discount_codes/admin tables dual-layer; cost_price_cents omitted from products_public; 13 SECURITY DEFINER RPCs service_role-only); JSON-LD re-proven XSS-safe (</script>, <!--, <img onerror>, U+2028/29); 41 client chunks 0 secrets; 4 rate flags server-only ==="1" no prod effect; db:reset:remote --linked noted destructive-on-linked.
+- B6 delivered as copy-paste headers() block in deploy-readiness-checklist §8 (HSTS/XCTO/Referrer/Permissions/frame-ancestors + App-Router/JSON-LD/Supabase/picsum/@vercel-analytics-compatible CSP, report-only-first rollout + verification curl). NOT wired (owner-gated).
+- GATES post-bump: tsc=0, build exit 0, unit 2041/2041. Files: package.json+lock (next bump), security-audit.md, deploy-readiness-checklist.md.
+
+=== T14 S10 (Arch, ultraarch) COMPLETE — APPROVE, 9/10, deployment READY (2026-08-04, parallel w/ S9) ===
+- SEO seam textbook: new page = one buildAlternates() + <JsonLd> drop; pure/impure split disciplined (json-ld.ts pure / breadcrumb.ts i18n bridge / metadata.ts URLs / site-url.ts origin / json-ld.tsx render+escape); acyclic; largest file 161 lines; errors degrade in-layer (safeRead → []/null + logged warning, never throw across render boundary).
+- KEY RISK (the one real finding, phase-2): THREE rendering mechanisms coexist for paginated product listings — PDP SSG, /sillas auto-dynamic (top-level searchParams await), taxonomy force-dynamic (searchParams into Suspense). Each locally correct + commented; system-level rule UNDOCUMENTED — the exact drift class that caused blocker #1. Recommend: document rendering-strategy map + rule in CLAUDE.md [phase-2]; prod build warning when NEXT_PUBLIC_SITE_URL unset (silent localhost SEO-poisoning, degrade-not-throw is correct) [phase-2]; document sitemap-index split trigger [phase-2].
+- Env inventory complete Public/Secret split, rate flags must-not-set-in-prod flagged; migrate+seed promotion path sound incl post-migrate anon-denial assertion. Tech-debt ledger consolidated (stale admin.spec.ts, PDP unknown-slug 200, sendOwnerRelay/Panel third-consumer triggers) — all opportunistic, none blocking.
+- Next: Stage 11 (Hacker, ultrahacker) — chaos pass; then Stage 12 (Verify) SHIP/NO-SHIP.
 
 === T14 S8 (UX, ultraux) COMPLETE — CLEAN, 9.5/10, no fixes needed (2026-08-03) ===
 - Zero regressions across every touched surface, verified LIVE vs prod build + next start (seeded DB, NEXT_PUBLIC_SITE_URL=https://posturpro.mx), both locales, 375px + 1024px.
