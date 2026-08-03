@@ -1,377 +1,428 @@
-# UI Design: T18 — Admin customer detail page
+# UI Design: T14 — SEO, Analytics & Launch Hardening (LIGHTWEIGHT pass)
 
-> **Scope note.** This is a LIGHTWEIGHT design pass for a **low**-complexity, full-stack
-> (logic-heavy) ticket. The visible surface is a **straight composition of already-shipped
-> T12 admin primitives** — `AdminPage` shell, the `Panel` card grammar, `OrderStatusBadge` /
-> `PaymentStatusBadge` / `paymentBadgeIsRedundant`, `formatMXN`, `formatRelativeDate`,
-> `isMailableAddress`, and the `order-table.tsx` row-link recipe. **No new component is
-> introduced.** The only styling decisions are (a) how the four page sections stack, (b) the
-> exact list-row link affordance for `customer-table.tsx`, and (c) a loading skeleton. All
-> motion is reuse-only (`.enter-fade`); no new keyframes, no client island.
+> **Scope note (read first).** T14 is complexity=HIGH / feature-type=full-feature,
+> but almost its entire surface is **invisible** (sitemap.ts, robots.ts, JSON-LD,
+> metadataBase, canonical/hreflang, OG, e2e infra, seed/reset, deploy checklist,
+> security-header recommendations). This document deliberately covers ONLY the
+> three UI-relevant slices:
+>
+> 1. **The conditional cookie-consent banner (Group B2)** — a **contingency spec**,
+>    BUILD ONLY IF the owner selects a cookie-based analytics vendor. The recommended
+>    default (`@vercel/analytics`, cookieless) means **no banner ships and AC-B2 is
+>    N/A**. This spec exists so Dev/UX never has to design under pressure if the
+>    owner picks a cookie vendor later.
+> 2. **Zero-visual-change regression constraints** on the taxonomy `[slug]` pages
+>    (`force-dynamic`) and the contact page (`t.raw` counter fix).
+> 3. **An explicit "NO UI needed" list** for the rest of T14 so later stages
+>    (Dev/UX/Hacker) do not gold-plate invisible SEO surfaces with invented chrome.
+>
+> Taste authority: `emil-design-eng` (motion), `impeccable`/DESIGN.md (Casa de
+> Azulejo look). Impeccable owns look/identity; Emil owns motion restraint.
 
 ---
 
 ## Design Principles for This Feature
 
-- **Copy the shipped grammar verbatim.** This page must be indistinguishable in look from the
-  order detail page. Same `Panel`, same header shape (`ArrowLeft02Icon` + label back-link,
-  `text-lg font-semibold tracking-tight` `<h1>`), same `dl`/`dt`/`dd` field layout, same
-  `formatMXN`/`formatRelativeDate` rendering. Consistency over novelty.
-- **Read-only, information-dense, calm.** No actions, no forms, no client interactivity beyond
-  navigation. The page answers one question ("who is this person and what did they buy?") and
-  gets out of the way. Density over whitespace — an operator tool, not marketing.
-- **Never let a long email/address break the layout.** The T12 mobile-overflow critical fix is
-  law here: `min-w-0` + `break-words` on every free-text field (name, email, address).
-- **Every unhappy path degrades to a visible, in-shell state** — never a 500, never a blank
-  region. Top-level failure → alert with Reintentar; section failure → scoped banner; zero
-  orders → empty panel; bad id → `notFound()`.
-- **Neutral admin theme, es-MX, hardcoded copy.** No `.theme-storefront`, no i18n catalogs.
+- **Least surface wins.** T14 is a deploy-hardening task, not a redesign. The
+  correct amount of new UI is one conditional banner (maybe zero) and one raw-key
+  fix. Anything more is scope creep — call it out, don't build it.
+- **The banner is chrome, and chrome is tilework.** If the banner ships, it is a
+  cobalt-on-glaze painted panel from the Casa de Azulejo world (DESIGN.md), reusing
+  existing tokens and the existing `Button` primitive — no new palette, no new
+  component library.
+- **Consent must never cost SEO or LCP.** The banner is a client island mounted as
+  a sibling overlay (like the WhatsApp FAB), never in `<main>`, never blocking the
+  server-rendered document. It must not shift layout, must not be a render-blocking
+  dependency of first paint, and must not delay the LCP image.
+- **Non-blocking, non-modal by default.** A cookieless-analytics world needs no
+  banner at all; even the cookie-vendor contingency is a **dismissible bottom bar**,
+  NOT a focus-trapping modal that blocks the store. LFPDPPP (Mexico's privacy law)
+  requires notice + a decline path, not a hostage-taking interstitial.
+- **Bilingual parity is mandatory.** Every string ships in es-MX (default) and en
+  in lockstep, through next-intl message files.
+- **Motion is Emil-restrained.** Enter `ease-out`, `transform`/`opacity` only,
+  `prefers-reduced-motion` fallback, interruptible. Reuse the existing `.enter-fade`
+  motion class rather than inventing a new keyframe.
 
 ---
 
-## Component Inventory (reuse vs. new)
+## Part 1 — Cookie-Consent Banner (CONTINGENCY — Group B2)
 
-| Component / primitive | Source | Action |
-| --- | --- | --- |
-| `AdminPage` shell (title + description + divider) | `src/components/admin/admin-page.tsx` | **Reuse** |
-| `Panel` (bordered card + `<h2>` header) | inline in order detail `[id]/page.tsx:120-128` | **Reuse** — copy the identical private `Panel` helper into the customer page (it is a local, non-exported helper; a verbatim 7-line copy is consistent with how the order page defines it locally). Do NOT invent a shared component for a low ticket. |
-| `TotalRow` (label ↔ value flex row) | inline in order detail `[id]/page.tsx:217-224` | **Reuse** — copy the identical local helper for the Lifetime-totals rows. |
-| Back-link (`ArrowLeft02Icon` + text) | order detail `[id]/page.tsx:60-67` | **Reuse pattern** — same markup, `href={ADMIN_CUSTOMERS_PATH}`, label "Clientes", `data-testid="customer-back-link"`. |
-| `OrderStatusBadge` | `src/components/admin/orders/order-status-badge.tsx` | **Reuse** (order-history rows) |
-| `PaymentStatusBadge` + `paymentBadgeIsRedundant` | `payment-status-badge.tsx` / `order-status-meta.ts` | **Reuse** (order-history rows; redundancy suppression exactly as `order-table`) |
-| `formatMXN`, `formatRelativeDate` | `src/lib/money.ts`, `src/lib/admin/format.ts` | **Reuse** |
-| `isMailableAddress` | `src/lib/email/recipient.ts` | **Reuse** (email sentinel → "Sin correo") |
-| Order-history table/cards | pattern from `order-table.tsx` DesktopTable + MobileCards | **New markup, zero new component** — inlined as an `OrderHistoryPanel` local section (a trimmed clone of `order-table`: no `⋮` actions column, no pagination). |
-| Empty state (dashed panel + glyph) | pattern from `order-empty-state.tsx` / list `CustomerEmptyState` | **New markup, inline** — a dashed panel with `ShoppingCart01Icon` and the zero-orders copy. No shared component. |
-| Loading skeleton | pattern from `[id]/loading.tsx` | **New file** `customers/[id]/loading.tsx` — opacity-only pulse skeleton, cloned shape. |
-| `.enter-fade` | `src/app/globals.css:414` | **Reuse** (top-level error branch only, mirroring the 404/error pages) |
-| `Link`, `notFound`, `HugeiconsIcon` | next / hugeicons | **Reuse** |
+> **BUILD GATE (binding):** This component ships **ONLY IF** the owner (via AC-B1)
+> selects a **cookie-based** analytics/monitoring vendor (e.g. a cookie-setting
+> Plausible variant, or any GA-style tracker). **IF the owner accepts the
+> recommended `@vercel/analytics` (cookieless, first-party) → this banner is NOT
+> built and AC-B2 is N/A.** Dev must confirm the vendor decision in
+> `tasks/next-ticket.md` / the deploy checklist before creating any file below.
+> If the decision is "cookieless / deferred", Dev writes a one-line note in
+> `dev-done.md` ("cookie banner N/A — cookieless analytics") and moves on.
 
-**Tally: 0 net-new reusable components.** 1 new route file (`page.tsx`), 1 new `loading.tsx`,
-and two page-local section helpers (`OrderHistoryPanel`, empty state) inlined in `page.tsx` the
-same way the order detail inlines `ContactPanel`/`ItemsPanel`/`PaymentPanel`. Plus the
-`customer-table.tsx` link edit (see §"Customer-table linking change").
+### Component: `CookieConsentBanner`
 
----
+**Purpose**: Give first-time visitors a bilingual, LFPDPPP-compliant notice that
+non-essential (analytics) cookies are used, with an explicit Accept and Decline
+path, and remember the choice so it never nags on repeat visits.
 
-## Page Section Order (top → bottom, single scroll column)
+**Location**: Site-wide overlay on the storefront only. Mounted as a **sibling to
+the WhatsApp FAB** inside `CartProvider` in `src/app/[locale]/layout.tsx` (same
+tree position as `<WhatsAppButton />`, AFTER the `flex min-h-dvh flex-col` div, so
+it is a true fixed overlay outside layout flow). **Never** rendered inside `<main>`
+(would affect document flow / could shift LCP). **Never** on `/admin` (admin is a
+parallel root layout without `.theme-storefront` — the firewall keeps it out).
 
-1. **Back-link** — `← Clientes`
-2. **Identity header** — customer name `<h1>`, email (mailable or "Sin correo"), phone
-3. **Lifetime totals** — `Panel`, compact labeled rows (order count, total spent, first, last)
-4. **Order history** — `Panel`, desktop table / mobile cards, linked rows (or empty state)
-5. **Contact & addresses** — `Panel`, contact block + de-duplicated shipping addresses
+**shadcn base**: **No new primitive.** Reuse `src/components/ui/button.tsx`
+(`Button`) for the two actions. Do **not** use `dialog.tsx` — Dialog is a
+focus-trapping modal with a scrim; this banner is intentionally **non-modal** so it
+never blocks the store or SEO/LCP. Build the container as a plain `fixed` client
+`<div role="region">` styled with existing tokens + the existing `.enter-fade`
+motion class (globals.css:414). This mirrors how `FilterSheet` composes primitives
+rather than adding a library.
 
-> **Layout rationale for the order.** Unlike the order detail (a two-column `md:grid-cols-2`
-> working surface), the customer detail has low content volume and a natural reading order:
-> *who → how much → what they bought → where to reach/ship them*. A **single readable column**
-> (`flex flex-col gap-6`, matching the order-detail outer wrapper) is the spec at all
-> breakpoints — the ticket explicitly permits this. Order history is the tallest section and
-> benefits from full width for its table. This keeps the design trivially responsive, no grid.
+**File**: `src/components/consent/cookie-consent.tsx` (single small client island,
+`"use client"`, target ≤ ~120 lines per Clean Code). A tiny pure helper for the
+localStorage read/write may live inline or in `src/lib/consent/storage.ts` if it
+grows past a few lines.
 
----
+### Layout (ASCII wireframe)
 
-### Component: Customer detail page (`customers/[id]/page.tsx`)
+**Desktop / tablet (≥ 640px)** — bounded bottom-left bar, offset from the WhatsApp
+FAB on the bottom-right so the two never collide:
 
-**Purpose**: Server-rendered read view of one `customers.id` — identity, lifetime totals,
-order history, contact + addresses.
-**Location**: `/admin/orders/customers/[id]`, inside the `(app)` admin shell.
-**shadcn base**: none directly — composed from admin primitives (which sit on the
-shadcn/Tailwind token layer). No new shadcn component needed.
-
-**Layout — desktop (≥1024px) & tablet (768px), single column:**
 ```
-┌────────────────────────────────────────────────────────────┐
-│ ← Clientes                                                   │  back-link (xs, muted)
-│                                                              │
-│ María González Hernández                                     │  h1 text-lg font-semibold
-│ maria.gonzalez@example.com                                   │  email (or italic "Sin correo")
-│ 55 1234 5678                                                 │  phone (muted) — omitted if null
-│                                                              │
-│ ┌── Totales del cliente ─────────────────────────────────┐  │  Panel
-│ │ Pedidos                                            3    │  │  TotalRow
-│ │ Total gastado                              $4,290.00    │  │  TotalRow (emphasis)
-│ │ Primer pedido                       hace 3 meses       │  │  TotalRow
-│ │ Último pedido                       hace 6 días        │  │  TotalRow
-│ └────────────────────────────────────────────────────────┘  │
-│                                                              │
-│ ┌── Historial de pedidos (3) ────────────────────────────┐  │  Panel
-│ │ Nº pedido    Fecha         Total     Estado    Pago     │  │  table thead
-│ │ ─────────────────────────────────────────────────────  │  │
-│ │ PP-1042  hace 6 días   $1,890.00  [✓ Pagado] [—]       │  │  linked row
-│ │ PP-0999  hace 1 mes    $1,200.00  [◷ Pend.]  [Pend.]   │  │
-│ │ PP-0871  hace 3 meses  $1,200.00  [✕ Cancel.] [—]      │  │
-│ └────────────────────────────────────────────────────────┘  │
-│                                                              │
-│ ┌── Datos de contacto y envío ───────────────────────────┐  │  Panel
-│ │ Contacto                                                │  │
-│ │   maria.gonzalez@example.com                            │  │
-│ │   55 1234 5678                                          │  │
-│ │ Direcciones de envío (2)                                │  │
-│ │   María González · Av. Reforma 123, Int 4              │  │
-│ │   Col. Juárez · CP 06600 · CDMX                         │  │
-│ │   ────────────                                          │  │
-│ │   María G. · Calle Pino 8                               │  │
-│ │   Col. Del Valle · CP 03100 · CDMX                      │  │
-│ └────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────┘
+                                                  ┌───────────┐
+                                                  │  (page)   │
+                                                  └───────────┘
+┌───────────────────────────────────────────────┐
+│ 🍪  Usamos cookies                              │   ● ← WhatsApp
+│ Usamos cookies de análisis para mejorar la      │      FAB (z-50,
+│ tienda. Consulta nuestro Aviso de Privacidad.   │      bottom-right,
+│                                                  │      untouched)
+│              [ Rechazar ]   [ Aceptar ]         │
+└───────────────────────────────────────────────┘
+ ↑ fixed bottom-left, max-w-md, cobalt-bordered glaze tile
 ```
 
-**Layout — mobile (375px), same single column, history as cards:**
+**Mobile (< 640px)** — full-width bottom bar, buttons side by side, sitting ABOVE
+the safe-area inset and NOT covering the WhatsApp FAB or any primary page CTA (the
+FAB stays pinned bottom-right at z-50; the banner sits as a full-bleed bar whose
+content is inset so it doesn't overlap the 56px FAB):
+
 ```
-┌──────────────────────────────┐
-│ ← Clientes                    │
-│                               │
-│ María González Hernández      │  break-words
-│ maria.gonzalez@example.com    │  break-words (never overflows)
-│ 55 1234 5678                  │
-│                               │
-│ ┌ Totales del cliente ──────┐ │
-│ │ Pedidos              3     │ │
-│ │ Total gastado  $4,290.00   │ │
-│ │ Primer pedido  hace 3 mes. │ │
-│ │ Último pedido  hace 6 días │ │
-│ └────────────────────────────┘ │
-│                               │
-│ ┌ Historial de pedidos (3) ─┐ │
-│ │ ┌────────────────────────┐│ │  card (mirror order MobileCards)
-│ │ │ PP-1042      $1,890.00 ││ │  number link + total
-│ │ │ hace 6 días            ││ │
-│ │ │ [✓ Pagado]             ││ │  badges wrap
-│ │ └────────────────────────┘│ │
-│ │ ┌────────────────────────┐│ │
-│ │ │ PP-0999      $1,200.00 ││ │
-│ │ │ hace 1 mes             ││ │
-│ │ │ [◷ Pendiente] [Pend.]  ││ │
-│ │ └────────────────────────┘│ │
-│ └────────────────────────────┘ │
-│                               │
-│ ┌ Datos de contacto y envío ┐ │
-│ │ Contacto                   │ │
-│ │  maria.gonzalez@examp...   │ │  break-words, wraps
-│ │  55 1234 5678              │ │
-│ │ Direcciones de envío (2)   │ │
-│ │  María González            │ │
-│ │  Av. Reforma 123, Int 4    │ │
-│ │  Col. Juárez · CP 06600    │ │
-│ │  · CDMX                    │ │
-│ └────────────────────────────┘ │
-└──────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│ 🍪 Usamos cookies                            │
+│ Cookies de análisis para mejorar la tienda.  │
+│ Ver Aviso de Privacidad.                     │
+│  ┌───────────────┐  ┌───────────────┐        │
+│  │   Rechazar    │  │    Aceptar    │        │
+│  └───────────────┘  └───────────────┘     ●  │ ← FAB still visible/tappable
+└─────────────────────────────────────────────┘
+   ↑ pb includes env(safe-area-inset-bottom)
 ```
 
-**Props** (the page reads `params`; the shape it consumes from `getAdminCustomer`):
+### Props
+
 ```typescript
-// Consumed shape (defined in customer-read.ts, referenced here for the UI contract).
-// The UI must render exactly these fields — no more, no fewer.
-interface AdminCustomerDetail {
-  id: string;                    // customers.id UUID
-  fullName: string;              // customers.full_name
-  email: string;                 // raw; render via isMailableAddress()
-  phone: string | null;          // "—" when null
-  totals: {
-    orderCount: number;          // == list count by construction (AC-9)
-    totalCents: number;          // integer cents; formatMXN at the edge (AC-8)
-    firstOrderAt: string | null; // ISO; "—" when null (zero orders)
-    lastOrderAt: string | null;  // ISO; "—" when null
+// The banner reads its own persisted state; it takes only presentational/i18n
+// inputs so the server layout can pass translated copy without a client i18n hook
+// re-render on mount. (Mirrors how WhatsAppButton receives server-resolved strings.)
+interface CookieConsentBannerProps {
+  /** Fully-translated, ready-to-render copy (resolved server-side via getTranslations). */
+  labels: {
+    title: string;            // consent.title
+    description: string;       // consent.description  (plain text, no ICU placeholders)
+    privacyLinkLabel: string;  // consent.privacyLinkLabel  (linked sentence)
+    accept: string;            // consent.accept
+    reject: string;            // consent.reject
+    /** aria-label for the region, e.g. "Aviso de cookies". */
+    regionLabel: string;       // consent.regionLabel
   };
-  // Bounded to CUSTOMER_ORDER_HISTORY_LIMIT, created_at DESC.
-  orders: Array<{
-    id: string;                  // links to ${ADMIN_ORDERS_PATH}/{id}
-    orderNumber: string;
-    createdAt: string;           // ISO → formatRelativeDate
-    totalCents: number;
-    orderStatus: OrderStatus;
-    paymentStatus: PaymentStatus;
-  }>;
-  ordersTruncated: boolean;      // true when totals.orderCount > orders.length
-  // De-duplicated on the full tuple, most-recent-first (AC-6, edge 4).
-  addresses: Array<{
-    shippingFullName: string;
-    line1: string;
-    line2: string | null;        // omitted from render when null
-    city: string;
-    state: string;
-    postalCode: string;
-    country: string;
-  }>;
-  historyFailed: boolean;        // section-isolation flag (AC-13): history read failed, core OK
+  /** Locale-correct href to the privacy/aviso-de-privacidad static page (built via getPathname). */
+  privacyHref: string;
+  /**
+   * Called when the user accepts. Host wires this to enable the cookie-based
+   * analytics loader. Optional so the banner is inert if analytics isn't wired yet.
+   */
+  onAccept?: () => void;
+  /** Called when the user declines. Host ensures no non-essential cookie is set. */
+  onReject?: () => void;
 }
 ```
-> The `page.tsx` itself takes only `{ params: Promise<{ id: string }> }` — no `searchParams`
-> (unlike the order page, no `created`/`paidFailed` banners here).
 
-**States**:
+> Typed, no `any`. `onAccept`/`onReject` are optional so the component degrades to a
+> pure notice+dismiss if the owner defers wiring the actual tracker.
+
+### Consent persistence mechanism
+
+- **Storage:** `localStorage` (NOT a cookie — a cookie to record cookie-consent needs
+  its own essential-cookie carve-out; localStorage sidesteps that and is client-only
+  so it never touches SSR).
+- **Key:** `posturpro.consent.analytics` (namespaced, versionable).
+- **Values:** the string `"granted"` | `"denied"`. Absent/unparseable → treat as
+  "not yet decided" → show the banner.
+- **Read timing:** on mount, inside a `useEffect` (never during render — avoids
+  hydration mismatch, since the server has no `localStorage`). Initial client render
+  is `null` (nothing), then the effect decides whether to reveal. This guarantees
+  the server-rendered HTML contains **no banner markup that could affect LCP**.
+- **Write timing:** on Accept → set `"granted"` + call `onAccept`; on Decline → set
+  `"denied"` + call `onReject`. Either choice hides the banner for good on this
+  device. Wrap the read/write in `try/catch` (private-mode / disabled storage) — on
+  failure, show the banner but don't crash; never an empty catch (log context).
+- **Versioning:** if the cookie/vendor policy materially changes later, bump the key
+  (`...analytics.v2`) to re-prompt. Document the current key in a code comment.
+
+### States
 
 | State | Visual | Behavior |
-| --- | --- | --- |
-| **Loading** | `customers/[id]/loading.tsx`: back-link bar + h1 bar + email bar, then 3 `animate-pulse rounded-lg border bg-muted/40` skeleton panels of decreasing height. Opacity-only pulse. | Covers the navigation gap; server-rendered, replaced when data arrives. No spinner inside sections. |
-| **Success** | The full composition above. | Order rows are links (hover/focus underline). |
-| **Empty (zero orders)** | Identity + contact still render. Totals panel shows `Pedidos 0`, `Total gastado $0.00`, `Primer/Último pedido —`. Order-history panel body = dashed-border block: `ShoppingCart01Icon` (40px, `text-muted-foreground/50`) + "Este cliente no tiene pedidos." Addresses section shows "Sin direcciones registradas." when none. | No error, no 500. Aggregate returns zeros; the empty branch renders (edge 5). |
-| **Section error (history read failed, core OK)** | Identity, totals, contact render normally. Order-history panel body shows a `role="alert"` scoped destructive-tinted banner: "No se pudo cargar el historial de pedidos." | `getAdminCustomer` returns `historyFailed: true`, `orders: []`; page renders the scoped banner instead of the table (mirror `order-read` history isolation, AC-13). Totals still reflect all orders (computed separately). |
-| **Top-level error (core read threw)** | `AdminPage title="Cliente"` wrapping a `role="alert"` destructive panel: "No se pudieron cargar los datos del cliente." + "Reintentar" link (`.enter-fade`) to the same URL. | Page `try/catch` around `getAdminCustomer`; logs `[admin-customer-detail] ...`; renders alert, not a 500 (verbatim the Customers-list error branch shape). |
-| **404 (bad/unknown id)** | In-shell admin 404 ("no encontrado"). | `getAdminCustomer` returns `null` (UUID guard fail, or no matching row) → page calls `notFound()`. No DB call for a non-UUID id. |
-| **Long history (> limit)** | Table/cards render the N most recent; a muted footer line below the table: "Mostrando los N más recientes de M." | `ordersTruncated === true`; totals still reflect **all** M orders (computed by aggregate, not the page). No pagination control at Phase-1 volume — see note. |
+| ----- | ------ | -------- |
+| **Undecided (first visit)** | Banner visible: cobalt-bordered glaze tile, cookie glyph, title, description with inline privacy link, `Rechazar` (outline) + `Aceptar` (primary) buttons. | Entered with `.enter-fade`. Focusable, keyboard-dismissible. Analytics NOT loaded until Accept (opt-in posture for a cookie vendor). |
+| **Accepted** | Banner gone (unmounted). | localStorage `granted`; `onAccept` fires (host loads tracker). Never shown again on this device. |
+| **Declined** | Banner gone (unmounted). | localStorage `denied`; `onReject` fires; no non-essential cookie set. Never shown again. |
+| **Returning (already decided)** | Nothing rendered at all. | Effect reads localStorage, finds a value, renders `null`. Zero DOM cost. |
+| **No-JS** | Nothing rendered (client island never hydrates). | **Acceptable ONLY IF** the cookie vendor's script is itself gated behind Accept (no JS ⇒ no tracker ⇒ no cookie ⇒ nothing to consent to). Store fully usable. This is the LFPDPPP-safe default: analytics is opt-in, so no-JS = no tracking = compliant with no banner shown. |
+| **Reduced motion** | Banner appears with opacity-only fade, no translate. | `.enter-fade` already drops the transform under `prefers-reduced-motion` (globals.css:426). No extra work. |
+| **Storage unavailable** | Banner shows (can't read a prior choice). | `try/catch` swallow-with-log; user can still Accept/Decline; write may no-op but the store never breaks. |
 
-> **Pagination note (edge 3):** at Phase-1 volume the one-row-per-order reality means almost
-> every customer has exactly 1 order; N>1 is rare and small. The history read is bounded by
-> `CUSTOMER_ORDER_HISTORY_LIMIT` and the section simply grows/scrolls — **no `ListPagination`
-> is added**. If a customer ever exceeds the limit, the "Mostrando los N más recientes de M"
-> footer is the honest signal. A future ticket can add pagination if real volume demands it.
+> There is intentionally **no loading, empty, error, or success/toast state** — the
+> banner has no async work, no network call, no failure mode beyond storage access.
+> Do NOT invent a "cookie preferences saved" toast (there is no Toaster in the repo,
+> and the codebase deliberately avoids one). Dismissal IS the feedback.
 
-**Responsive**:
+### Responsive
 
 | Breakpoint | Layout Change |
-| --- | --- |
-| **< 640px (mobile, 375px target)** | Single column. Order history renders the **mobile card list** (`sm:hidden`, mirror `order-table` MobileCards): number-link + total on one baseline-aligned row, `formatRelativeDate` below, badges wrap. Address entries stack; every free-text field `min-w-0 break-words`. Totals rows stay label↔value flex. |
-| **640–1023px (tablet, 768px target)** | Single column still. Order history switches to the **desktop `<table>`** (`hidden sm:block`, wrapper `overflow-x-auto`). Everything else unchanged. |
-| **≥ 1024px (desktop)** | Identical single column. The `Fecha` column in the history table is always visible here (unlike the order list it is NOT `lg:table-cell`-gated — this page has fewer columns and room to spare). |
+| ---------- | ------------- |
+| `< 640px` (mobile) | Full-width bottom bar (`inset-x-0 bottom-0`), content padded `px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]`. Buttons side-by-side (`Rechazar` then `Aceptar`), each `flex-1`. Content inset on the right (`pr-20`) so it never sits under the 56px WhatsApp FAB. |
+| `640–1024px` (tablet) | Bounded card `max-w-md`, pinned `bottom-4 left-4` (opposite corner from the FAB at `bottom-4 right-4`). Buttons right-aligned in a row. |
+| `≥ 1024px` (desktop) | Same bounded card, `bottom-6 left-6` (mirrors the FAB's `md:bottom-6 md:right-6`). Never full-width. |
 
-**Animations**:
-- **Mount**: none for the composed success view (server-rendered, navigation-frequency — per
-  emil-design-eng "list navigation → remove or drastically reduce"; the order detail has no
-  mount animation either — match it). The only motion is the **top-level error branch**, which
-  reuses `.enter-fade` exactly as the shipped 404/error pages do (low-frequency surface).
-  - Trigger: mount of the error panel. Property: `opacity` + `transform: translateY` (existing
-    class). Easing: `--ease-out`. Duration: 200ms. Reduced-motion: `.enter-fade` already drops
-    the translate (opacity-only) under `prefers-reduced-motion`.
-- **Hover (order-history row link)**: `nav-hover` + `hover:bg-muted/40` on the `<tr>`,
-  `hover:underline` on the order-number link — property `background-color`/`text-decoration`,
-  the existing `nav-hover` timing (already tuned in globals.css). No new easing/duration.
-- **Focus (order-number link)**: `focus-visible:underline outline-none` — identical to
-  `order-table`.
-- **Click**: native navigation; no custom press animation (matches `order-table`).
-- **Exit**: none.
+**Collision rule with the WhatsApp FAB (binding):** the FAB is `z-50`, bottom-right,
+`right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))]` (`md:` 1.5rem). The banner
+uses **`z-40`** (below the FAB — the FAB must always stay tappable) and lives
+**bottom-left** on ≥640px. On mobile the banner is full-width but its interactive
+content (buttons) must not extend under the FAB's bottom-right 56px square — reserve
+right padding (`pr-20`) OR keep buttons left-of-center. Both elements share the same
+`env(safe-area-inset-bottom)` treatment so neither clips on notched phones. Note the
+mobile drawer scrim is `z-[60]`, so the stack is: drawer 60 > FAB 50 > banner 40 —
+no conflict.
 
----
+### Animations
 
-## Customer-table linking change (`customer-table.tsx`) — AC-1
+- **Mount (enter):** reuse `.enter-fade` (globals.css:414) — `opacity 0→1` +
+  `translateY(8px)→0`, **200ms `--ease-out`** (`cubic-bezier(0.23,1,0.32,1)`).
+  Trigger: the mount effect sets a visible flag after reading localStorage. Property:
+  `transform` + `opacity` only (compositor-safe).
+  *Vocabulary: "Slide-and-fade up, ease-out, 200ms."*
+- **Exit (dismiss):** on Accept/Reject, fade+translate out over **~150ms `--ease-out`**
+  (exit faster than enter, per Emil), then unmount. Simplest compliant option: set a
+  not-visible state, let a `.enter-fade`-style transition run in reverse via a `data-`
+  attribute, unmount on `transitionend`. If fiddly, an instant unmount is acceptable
+  (dismissal is a deliberate, one-time action — Emil's "occasional" tier tolerates
+  either). Do NOT block the store waiting for the exit.
+- **Button press:** `Aceptar`/`Rechazar` inherit the `Button` primitive's existing
+  press feedback — no custom motion.
+- **Reduced motion:** `.enter-fade`'s `@media (prefers-reduced-motion: reduce)` block
+  (globals.css:426) already strips the translate and keeps a plain opacity fade.
+  Nothing to add. *Never* animate position under reduced motion.
 
-**The exact affordance:** mirror `order-table.tsx`, which links **only the identifier cell**
-(the order-number), keeping the other cells' text selectable. For the customer table the
-identifier cell is the **name** (`row.fullName`).
+### Accessibility
 
-- **Desktop `<table>`**: wrap `row.fullName` in the *Cliente* cell in a `Link` to
-  `${ADMIN_CUSTOMERS_PATH}/${row.id}`. The email stays plain selectable text (it is already
-  `select-text` — preserve that). Apply the order-table link classes:
-  `className="text-foreground outline-none hover:underline focus-visible:underline"`. Add
-  `nav-hover hover:bg-muted/40` to the `<tr>` (it currently has none) so the whole row gives
-  hover feedback like the order rows. Keep the `<tr>`'s existing `align-top`. Add
-  `data-testid={`admin-customer-row-${row.id}`}` on the `Link`.
-  ```
-  Before:  <td class="… font-medium">{row.fullName}</td>
-  After:   <td class="… font-medium">
-             <Link href={`${ADMIN_CUSTOMERS_PATH}/${row.id}`}
-                   class="text-foreground outline-none hover:underline focus-visible:underline"
-                   data-testid={`admin-customer-row-${row.id}`}>
-               {row.fullName}
-             </Link>
-           </td>
-  ```
-- **Mobile card `<li>`**: wrap the **name `<p>`** (the `truncate font-medium` line) in the same
-  `Link` — NOT the whole card, so the `select-text` email stays selectable (matches how
-  `order-table` MobileCards links only the number, not the whole card). Same `data-testid`.
-  Keep the order-count pill outside the link.
-- **Docstring**: update the current "Rows do NOT link (customer accounts are out of scope)"
-  line to reflect that the name now links to the customer detail (T18).
-- **Import add**: `Link` from `next/link` (`ADMIN_CUSTOMERS_PATH` is already imported here).
+- Container: `role="region"` with `aria-label={labels.regionLabel}` (e.g. "Aviso de
+  cookies") so screen-reader users can find/skip it. It is a **landmark notice, not a
+  dialog** — do NOT use `role="dialog"`/`aria-modal` (it is non-modal and must not
+  trap focus or block the store).
+- **Focus management:** because it is non-modal, do NOT auto-move focus into it on
+  mount (that would yank a reading user). It sits in natural tab order at the end of
+  the page; first Tab after the footer reaches `Rechazar` then `Aceptar`. Both buttons
+  get the standard cobalt `focus-visible:ring-ring` from the `Button` primitive.
+- **Keyboard dismissal:** `Escape` while focus is within the region declines (treated
+  as "denied" — the privacy-preserving default) and closes it. Both actions are also
+  reachable by Tab+Enter. Document the Escape=decline behavior in a comment.
+- The cookie glyph is decorative → `aria-hidden`. The privacy link is a real
+  `<Link>`/anchor with a visible underline (color is never the only affordance).
+- Color contrast: cobalt text on glaze/white (`text-popover-foreground` on
+  `bg-popover`) is AA per DESIGN.md contrast table (14.10:1); `Aceptar` uses
+  `bg-primary`/`text-primary-foreground` (8.37:1). No new pairings introduced.
+- Not a keyboard trap; must not steal focus from form fields elsewhere on the page.
 
-**Why name, not a whole-row `<Link>`:** a `<Link>` cannot wrap `<tr>`/`<td>` validly, and the
-order table already established "link the identifier, keep other cells selectable" — consistency
-demands the same. The email is operationally useful to select/copy, so it must not be swallowed
-by a link. Exact `order-table` precedent (`order-table.tsx:68-97`).
+### Copy inventory (both locales — new `consent` namespace)
 
-**Keyboard/a11y:** the `Link` is natively focusable with the shared `focus-visible:underline`
-treatment (visible focus style, AC-1). Tab order: name-link → next row's name-link
-(email is text, not focusable). Logical top-to-bottom.
+Add a new top-level `"consent"` namespace to **both** `src/messages/es-MX.json`
+(source of truth) and `src/messages/en.json`, in lockstep. **6 keys.** All plain
+strings — **no ICU placeholders**, so `t("consent.x")` is safe (this class of raw-key
+bug — see AC-A3/A4 — is avoided by design here).
 
----
+| Key | es-MX (default) | en |
+| --- | --- | --- |
+| `consent.title` | `Usamos cookies` | `We use cookies` |
+| `consent.description` | `Usamos cookies de análisis para entender cómo se usa la tienda y mejorarla.` | `We use analytics cookies to understand how the store is used and improve it.` |
+| `consent.privacyLinkLabel` | `Consulta nuestro Aviso de Privacidad.` | `Read our Privacy Notice.` |
+| `consent.accept` | `Aceptar` | `Accept` |
+| `consent.reject` | `Rechazar` | `Decline` |
+| `consent.regionLabel` | `Aviso de cookies` | `Cookie notice` |
 
-## Interaction Flows
+> The description + privacy link render as two adjacent sentences (description, then
+> the linked notice), NOT as an interpolated ICU string — this keeps every value a
+> plain string and sidesteps the `t.raw` placeholder trap entirely. `privacyHref`
+> points at the localized `aviso-de-privacidad` static page via `getPathname`.
+> **12 total translated strings (6 keys × 2 locales).** If the owner's vendor or
+> LFPDPPP counsel later requires a granular "manage preferences" flow, a
+> `consent.manage`/`consent.preferences` key set can extend this — out of scope for
+> the contingency.
 
-### Flow: Drill into a customer
-1. Operator on the Customers list clicks a customer **name** (or taps it on mobile) → native
-   `Link` navigation to `/admin/orders/customers/{id}`.
-2. `loading.tsx` skeleton covers the navigation gap (server render).
-3. Detail renders: back-link → identity → totals → history → contact.
-4. Operator clicks an **order-number** in the history table → navigates to
-   `/admin/orders/{orderId}`.
-5. Operator clicks **← Clientes** → back to the list.
+### Interaction flow — first-visit consent (if banner ships)
 
-### Flow: Zero-order customer
-1. Navigate to a customer whose only order was orphaned (`customer_id` set null) or that has
-   none.
-2. Identity + contact render; totals show `0` / `$0.00` / `—`; history panel shows the dashed
-   empty block "Este cliente no tiene pedidos." No error.
-
----
-
-## Accessibility Checklist
-- [ ] Order-history desktop table has `<caption className="sr-only">Historial de pedidos</caption>`
-      (mirror `order-table`'s "Lista de pedidos").
-- [ ] `<th scope="col">` on every history header cell.
-- [ ] Order-number links keyboard-focusable with visible `focus-visible:underline`; customer
-      name-links on the list likewise.
-- [ ] Status/payment badges carry glyph **and** text (shipped badges already do — color is
-      never the only indicator).
-- [ ] Back-link icon `aria-hidden`; the link text "Clientes" is the accessible name.
-- [ ] Empty-state / section-error glyphs `aria-hidden`; the text carries meaning.
-- [ ] Section-error banner and top-level error use `role="alert"`.
-- [ ] Every free-text field (`fullName`, `email`, address lines) uses `break-words` + a
-      `min-w-0` container so magnification / narrow viewports never trigger horizontal overflow.
-- [ ] Lifetime totals use a `<dl>`/`<dt>`/`<dd>` structure (semantic label↔value), reusing the
-      order detail's `TotalRow`.
-- [ ] Tab order is logical: back-link → order-number links top-to-bottom. No focus traps.
+1. Visitor lands on any storefront page → server renders the full document with **no
+   banner markup** (SEO/LCP unaffected).
+2. Client hydrates → banner island's effect reads
+   `localStorage["posturpro.consent.analytics"]`.
+3. If a value exists → render `null` (returning visitor, done).
+4. If absent → set visible=true → banner enters bottom-left (desktop) / bottom-bar
+   (mobile) with `.enter-fade`, offset from the WhatsApp FAB.
+5. User picks:
+   - **Aceptar** → write `"granted"`, call `onAccept()` (host loads the cookie
+     tracker), fade out, unmount.
+   - **Rechazar** (or `Escape`) → write `"denied"`, call `onReject()` (host loads no
+     tracker / sets no non-essential cookie), fade out, unmount.
+6. Choice persists per-device; the banner never reappears unless the consent key is
+   version-bumped.
 
 ---
 
-## es-MX Copy (all hardcoded, neutral admin voice)
+## Part 2 — Regression Constraints on Existing Visible Surfaces
 
-| Surface | Copy |
-| --- | --- |
-| Back-link | `Clientes` (with `←` icon) |
-| Identity `<h1>` | customer's `full_name` (no separate page title) |
-| Email sentinel/blank | `Sin correo` (italic, muted — verbatim order detail) |
-| Phone null | `—` |
-| Totals panel header | `Totales del cliente` |
-| Totals rows | `Pedidos` · `Total gastado` · `Primer pedido` · `Último pedido` |
-| Totals empty dates | `—` |
-| History panel header | `Historial de pedidos ({orderCount})` |
-| History table headers | `Nº pedido` · `Fecha` · `Total` · `Estado` · `Pago` |
-| History empty | `Este cliente no tiene pedidos.` |
-| History truncated footer | `Mostrando los {N} más recientes de {M}.` |
-| History section error | `No se pudo cargar el historial de pedidos.` |
-| Contact panel header | `Datos de contacto y envío` |
-| Contact sub-labels | `Contacto` · `Direcciones de envío ({count})` |
-| Address line format | `{shippingFullName}` / `{line1}{, line2}` / `Col. {city} · CP {postalCode} · {state}` (verbatim order-detail address grammar) |
-| Addresses empty | `Sin direcciones registradas.` |
-| Top-level error | `No se pudieron cargar los datos del cliente.` + `Reintentar` |
-| Error page title | `AdminPage title="Cliente"` |
+These are **behavior-preserving** edits. The design instruction is a hard constraint,
+not a redesign: **ZERO visual change is permitted** except the one explicitly-required
+counter fix.
 
-**Copy decisions:**
-- **"Totales del cliente"** (not "Valor de por vida" / "Lifetime value") — plainer es-MX,
-  matches the calm operator voice; avoids the marketing-flavored LTV language the ticket rules
-  out of scope.
-- **"Total gastado"** = sum of **all** the customer's order totals (not paid-only), per edge 1,
-  so the number always reconciles with the visible history and the list count. No separate
-  "pagado" line in this lightweight pass (ticket allows it as a future separate labeled line).
-- **"Direcciones de envío ({n})"** with a count — signals de-dup happened when n < order count.
-- Counts in the panel headers use parentheses (`Historial de pedidos (3)`), matching the order
-  detail's `Artículos ({n})` pattern — no singular/plural branching (reads fine for 0/1/N).
+### 2a. Taxonomy `[slug]` pages — `export const dynamic = "force-dynamic"`
+
+**Files:** `categorias/[slug]/page.tsx`, `marcas/[slug]/page.tsx`,
+`estilos/[slug]/page.tsx`.
+
+- This is a **render-mode** change (SSG → dynamic) that fixes the confirmed prod-500
+  (`DYNAMIC_SERVER_USAGE`). It has **no rendered-UI effect whatsoever** at 200.
+- **Binding UI constraints (no visual change allowed):**
+  - The `<Suspense fallback={<ProductGridSkeleton/>}>` boundary MUST remain — the
+    skeleton loading state is preserved verbatim (ticket UX: "SEO edits must NOT
+    remove it").
+  - The `<EmptyState>` for zero-product taxonomies (`empty.category/brand/style`)
+    MUST remain unchanged and still return 200.
+  - The product grid markup / `gridTemplateColumns` structure is e2e-asserted
+    (DESIGN.md per-surface rule) — do not touch it.
+  - `?page=N` pagination (incl. out-of-range clamp to `lastPage`) renders exactly as
+    before, now at 200 instead of 500.
+- **Verification of "no visual change":** the page that previously 500'd now renders
+  the same Casa de Azulejo tile-wall it was always meant to. There is nothing new to
+  design — Dev adds one line per page and the existing UI is what appears.
+
+### 2b. Contact page — `t("charCount")` → `t.raw("charCount")` (the ONE visual fix)
+
+**File:** `src/app/[locale]/contacto/page.tsx:59`.
+
+- This IS the required visual change: the character counter must render the formatted
+  **`"N/M"`** (e.g. `0/1200`, live-updating as the user types) in both es-MX and en —
+  **NOT** the literal `charCount` key and **NOT** the raw `{count}/{max}` template.
+- The fix is a one-liner mirroring `empresas/page.tsx:147`: hand the raw ICU template
+  `"{count}/{max}"` to the client `<CharacterCounter>` via `t.raw`, which interpolates
+  `count`/`max` client-side. No component redesign, no style change to the counter.
+- **Design constraint:** the counter's existing position, typography (`text-sm`
+  muted, `tabular-nums`), and placement under the message textarea are unchanged. The
+  only difference a user sees is a correct number instead of a leaked key. Do not
+  restyle the counter, the textarea, or the form.
 
 ---
 
-## Design Tokens Used
-- **Colors**: `border-border`, `bg-muted/40`, `text-muted-foreground`, `text-foreground`,
-  `border-destructive/30` + `bg-destructive/5` + `text-destructive` (error/section-error),
-  `border-dashed border-border` + `text-muted-foreground/50` (empty state). All existing
-  semantic tokens — none invented.
-- **Typography**: `text-lg font-semibold tracking-tight` (h1), `text-sm font-medium` (Panel
-  `<h2>`), `text-sm` (body), `text-xs text-muted-foreground` (labels, back-link),
-  `font-mono text-xs` (order numbers), `tabular-nums` (money + dates + counts).
-- **Spacing**: outer `flex flex-col gap-6` (matches order detail), `Panel` `p-4`, panel gap
-  `gap-4`, table cells `px-3 py-2`, mobile card `p-3 gap-2` — all copied from the shipped
-  tables/panels.
-- **Radius/border**: `rounded-lg border border-border` (panels + table wrapper), verbatim.
-- **Shadows**: none (admin surfaces are flat/bordered — matches T12).
-- **Motion**: `.enter-fade` (error branch only) + existing `nav-hover` timing; `--ease-out` is
-  the token behind `.enter-fade`. No new tokens.
+## Part 3 — Explicit "NO UI NEEDED" list (do NOT gold-plate)
+
+The following T14 deliverables have **no rendered UI** and must NOT receive any
+invented chrome, banner, badge, panel, modal, or visible affordance. Later stages
+(Dev, UX, Hacker) should treat these as headless/infra and design **nothing** for
+them:
+
+- **`src/app/sitemap.ts`** — returns `MetadataRoute.Sitemap` (XML). No page, no UI.
+- **`src/app/robots.ts`** — returns `MetadataRoute.Robots` (plain text). No UI.
+- **JSON-LD** (`Product`, `Organization`, `WebSite`, `BreadcrumbList`) — rendered as
+  `<script type="application/ld+json">` in the document. It is **invisible structured
+  data for crawlers**, NOT a breadcrumb UI, NOT a rating widget, NOT a rich card in
+  the page. Do NOT add a visible breadcrumb trail "because there's a BreadcrumbList"
+  — the `BreadcrumbList` is metadata only. (A visible breadcrumb, if ever wanted, is a
+  separate future ticket, out of T14 scope.)
+- **`metadataBase` + default `openGraph`/`twitter`** (layout) — affects
+  `<head>`/social-preview cards on external platforms only. No on-site UI.
+- **`canonical` + `alternates.languages` (hreflang)** — `<head>` link tags. No
+  visible UI. The existing header locale toggle already handles user-facing language
+  switching; hreflang is crawler-facing and must NOT spawn a second UI switcher.
+- **OG image** — used by external scrapers (social/chat previews), not rendered
+  in-app. If a default OG image asset is needed it follows DESIGN.md cartouche/cobalt
+  art direction, but it is an asset, not a component.
+- **e2e infra** (`playwright.config.ts`, `package.json` scripts, prod e2e server) —
+  developer tooling. No UI.
+- **Seed/reset path + deploy-readiness checklist** (`supabase/*`, `.md` docs) —
+  developer/ops docs. No UI.
+- **Security headers / CSP (AC-B6, Stage 9)** — HTTP response headers. No UI.
+- **Analytics / error-monitoring wiring (Group B)** — if `@vercel/analytics` is
+  chosen, it is a headless `<Analytics />` component with **no visible chrome and no
+  consent banner**. Sentry is likewise headless. Neither renders user-facing UI.
+
+> If any later stage feels an urge to add a visible element for something in this
+> list, that urge is scope creep — stop and re-read this section.
+
+---
+
+## Accessibility Checklist (banner contingency)
+
+- [ ] Region has `role="region"` + `aria-label` (landmark, not dialog).
+- [ ] Both action buttons have visible text labels + cobalt `focus-visible` rings.
+- [ ] Does NOT auto-focus on mount (non-modal — never yanks a reading user).
+- [ ] Does NOT trap focus; is fully keyboard reachable via Tab in natural order.
+- [ ] `Escape` within the region declines + dismisses (privacy-preserving default).
+- [ ] Cookie glyph is `aria-hidden`; privacy link is a real underlined anchor.
+- [ ] Color is never the only signal (buttons have text; link is underlined).
+- [ ] Contrast AA on all pairings (reuses existing DESIGN.md-verified tokens).
+- [ ] Respects `prefers-reduced-motion` (opacity-only fade, no translate).
+- [ ] Bilingual parity: all 6 keys present in es-MX and en.
+
+## Design Tokens Used (banner contingency)
+
+- **Colors:** `bg-popover` (glaze white), `text-popover-foreground` (cobalt ink),
+  `border-border` (grout seam), `bg-primary`/`text-primary-foreground` (Aceptar CTA),
+  `--ring` (focus). Decline uses `Button variant="outline"` (grout border, cobalt
+  text). **No new tokens** — everything from `.theme-storefront` in globals.css.
+- **Typography:** `--font-sans` (Inter) body/UI; `text-sm`/`text-base`. `consent.title`
+  may use `font-heading` small-caps as a tile caption if desired, but a plain semibold
+  sans title is acceptable and lighter.
+- **Radius:** `rounded-lg` (`--radius-lg`) for the panel (a "large panel" per DESIGN.md
+  elevation rules); buttons keep the primitive `rounded-md`.
+- **Elevation:** `shadow-lg` with the cobalt-tinted `--shadow-color` (Floating tier —
+  same class of surface as the FAB/dialog per DESIGN.md).
+- **Motion:** existing `.enter-fade` class + `--ease-out` token. No new keyframes.
+- **Icon:** a `@hugeicons/core-free-icons` cookie/shield glyph via `HugeiconsIcon`
+  (same import pattern as `WhatsAppButton`), `aria-hidden`.
+
+---
+
+## Handoff notes for Dev (Stage 4) — do not miss
+
+1. **Confirm the vendor decision BEFORE building the banner.** If analytics is
+   cookieless (`@vercel/analytics`, the recommendation) or deferred → **do not create
+   `cookie-consent.tsx` at all**; note "AC-B2 N/A (cookieless)" in `dev-done.md`. Only
+   build if the owner picks a cookie-based vendor.
+2. **If built:** it is a `"use client"` island mounted as a sibling to
+   `<WhatsAppButton />` in `src/app/[locale]/layout.tsx` (inside `CartProvider`, after
+   the flex div). Pass server-resolved `labels` + `privacyHref` as props (mirror
+   `WhatsAppButton`'s server-resolves-strings pattern) so there's no client i18n
+   round-trip.
+3. **z-40, bottom-left** (desktop) — never collide with the `z-50` bottom-right FAB;
+   share `env(safe-area-inset-bottom)`. On mobile the banner is full-width but reserve
+   right padding (`pr-20`) so buttons don't sit under the 56px FAB. Stack: drawer 60 >
+   FAB 50 > banner 40.
+4. **localStorage key `posturpro.consent.analytics`**, values `"granted"`/`"denied"`,
+   read in `useEffect` (never in render — hydration safety), wrapped in `try/catch`
+   (log, don't swallow silently). Banner absent from SSR HTML so LCP is untouched.
+5. **New `consent` namespace: 6 keys × 2 locales = 12 strings, all plain (no ICU).**
+   Add to es-MX.json and en.json in lockstep. es-MX is source of truth.
+6. **Regression:** the 3 taxonomy `force-dynamic` edits and the contact `t.raw` edit
+   are behavior/appearance-preserving. Keep the `<Suspense>`/skeleton, `<EmptyState>`,
+   grid structure, and counter styling exactly as-is. The ONLY visible delta is the
+   contact counter now rendering `N/M` instead of a leaked key.
+7. **Everything in Part 3 is headless — design and build zero UI for it.**

@@ -1,10 +1,18 @@
 # Pipeline State
 Task: T14 — SEO, analytics & launch hardening
 Tier: full-cycle
-Stage: 3
-Agent: ultradesign
-Last Updated: 2026-08-03 20:15
+Stage: 4
+Agent: ultradev
+Last Updated: 2026-08-03 21:30
 Notes: LAST build task. Full-cycle. T14 is deploy-readiness — after it, owner deploys to Vercel + hosted Supabase for client QA. Go-live also gated on T8 Phase 5 owner sign-off.
+
+=== T14 S3 (UI Design, ultradesign) COMPLETE — LIGHTWEIGHT pass (2026-08-03) ===
+- tasks/ui-design.md OVERWRITTEN with the T14 spec (prior T18 spec in git). Three parts:
+  1. COOKIE-CONSENT BANNER = CONTINGENCY ONLY (Group B2): BUILD ONLY IF owner picks a cookie-based analytics vendor; recommended @vercel/analytics is cookieless → banner N/A, does NOT ship. Spec if built: non-modal fixed bottom-LEFT overlay (z-40; WhatsApp FAB stays z-50 bottom-right; stack drawer 60 > FAB 50 > banner 40), sibling of the FAB in [locale]/layout.tsx (never in <main>), role="region" NOT Dialog (no focus trap; Escape=decline), reuse Button + existing .enter-fade (200ms enter/~150ms exit, --ease-out, RM opacity-only), localStorage key `posturpro.consent.analytics` = granted|denied read in useEffect only (hydration/LCP-safe, try/catch), server-props island, banner NEVER in SSR HTML. NEW `consent` namespace 6 keys × 2 locales (table in spec), all plain strings NO ICU placeholders (deliberately sidesteps the t.raw bug class T14 fixes).
+  2. ZERO-VISUAL-CHANGE regression constraints: taxonomy force-dynamic → no rendered-UI effect (keep Suspense/skeleton/EmptyState/grid); contact t.raw → the ONE allowed visual delta = counter renders "N/M" instead of the leaked raw key; no restyle.
+  3. Explicit "NO UI needed" list for all invisible surfaces (sitemap, robots, JSON-LD, metadataBase, canonical/hreflang, OG, e2e infra, seed/reset, deploy checklist, CSP/headers, cookieless analytics) — BreadcrumbList JSON-LD is metadata, must NOT spawn a visible breadcrumb.
+- FILES: only tasks/ui-design.md + this file. No source code touched.
+- Next: Stage 4 (Dev, ultradev) — implement Group A in full (blocker fixes first: taxonomy force-dynamic → contact t.raw → e2e prod server + 4 rate flags → seed/reset path; then metadata helper → metadataBase → robots.ts → sitemap.ts → JSON-LD → canonical/hreflang store-wide). Group B stays owner-gated (record decisions, stub behind env flags; banner only if cookie-based vendor chosen — default cookieless ⇒ no banner).
 
 === T14 S1+2 (PlanResearch, ultraplanner-research + orchestrator verification) COMPLETE — Complexity=HIGH, full-cycle ALL 12 STAGES (2026-08-03) ===
 - COMPLEXITY: HIGH (15+ files: 2 new App-Router routes sitemap.ts/robots.ts, shared SEO metadata helper + JSON-LD builder/component across ~8 surfaces, layout metadataBase, contact fix, taxonomy force-dynamic ×3, playwright+package.json, seed/reset+deploy checklist, cross-cutting security review). FEATURE TYPE=full-feature (full-stack). → high ⇒ ALL 12 stages at full depth. Next = Stage 3 (UI Design, ultradesign) — LIGHTWEIGHT (only storefront-visible surface is the conditional cookie banner [Group B, may be N/A if cookieless analytics] + the taxonomy pages that must keep working; SEO head/JSON-LD/sitemap/robots have no visible UI). tasks/next-ticket.md + tasks/research-report.md written.
