@@ -84,7 +84,7 @@ export function OrderDetailActions({
               aria-label="Avanzar estado"
               data-testid="advance-status-trigger"
               disabled={pending}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              className="inline-flex h-8 w-auto shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-foreground px-3 text-xs font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50 sm:size-auto sm:h-8"
             >
               <HugeiconsIcon icon={ArrowRight02Icon} size={14} strokeWidth={2} aria-hidden />
               {pending ? "Avanzando…" : "Avanzar estado"}
@@ -109,6 +109,7 @@ export function OrderDetailActions({
           onClick={() => setRefundOpen(true)}
           disabled={!canRefund}
           data-testid="refund-open"
+          className="shrink-0 whitespace-nowrap"
           {...(!canRefund ? { title: "El pago no es reembolsable.", "aria-describedby": "refund-reason" } : {})}
         >
           <HugeiconsIcon icon={MoneyBag02Icon} size={14} strokeWidth={2} aria-hidden />
@@ -121,6 +122,7 @@ export function OrderDetailActions({
           onClick={() => setCancelOpen(true)}
           disabled={!canCancel}
           data-testid="cancel-open"
+          className="shrink-0 whitespace-nowrap"
         >
           <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} aria-hidden />
           Cancelar
@@ -131,6 +133,7 @@ export function OrderDetailActions({
           variant="ghost"
           asChild
           data-testid="packing-slip-open"
+          className="shrink-0 whitespace-nowrap"
         >
           <a href={`${ADMIN_ORDERS_PATH}/${orderId}/packing-slip`} target="_blank" rel="noopener noreferrer">
             <HugeiconsIcon icon={PrinterIcon} size={14} strokeWidth={2} aria-hidden />
