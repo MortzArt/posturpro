@@ -1,11 +1,11 @@
 /**
  * <CatalogBanner> tests (T15 AC-8, edge 3). The `/sillas` index art slot — a
- * decorative 21/9 cartouche with the shared null-degrade grammar. It carries NO
+ * decorative 42/9 cartouche with the shared null-degrade grammar. It carries NO
  * overlaid copy (edge 5 N/A). We assert:
  *   - FILLED slot renders an <img> with the passed alt text, no fallback tile.
  *   - NULL slot degrades to the `catalog-banner-fallback` blank cobalt tile
  *     (chair glyph), never a broken <img>.
- *   - The aspect box (21/9) is reserved regardless of asset → zero CLS.
+ *   - The aspect box (42/9) is reserved regardless of asset → zero CLS.
  *   - It is lazy (not the LCP) — no `priority`/`fetchpriority=high` is forced.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -46,9 +46,9 @@ describe("CatalogBanner — null slot (graceful degrade, edge 3)", () => {
     expect(screen.queryByRole("img")).toBeNull();
   });
 
-  it("reserves the 21/9 aspect box regardless of asset (zero CLS)", () => {
+  it("reserves the 42/9 aspect box regardless of asset (zero CLS)", () => {
     const { container } = render(<CatalogBanner imageUrl={null} imageAlt={ALT} />);
     const root = container.firstElementChild as HTMLElement;
-    expect(root.className).toContain("aspect-[21/9]");
+    expect(root.className).toContain("aspect-[42/9]");
   });
 });
