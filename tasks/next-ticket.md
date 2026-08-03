@@ -1,288 +1,390 @@
-# Task: T18 — Admin customer detail page
+# Task: T14 — SEO, Analytics & Launch Hardening
 
 ## Priority
 
-High — Owner-approved scope addition (2026-08-03). The Customers list (T12) already
-ships but its rows are dead ends: an operator can see a customer exists and how many
-orders they have, but cannot drill into that customer to see their order history,
-the contact/shipping details, or lifetime value. This is the natural completion of
-the T12 customer surface and a prerequisite for any future customer-centric workflow.
-Not launch-blocking (go-live is gated on T8 Phase 5 + T14), but small, self-contained,
-and high operator value.
+**Critical** — This is the LAST Phase-1 build task and the gate to the OWNER's
+Vercel + hosted-Supabase client-QA deploy. It contains a confirmed prod-only
+HTTP 500 on ALL taxonomy detail browsing (`/categorias|marcas|estilos/[slug]`,
+`DYNAMIC_SERVER_USAGE` — reproduced live, fix verified), a confirmed
+user-visible i18n leak (contact character counter renders a raw key),
+broken/unhardened e2e test infra, and the entire net-new SEO surface (sitemap /
+robots / JSON-LD / canonical / hreflang / OG) the store needs to be indexable.
+A deployed client-QA build MUST NOT 500 on category browsing. Nothing ships
+until the Group-A blockers below pass.
+
+> **VERIFICATION NOTE (read before implementing) — CORRECTED by orchestrator
+> 2026-08-03:** The planning pass initially marked the taxonomy-500 blocker
+> "falsified" after seeing a green `npm run build`. The orchestrator
+> re-verified at REQUEST time and the bug is **REAL**. Corrected findings:
+>
+> - **"PROD-BUILD 500 on taxonomy pages" — CONFIRMED, real hard blocker.**
+>   `npm run build` (Next.js 16.2.9) exits 0 BUT the route table shows the 3
+>   taxonomy `[slug]` routes as **`● (SSG)`** (not `ƒ Dynamic`). On
+>   `npm run start` with a seeded DB, `curl -L` of a real slug
+>   (`/es-MX/categorias/oficina`, `/marcas/ergovita`, `/estilos/ejecutiva`,
+>   `?page=2`, `/en/...`) returns **HTTP 500** with server-log digest
+>   `DYNAMIC_SERVER_USAGE`; `/sillas` returns 200. Root cause: the 3 pages have
+>   `generateStaticParams` and pass `searchParams` into `PaginatedProductListing`
+>   inside `<Suspense>` (the page body never reads `searchParams` synchronously,
+>   so Next keeps the route SSG and the deep await throws during static
+>   generation). **FIX (verified end-to-end):** add
+>   `export const dynamic = "force-dynamic";` to each of the 3 `[slug]/page.tsx`
+>   (matching `/sillas`'s effective posture) → routes become `ƒ Dynamic`, build
+>   stays green, all 3 return **HTTP 200** both locales incl. `?page=2`. This is
+>   AC-A2 and the #1 Group-A blocker.
+> - **"`supabase db reset` broken (Ecto `schema_migrations_pkey`)" — did NOT
+>   reproduce on this machine.** `npm run db:reset` exits **0**; migrations
+>   0001..0014 apply cleanly; `[analytics] enabled=false` and no analytics/
+>   Logflare container exists (the only source of the Ecto conflict; pipeline-
+>   state itself noted the stray ACL was "NOT present on this running instance").
+>   The REAL, smaller finding: there is **no `supabase/seed.sql` / `[db.seed]`**,
+>   so `db:reset` does not seed — seeding is a separate `npm run db:seed`
+>   (`tsx scripts/seed.ts`, confirmed: reset then seed yields 6 categories /
+>   5 brands / 6 styles / 30 products). T14 makes reset+seed one repeatable path
+>   and documents the hosted-apply path. (Note for CI/hosted: the stray anon
+>   `pg_default_acl` EXECUTE grant flagged in prior stages can still appear on
+>   OTHER environments — the deploy checklist must assert the anon-denial RLS
+>   posture post-migrate.)
 
 ## Complexity
 
-**low** — Pattern copy on top of a fully-built substrate. It reuses the T12 order
-list/detail grammar verbatim (AdminPage shell, `Panel`, `OrderStatusBadge`/
-`PaymentStatusBadge`/`paymentBadgeIsRedundant`, `formatMXN`, `formatRelativeDate`,
-`ListPagination`, `UUID_PATTERN`→`notFound()` guard). The only genuinely new pieces
-are: one new read module (`customer-read.ts`) built from `customer-list-query.ts` +
-`order-read.ts`, one new route (`customers/[id]/page.tsx`), and making the existing
-`customer-table.tsx` rows into links. No new data model, no new migration required
-(one small aggregate helper may reuse existing tables), no new dependencies. Estimated
-~6–9 files changed, well under the medium threshold, and every pattern already exists.
+**high** — justified against the criteria:
+
+- **15+ files touched**: 2 new App-Router special files (`sitemap.ts`,
+  `robots.ts`), a new shared SEO metadata helper + a new JSON-LD builder/component
+  inserted on PDP / home / taxonomy, `next.config.ts` / layout (`metadataBase` +
+  default OG), the contact page (blocker), `playwright.config.ts` + `package.json`
+  (e2e infra), seed/reset wiring + deploy checklist, plus the cross-cutting
+  security-review inventory feeding Stage 9.
+- **New subsystems**: a dynamic sitemap enumerating both locales × products ×
+  brands × categories × styles × static pages; a structured-data (JSON-LD)
+  layer; a canonical/hreflang/OG metadata convention that did not exist before.
+- **Cross-cutting security review** of the whole store (secrets, admin auth, MP
+  webhook, RLS, missing CSP/security headers) — see the inventory in the report.
+- Not a pattern copy: net-new server routes, a confirmed prod-500 render-mode
+  fix (`force-dynamic` on 3 pages), and a bilingual conditional UI surface.
 
 ## Feature Type
 
-**full-stack** (logic-heavy) — A new server-rendered admin page + a new server-only
-read module + a change to an existing server component. There IS a visible surface
-(the detail page), so it is not `logic-only`, but the UI is a straight composition of
-existing admin primitives with no new interaction model, no client island, and no new
-motion — so UI Design and UX stages run lightweight.
+**full-feature** (full-stack). SEO metadata is logic + `<head>`; `sitemap.ts` /
+`robots.ts` are new DB-reading server routes; JSON-LD is server-rendered markup;
+the (conditional) cookie banner is client UI; the security review is
+cross-cutting. All pipeline stages run at full depth.
 
 ## User Story
 
-As a store operator, I want to click a customer in the Customers list and see that
-customer's full profile — every order they placed (with a link to each order), the
-contact and shipping details on record, and their lifetime totals — so that I can
-answer "who is this person and what have they bought from us?" in one place without
-manually cross-referencing the order list.
+As the **store owner (and Google/Bing crawlers, and prospective B2B/B2C
+customers)**, I want the storefront to be **fully crawlable and richly indexed
+(canonical, hreflang, sitemap, robots, product rich-results), free of the raw
+i18n key leaking on the contact form, and running on hardened deploy/test
+infra**, so that the client-QA deploy succeeds on the first try, search engines
+index every product/taxonomy page in both locales, and no user sees a broken
+counter.
 
 ## Background
 
-**What exists today.** T12 shipped a Customers list at `/admin/orders/customers`
-(`src/app/admin/(app)/orders/customers/page.tsx`): a searchable, paginated table
-(`customer-table.tsx`) of `customers` rows — full name, email, phone, and a per-customer
-**order count**. That count comes from the `admin_customer_order_counts` RPC (migration
-0013), which does `select customer_id, count(*) from orders where customer_id = any($ids)
-group by customer_id`. The list rows explicitly **do not link anywhere** (see the
-`customer-table.tsx` docstring: "Rows do NOT link (customer accounts are out of scope)").
+**What exists today (verified in current tree):**
 
-**The customer-keying reality (the critical fact).** Customers are keyed by
-`customers.id` (a UUID PK). `orders.customer_id` is an FK to it (`on delete set null`).
-The `create_order` RPC (migration 0008, line ~200) inserts a **brand-new `customers`
-row for every order** — comment: *"No accounts in Phase 1 — one row per order."* There
-is **no dedup on email or phone**. Consequences that the detail page MUST respect:
+- Per-page `generateMetadata` (title + description) exists on the locale layout
+  (`src/app/[locale]/layout.tsx:34`), homepage, `/empresas`, `/sillas`, PDP
+  (`producto/[slug]/page.tsx`), all 3 taxonomy detail pages, contact, and the
+  generic static `[pageSlug]` page.
+- `/sillas` has a `canonical` + faceted-`noindex` rule (`sillas/page.tsx:63-85`)
+  — the ONLY canonical in the store — and reuses `getPathname` for locale-aware
+  URLs (`sillas/page.tsx:126`).
+- `next/image` is used everywhere with `priority` on above-the-fold images (hero
+  `home/hero.tsx:100` + `sizes`, PDP gallery `product-gallery.tsx:93`, first-row
+  grid cards `product-grid.tsx:57`). No raw `<img>` in production code.
+  `next.config.ts` allow-lists the Supabase Storage host (derived from
+  `NEXT_PUBLIC_SUPABASE_URL`) + `picsum.photos` (seed images).
+- Product detail type carries everything Product JSON-LD needs: `name`,
+  `brandName`, `priceCents`, `stockState`, cover image URL, alt
+  (`src/lib/catalog/types.ts:22-34`); `truncateForMeta` already exists in PDP
+  `generateMetadata`.
+- Rate-limit escape hatches honored server-side: `CHECKOUT_`, `CONTACT_`,
+  `QUOTE_`, `ADMIN_LOGIN_RATE_LIMIT_DISABLED` (all read with `=== "1"`, never
+  `NEXT_PUBLIC_`).
+- Security posture is already strong (see report §8): no secret is
+  `NEXT_PUBLIC_`; admin sessions are HMAC-signed with a DB-backed revocation
+  counter; the MP webhook verifies HMAC + replay window + idempotency before any
+  side effect; RLS denies anon on every orders/customers/payments/PII table.
 
-- A customer's order count is, in practice, almost always **exactly 1** (one customer
-  row per order). N>1 only occurs if orders were ever backfilled/linked to a shared id
-  (not a current path) — so the page must correctly render count-1 AND count-N, and
-  never assume 1.
-- The "duplicate email" rows in the Customers screenshot (`manual-buyer@example.com`
-  repeated) are **distinct `customers.id` rows** that happen to share an email — they
-  are correctly counted separately by the list, and the detail page must aggregate
-  **only** the orders sharing the clicked `customers.id`, never all orders with that
-  email.
-- Email-less manual (phone/offline) orders (T17) store the sentinel
-  `sin-correo@pedido-manual.invalid` (`src/lib/email/recipient.ts`,
-  `NO_EMAIL_PLACEHOLDER`) in both `customers.email` and `orders.contact_email`. Because
-  each is its own `customers.id`, phone-distinct sentinel customers are **already not
-  collapsed** — the keying handles this for free. The detail page must **render** the
-  sentinel as "Sin correo" via `isMailableAddress()`, never as a literal invalid email.
+**What is missing / broken (verified):**
 
-**What's missing.** The route `/admin/orders/customers/[id]`, the read that fetches one
-customer + their orders + aggregates, and the link from the list rows.
+0. **Taxonomy prod-500 (blocker #1 — CONFIRMED LIVE):** all 3 taxonomy detail
+   pages (`categorias/[slug]`, `marcas/[slug]`, `estilos/[slug]`) return HTTP
+   500 (`DYNAMIC_SERVER_USAGE`) on a prod build + `next start` with a seeded DB,
+   because they are `● SSG` (`generateStaticParams`) yet await `searchParams`
+   inside `<Suspense>` via `PaginatedProductListing`. `/sillas` (which awaits
+   `searchParams` at the page top level) is `ƒ Dynamic` and returns 200. Fix
+   (verified → 200): `export const dynamic = "force-dynamic";` on the 3 pages.
+   See the VERIFICATION NOTE above and report §(a).
+1. **charCount raw-key leak (blocker — CONFIRMED):** `contacto/page.tsx:59`
+   calls `t("charCount")` on the ICU template `"{count}/{max}"`
+   (`src/messages/es-MX.json` `contact.charCount`) with no args → next-intl
+   `FORMATTING_ERROR` → the raw key can render to users. The `/empresas` twin was
+   fixed with `t.raw("form.charCount")` (`empresas/page.tsx:147`); the QA form
+   (`product/qa-form.tsx`) and confirmation page also use `t.raw`. Contact is the
+   sole remaining offender (grep-confirmed, report §2).
+2. **e2e infra (blocker — CONFIRMED):** `playwright.config.ts` `webServer` runs
+   `npm run dev` (cold-compile flaky; `notFound()` streams a **200** doc in dev,
+   masking real 404 status) and sets only `CHECKOUT_/QUOTE_RATE_LIMIT_DISABLED` —
+   missing `CONTACT_` and `ADMIN_LOGIN_`. `next.config.ts` already supports the
+   isolated `NEXT_QA_DIST_DIR` build-dir escape hatch for a dedicated prod e2e
+   server.
+3. **Seed/reset + hosted-apply path (launch hardening — reframed from
+   blocker 4):** `db:reset` works but does not seed (no `seed.sql` / `[db.seed]`);
+   the hosted Supabase project is empty, never migrated, CLI unlinked — the
+   deploy needs a documented, repeatable clean migrate+seed path.
+
+**SEO net-new (verified ABSENT — report §3):** NO `sitemap.ts`, NO `robots.ts`,
+NO JSON-LD (`application/ld+json`) anywhere, NO `metadataBase`, NO
+`openGraph`/`twitter`, NO `alternates.languages` (hreflang); canonical only on
+`/sillas`.
 
 ## Acceptance Criteria
 
 Each criterion is binary — PASS or FAIL.
 
-- [ ] **AC-1** Each row in the existing Customers table (`customer-table.tsx`), both the
-      desktop `<table>` and the mobile card list, is a link to
-      `/admin/orders/customers/{customers.id}`. The link is keyboard-focusable and has a
-      visible focus style (mirror `order-table.tsx`'s row-link treatment).
-- [ ] **AC-2** Navigating to `/admin/orders/customers/{id}` for a customer that exists
-      renders a detail page inside the `AdminPage` shell with a "back to Clientes" link
-      to `ADMIN_CUSTOMERS_PATH`.
-- [ ] **AC-3** The page shows the customer identity: `full_name`, and email rendered via
-      `isMailableAddress()` — a real email shows as text; the `sin-correo@pedido-manual.invalid`
-      sentinel (or any blank/malformed value) shows "Sin correo", never the literal
-      invalid string. Phone shows the value or "—" when null.
-- [ ] **AC-4** The page shows an **Order history** section: one row per order belonging to
-      this customer (`orders where customer_id = {id}`), ordered `created_at DESC`. Each row
-      shows the order number, relative created date (`formatRelativeDate`), total
-      (`formatMXN`), an `OrderStatusBadge`, and a `PaymentStatusBadge` suppressed via
-      `paymentBadgeIsRedundant` exactly as the order list does.
-- [ ] **AC-5** Each order-history row links to that order's detail page
-      (`${ADMIN_ORDERS_PATH}/{order.id}`).
-- [ ] **AC-6** The page shows a **Contact & addresses** section: the contact email/phone
-      on record for the customer, plus the distinct shipping addresses used across their
-      orders (`shipping_full_name`, `line1`, `line2`, `city`, `state`, `postal_code`,
-      `country`). Identical addresses across multiple orders are de-duplicated to one entry.
-- [ ] **AC-7** The page shows **Lifetime totals**: order count (== the count the list row
-      showed for this customer — verified equal by construction), total spent
-      (`sum(total_cents)` across the customer's orders, rendered with `formatMXN`), and
-      first-order / last-order dates.
-- [ ] **AC-8** Total spent is computed in **integer cents** and only formatted at the edge
-      (`formatMXN`) — no floating-point peso arithmetic anywhere in the aggregation.
-- [ ] **AC-9** The lifetime **order count on the detail page equals** the count the
-      Customers list showed for the same `customers.id`. (Both derive from
-      `orders where customer_id = {id}`; asserted by an integration test seeding N orders
-      for one customer and comparing the RPC count to the detail read.)
-- [ ] **AC-10** A request to `/admin/orders/customers/{id}` where `{id}` is not a valid
-      UUID, or is a well-formed UUID that matches no `customers` row, calls `notFound()`
-      (in-shell 404), never a 500 (mirror `order-read.ts`'s `UUID_PATTERN`→`null` guard).
-- [ ] **AC-11** The page is admin-only. It lives under `src/app/admin/(app)/` so the
-      `(app)` layout's `hasValidAdminSession()` guard protects it (same mechanism as the
-      order detail page — pages do not call `requireSession` directly; that is for actions).
-      An unauthenticated request is redirected to the login page.
-- [ ] **AC-12** All page chrome is **es-MX** (hardcoded, admin is es-MX only — no i18n
-      message files for admin), consistent with the neutral admin theme (no `.theme-storefront`).
-- [ ] **AC-13** The detail read is **server-only**, uses the admin (service-role) client,
-      and **never throws to the page** for the order-history / address / totals sections:
-      a section read failure degrades to a section-scoped state, and a missing/invalid
-      customer degrades to `null`→`notFound()` — the page never 500s (mirror
-      `order-read.ts`'s section-isolation principle).
-- [ ] **AC-14** New read logic is covered by an integration test against the live local
-      Supabase (mirroring `admin-customer-counts.integration.test.ts`): seeds a customer +
-      orders, asserts the aggregate (count, total_cents sum, first/last dates, distinct
-      address de-dup) and the count-equals-list invariant; plus a unit test for any new
-      pure helper and for the customer-table row-link change. `tsc --noEmit` and `eslint`
-      are clean on all touched files, and the full unit + integration suites stay green.
-- [ ] **AC-15** No new migration is required unless an aggregate RPC is chosen (see
-      Technical Approach); if one is added it is the next number (0014), idempotent,
-      `security definer` + pinned empty `search_path` + `service_role`-only execute, and
-      its Args/Return are declared as `type` aliases in `rpc.ts` (never `interface`).
+### GROUP A — HARD DEPLOY-BLOCKERS (must all pass before the Vercel/hosted-Supabase client-QA deploy)
+
+- [ ] **AC-A1 (build green):** `npm run build` completes with exit 0 and ZERO
+      errors after all T14 edits. (Note: a green build does NOT by itself prove
+      AC-A2 — the taxonomy 500 is a request-time error; AC-A2 must be verified by
+      an actual request against a running prod server.)
+- [ ] **AC-A2 (blocker #1 — taxonomy 500 FIXED):** Add
+      `export const dynamic = "force-dynamic";` to `categorias/[slug]/page.tsx`,
+      `marcas/[slug]/page.tsx`, `estilos/[slug]/page.tsx`. On a PROD build +
+      `next start` with a SEEDED DB, `GET /categorias/<seed-slug>`,
+      `/marcas/<seed-slug>`, `/estilos/<seed-slug>` (and `/en/...` variants) each
+      return HTTP **200** (NOT 500 / `DYNAMIC_SERVER_USAGE`) with the product grid
+      (`data-testid="product…"`) in the server-rendered HTML; `?page=2` also
+      returns 200 with page-2 items. Verification: `curl -L` a real seeded slug —
+      this is the ONLY way to prove the fix (build exit 0 is insufficient).
+      Confirmed today: WITHOUT the fix all three are HTTP 500; WITH it all three
+      are 200 and the route table shows them as `ƒ Dynamic`.
+- [ ] **AC-A3 (blocker — charCount):** The contact form message counter renders
+      the formatted `"0/1200"` (count/max), NOT the literal `charCount` key or
+      `{count}/{max}`, in both es-MX and en. Fix: `contacto/page.tsx:59`
+      `t("charCount")` → `t.raw("charCount")`.
+- [ ] **AC-A4 (blocker — no sibling raw-key leaks):** Grep confirms no other
+      storefront `t("...")` is called on a placeholder-bearing ICU template that
+      must be `t.raw()`. Confirmed clean or all fixed.
+- [ ] **AC-A5 (blocker — e2e prod server):** `playwright.config.ts` `webServer`
+      runs a PROD server (build to `NEXT_QA_DIST_DIR` + `next start`), NOT
+      `npm run dev`, and exports all four flags: `CHECKOUT_`, `QUOTE_`,
+      `CONTACT_`, `ADMIN_LOGIN_RATE_LIMIT_DISABLED=1`.
+- [ ] **AC-A6 (blocker — real 404):** Against the prod e2e server, a
+      known-missing route returns a real **404** status (not the dev 200 doc).
+- [ ] **AC-A7 (reset+seed path):** A single documented command sequence brings a
+      clean LOCAL DB to migrated + seeded (`npm run db:reset && npm run db:seed`,
+      or a wired `[db.seed]`/`seed.sql`), verified exit 0.
+- [ ] **AC-A8 (hosted-apply path):** The deploy checklist documents a repeatable
+      clean migrate+seed for the hosted Supabase project (link → `db push`
+      0001..0014 → seed/import), with the exact commands.
+- [ ] **AC-A9 (SEO — sitemap):** `GET /sitemap.xml` returns 200
+      `application/xml` enumerating, for BOTH locales, every active product,
+      brand, category, style, `/sillas`, homepage, and published static page,
+      with absolute URLs from `metadataBase` and per-URL `alternates` hreflang.
+- [ ] **AC-A10 (SEO — robots):** `GET /robots.txt` returns 200 allowing
+      storefront crawl, disallowing `/admin`, `/api`, `/checkout`, `/carrito`,
+      and faceted `/sillas` query URLs, with `Sitemap:` pointing at the absolute
+      `/sitemap.xml`.
+- [ ] **AC-A11 (SEO — canonical + hreflang):** Every indexable surface (home,
+      unfiltered `/sillas`, PDP, the 3 taxonomy detail pages, static pages,
+      `/empresas`) emits a self-referential `canonical` + `alternates.languages`
+      for `es-MX`, `en`, and `x-default`, via a shared helper. `/sillas`'s
+      existing faceted-`noindex`/canonical rule is preserved.
+- [ ] **AC-A12 (SEO — JSON-LD):** PDP emits valid `Product` JSON-LD (name, image,
+      `brand`, `offers` with `priceCurrency:"MXN"`, `price` as major-unit decimal
+      from integer cents, `availability` from `stockState`); home emits
+      `Organization` + `WebSite`; taxonomy + PDP emit `BreadcrumbList`. Validates
+      with no required-field errors.
+- [ ] **AC-A13 (secrets in bundle):** Client bundle contains ZERO server
+      secrets — no MP access token, Resend key, Supabase `service_role`, or MP
+      webhook secret is `NEXT_PUBLIC_`-prefixed or reachable from a client
+      component (existing `secret-exposure` tests still green). `metadataBase` /
+      site URL come from a non-secret env var (`NEXT_PUBLIC_SITE_URL` /
+      `NEXT_PUBLIC_SITE_ORIGIN`, already present).
+- [ ] **AC-A14 (build determinism):** `sitemap.ts` and `generateStaticParams`
+      degrade safely (empty/partial, no throw) if the DB is unreachable at build,
+      OR the deploy checklist mandates build-time DB access and documents it.
+
+### GROUP B — OWNER-CHOICE-GATED / NICE-TO-HAVE (do NOT block the deploy)
+
+- [ ] **AC-B1 (analytics vendor):** Recommend Vercel Analytics
+      (`@vercel/analytics` — first-party, cookieless, CSP-friendly) as default,
+      vs. Plausible. **Waits on:** owner vendor decision + any env. PASS =
+      decision recorded and wiring stubbed behind an env flag, or explicitly
+      deferred. If chosen, note it needs the (missing) CSP to allow its script.
+- [ ] **AC-B2 (cookie consent — CONDITIONAL):** IF the chosen analytics sets
+      cookies → ship a bilingual, design-system-consistent consent banner
+      (LFPDPPP). IF Vercel Analytics (cookieless) → banner NOT required, AC N/A.
+      **Waits on:** AC-B1 outcome.
+- [ ] **AC-B3 (error monitoring):** Recommend Sentry (`@sentry/nextjs`) or
+      equivalent; DSN + config env-driven. **Waits on:** owner decision + DSN
+      env. PASS = decision recorded or deferred.
+- [ ] **AC-B4 (backup verification):** Document a PITR / daily-backup +
+      restore-test checklist for the hosted Supabase project. **Waits on:** the
+      live project existing post-deploy.
+- [ ] **AC-B5 (perf/LCP verify):** Confirm LCP images on home/PLP/PDP are
+      `priority` (already true — hero:100, gallery:93, grid:57) + record a
+      bundle-size sanity note. Verify + document.
+- [ ] **AC-B6 (security headers — from review, non-blocking):** Recommend adding
+      a `headers()`/middleware security-header layer (CSP, X-Frame-Options/
+      frame-ancestors, HSTS, X-Content-Type-Options, Referrer-Policy) — the one
+      clear gap the security inventory found. Scope for Stage 9; a CSP is a
+      prerequisite if a third-party analytics/monitoring script is chosen.
 
 ## Edge Cases
 
-At least five specific edge cases that MUST be handled:
-
-1. **Customer with N orders but 0 paid** — e.g. all orders are `pending_payment` /
-   `cancelled` and none `paid`. Order count and history render normally; **total spent**
-   sums `total_cents` of the orders as displayed (the order *value*), matching the list's
-   count semantics (count = order rows, not paid orders). Do NOT silently filter to
-   paid-only — that would make the detail count disagree with the list count (AC-9).
-   Decision: headline "Total gastado" = sum of all the customer's order totals so it
-   always reconciles with the visible history and the list count. (A paid-only total, if
-   ever wanted, is a *separate labeled line*, not the headline.)
-2. **Email-less / sentinel manual customers not collapsed** — two distinct manual
-   customers both storing `sin-correo@pedido-manual.invalid` with **different phones**
-   are two `customers.id` rows; clicking each shows only its own single order. The detail
-   read keys strictly on `customers.id`, never on email, so they are never merged. The
-   email field renders "Sin correo" for both.
-3. **Very long order history** — a customer with, hypothetically, dozens of orders. The
-   order-history section must render bounded/scrollable and the read must be bounded (no
-   unbounded fetch that could truncate at PostgREST's 1000-row cap). Cap the history read
-   at a named `CUSTOMER_ORDER_HISTORY_LIMIT` (or reuse `ADMIN_PRODUCTS_PER_PAGE`=25); if
-   `orderCount > limit`, show "Mostrando los N más recientes de M" — the aggregate totals
-   (count, sum, first/last) MUST still reflect **all** orders (computed by an aggregate
-   query/RPC, not by tallying the fetched page).
-4. **Addresses that differ across orders** — a customer whose orders used different
-   shipping addresses shows **each distinct address once** (de-duped on the full tuple),
-   most-recent first. A customer whose orders all used the same address shows exactly one
-   address entry.
-5. **`customer_id` orphaned to null / customer with zero orders** — a `customers` row
-   whose only order had its `customer_id` set to null by the FK's `on delete set null`,
-   or that otherwise has no orders. The page still renders identity + contact, an **empty
-   order-history state** ("Este cliente no tiene pedidos."), lifetime count 0, total spent
-   `$0.00`, and no first/last dates ("—"). It must not 500 or divide by zero.
-6. **Order with null contact_phone / null address_line2** — history rows and address
-   entries tolerate nullable columns; line2 omitted when null, phone shows "—".
-7. **Hostile / injection id in the URL** — `<script>`, SQL fragments, over-long strings
-   in `[id]` are rejected by the `UUID_PATTERN` guard → `notFound()` before any DB call
-   (mirror `order-read.ts`).
+1. **Taxonomy `?page=99` (out of range) on prod** → query layer already clamps
+   to `lastPage` (M-2); page must return 200 with the clamped last page, never
+   500. (Only true AFTER the `force-dynamic` fix — without it the page 500s on
+   ANY request regardless of `?page`.)
+2. **Category/brand/style with ZERO active products** → sitemap includes-or-
+   safely-excludes without throwing; the page renders its `<EmptyState>` (200).
+3. **DB unreachable at build on Vercel** → `sitemap.ts` +
+   `generateStaticParams` must not crash the build (empty/partial + on-demand
+   fallback) OR the checklist mandates build-time DB access. No unhandled
+   rejection.
+4. **Slug with URL-unsafe characters** → sitemap URLs properly encoded; XML
+   stays valid.
+5. **Locale-prefixed vs default URLs** → es-MX is unprefixed default, en is
+   `/en/...`. hreflang + sitemap `<loc>`/alternates use per-locale `getPathname`
+   (as `sillas/page.tsx:126`); `x-default` → the es-MX URL.
+6. **Faceted `/sillas?marca=...`** → MUST NOT appear in the sitemap (it is
+   `noindex,follow`); only clean `/sillas` + `?page=N` canonicals are indexable.
+7. **Product with null/zero price or out-of-stock in JSON-LD** → omit the
+   invalid `offers` field / map `availability` to `OutOfStock`; never emit
+   malformed JSON.
+8. **Cookie banner (if shipped) with `prefers-reduced-motion` / no-JS** →
+   dismissible without motion, does not block content for a no-JS browser.
 
 ## Error States Table
 
 | Trigger | User Sees | System Does |
 | ------- | --------- | ----------- |
-| `[id]` not a UUID, or valid UUID with no matching customer | In-shell admin 404 ("no encontrado") | `customer-read` returns `null` after `UUID_PATTERN` guard / empty query → page calls `notFound()`; no DB call for a bad UUID |
-| Core customer read fails (DB down) | Top-level "No se pudieron cargar los datos del cliente." alert with a Reintentar link to the same URL | Read throws caught at the page (mirror the Customers list `try/catch`); logs `[admin-customer-detail] ...`; renders alert, not a 500 |
-| Order-history section read fails but customer core loaded | Identity + contact render; the history section shows a scoped "No se pudo cargar el historial de pedidos." banner | Section read isolated (returns `null`); page renders section banner (mirror `order-read.ts` history/notes isolation) |
-| Unauthenticated request | Redirect to `/admin/login` | `(app)` layout `hasValidAdminSession()` fails → redirect before the page renders |
-| Customer has zero orders | Empty order-history state + count 0 + total `$0.00` + first/last "—" | Aggregate returns zeros/nulls; page renders the empty branch, no error |
+| Contact counter with unformatted key (pre-fix) | literal `charCount` / `{count}/{max}` | next-intl `FORMATTING_ERROR` — MUST be eliminated via `t.raw` |
+| `/sitemap.xml` requested, DB read fails | valid but reduced sitemap (static routes only) | log error with context, return 200 with buildable routes; never 500 |
+| `/robots.txt` requested | plain-text robots policy | served with no DB dependency |
+| Missing route on prod e2e server | localized 404 page | returns real 404 status (fixes dev 200-doc masking) |
+| `db:reset` run on a dev machine | schema recreated, migrations applied, NO data | developer must run `db:seed` next — documented so no confusion |
+| Analytics/monitoring env absent (Group B) | no analytics; app works | feature is a no-op behind an env flag; never throws / blocks render |
+| JSON-LD for a product with null price/stock | product page renders; offer omitted / availability=OutOfStock | JSON-LD omits invalid field, stays valid |
+| Third-party analytics script with no CSP | works, but no CSP protection | Stage 9 adds CSP allow-listing that host (AC-B6) |
 
 ## UX Requirements
 
-- **Loading**: Server-rendered page; a `loading.tsx` (reuse the orders section's skeleton
-  pattern if present, else a simple `AdminPage` title + muted "Cargando…") covers the
-  navigation gap. No spinner inside the composed sections.
-- **Empty** (customer with no orders): order-history section shows a dashed-border empty
-  panel with a receipt/`UserGroupIcon` glyph and "Este cliente no tiene pedidos." (mirror
-  `CustomerEmptyState` / `order-empty-state.tsx`). Lifetime totals show count 0, `$0.00`,
-  dates "—".
-- **Error**: top-level read failure → `role="alert"` destructive-tinted panel with a
-  "Reintentar" link to the same URL (verbatim the Customers list error branch). Section
-  failure → scoped banner inside that section.
-- **Success**: the composed detail — identity header, Lifetime totals, Order history
-  (linked rows), Contact & addresses — renders. Each order row is an obvious link (hover
-  underline + focus ring), and clicking navigates to that order's detail.
-- **Mobile (375px)**: single-column stack. Order history uses a card list (mirror
-  `order-table.tsx`'s `MobileCards`), addresses stack. `min-w-0` + `break-words` on every
-  free-text field (email, address, name) so a long unbroken email never causes horizontal
-  overflow (this was the T12 UX critical fix — honor it here).
-- **Tablet (768px)**: the two-column `md:grid-cols-2` panel layout of the order detail is
-  optional; a single readable column is acceptable given the low content volume. If two
-  columns are used, `min-w-0` on both. Order history remains a full-width table ≥640px.
+Storefront-facing surfaces of this task (contact counter fix, conditional cookie
+banner, and the taxonomy pages that must keep working):
+
+- **Loading:** Taxonomy pages keep the `<ProductGridSkeleton>` Suspense fallback
+  (`categorias/[slug]/page.tsx:119`); the SEO edits must NOT remove it.
+- **Empty:** Taxonomy `<EmptyState>` (`empty.category/brand/style`) unchanged and
+  still 200. Sitemap of an empty catalog is valid XML with static routes only.
+- **Error:** `/sitemap.xml` on DB error degrades to static routes (no 500).
+  Cookie banner (if shipped) never traps focus.
+- **Success:** Contact counter shows `"0/1200"` live-updating as the user types
+  (es-MX and en). Crawlers receive canonical + hreflang + JSON-LD + OG in head.
+- **Mobile (375px):** Cookie banner (if shipped) is a full-width bottom bar/sheet
+  that does not cover the primary CTA and is thumb-dismissible; contact counter
+  legible.
+- **Tablet (768px):** Cookie banner is a bounded bar; taxonomy grids unaffected;
+  no horizontal overflow.
+
+Any cookie banner MUST follow the `emil-design-eng` + `apple-design` skills:
+enter `ease-out`, respect `prefers-reduced-motion`, animate transform/opacity
+only, interruptible.
 
 ## Technical Approach
 
 ### Files to Create
 
-- `src/app/admin/(app)/orders/customers/[id]/page.tsx` — the detail route. Server
-  component, `export const dynamic = "force-dynamic"`. Reads `{ id }` from `params`, calls
-  `getAdminCustomer(id)`; `null` → `notFound()`. Composes: back-link → identity header →
-  Lifetime totals panel → Order history panel (linked rows, desktop table + mobile cards)
-  → Contact & addresses panel. Reuses `AdminPage`, the `Panel` grammar, `OrderStatusBadge`,
-  `PaymentStatusBadge`, `paymentBadgeIsRedundant`, `formatMXN`, `formatRelativeDate`,
-  `isMailableAddress`, and `ListPagination` only if history is paginated. No client island.
-- `src/lib/admin/orders/customer-read.ts` — `server-only`. Exports `AdminCustomerDetail`
-  interface + `getAdminCustomer(id: string): Promise<AdminCustomerDetail | null>`. Guards
-  `id` with `UUID_PATTERN` (→ `null`); reads the `customers` row (→ `null` if missing);
-  reads that customer's orders (`orders where customer_id = id`, `created_at DESC`, bounded
-  by `CUSTOMER_ORDER_HISTORY_LIMIT`); computes aggregates (count, `sum(total_cents)`,
-  first/last `created_at`) — see the RPC decision below; derives the distinct address set.
-  Section reads isolated (never throw to page). Built from `customer-list-query.ts` +
-  `order-read.ts` conventions.
-- `src/lib/admin/orders/customer-read.test.ts` — unit test for the pure pieces (address
-  de-dup, total-in-cents, empty/zero-order shaping) with the DB mocked.
-- `tests/integration/admin-customer-detail.integration.test.ts` — live-DB integration test
-  mirroring `admin-customer-counts.integration.test.ts` (serviceClient, tracked cleanup):
-  seeds a customer + N orders (varied statuses, some sharing an address, some differing),
-  asserts count / total_cents sum / first-last dates / distinct-address de-dup, the
-  count-equals-`admin_customer_order_counts` invariant (AC-9), the null-customer_id
-  exclusion, and the zero-order shape.
-- *(conditional)* `supabase/migrations/0014_admin_customer_aggregates.sql` — only if the
-  aggregate-RPC option is chosen (see Research §Key Decisions). Idempotent, `security
-  definer`, empty `search_path`, `service_role`-only, returns `(order_count bigint,
-  total_cents bigint, first_order_at timestamptz, last_order_at timestamptz)` for one id.
+- `src/app/sitemap.ts` — a single ROOT dynamic sitemap (App Router calls one
+  `sitemap` per app; enumerate both locales itself). Reuse
+  `listActiveProductSlugs`, `listBrands`, `listStyles`, `listCategories`
+  (+ `flattenSlugs`), and the static-pages reader; build per-locale URLs with
+  `getPathname` (`src/i18n/navigation`) and add `alternates.languages` per entry.
+- `src/app/robots.ts` — static robots policy + absolute `Sitemap:` from
+  `metadataBase`; disallow `/admin`, `/api`, `/checkout`, `/carrito`.
+- `src/lib/seo/metadata.ts` — shared helper: `buildAlternates(pathname)` →
+  `{ canonical, languages: { "es-MX", "en", "x-default" } }` and a
+  `buildOpenGraph(...)` helper. Single-sources the convention (DRY per CLAUDE.md).
+- `src/lib/seo/json-ld.ts` + `src/components/seo/json-ld.tsx` — typed builders
+  for `Product`, `Organization`, `WebSite`, `BreadcrumbList` + a server
+  component rendering `<script type="application/ld+json">` with safe escaping.
+- `tasks/deploy-readiness-checklist.md` — Vercel + hosted-Supabase checklist
+  (env vars, migrate+seed apply path, image hosts, build command, region, backup
+  plan, security-headers note).
+- (Conditional, Group B) `src/components/consent/cookie-consent.tsx` — bilingual
+  banner, ONLY if a cookie-using analytics vendor is chosen.
 
 ### Files to Modify
 
-- `src/components/admin/orders/customer-table.tsx` — wrap the desktop row name cell (and
-  the mobile card) in a `Link` to `${ADMIN_CUSTOMERS_PATH}/${row.id}` (mirror
-  `order-table.tsx`, which links only the order-number cell so the email stays selectable).
-  Update the docstring (currently "Rows do NOT link"). Add
-  `data-testid={`admin-customer-row-${row.id}`}`.
-- `src/lib/config/*` (a small admin constants module) — add `CUSTOMER_ORDER_HISTORY_LIMIT`
-  (named constant; no magic number) if the history read is bounded/paginated.
-- `src/lib/admin/constants.ts` — *(optional)* a `customerDetailPath(id)` builder for a
-  single URL source; inlining `${ADMIN_CUSTOMERS_PATH}/${id}` is consistent with the order
-  detail's inlined path and acceptable — no change strictly required.
-- `src/lib/supabase/types/rpc.ts` — *(conditional, only if the RPC option is chosen)* add
-  the Args/Return **`type` aliases** and the Database `Functions` entry for the new
-  aggregate RPC (never `interface` — collapses the generic to `never`).
+- `src/app/[locale]/contacto/page.tsx:59` — **blocker fix**: `t("charCount")` →
+  `t.raw("charCount")`.
+- `playwright.config.ts` — **blocker fix**: `webServer.command` → build to
+  `NEXT_QA_DIST_DIR` + `next start`; add `CONTACT_RATE_LIMIT_DISABLED=1` and
+  `ADMIN_LOGIN_RATE_LIMIT_DISABLED=1` to `webServer.env`.
+- `package.json` — add the e2e prod-server script the playwright config invokes
+  (build with `NEXT_QA_DIST_DIR` then `next start`); optionally a
+  `db:reset:seed` convenience that chains reset + seed.
+- `supabase/config.toml` (or add `supabase/seed.sql`) — wire seeding so a fresh
+  reset optionally seeds, OR document the two-step. (No schema change.)
+- `next.config.ts` — no functional change needed to remotePatterns (already
+  covers prod Supabase host); confirm and leave locked.
+- `src/app/[locale]/layout.tsx` — set `metadataBase` (from `NEXT_PUBLIC_SITE_URL`/
+  `NEXT_PUBLIC_SITE_ORIGIN`) + default `openGraph` in the root `generateMetadata`
+  so all pages inherit absolute URLs.
+- `src/app/[locale]/producto/[slug]/page.tsx` — add `Product` + `BreadcrumbList`
+  JSON-LD + canonical + hreflang.
+- `src/app/[locale]/page.tsx` (home) — add `Organization` + `WebSite` JSON-LD +
+  canonical + hreflang.
+- `src/app/[locale]/categorias/[slug]/page.tsx`, `marcas/[slug]/page.tsx`,
+  `estilos/[slug]/page.tsx` — **blocker #1 fix**: add
+  `export const dynamic = "force-dynamic";` (fixes the confirmed prod-500 /
+  `DYNAMIC_SERVER_USAGE`; verified → HTTP 200). ALSO add canonical + hreflang +
+  `BreadcrumbList` JSON-LD.
+- `src/app/[locale]/sillas/page.tsx`, `empresas/page.tsx`, `[pageSlug]/page.tsx`
+  — add hreflang `alternates.languages` (sillas already has canonical).
 
 ### Data Model Changes
 
-- **None required.** The page reads existing tables: `customers` (`id`, `email`,
-  `full_name`, `phone`) and `orders` (`id`, `order_number`, `customer_id`, `created_at`,
-  `total_cents`, `status`, `payment_status`, `contact_email`, `contact_phone`, all
-  `shipping_*`). Index coverage already exists: `orders_customer_id_idx` on
-  `orders(customer_id)` (migration 0003) serves both the history read and the aggregate.
-- **Optional aggregate RPC** (0014) — a read-only helper; adds a function, not a table.
+None. Read-only against schema 0001..0014. No new tables/columns/migrations.
+(Blocker 3 is a migrate+seed **apply-path** item, not a schema change.)
 
-### API Endpoints
+### API / Route Additions
 
-- **None.** This is server-component data fetching, not an HTTP API. The read is
-  `getAdminCustomer(id)` in `customer-read.ts` (server-only), invoked directly by the RSC.
-  No `/api/admin/*` route is added (so no route-handler self-guard is needed).
+- `GET /sitemap.xml` (via `src/app/sitemap.ts`) — dynamic, DB-backed, both
+  locales.
+- `GET /robots.txt` (via `src/app/robots.ts`) — static policy + sitemap pointer.
+- No new REST/server-action endpoints.
 
 ### Dependencies
 
-- **None.** All primitives (badges, formatters, pagination, `notFound`, `Link`, hugeicons)
-  already exist. No new npm package.
+- **None required for Group A.** sitemap/robots/JSON-LD/canonical/hreflang/OG all
+  use built-in Next.js App Router APIs (`MetadataRoute.Sitemap`,
+  `MetadataRoute.Robots`, `Metadata.alternates`/`openGraph`, plain `<script>` for
+  JSON-LD) + existing `next-intl` navigation — consistent with no-CDN/strict-CSP.
+- **Group B (owner-choice-gated, flagged):**
+  - `@vercel/analytics` — first-party, cookieless, CSP-friendly. Recommended
+    default. Owner approval + Vercel project setting.
+  - `@sentry/nextjs` — error monitoring. Owner approval + DSN env.
+  - Cookie banner (only if a cookie-using analytics is chosen) — no new dep;
+    build on existing shadcn/ui + Tailwind.
 
 ## Out of Scope
 
-- Customer **accounts / auth** — Phase 1 has no customer login; this is an admin-only
-  read view of guest records.
-- **Editing** a customer (name/email/phone) or **merging** duplicate-email customer rows —
-  read-only view only. (Merge is a real feature given the one-row-per-order model; flag
-  for a future ticket, do not build here.)
-- **Deleting** a customer.
-- Cross-customer analytics, cohorts, LTV charts, or CSV export of customer data.
-- Changing the `create_order` one-row-per-order behavior or adding email/phone dedup — the
-  detail page must work correctly *with* the current keying, not change it.
-- Any storefront-facing surface. Admin-only, neutral theme, es-MX.
+- Admin (`src/app/admin/**`) SEO — admin is out of the storefront crawl surface;
+  do NOT touch `admin/` or `ui/*`.
+- Any `next.config.ts` change beyond confirming remotePatterns (locked through
+  T15/T16), other than a possible security-headers `headers()` block scoped to
+  Stage 9 (AC-B6).
+- Net-new schema/migrations (blocker 3 is apply-path only).
+- Provisioning the hosted Supabase project / performing the Vercel deploy (owner
+  action; T14 delivers the checklist + clean apply path).
+- Selecting the analytics/monitoring vendor and adding production keys
+  (owner-gated Group B).
+- Real product photography (seed picsum images remain).
+- MP live-sandbox sign-off (T8 Phase 5, separate gate).
