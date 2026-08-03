@@ -20,3 +20,13 @@ export const INTERNAL_NOTE_MAX_LENGTH = 2000;
  * text. Shared with the cancel/advance textareas so client and server agree.
  */
 export const STATUS_NOTE_MAX_LENGTH = 2000;
+
+/**
+ * The `orders.payment_method` sentinel that marks an order as manually / phone
+ * created (T17). `create_order` does NOT accept `payment_method` in its payload
+ * (it hardcodes the checkout defaults), so a manual order is stamped with this
+ * value in a post-create step: the paid-choice `advance_order_status` call
+ * carries it as `p_payment_method`, and the pending-choice path stamps it via a
+ * direct UPDATE. The order detail badges from it via `isManualOrder`.
+ */
+export const MANUAL_ORDER_PAYMENT_METHOD = "manual" as const;

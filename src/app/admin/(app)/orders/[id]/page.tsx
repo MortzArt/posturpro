@@ -8,12 +8,15 @@ import { getAdminOrder } from "@/lib/admin/orders/order-read";
 import { ADMIN_ORDERS_PATH } from "@/lib/admin/constants";
 import { OrderStatusBadge } from "@/components/admin/orders/order-status-badge";
 import { PaymentStatusBadge } from "@/components/admin/orders/payment-status-badge";
+import { SourceBadge } from "@/components/admin/orders/source-badge";
+import { OrderCreatedBanner } from "@/components/admin/orders/order-created-banner";
 import { OrderStatusStepper } from "@/components/admin/orders/order-status-stepper";
 import { OrderHistoryLog } from "@/components/admin/orders/order-history-log";
 import { OrderActionsPanel } from "@/components/admin/orders/order-actions-panel";
 import { TrackingForm } from "@/components/admin/orders/tracking-form";
 import { InternalNotes } from "@/components/admin/orders/internal-notes";
-import { deriveCancelledAt } from "@/lib/admin/orders/order-status-meta";
+import { deriveCancelledAt, isManualOrder } from "@/lib/admin/orders/order-status-meta";
+import { isMailableAddress } from "@/lib/email/recipient";
 import type { AdminOrderDetail } from "@/lib/admin/orders/order-read";
 
 /**
@@ -25,10 +28,13 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminOrderDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ created?: string; paidFailed?: string; emailFailed?: string }>;
 }) {
   const { id } = await params;
+  const { created, paidFailed, emailFailed } = await searchParams;
   const order = await getAdminOrder(id);
   if (!order) {
     notFound();
@@ -43,6 +49,13 @@ export default async function AdminOrderDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
+      {created ? (
+        <OrderCreatedBanner
+          orderNumber={created}
+          paidFailed={paidFailed === "1"}
+          emailFailed={emailFailed === "1"}
+        />
+      ) : null}
       <div>
         <Link
           href={ADMIN_ORDERS_PATH}
@@ -56,9 +69,11 @@ export default async function AdminOrderDetailPage({
           <h1 className="text-lg font-semibold tracking-tight">Pedido {order.orderNumber}</h1>
           <OrderStatusBadge status={order.orderStatus} />
           <PaymentStatusBadge status={order.paymentStatus} />
+          {isManualOrder(order.paymentMethod) ? <SourceBadge /> : null}
         </div>
         <p className="mt-1 break-words text-sm text-muted-foreground">
-          Creado {formatRelativeDate(order.createdAt)} · {order.contactEmail}
+          Creado {formatRelativeDate(order.createdAt)}
+          {isMailableAddress(order.contactEmail) ? ` · ${order.contactEmail}` : ""}
         </p>
       </div>
 
@@ -118,7 +133,11 @@ function ContactPanel({ order }: { order: AdminOrderDetail }) {
       <dl className="flex flex-col gap-2 text-sm">
         <div className="min-w-0">
           <dt className="text-xs text-muted-foreground">Contacto</dt>
-          <dd className="break-words">{order.contactEmail}</dd>
+          {isMailableAddress(order.contactEmail) ? (
+            <dd className="break-words">{order.contactEmail}</dd>
+          ) : (
+            <dd className="break-words italic text-muted-foreground">Sin correo</dd>
+          )}
           {order.contactPhone ? <dd className="break-words text-muted-foreground">{order.contactPhone}</dd> : null}
         </div>
         <div className="min-w-0">

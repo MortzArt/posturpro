@@ -128,6 +128,10 @@ interface MoneyFieldProps {
   disabled?: boolean;
   testid: string;
   placeholder?: string;
+  /** Optional controlled value (pair with `onChange`) for live-total callers. */
+  value?: string;
+  /** Optional change handler (e.g. to recompute a live order total). */
+  onChange?: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 /** Peso input: `$` adornment + `inputmode="decimal"` (never `type=number`). */
@@ -142,6 +146,8 @@ export function MoneyField({
   disabled,
   testid,
   placeholder,
+  value,
+  onChange,
 }: MoneyFieldProps) {
   const id = useId();
   const errorId = useId();
@@ -172,7 +178,8 @@ export function MoneyField({
           type="text"
           inputMode="decimal"
           placeholder={placeholder}
-          defaultValue={defaultValue}
+          {...(value !== undefined ? { value } : { defaultValue })}
+          onChange={onChange}
           disabled={disabled}
           aria-invalid={error ? true : undefined}
           aria-describedby={cn(helper ? helperId : undefined, error ? errorId : undefined)}

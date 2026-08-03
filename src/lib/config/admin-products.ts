@@ -23,6 +23,9 @@ export const ADMIN_LEDGER_PER_PAGE = 20;
 /** Max debounce for the list search box before pushing to the URL (ms). */
 export const ADMIN_SEARCH_DEBOUNCE_MS = 300;
 
+/** Max products returned by the manual-order picker catalog search (T17). */
+export const MANUAL_ORDER_CATALOG_LIMIT = 20;
+
 /**
  * Allowed image MIME types for product uploads (AC-14). The server re-validates
  * against this exact set — never trusts the client `accept` attribute.

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { UserGroupIcon } from "@hugeicons/core-free-icons";
+import { PlusSignIcon, UserGroupIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { AdminPage } from "@/components/admin/admin-page";
 import { OrderFilters } from "@/components/admin/orders/order-filters";
@@ -12,7 +12,27 @@ import {
   hasActiveOrderFilters,
   type RawSearchParams,
 } from "@/lib/admin/orders/order-list-filters";
-import { ADMIN_CUSTOMERS_PATH } from "@/lib/admin/constants";
+import { ADMIN_CUSTOMERS_PATH, ADMIN_ORDERS_PATH } from "@/lib/admin/constants";
+
+/** The order-list header actions (primary create CTA + secondary customers). */
+function OrdersHeaderActions() {
+  return (
+    <>
+      <Button asChild size="sm" data-testid="admin-orders-new">
+        <Link href={`${ADMIN_ORDERS_PATH}/new`}>
+          <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={2} aria-hidden />
+          Nuevo pedido
+        </Link>
+      </Button>
+      <Button asChild variant="secondary" size="sm" data-testid="admin-orders-customers-link">
+        <Link href={ADMIN_CUSTOMERS_PATH}>
+          <HugeiconsIcon icon={UserGroupIcon} size={16} strokeWidth={2} aria-hidden />
+          Clientes
+        </Link>
+      </Button>
+    </>
+  );
+}
 
 /**
  * Admin order list (T12 Surface 1). Server component: parses the URL filters,
@@ -37,7 +57,7 @@ export default async function AdminOrdersPage({
     const message = caught instanceof Error ? caught.message : "unknown";
     console.error(`[admin-orders] list read failed: ${message}`);
     return (
-      <AdminPage title="Pedidos">
+      <AdminPage title="Pedidos" actions={<OrdersHeaderActions />}>
         <ListErrorBanner />
       </AdminPage>
     );
@@ -50,14 +70,7 @@ export default async function AdminOrdersPage({
     <AdminPage
       title="Pedidos"
       description={description}
-      actions={
-        <Button asChild variant="secondary" size="sm" data-testid="admin-orders-customers-link">
-          <Link href={ADMIN_CUSTOMERS_PATH}>
-            <HugeiconsIcon icon={UserGroupIcon} size={16} strokeWidth={2} aria-hidden />
-            Clientes
-          </Link>
-        </Button>
-      }
+      actions={<OrdersHeaderActions />}
     >
       <div className="flex flex-col gap-4">
         <OrderFilters filters={filters} />

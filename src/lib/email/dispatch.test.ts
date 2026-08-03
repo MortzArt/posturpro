@@ -260,3 +260,46 @@ describe("locale end-to-end from orders.locale (edge 3, AC-12)", () => {
     expect(sent.html).toContain("/checkout/confirmacion/");
   });
 });
+
+describe("recipient-safety guard (T17 AC-13)", () => {
+  const NO_EMAIL = "sin-correo@pedido-manual.invalid";
+
+  it("skips the confirmation send (benign) when the order has the no-email sentinel", async () => {
+    getOrderForEmail.mockResolvedValue({ ...ORDER, contactEmail: NO_EMAIL });
+    const { sendOrderConfirmation } = await dispatch();
+    const result = await sendOrderConfirmation(ORDER.orderId);
+    expect(result).toEqual({ ok: true, sent: false });
+    expect(claimEmailSend).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("skips a later shipped email (benign) for an email-less manual order — no 500, no provider call", async () => {
+    getOrderForEmail.mockResolvedValue({ ...ORDER, contactEmail: NO_EMAIL });
+    const { sendShipped } = await dispatch();
+    const result = await sendShipped(ORDER.orderId, {
+      trackingNumber: "1Z9",
+      carrier: "DHL",
+      trackingUrl: null,
+    });
+    expect(result).toEqual({ ok: true, sent: false });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("skips cancelled + refund + voucher + payment-received for a blank/malformed recipient", async () => {
+    getOrderForEmail.mockResolvedValue({ ...ORDER, contactEmail: "" });
+    const { sendCancelled, sendRefundIssued, sendVoucherInstructions, sendPaymentReceived } = await dispatch();
+    expect(await sendCancelled(ORDER.orderId, null)).toEqual({ ok: true, sent: false });
+    expect(await sendRefundIssued(ORDER.orderId, "r1", 100)).toEqual({ ok: true, sent: false });
+    expect(await sendVoucherInstructions(ORDER.orderId, "p1", {} as never)).toEqual({ ok: true, sent: false });
+    expect(await sendPaymentReceived(ORDER.orderId, "p1", 100)).toEqual({ ok: true, sent: false });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("still sends normally when the order has a real email (guard is transparent)", async () => {
+    getOrderForEmail.mockResolvedValue({ ...ORDER, contactEmail: "real@cliente.mx" });
+    const { sendOrderConfirmation } = await dispatch();
+    const result = await sendOrderConfirmation(ORDER.orderId);
+    expect(result).toEqual({ ok: true, sent: true });
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "real@cliente.mx" }));
+  });
+});

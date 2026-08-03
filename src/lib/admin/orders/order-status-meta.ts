@@ -11,6 +11,7 @@
  * variant/tint is reinforcement only (never color alone — a11y).
  */
 import type { OrderStatus, PaymentStatus, TransitionKind } from "@/lib/supabase/database.types";
+import { MANUAL_ORDER_PAYMENT_METHOD } from "@/lib/admin/orders/order-constants";
 
 /** The `Badge` variants this feature uses (subset of the shadcn Badge cva). */
 export type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
@@ -114,6 +115,29 @@ export function paymentBadgeIsRedundant(
     ORDER_STATUS_META[orderStatus].label === PAYMENT_STATUS_META[paymentStatus].label
   );
 }
+
+/**
+ * True when an order was created manually / by phone (T17). Derived from the
+ * `payment_method='manual'` source marker; the detail (and optionally the list)
+ * badges from it. Single-sourced through `MANUAL_ORDER_PAYMENT_METHOD`.
+ */
+export function isManualOrder(paymentMethod: string | null): boolean {
+  return paymentMethod === MANUAL_ORDER_PAYMENT_METHOD;
+}
+
+/**
+ * Source-provenance badge metadata (T17). Glyph + text (never color alone). The
+ * `☎` glyph reads as "phone / manual" independent of color; the `outline`
+ * variant + muted tint keep it quiet — it is provenance, not lifecycle status.
+ */
+export const SOURCE_BADGE_META = {
+  manual: {
+    label: "Pedido manual / telefónico",
+    glyph: "☎",
+    variant: "outline",
+    tint: "text-muted-foreground",
+  },
+} as const satisfies Record<"manual", OrderStatusMeta>;
 
 /**
  * Forward-only lifecycle rank, mirroring the DB `order_status_rank` (0009):

@@ -16,6 +16,7 @@ import { getTranslations } from "next-intl/server";
 import { getEmailEnv } from "@/lib/env";
 import { getStoreSettingsStatic } from "@/lib/store-settings";
 import { OWNER_EMAIL_LOCALE, EMAIL_SEND_TIMEOUT_MS } from "@/lib/config";
+import { resolveCustomerRecipient } from "@/lib/email/recipient";
 import { sendEmail, type SendEmailInput } from "@/lib/email/provider";
 import { claimEmailSend, finalizeEmailSend } from "@/lib/email/ledger";
 import { buildOrderUrl } from "@/lib/email/order-url";
@@ -155,10 +156,14 @@ export async function sendOrderConfirmation(orderId: string): Promise<DispatchRe
     console.error(`[email] order confirmation skipped: order ${orderId} unreadable`);
     return { ok: false, reason: "order unreadable" };
   }
+  const recipient = resolveCustomerRecipient(order.contactEmail);
+  if (!recipient) {
+    return { ok: true, sent: false };
+  }
   const [t, chrome] = await Promise.all([emailTranslator(order.locale), chromeFor(order)]);
   return dispatchEmail(orderId, EMAIL_KINDS.ORDER_CONFIRMATION, ONE_PER_ORDER_DEDUPE_KEY, () => {
     const rendered = renderOrderConfirmation(orderInput(order), t, chrome);
-    return { ...rendered, to: order.contactEmail };
+    return { ...rendered, to: recipient };
   });
 }
 
@@ -195,10 +200,14 @@ export async function sendPaymentReceived(
     console.error(`[email] payment received skipped: order ${orderId} unreadable`);
     return { ok: false, reason: "order unreadable" };
   }
+  const recipient = resolveCustomerRecipient(order.contactEmail);
+  if (!recipient) {
+    return { ok: true, sent: false };
+  }
   const [t, chrome] = await Promise.all([emailTranslator(order.locale), chromeFor(order)]);
   return dispatchEmail(orderId, EMAIL_KINDS.PAYMENT_RECEIVED, mpPaymentId, () => {
     const rendered = renderPaymentReceived({ ...orderInput(order), paidAmountCents }, t, chrome);
-    return { ...rendered, to: order.contactEmail };
+    return { ...rendered, to: recipient };
   });
 }
 
@@ -218,10 +227,14 @@ export async function sendVoucherInstructions(
     console.error(`[email] voucher skipped: order ${orderId} unreadable`);
     return { ok: false, reason: "order unreadable" };
   }
+  const recipient = resolveCustomerRecipient(order.contactEmail);
+  if (!recipient) {
+    return { ok: true, sent: false };
+  }
   const [t, chrome] = await Promise.all([emailTranslator(order.locale), chromeFor(order)]);
   return dispatchEmail(orderId, EMAIL_KINDS.VOUCHER_INSTRUCTIONS, mpPaymentId, () => {
     const rendered = renderVoucherInstructions({ ...orderInput(order), voucher }, t, chrome);
-    return { ...rendered, to: order.contactEmail };
+    return { ...rendered, to: recipient };
   });
 }
 
@@ -238,11 +251,15 @@ export async function sendShipped(
   if (!order) {
     return { ok: false, reason: "order unreadable" };
   }
+  const recipient = resolveCustomerRecipient(order.contactEmail);
+  if (!recipient) {
+    return { ok: true, sent: false };
+  }
   const [t, chrome] = await Promise.all([emailTranslator(order.locale), chromeFor(order)]);
   return dispatchEmail(orderId, EMAIL_KINDS.SHIPPED, ONE_PER_ORDER_DEDUPE_KEY, () => {
     const input: ShippedEmailInput = { ...orderInput(order), ...tracking };
     const rendered = renderShipped(input, t, chrome);
-    return { ...rendered, to: order.contactEmail };
+    return { ...rendered, to: recipient };
   });
 }
 
@@ -255,11 +272,15 @@ export async function sendCancelled(
   if (!order) {
     return { ok: false, reason: "order unreadable" };
   }
+  const recipient = resolveCustomerRecipient(order.contactEmail);
+  if (!recipient) {
+    return { ok: true, sent: false };
+  }
   const [t, chrome] = await Promise.all([emailTranslator(order.locale), chromeFor(order)]);
   return dispatchEmail(orderId, EMAIL_KINDS.CANCELLED, ONE_PER_ORDER_DEDUPE_KEY, () => {
     const input: CancelledEmailInput = { ...orderInput(order), reason };
     const rendered = renderCancelled(input, t, chrome);
-    return { ...rendered, to: order.contactEmail };
+    return { ...rendered, to: recipient };
   });
 }
 
@@ -273,12 +294,16 @@ export async function sendRefundIssued(
   if (!order) {
     return { ok: false, reason: "order unreadable" };
   }
+  const recipient = resolveCustomerRecipient(order.contactEmail);
+  if (!recipient) {
+    return { ok: true, sent: false };
+  }
   const [t, chrome] = await Promise.all([emailTranslator(order.locale), chromeFor(order)]);
   // Dedupe on the MP refund id: a partial refund can fire more than once per order.
   return dispatchEmail(orderId, EMAIL_KINDS.REFUND_ISSUED, mpRefundId, () => {
     const input: RefundEmailInput = { ...orderInput(order), refundedAmountCents };
     const rendered = renderRefundIssued(input, t, chrome);
-    return { ...rendered, to: order.contactEmail };
+    return { ...rendered, to: recipient };
   });
 }
 
