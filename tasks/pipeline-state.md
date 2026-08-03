@@ -1,10 +1,17 @@
 # Pipeline State
 Task: T14 — SEO, analytics & launch hardening
 Tier: full-cycle
-Stage: 8
-Agent: ultraux
-Last Updated: 2026-08-03 23:10
+Stage: 9+10 (parallel)
+Agent: ultrasecurity + ultraarch
+Last Updated: 2026-08-03 23:30
 Notes: LAST build task. Full-cycle. T14 is deploy-readiness — after it, owner deploys to Vercel + hosted Supabase for client QA. Go-live also gated on T8 Phase 5 owner sign-off.
+
+=== T14 S8 (UX, ultraux) COMPLETE — CLEAN, 9.5/10, no fixes needed (2026-08-03) ===
+- Zero regressions across every touched surface, verified LIVE vs prod build + next start (seeded DB, NEXT_PUBLIC_SITE_URL=https://posturpro.mx), both locales, 375px + 1024px.
+- Contact counter (the ONE intended visible delta): PASS — renders 0/2000, live-updates (10/2000, 1995/2000 near cap), warning color + aria-live=polite near limit, aria-describedby association, byte-identical a11y pattern to empresas sibling. Raw template strings ONLY in RSC flight payload, never visible DOM.
+- Zero-visual-change PASS on home/sillas/PDP/3 taxonomy/empresas/showroom/sobre-nosotros: no overflow, JsonLd renders script-only (no layout, not focusable/announced), exactly ONE visible breadcrumb nav (JSON-LD spawned no duplicate). Taxonomy ƒ Dynamic keeps skeleton/EmptyState; ?page=2/?page=99 clamped 200. 404 = real status + styled page both locales.
+- Files changed: NONE (only tasks/ux-audit.md). Backlog (pre-existing, out of scope): PDP unknown-slug returns 200 not 404 (SSG notFound) — future catalog-scoped ticket.
+- Next: Stages 9 (Security, ultrasecurity) + 10 (Arch, ultraarch) IN PARALLEL, then 11 (Hacker) — complexity=high runs all stages — then 12 (Verify).
 
 === T14 S7 (QA, ultraqa) COMPLETE — PASS, confidence HIGH (2026-08-03) ===
 - AC 14/14 Group-A PASS, every one verified vs a REAL next build (exit 0) + next start on the seeded DB (per the S1 LESSON): A2 all 3 [slug] ƒ Dynamic, real slugs 200 both locales incl ?page=2 + ?page=99 clamped; A9 sitemap xmllint-well-formed 118 loc=118 unique + 354 hreflang; A10 robots incl both /en funnel disallows; A11 canonical+hreflang every indexable surface; A12 Product (price 8999.00 MXN major-unit, InStock)/Breadcrumb/Org/WebSite JSON-LD valid + accented-name XSS spot-check clean; A13 0 secret values across 44 client chunks; A3/A4 counter "0/2000".
