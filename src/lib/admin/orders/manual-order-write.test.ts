@@ -119,6 +119,24 @@ describe("create_order payload (AC-9/10/14)", () => {
     expect(update).toHaveBeenCalledWith({ payment_method: "manual" });
   });
 
+  it("charges the LIVE revalidated price, never a client-influenced value (trust boundary)", async () => {
+    // revalidateLines is the SOLE price authority: even though the input line
+    // carries only identity + qty (no price), assert the RPC payload's unit price
+    // and line total come from the revalidated live line (499900), and the totals
+    // are assembled from it — a tampered/stale client price cannot change the charge.
+    revalidateLines.mockResolvedValue({
+      ok: true,
+      lines: [{ ...VALIDATED_LINE, unitPriceCents: 499900, quantity: 2 }],
+    });
+    await createManualOrder({ input: input(), idempotencyKey: "idem-1" });
+    const payload = rpc.mock.calls[0][1].payload;
+    expect(payload.items[0].unit_price_cents).toBe(499900);
+    expect(payload.items[0].line_total_cents).toBe(499900 * 2);
+    // subtotal is derived from the live line, plus the admin-confirmed shipping.
+    expect(payload.subtotal_cents).toBe(499900 * 2);
+    expect(payload.total_cents).toBe(499900 * 2 + 50000);
+  });
+
   it("substitutes the no-email sentinel when contactEmail is null (AC-11)", async () => {
     await createManualOrder({ input: input({ contactEmail: null }), idempotencyKey: "idem-1" });
     expect(rpc.mock.calls[0][1].payload.contact_email).toBe(NO_EMAIL_PLACEHOLDER);

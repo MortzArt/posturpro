@@ -1,127 +1,157 @@
-# QA Report: T16 — B2B landing page (`/empresas`, offices + quote form)
+# QA Report: T17 — Admin manual order entry (phone / offline orders)
 
-Standard pipeline, S5 (QA) — the QUALITY GATE for the standard tier (no verify stage). Scope:
-commits `f713355` (dev, +174 unit + 20 e2e) + `615b424` (reviewfix). Independent re-verification,
-residual-gap closure, and full-repo regression. **Verdict: PASS, confidence HIGH.**
+Standard-tier S5 (QA) — the QUALITY GATE. Scope: `c02dca9` (dev) + `4d564d3` (reviewfix).
+Verified INDEPENDENTLY (re-ran every gate; did not trust dev-done / review summaries) and
+regressed the whole repo. This feature creates real orders, moves stock, and can mark money
+received, so the trust boundary was verified in code AND by explicit new tests.
+
+## Verdict: PASS — confidence HIGH
+
+Zero known bugs. 20/20 ACs covered + passing, 7/7 edges handled + tested. The trust core
+(client price never trusted, session-first on all 3 surfaces, idempotency, recipient-safety,
+offline-paid without a receipt email, M-1 internal-note round-trip) is proven at unit,
+integration, and e2e levels. No T17-caused regression anywhere in the suite.
 
 ## Test Suite Summary
+| Type        | Ran  | Passed | Failed | Notes |
+|-------------|------|--------|--------|-------|
+| Unit        | 1985 | 1985   | 0      | was 1982 → **+3** new trust tests this stage |
+| Integration | 257  | 257    | 0      | 24 files, full reset+reseed, incl. `admin-orders-manual` |
+| E2E         | 3    | 3      | 0      | chromium, warm server (reused :3000) |
+| tsc --noEmit | —   | 0 err  | —      | clean |
+| eslint       | —   | 0 err  | —      | clean (all T17 files + edited tests) |
 
-| Type | Written (T16 total) | Passed | Failed | Skipped |
-|------|--------|--------|--------|---------|
-| Unit | 174 (dev) + 12 (QA hero) + 1 slot (QA imagery) | all | 0 | 0 |
-| Integration | 0 new (no DB seam — email-relay only) | 253/253 | 0 | 0 |
-| E2E | 20 (dev) + 12 (QA) = 32 | 32/32 | 0 | 0 |
-| **Full unit suite** | **1931** (was 1920 → +11 net) | **1931** | **0** | 0 |
+## New Tests Added This Stage (+3 unit)
+Both target the ONE property that matters most for a money+stock feature — a tampered client
+payload cannot change the charged total or oversell — making the trust boundary explicit and
+regression-proof (a future dev adding a price field would now fail these).
 
-Gates (independently run, not trusted from dev-done): `tsc --noEmit` = **0**; `eslint` (all touched +
-new files) = **0**; full unit suite **1931/1931 (113 files)**; integration **253/253 (23 files)**;
-`e2e/empresas-quote.spec.ts` **32/32** (chromium + Pixel-7 mobile) via the Playwright-managed
-webServer (correct `QUOTE_RATE_LIMIT_DISABLED=1` env).
+- **`src/lib/admin/orders/manual-order-form-read.test.ts`** (+2):
+  - "does NOT carry line_unit_price_cents into the raw validator input" — injects a hostile
+    1-centavo `line_unit_price_cents` into FormData and asserts the raw line the validator
+    consumes has EXACTLY `{line_key, line_product_id, line_variant_id, line_qty}` and no price
+    property; the tampered value lands ONLY in the display echo (never a charge-driving field).
+  - "ignores an injected top-level total / subtotal — no such raw field exists" — asserts a
+    forged `total_cents`/`subtotal_cents` never appears in the raw input.
+- **`src/lib/admin/orders/manual-order-write.test.ts`** (+1):
+  - "charges the LIVE revalidated price, never a client-influenced value" — asserts the
+    `create_order` payload's `unit_price_cents`, `line_total_cents`, `subtotal_cents`, and
+    `total_cents` are all derived from the `revalidateLines` live line (499900) + the
+    admin-confirmed shipping — never from the input.
 
-## Tests Written (this stage)
+## Trust-Boundary Verification (task focus #2)
+| Property | How proven | Result |
+|----------|-----------|--------|
+| Client `unit_price` ignored | Structural: `readRawManualOrder` reads only key/pid/vid/qty; `line_unit_price_cents` → display echo only (form-read test + NEW tamper test). Write test: payload price = live revalidated price. | PASS |
+| Tampered total can't change charge | `assembleOrder` snapshots totals from live lines; NEW write test contrasts payload totals against input | PASS |
+| Oversell prevented | `create_order` guarded decrement `WHERE stock>=qty` (integration: stock decremented exactly once; idempotent replay = one decrement) | PASS |
+| Out-of-stock at submit | `revalidateLines` → `line-issues` aborts BEFORE create; write test asserts `rpc` never called | PASS |
+| Price-changed since add | `revalidateLines` → `price-changed` w/ live price; abort before create (write test) | PASS |
+| Zero lines | `parseLines` → `no-items`; RPC never called (input test) | PASS |
+| qty 0 / negative / non-int / >INT4 | `parseLine` integer∈[1,INT4_MAX] (input test, 4 cases) | PASS |
+| Unknown product/variant UUID | `parseLine` UUID_PATTERN → `line-invalid` (input test: `../etc`, `not-a-uuid`) | PASS |
 
-### Unit (+13, 2 files)
-- `src/components/home/hero.test.tsx` (NEW, 12) — the previously-untested Hero component, closing the
-  task's "degrade path (B2B_HERO_IMAGE null → building-glyph tile) unit-covered" gap:
-  - filled slot renders `next/image` with the passed alt, no fallback tile; 4/3 aspect box reserved (CLS).
-  - null slot degrades to `hero-image-fallback` (never a broken `<img>`); SAME 4/3 box reserved;
-    tile is `aria-hidden` (decorative, AC-11); pitch copy + CTA still render.
-  - **`fallbackIcon` honored** — the B2B `Building06Icon` renders a *different* glyph than the homepage
-    chair default (proves the T16 "fallback reads offices" wiring, edge 3 / AC-10), not hardcoded.
-  - mount reuses the reduced-motion-gated `.enter-fade` class (AC-10).
-- `src/lib/config/imagery.test.ts` (EXTENDED, +1 slot × 2 assertions) — added `B2B_HERO_IMAGE` to the
-  `string | null` + local-`/public`-path (no remote host) contract table (AC-8/AC-10).
+## M-1 Regression (internal-note data-loss fix — task focus #3)
+| Case | Test | Result |
+|------|------|--------|
+| Note present → persisted to `order_internal_notes` via `addOrderNote` | write test "inserts the internal note onto the created order" | PASS |
+| Blank note → no row | write test "does not insert a note when blank/null" | PASS |
+| Double-submit (reused key) → not double-inserted | write test "does NOT re-insert on an idempotent replay (reused:true)" | PASS |
+| Note-write failure never rolls back the order | write test "never rolls back the order when the note insert fails" | PASS |
+Note is stored in the same `order_internal_notes` table the detail "Notas internas" panel reads
+(via `addOrderNote`), so it round-trips to the detail render.
 
-### E2E (+12, extends `e2e/empresas-quote.spec.ts`)
-- **State-preservation-on-error, ALL SIX fields** (AC-6, edge 3, React-19 remount) — fills all 6 fields
-  incl. `teamSize="200+"`, forces a failure re-render, asserts every value survives — *including the
-  re-keyed native `<select>`* (the load-bearing case S4 verified only in code). Resilient to which
-  failure banner appears (error vs rate-limited — both preserve values).
-- **Char-counter regression** (×2 projects) — asserts `quote-counter` renders a numeric `N/M`, NEVER the
-  raw i18n key; reacts to typed input. Guards the `t()`-vs-`t.raw()` bug fixed this stage (see Bugs).
-- **Honeypot off-screen in BOTH locales** (AC-7, edge 2) — `/empresas` and `/en/empresas`: present,
-  `tabindex=-1`, `autocomplete=off`, `aria-hidden` wrapper, `left < -1000px`, not in viewport.
-- **Per-page metadata resolves per locale** (AC-9) — es-MX has a non-empty localized title+description;
-  en resolves a *distinct* English title (not a silent es-MX fallback).
+## Payment Paths (task focus #4)
+| Path | Assertion | Result |
+|------|-----------|--------|
+| Pending | leaves `pending_payment`/`pending`; source stamped via direct UPDATE `payment_method='manual'` | PASS (integration + write test) |
+| Offline paid | `advance_order_status` payment-only (`p_order_status=null`, `p_payment_status='paid'`, `p_payment_method='manual'`) → `transition_kind='paid'` history row; NO payment-received email | PASS (integration asserts paid + method + kind='paid' row; write test asserts no `sendPaymentReceived`) |
+| Both | stock decremented exactly once + order number `PP-XXXXXX` issued | PASS (integration) |
 
-## Acceptance Criteria Coverage (14/14 PASS)
+## Email Safety (task focus #5)
+| Case | Test | Result |
+|------|------|--------|
+| Email-less order → placeholder never mailed | recipient + dispatch tests: sentinel/blank/malformed → `{ok:true,sent:false}`, no provider call, no claim | PASS |
+| "Sin correo" shown, sentinel never leaked | detail gates on `isMailableAddress`; e2e asserts "Sin correo" visible + "pedido-manual.invalid" count 0 | PASS |
+| Later T12 status email (shipped) does NOT throw | dispatch test "skips a later shipped email (benign) — no 500"; integration asserts `resolveCustomerRecipient` → null | PASS |
+| Guard transparent for real emails | dispatch "still sends normally when the order has a real email" | PASS |
+All 6 customer-facing sends (`sendOrderConfirmation`/`PaymentReceived`/`Shipped`/`Cancelled`/`RefundIssued`/`VoucherInstructions`) route through `resolveCustomerRecipient`.
 
-| # | Criterion | Test(s) / Evidence | Status |
-|---|-----------|--------------------|--------|
-| AC-1 | Renders 200 both locales in storefront shell, Casa de Azulejo | e2e both-locale 200 + `lang` attr; live curl 200/200 | PASS |
-| AC-2 | Persuade structure (hero/value/process/form) + anchored CTA | e2e `b2b-pillars`/`b2b-process`/`quote-form` visible; CTA→`#cotizacion`, `#como-funciona` present | PASS |
-| AC-3 | Zero fabricated proof | Grep sweep of ALL `empresas` copy (both locales) + B2B JSX: only team-size ranges + "10 dígitos"; no counts/testimonials/client-names/percentages/press | PASS |
-| AC-4 | 6 fields incl. constrained native team-size `<select>` | e2e: 6 fields visible, `<select>` tag with 5 options; all labels from i18n both locales | PASS |
-| AC-5 | Valid submit → `sendQuoteRelay`/`renderQuoteRelay`, replyTo=visitor, all fields | `actions.test.ts` happy-path + trimmed relay; `quote-relay.test.ts` every field HTML+text; dispatch `replyTo=fromEmail` | PASS |
-| AC-6 | Full serializable state matrix, error never leaks reason | `actions.test.ts` branch matrix; e2e error+retry+preserved; 6-field-preservation e2e; reason-suppression asserted | PASS |
-| AC-7 | Abuse controls in order (honeypot→validate→rate-limit) | `actions.test.ts` gate-ordering; dedicated limiter instance; server-only disable hatch; honeypot-both-locales e2e | PASS |
-| AC-8 | Nav + footer links both locales, zero dead | `nav-items.test.ts` asserts `offices→/empresas`; e2e nav + `footer-link-offices` → 200 | PASS |
-| AC-9 | Per-page `generateMetadata` both locales | per-locale metadata e2e (distinct en title); `page.tsx:50` locale-resolved title+description | PASS |
-| AC-10 | DESIGN.md compliance; image null-degrade; admin firewall | Hero fallback unit tests (Building glyph, aspect box, `.enter-fade`); imagery slot contract; no admin/`ui/*` edit | PASS |
-| AC-11 | WCAG AA; labeled fields + `aria-describedby`; native select; glyph+text status | aria wiring spot-check (5×`aria-describedby`/`aria-invalid`, focus-visible ring, glyph+text banners); native `<select>` e2e | PASS |
-| AC-12 | No overflow at 375/768 | e2e no-overflow assertion both widths; `grid-cols-1 sm:grid-cols-2` 2-up-pairs-stack | PASS |
-| AC-13 | Exact bilingual parity; keys-used updated | Message-parity test green (0 asymmetry); `keys-used.test.ts` registers all `empresas.*` + nav/footer | PASS |
-| AC-14 | Unit + e2e; tsc/eslint/suite green | 1931/1931 unit; action/guard/limiter/template exhaustive; 32/32 e2e; tsc=0, eslint=0 | PASS |
+## Idempotency (task focus #6)
+Server-minted key (`normalizeIdempotencyKey` → `randomUUID()` when blank). Integration: a repeat
+key returns the original order (`reused:true`) with ONE stock decrement. Write test: `reused:true`
+skips the note re-insert. PASS.
 
-## Edge Case Coverage (8/8 HANDLED)
+## E2E (task focus #7) — warm server, chromium 3/3
+Admin login → `/admin/orders` "Nuevo pedido" CTA (`admin-orders-new`) → `/admin/orders/new`
+→ picker search "silla" → add first in-stock option → fill EMAIL-LESS contact + shipping →
+confirm switch disabled (email blank) → submit pending → lands on detail
+`?created=` with `order-created-banner` + `order-source-manual` (☎ Pedido manual / telefónico)
+badge + "Sin correo" (no leaked sentinel). Separate test: invalid CP stays on form with
+`manual-order-cp-error`, no order created (AC-4). The b7a6b3c no-duplicate-status-badge fix holds:
+a pending_payment/pending manual order is exactly the redundant pair `paymentBadgeIsRedundant()`
+hides on list rows (unit-tested, 7 cases); the detail header renders both by design.
 
-| # | Edge Case | Test | Status |
-|---|-----------|------|--------|
-| 1 | Team-size enum tampering | `submit-guard.test.ts` + `actions.test.ts` (`teamSizeInvalid` / empty→`teamSizeRequired`) | PASS |
-| 2 | Honeypot filled | `actions.test.ts` (fake success, no send, no oracle) + honeypot-off-screen e2e both locales | PASS |
-| 3 | Owner email unconfigured / send fail | `actions.test.ts` `{ok:false}`→error, reason logged only; e2e default error-on-submit + preserved | PASS |
-| 4 | Rate-limit flood, isolated from contact | `rate-limit.test.ts` per-IP window + **both-direction isolation** + independent key counts | PASS |
-| 5 | Whitespace / oversized / control-char | `submit-guard.test.ts` trim→required, `needsTooLong` cap, `stripControlChars` (byte-mirrors contact) | PASS |
-| 6 | Missing/unknown locale, empty tables | Layout `notFound()` gates `/zz/empresas` (live 404, not 500); copy-driven; `readB2BBrands`→`[]` | PASS |
-| 7 | `prefers-reduced-motion` | `.enter-fade`/`.stagger` reduce blocks (globals.css); Hero test asserts the class | PASS |
-| 8 | JS-disabled / slow network | real `<form action>`; server re-validates trimmed values; server-rendered pitch | PASS |
+## Auth (task focus #8)
+`requireSession()` is line 1 of the RSC page (`new/page.tsx`), the `createManualOrder` action,
+AND the `searchManualOrderCatalog` action — before any DB read/write. It calls the unit-tested
+`hasValidAdminSession` (`session-guard.test.ts`) and `redirect()`s to `/admin/login` when absent.
+A logged-out request is rejected before any write. Verified in code (all 3 session-first).
+
+## Acceptance Criteria Coverage (20/20)
+| # | Criterion | Evidence | Status |
+|---|-----------|----------|--------|
+| AC-1 | "Nuevo pedido" CTA, testid | e2e clicks `admin-orders-new` → form | PASS |
+| AC-2 | Page + action `requireSession()` first | code: 3 surfaces session-first | PASS |
+| AC-3 | Contact + full MX shipping (incl. note persisted) | input test + M-1 write tests | PASS |
+| AC-4 | Same MX CP/state rules | input test (cp-invalid, state-invalid) + e2e | PASS |
+| AC-5 | Search catalog, variant required, qty≥1 | picker + parseLine; e2e add-via-picker | PASS |
+| AC-6 | Live stock + server price at selection | catalog action `variant.price_override_cents ?? product.price_cents` | PASS |
+| AC-7 | `revalidateLines` re-verify, abort on issue | write test: rpc not called on issues | PASS |
+| AC-8 | Shipping default + override; `assembleOrder` | write test: totals from assembleOrder + admin shipping | PASS |
+| AC-9 | Atomic `create_order`; idempotency | integration create + idempotency; write test key | PASS |
+| AC-10 | pending_payment/pending, es-MX | integration `pending`; write test `locale='es-MX'` | PASS |
+| AC-11 | Email optional; blank creates | input test (blank→null); write test (sentinel) | PASS |
+| AC-12 | Confirmation opt-in, gated on valid email | write tests (4 branches) | PASS |
+| AC-13 | Recipient-safe skip on all sends | recipient + dispatch tests | PASS |
+| AC-14 | `payment_method='manual'` + detail badge | write test stamp; e2e `order-source-manual` | PASS |
+| AC-15 | Paid via advance payment-only | integration + write test | PASS |
+| AC-16 | No payment-received email on paid | write test: no `sendPaymentReceived` | PASS |
+| AC-17 | Appears in list + detail, packing slip | `revalidatePath` + redirect; e2e detail; list-badge unit-tested | PASS |
+| AC-18 | Input + write unit tests | present + extended (+3 this stage) | PASS |
+| AC-19 | Integration end-to-end | `admin-orders-manual.integration.test.ts` 4 tests green | PASS |
+| AC-20 | Admin e2e | `admin-orders-manual.spec.ts` 3/3 warm | PASS |
+
+## Edge Case Coverage (7/7)
+| # | Edge | Test | Status |
+|---|------|------|--------|
+| 1 | Stock race on create | integration guarded decrement; revalidate abort | PASS |
+| 2 | Zero-item order | input test `no-items`; RPC never called | PASS |
+| 3 | Double / double-submit | integration idempotency (one decrement); write reused skip | PASS |
+| 4 | Email absent | sentinel + guard; e2e email-less; integration later-send skip | PASS |
+| 5 | Price change mid-entry | write test `price-changed` abort before create | PASS |
+| 6 | Invalid quantity | input test (0/neg/1.5/INT4+1) | PASS |
+| 7 | Marked-paid + email-less | integration paid + no receipt; recipient guard | PASS |
 
 ## Bugs Found & Fixed
+None. The S4 ReviewFix pass had already fixed the one real defect (M-1 internal-note data loss),
+the multi-word search (M-2), the confirmation-switch honesty (M-3), and the stale config test.
+This stage independently re-verified all four hold and added +3 trust-boundary tests to lock in
+the most security-critical property.
 
-### BUG-A (MINOR-visible, PRE-EXISTING pattern, T16 instance FIXED)
-- **What**: The live character counter under the "¿Qué necesitas?" textarea rendered the **literal i18n
-  key `empresas.form.charCount`** to every user, in both locales, instead of `N/M` (e.g. `0/2000`).
-- **How found**: The Playwright-managed webServer log surfaced a server-side
-  `FORMATTING_ERROR: The intl string context variable "count" was not provided to the string "{count}/{max}"`
-  at `page.tsx:141 charCount: t("form.charCount")`. The mobile DOM snapshot confirmed the counter text
-  was the raw key. `t()` ICU-formats the template with no `count`/`max` context → throws → next-intl's
-  default `getMessageFallback` returns the key path → `interpolate()` (no placeholders) emits it verbatim.
-- **Fix**: `charCount: t.raw("form.charCount")` (`page.tsx`) — `t.raw` returns the template untouched for
-  client-side interpolation. This is the **established codebase pattern** (PDP `qa.form.counter`, cart,
-  checkout confirmation all use `t.raw` for cross-boundary templates). tsc/eslint clean; FORMATTING_ERROR
-  gone; counter now renders `0/2000` and reacts to input (new regression e2e ×2 guards it).
-- **Pre-existing twin (documented for T14, NOT fixed here — out of my T16 scope)**: the **contact form**
-  has the identical bug — `src/app/[locale]/contacto/page.tsx:59 charCount: t("charCount")` on the same
-  `"{count}/{max}"` template. It shipped in T13 (QA-passed, missed) and renders `contact.charCount`
-  under the contact textarea today. One-line fix (`t.raw`); T14's per-page pass should close it.
+## Untested Areas (accepted, low risk)
+- **Action-level auth rejection test** (a logged-out POST to `createManualOrder`): not added as a
+  standalone test — server actions with `"use server"` + `redirect()` are awkward to unit-test in
+  isolation, and the guarantee is already strong: `requireSession()` is line 1 of all 3 surfaces,
+  delegates to the unit-tested `hasValidAdminSession`, and redirects before any DB call. LOW risk.
+- **Optional list source-badge / source filter**: deliberately deferred per ticket (may-defer); the
+  required detail badge is present and e2e-verified. No AC affected. LOW risk.
 
-### No product bugs in the T16 quote stack itself
-The security-critical path (honeypot→validate→rate-limit→relay ordering, `stripControlChars`,
-server-side enum boundary, `escapeHtml` on every field, error-reason suppression, dedicated-limiter
-isolation, never-throw-to-client) is correct and exhaustively tested — verified in code, not trusted.
-
-## Cross-Surface Regression
-- Full unit suite **1931/1931 (113 files)** — nav/footer/keys additions broke no existing nav or key
-  tests; my hero test + page.tsx `t.raw` edit regressed nothing. (One `payment-panel` full-run flake
-  observed once, passed on clean re-run + isolated 17/17 — the documented pre-existing `waitFor`
-  timing flake, does NOT touch T16 files.)
-- Integration **253/253** unchanged (no DB seam added).
-- Homepage/static pages unaffected: hero default (no `fallbackIcon`) still renders the chair glyph
-  (unit-asserted); the theme-firewall spec and all storefront e2e remain green (no `ui/*`/admin/`:root` edit).
-
-## Confidence: HIGH
-
-Every AC (14/14) is behavior-tested and passing; every edge (8/8) is handled and tested; the full repo
-regresses clean; the one bug found was caught by watching the server log (not just green tests) and fixed
-with the codebase's own idiom, plus a regression e2e. The S4 M-1 native-`<select>` affordance fix is
-confirmed (no `appearance-none`; e2e proves a `<select>` with 5 options + preserved value).
-
-## Untested Areas (with risk)
-- **Live email SUCCESS render** (real `sendQuoteRelay` `{ok:true}` → success banner clears + auto-hides) —
-  blocked-on-user: `.env.local` has no `EMAIL_API_KEY`/`EMAIL_FROM_ADDRESS`/`EMAIL_OWNER_ADDRESS`, and the
-  success mapping is proven exhaustively at the action level (`actions.test.ts`) + `sendQuoteRelay` is the
-  byte-for-byte shipped `sendContactRelay` pattern. **Risk: LOW.** Same posture T13 QA accepted; e2e
-  correctly asserts the default error-on-submit (edge 3). T14 owns the live EMAIL_* wiring.
-- **Prod-build render of `/empresas`** — the pre-existing T14-owned taxonomy-detail prod 500 (BUG-1 from
-  T15 QA) makes a full prod-build e2e noisy; `/empresas` is copy-driven with no `searchParams`-in-SSG, so
-  it is not in that bug class (dev-server 200 both locales confirmed). **Risk: LOW**, T14 repoints e2e to prod.
+## Environment Notes
+- One unit flake observed on the FIRST full run: `checkout/rate-limit.test.ts >
+  cardinality-DoS bound` timed out at 5s while tsc+eslint competed for CPU. Confirmed a
+  CPU-contention flake — passed 6/6 in isolation (2.15s) and 0 failures on the clean final run
+  (1985/1985). NOT a T17 regression.
+- e2e reused the warm dev server on :3000 (`reuseExistingServer` local) — avoids the documented
+  cold-compile flakiness. The pre-existing prod-build taxonomy 500 (T14-owned) and Pixel-7
+  gotoPDP gotchas are out of T17 scope and were not exercised.

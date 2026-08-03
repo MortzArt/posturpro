@@ -65,6 +65,38 @@ describe("readRawManualOrder", () => {
   });
 });
 
+describe("trust boundary — a tampered client price never reaches the validator (T17 QA)", () => {
+  it("does NOT carry line_unit_price_cents into the raw validator input", () => {
+    // A malicious form injects a hostile price the attacker hopes will be charged.
+    const form = buildForm();
+    form.delete("line_unit_price_cents");
+    form.append("line_unit_price_cents", "1"); // one centavo, for BOTH lines
+    form.append("line_unit_price_cents", "1");
+
+    const { raw, values } = readManualOrderForm(form);
+
+    // The raw input the pure validator consumes has NO price field at all — the
+    // parseManualOrderInput → revalidateLines → assembleOrder path re-reads the
+    // LIVE price server-side, so a tampered price has zero path to the total.
+    for (const line of raw.lines) {
+      expect(Object.keys(line)).toEqual(["line_key", "line_product_id", "line_variant_id", "line_qty"]);
+      expect(line).not.toHaveProperty("line_unit_price_cents");
+    }
+    // The tampered price lands ONLY in the display echo (used to re-render the
+    // editor on a rejected submit) — never in a field that drives the charge.
+    expect(values.lines[0].unitPriceCents).toBe(1);
+  });
+
+  it("ignores an injected top-level total / subtotal — no such raw field exists", () => {
+    const form = buildForm();
+    form.set("total_cents", "1");
+    form.set("subtotal_cents", "1");
+    const raw = readRawManualOrder(form) as unknown as Record<string, unknown>;
+    expect(raw).not.toHaveProperty("total_cents");
+    expect(raw).not.toHaveProperty("subtotal_cents");
+  });
+});
+
 describe("readManualOrderForm (values echo)", () => {
   it("echoes display line values, with variantId null for a variant-less line", () => {
     const { values } = readManualOrderForm(buildForm());
