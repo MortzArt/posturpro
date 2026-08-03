@@ -57,6 +57,27 @@ export function OrderDetailActions({
   const canRefund = paymentStatus === "paid" && remainingCents > 0;
   const canCancel = orderStatus !== "cancelled";
   const alreadyShipped = ORDER_STATUS_RANK[orderStatus] >= ORDER_STATUS_RANK.shipped && orderStatus !== "cancelled";
+  // Offline payment recording: only while the payment is still open (not paid /
+  // refunded) and the order is live. Records a cash/transfer/on-delivery payment.
+  const canMarkPaid =
+    (paymentStatus === "pending" || paymentStatus === "authorized") && orderStatus !== "cancelled";
+
+  const onMarkPaid = (): void => {
+    setTransitionError(null);
+    startTransition(async () => {
+      const result = await markPaidOffline(orderId);
+      if (result.ok) {
+        onBanner({ message: "Pago registrado", emailSent: true });
+        router.refresh();
+        return;
+      }
+      setTransitionError(
+        result.reason === "already-paid"
+          ? "Este pedido ya está marcado como pagado."
+          : "No se pudo registrar el pago.",
+      );
+    });
+  };
 
   const onAdvance = (target: OrderStatus): void => {
     setTransitionError(null);
@@ -101,6 +122,20 @@ export function OrderDetailActions({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+        ) : null}
+
+        {canMarkPaid ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={onMarkPaid}
+            disabled={pending}
+            data-testid="mark-paid-offline"
+            className="shrink-0 whitespace-nowrap"
+          >
+            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={14} strokeWidth={2} aria-hidden />
+            {pending ? "Registrando…" : "Registrar pago recibido"}
+          </Button>
         ) : null}
 
         <Button

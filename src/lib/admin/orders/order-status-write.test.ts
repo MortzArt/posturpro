@@ -51,7 +51,7 @@ vi.mock("@/lib/supabase/admin", () => ({
   }),
 }));
 
-import { advanceOrderTo } from "./order-status-write";
+import { advanceOrderTo, markOrderPaidOffline } from "./order-status-write";
 
 const ORDER_ID = "33333333-3333-3333-3333-333333333333";
 
@@ -179,5 +179,47 @@ describe("advanceOrderTo — failure mapping (edge 5)", () => {
     const result = await advanceOrderTo(ORDER_ID, "paid", null);
     expect(result).toEqual({ ok: false, reason: "not-found" });
     expect(advanceOrderStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe("markOrderPaidOffline — record a non-MP payment", () => {
+  it("flips payment_status→paid via the payment-only path (no lifecycle change), method=manual", async () => {
+    currentOrder.data = { payment_status: "pending", tracking_number: null, tracking_carrier: null, tracking_url: null };
+    advanceOrderStatus.mockResolvedValue({ ok: true, result: { applied: true, reason: "advanced", to_status: null, transition_kind: "paid" } });
+    const result = await markOrderPaidOffline(ORDER_ID);
+    expect(result).toEqual({ ok: true });
+    expect(advanceOrderStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ p_order_id: ORDER_ID, p_order_status: null, p_payment_status: "paid", p_payment_method: "manual" }),
+    );
+    // Offline payment fires NO customer email.
+    expect(sendShipped).not.toHaveBeenCalled();
+    expect(sendCancelled).not.toHaveBeenCalled();
+  });
+
+  it("is idempotent — an already-paid order is not touched", async () => {
+    currentOrder.data = { payment_status: "paid", tracking_number: null, tracking_carrier: null, tracking_url: null };
+    const result = await markOrderPaidOffline(ORDER_ID);
+    expect(result).toEqual({ ok: false, reason: "already-paid" });
+    expect(advanceOrderStatus).not.toHaveBeenCalled();
+  });
+
+  it("refuses a refunded order (already-paid guard covers refunded)", async () => {
+    currentOrder.data = { payment_status: "refunded", tracking_number: null, tracking_carrier: null, tracking_url: null };
+    const result = await markOrderPaidOffline(ORDER_ID);
+    expect(result).toEqual({ ok: false, reason: "already-paid" });
+    expect(advanceOrderStatus).not.toHaveBeenCalled();
+  });
+
+  it("returns not-found for a bad UUID (no read/RPC)", async () => {
+    const result = await markOrderPaidOffline("not-a-uuid");
+    expect(result).toEqual({ ok: false, reason: "not-found" });
+    expect(advanceOrderStatus).not.toHaveBeenCalled();
+  });
+
+  it("maps an RPC error to write-failed", async () => {
+    currentOrder.data = { payment_status: "authorized", tracking_number: null, tracking_carrier: null, tracking_url: null };
+    advanceOrderStatus.mockResolvedValue({ ok: false, error: "boom" });
+    const result = await markOrderPaidOffline(ORDER_ID);
+    expect(result).toEqual({ ok: false, reason: "write-failed" });
   });
 });
