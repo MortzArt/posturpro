@@ -86,3 +86,48 @@ that auto-grants `EXECUTE` to `anon` on every new function — which makes the
 customer-RPC files pass **15/15** including both anon-denial tests. On a clean CI
 reset (historically 253/253 green) these pass. No T18 code change can or should
 "fix" this — the RPC posture is verbatim 0013.
+
+## Review + Fix Pass (S4 ReviewFix Stage, standard tier)
+
+Single-pass adversarial review of `b4ba22c`. **0 critical, 0 major, 0 code-defect
+minors.** No fixes required. APPROVE, 9/10. Details in `tasks/review-findings.md`.
+
+### Issues Found & Fixed
+
+| ID  | Severity | Title | Status  | File | Fix Applied / Justification |
+| --- | -------- | ----- | ------- | ---- | --------------------------- |
+| m-1 | MINOR | `dedupeAddresses` NUL-byte delimiter invisible in source | SKIPPED | `customer-read.ts:258` | Not a defect. The `.join()` delimiter is a NUL byte ` ` (byte-verified `join("\0")`), not the space it visually resembles — genuinely field-safe; boundary unit test passes. Changing the byte to a visible escape is cosmetic with regression risk on a green test. Backlog: add a clarifying comment. |
+| m-2 | MINOR | Inlined `Panel`/`TotalRow` duplicated (2nd copy) | SKIPPED | `page.tsx:96,106` | Ticket + ui-design.md explicitly sanction the verbatim copy; DRY-with-judgment says extract at the 3rd consumer. Backlog: shared admin `Panel`/`TotalRow` when a 3rd page needs them. |
+
+### Verifications (independently run, not trusted from S3)
+
+- **AC-9 (count-equals-list):** PASS by construction. 0013 and 0014 both `count(*)
+  ... where customer_id = ...` over `public.orders`, no status/soft-delete divergence,
+  same keying. Integration test asserts `aggregate.order_count === listCount`.
+- **Environmental issue:** Confirmed env artifact, NOT a code bug. Live-DB
+  `has_function_privilege` = `anon=f / service_role=t / public=f` for
+  `admin_customer_aggregates`; the anon-denial integration test **passes** on the
+  running DB (9/9 whole file). The `db reset` container conflict is real but does not
+  affect T18 correctness. No fix.
+- **0014 grant posture:** verbatim 0013 (`revoke all from public` + `grant execute to
+  service_role`); `rpc.ts` uses `type` aliases, not `interface`.
+- **Money:** integer cents end to end (`sum(total_cents)`→bigint, `Number(...)`,
+  `formatMXN` at edge only). AC-8 holds.
+- **Section isolation / never-500:** UUID guard before any DB call; `readHistory`→null,
+  `readTotals`→EMPTY_TOTALS on error; page try/catch → error branch. AC-13 holds.
+
+### Gates (re-run this stage)
+
+- `tsc --noEmit`: **0 errors** (whole project).
+- `eslint` on all 9 touched files: **clean**.
+- Full unit suite: **2001/2001** (119 files) — no regression (no code change made).
+- T18 integration (isolated, against running local DB via `migration up`): **9/9**,
+  including the anon-denial and the AC-9 invariant.
+
+### Summary
+
+- Critical: 0/0 fixed
+- Major: 0/0 fixed
+- Minor: 0/2 fixed, 2 SKIPPED (both justified)
+
+Next: S5 QA (ultraqa) — standard-tier quality gate.

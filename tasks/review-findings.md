@@ -1,8 +1,14 @@
-# Code Review + Fix: T17 — Admin manual / phone order entry (S4 ReviewFix, standard tier)
+# Code Review + Fix: T18 — Admin customer detail page
 
 ## Summary
 
-Single-pass adversarial review + inline fix across all 28 files of commit `c02dca9`. The trust core is genuinely solid — client prices are never trusted (`revalidateLines` is the sole price authority), `requireSession()` guards the RSC page, the create action, AND the catalog-search action; the idempotency key is minted server-side per page load; the AC-13 recipient guard covers all customer sends; the offline-paid path uses `advance_order_status` payment-only with no receipt email; and no XSS surface (React-escaped throughout, no `dangerouslySetInnerHTML`). **One real data-loss bug (M-1), two MAJOR UX/interaction defects (M-2, M-3), and the misdiagnosed config test** were found and fixed inline. 0 critical. Verdict: **APPROVE, 8.5/10** — all critical/major issues fixed in this pass.
+Single-pass adversarial review of S3 commit `b4ba22c` (6 created, 3 modified, 3 test
+files). The implementation is a clean, faithful pattern-copy of the T12 order grammar.
+**Zero critical, zero major, zero code-defect minor issues.** The one construct that
+looked like a critical bug on first read — the `dedupeAddresses` key delimiter — is
+actually correct (the delimiter is a NUL byte ` `, not a space, verified at byte
+level). AC-9 keying agreement, the 0014 grant posture, section-isolation, and integer-cents
+money all verified in code and against the live DB. No fixes were required.
 
 ## Issues Found & Resolved
 
@@ -12,115 +18,121 @@ None.
 
 ### Major Issues
 
-#### M-1: "Nota interna" is collected, validated, then silently dropped (data loss)
-- **Severity**: MAJOR
-- **File**: `src/lib/admin/orders/manual-order-write.ts` (payload build, ~line 166) + form `manual-order-form.tsx:189`
-- **Problem**: The form renders a "Nota interna" TextareaField with helper "Solo visible para el equipo; no se envía al cliente." `parseManualOrderInput` validates + bounds it into `input.internalNote`, but the write path NEVER persists it: `create_order` has no note field (confirmed in `0008_checkout.sql` and `CreateOrderPayload`), and internal notes actually live in the separate `order_internal_notes` table (via `addOrderNote`). The admin types a note, submits, the note vanishes with no error — a broken promise + data loss.
-- **Impact**: Owner records "cliente pagó en efectivo, entregar el jueves" → note is silently discarded. On a phone-order tool for a non-technical owner, this is a trust-breaking failure.
-- **Fix Applied**: Added `maybePersistInternalNote(orderId, internalNote, reused)` post-create step in the write orchestration. Reuses the existing `addOrderNote` (`order_internal_notes` insert) — the same store the detail's "Notas internas" panel reads and `addInternalNote` writes. Skipped when blank; skipped on an idempotent replay (`reused:true`) so a double-submit never double-inserts; failure-isolated (a note-write failure logs but NEVER rolls back the order, matching the paid/email post-create anti-rollback contract). Added 4 unit tests (blank skip, present insert, reused no-insert, failure no-rollback).
-- **Status**: FIXED
-
-#### M-2: Space key blocks multi-word catalog search
-- **Severity**: MAJOR
-- **File**: `src/components/admin/orders/manual-order-line-editor.tsx:212`
-- **Problem**: The picker's `onKeyDown` treated both `Enter` and `" "` (Space) as the option-activation key inside a `type="search"` combobox. Since the handler `preventDefault()`s on activation, the admin could not type a space in the search box while the listbox was open — any multi-word query ("faja lumbar", "silla ergonómica") was impossible to type; Space kept adding the active row instead.
-- **Impact**: Core search affordance broken for any product whose name/SKU search needs more than one word — directly undermines AC-5 (search catalog by name/SKU).
-- **Fix Applied**: Dropped `" "` as an activation key; `Enter` only. Matches the ARIA APG editable-combobox pattern (Enter selects; Space stays a literal character). Comment added explaining why.
-- **Status**: FIXED
-
-#### M-3: Confirmation switch could submit "off" while shown "on"
-- **Severity**: MAJOR (functionally guarded, but a UX-honesty defect on a money-adjacent action)
-- **File**: `src/app/admin/(app)/orders/new/manual-order-form.tsx:288`
-- **Problem**: The `send_confirmation` SwitchField is uncontrolled (`defaultChecked`) and only toggles `disabled`. Flow: admin enters a valid email → switches confirmation ON → then edits the email invalid/blank → the switch becomes `disabled` while still visually checked. A disabled checkbox is not submitted → `send_confirmation` reads `false`. The admin believes confirmation is enabled but it silently won't send. (The write layer double-gates on `isMailableAddress`, so no bad-address send ever occurs — the harm is purely the misleading "on" state.)
-- **Fix Applied**: Re-key the SwitchField on `emailValid` so it REMOUNTS to unchecked (`defaultChecked={false}`) whenever the email is invalid — the UI never shows "on" while it will submit "off". Seeds from the echoed value only when a valid email is present. Comment added.
-- **Status**: FIXED
-
-#### Config test (misdiagnosed as a "pre-existing env flake") — actually a stale test
-- **Severity**: MAJOR (a red/failing test the dev-done wrongly attributed to a shell env leak)
-- **File**: `src/lib/config.test.ts:74-75`
-- **Problem**: dev-done + pipeline-state claimed `config.test.ts WHATSAPP_PHONE_E164` is a "pre-existing env flake / shell WHATSAPP env leak, not T17." That is a **misdiagnosis**. The test hard-codes `expect(WHATSAPP_PHONE_E164).toBe("")` and expects `isWhatsAppConfigured` → `false`, but the source constant `src/lib/config/shared.ts:69` is now `"5215512345678"` (the number enabled earlier). The test fails deterministically because the constant changed — nothing to do with the environment.
-- **Fix Applied**: Rewrote the assertion to follow the constant rather than hard-code the empty default: `expect(isWhatsAppConfigured(WHATSAPP_PHONE_E164)).toBe(WHATSAPP_PHONE_E164.length > 0)`. This holds whether the number is set or empty and never goes stale on toggle. Full unit suite is now GREEN (1982/1982, 0 failures) — the "flake" is eliminated.
-- **Status**: FIXED
+None.
 
 ### Minor Issues
 
-#### m-1: Initial `activeIndex` could point at an out-of-stock (aria-disabled) row
-- **File**: `src/components/admin/orders/manual-order-line-editor.tsx:120`
-- **Fix Applied**: `setActiveIndex(0)` on new results could set `aria-activedescendant` to a non-selectable row. Added `firstSelectableIndex(found)` helper (reuses `flattenTargets`) to highlight the first in-stock target, falling back to 0.
-- **Status**: FIXED
+#### m-1: `dedupeAddresses` NUL-byte delimiter is invisible/undocumented in source rendering
 
-#### m-2: Duplicate `@/lib/money` import
-- **File**: `src/app/admin/(app)/orders/new/manual-order-form.tsx:9-10`
-- **Fix Applied**: Merged `formatMXN` + `pesosToCents` into one import line.
-- **Status**: FIXED
+- **File**: `src/lib/admin/orders/customer-read.ts:258`
+- **Observation**: The dedup key is `[...fields].join(" ")`. The delimiter is a
+  literal NUL control byte, which renders as an invisible/space character in most
+  editors and in `Read`/`sed`/`cat` output — making the source line *look* like
+  `.join(" ")` (a space), which WOULD be a real collision bug (`"a b"+" "+"c"` ==
+  `"a"+" "+"b c"`). It is in fact ` `, which cannot occur in any Postgres text
+  column here, so the key is genuinely field-safe and the delimiter-boundary unit test
+  (`customer-read.test.ts:85`) legitimately passes. Verified: byte dump shows
+  `6a 6f 69 6e 28 22 00 22 29` (`join("\0")`); the pure function returns length 2 for
+  the boundary case under vitest.
+- **Status**: SKIPPED — not a defect; behavior is correct and covered by a test. A code
+  comment already exists at line 244 ("a delimiter that cannot appear inside the values").
+  A one-line clarification that the delimiter is ` ` (not the space it visually
+  resembles) would aid future readers, but the JOIN uses the invisible byte deliberately
+  and changing it (e.g. to a visible `" "` escape literal) is a cosmetic edit with
+  regression risk on a green test — not worth touching in this pass. Noted for backlog.
 
-#### m-3: Qty stepper clamps to `Number.MAX_SAFE_INTEGER` (no client stock cap)
-- **File**: `src/components/admin/orders/manual-order-line-editor.tsx` (QtyStepper)
-- **Suggestion**: Client allows arbitrarily large qty; server re-validates against live stock (`create_order` guarded decrement + `revalidateLines`), so NOT a security/oversell issue — only delayed feedback.
-- **Status**: SKIPPED — not a correctness/security defect (server authoritative on stock, edge 1 holds); UX polish deferrable.
+#### m-2: Inlined `Panel` / `TotalRow` duplicated from the order-detail page
 
-#### m-4: `manual-order-form-read.ts` uses two different count formulas for the same rows
-- **File**: `src/lib/admin/orders/manual-order-form-read.ts:38,84`
-- **Suggestion**: Not currently exploitable — the editor always emits every per-line hidden input (incl. empty `line_variant_id`), so the parallel arrays stay equal length. Fragile if a field ever becomes conditional.
-- **Status**: SKIPPED — no current defect; noted for clean-code backlog (shared count helper / length assertion).
-
-#### m-5: `manual-order-line-editor.tsx` is 554 lines (> ~400 soft cap)
-- **File**: `src/components/admin/orders/manual-order-line-editor.tsx`
-- **Suggestion**: Split into `manual-order-product-picker.tsx` + the line editor (~250 each).
-- **Status**: SKIPPED — under the 1000-line hard cap; splitting mid-review risks churn. Noted for clean-code backlog.
-
-#### m-6: Effective-price re-derivation duplicated (form `sumLines` vs editor `LineRow`)
-- **File**: `manual-order-form.tsx:362` and `manual-order-line-editor.tsx` (LineRow)
-- **Suggestion**: Extract a shared `effectiveUnitPrice(line, issue)`.
-- **Status**: SKIPPED — both agree (no correctness bug); DRY-with-judgment, deferrable.
+- **File**: `src/app/admin/(app)/orders/customers/[id]/page.tsx:96,106`
+- **Observation**: `Panel` and `TotalRow` are copied verbatim from `orders/[id]/page.tsx`.
+  This is the SECOND copy of each helper.
+- **Status**: SKIPPED — explicitly sanctioned by the ticket and ui-design.md ("Copies the
+  order-detail Panel/TotalRow helpers verbatim"; the order page itself inlines
+  ContactPanel/ItemsPanel/PaymentPanel). Per CLAUDE.md DRY-with-judgment, two copies do
+  not yet warrant a shared extraction. Backlog note: extract a shared admin `Panel` /
+  `TotalRow` (e.g. `components/admin/panel.tsx`) at the THIRD consumer.
 
 ## Acceptance Criteria Verification
 
-| #     | Criterion                                             | Status | Evidence |
-| ----- | ----------------------------------------------------- | ------ | -------- |
-| AC-1  | "Nuevo pedido" CTA in list actions, testid           | PASS   | `orders/page.tsx` CTA (+ error header), `data-testid="admin-orders-new"` |
-| AC-2  | Page + action `requireSession()` before any DB        | PASS   | `new/page.tsx` session-first; `actions.ts:194` awaits `requireSession()` first; catalog action `:174` too |
-| AC-3  | Contact + full MX shipping fields (incl. note)        | PASS   | Form sections; **note now persisted** (M-1 fix) |
-| AC-4  | Same MX CP/state rules as checkout                    | PASS   | `manual-order-input.ts` reuses `MEXICAN_CP_PATTERN`/`isMexicanState`/`ADDRESS_FIELD_MAX` |
-| AC-5  | Search catalog, variant required, qty ≥ 1             | PASS   | picker + `parseLine` UUID+qty; **multi-word search fixed** (M-2) |
-| AC-6  | Live stock + server-recalculated price at selection   | PASS   | `manual-order-catalog.ts` `variant.price_override_cents ?? product.price_cents`; client never computes price |
-| AC-7  | `revalidateLines` re-verify on submit; abort on issue | PASS   | `manual-order-write.ts:75` before create; write test asserts `rpc` not called on issues |
-| AC-8  | Shipping default + admin override; `assembleOrder`     | PASS   | `parseShippingOverride` → `assembleOrder({kind:"flat"})` |
-| AC-9  | Atomic `create_order`; idempotency prevents double     | PASS   | RPC call; key minted server-side in `page.tsx`, normalized in action |
-| AC-10 | status=pending_payment, payment=pending, locale es-MX  | PASS   | `create_order` defaults + `payload.locale="es-MX"` |
-| AC-11 | Email optional; blank still creates                   | PASS   | `parseEmail` blank→null; `NO_EMAIL_PLACEHOLDER` satisfies NOT NULL |
-| AC-12 | Confirmation opt-in, gated on valid email             | PASS   | `maybeSendConfirmation` double-gates; switch UI honest (M-3 fix) |
-| AC-13 | Recipient-safe skip on all customer sends             | PASS   | `resolveCustomerRecipient` guard added to all 6 sends in `dispatch.ts` |
-| AC-14 | `payment_method='manual'` + detail badge             | PASS   | `stampManualSource` / advance carries it; `SourceBadge` on detail |
-| AC-15 | Paid via `advance_order_status` payment-only          | PASS   | `markSourceAndPayment` `p_order_status=null,p_payment_status='paid'` |
-| AC-16 | No payment-received email on offline paid             | PASS   | no `sendPaymentReceived` call; only optional confirmation |
-| AC-17 | Appears in list + detail, packing slip printable      | PASS   | `revalidateOrder` + redirect to detail; detail renders full order |
-| AC-18 | Input + write unit tests                              | PASS   | input matrix + write branch map (+4 new note tests this pass) |
-| AC-19 | Integration end-to-end                               | PASS   | `admin-orders-manual.integration.test.ts` in 257-pass suite |
-| AC-20 | Admin e2e                                            | PASS (dev-run) | `e2e/admin-orders-manual.spec.ts` 3/3 (not re-run this stage; no e2e-affecting change) |
+| #     | Criterion | Status | Evidence |
+| ----- | --------- | ------ | -------- |
+| AC-1  | List name cells link (desktop + mobile), focusable, focus style | PASS | `customer-table.tsx:44-52,66-73` — both `<Link>`s to `${ADMIN_CUSTOMERS_PATH}/${row.id}`, `focus-visible:underline`, `data-testid`; test `customer-table.test.tsx` asserts 2 links + focus + email-not-a-link |
+| AC-2  | Detail renders in shell + back-link to `ADMIN_CUSTOMERS_PATH` | PASS | `page.tsx:51-58` back-link `customer-back-link` → `ADMIN_CUSTOMERS_PATH`; route under `(app)` |
+| AC-3  | Identity: name, email via `isMailableAddress`, phone or "—" | PASS | `page.tsx:59-67` — name, `isMailableAddress` branch → "Sin correo" italic, phone omitted when null (spec allows omit; ContactPanel also shows it) |
+| AC-4  | Order history: one row/order, `created_at DESC`, number/date/total/badges + `paymentBadgeIsRedundant` | PASS | `customer-read.ts:143` `.order created_at desc`; `page.tsx:177-217` table with all fields + `paymentBadgeIsRedundant` suppression |
+| AC-5  | Each history row links to `${ADMIN_ORDERS_PATH}/{order.id}` | PASS | `page.tsx:196,227` |
+| AC-6  | Contact & addresses: distinct shipping addresses de-duped | PASS | `page.tsx:248-293` ContactPanel; `dedupeAddresses` full-tuple key (`customer-read.ts:246`) |
+| AC-7  | Lifetime totals: count (== list), total spent, first/last dates | PASS | `TotalsPanel` `page.tsx:115-132`; totals from 0014 RPC |
+| AC-8  | Total spent in integer cents, format at edge only | PASS | `sum(o.total_cents)`→bigint in 0014; `Number(row.total_cents)` int; `formatMXN` only at render (`page.tsx:120`). Integration test asserts `Number.isInteger` + exact 429000 |
+| AC-9  | Detail count EQUALS list count for same id | PASS | 0013 and 0014 filter identically: `where customer_id = ...`, no status/soft-delete divergence, same grouping. Integration test line 154-165 asserts `row.order_count === listCount` |
+| AC-10 | Non-UUID / missing → `notFound()`, never 500 | PASS | `customer-read.ts:80` `UUID_PATTERN` guard → null before any DB call; `maybeSingle` → null on miss; `page.tsx:44-46` → `notFound()` |
+| AC-11 | Admin-only under `(app)` guard; unauth → login | PASS | Route at `admin/(app)/...`; `(app)/layout.tsx:23-24` `hasValidAdminSession()` → redirect |
+| AC-12 | All chrome es-MX, neutral admin theme | PASS | All strings hardcoded es-MX; no `.theme-storefront`; admin primitives |
+| AC-13 | Server-only, admin client, never throws to page; section failures scoped | PASS | `import "server-only"`; `createAdminClient`; `readHistory`→null on error, `readTotals`→EMPTY_TOTALS; page try/catch → error branch; `getAdminCustomer` outer try/catch → null |
+| AC-14 | Integration + unit tests; tsc + eslint clean; suites green | PASS | 9/9 integration (isolated run, incl. anon-denial + AC-9), 11/11 new unit; tsc 0, eslint 0; full unit 2001/2001 |
+| AC-15 | 0014 idempotent, security definer, empty search_path, service_role-only; rpc.ts `type` aliases | PASS | Migration verified verbatim-0013 posture; `rpc.ts` uses `type` aliases (not interface). Live DB: anon=f, service_role=t, public=f |
 
 ## Edge Case Verification
 
-| # | Edge Case                     | Status  | Evidence |
-| - | ----------------------------- | ------- | -------- |
-| 1 | Stock race on create          | HANDLED | `create_order` guarded decrement; revalidate + RPC floor |
-| 2 | Zero-item order               | HANDLED | `parseLines` → `no-items`; RPC never called |
-| 3 | Double / double-submit        | HANDLED | server-minted idempotency key → `reused:true`; note no-double-insert (M-1 fix) |
-| 4 | Email absent                  | HANDLED | sentinel + recipient guard; later T12 send skips benignly |
-| 5 | Price change mid-entry        | HANDLED | `revalidateLines` `price-changed` → abort before create |
-| 6 | Invalid quantity              | HANDLED | `parseLine` integer/[1,INT4_MAX] |
-| 7 | Marked-paid + email-less      | HANDLED | paid advance, no `sendPaymentReceived`, no confirmation |
+| #  | Edge Case | Status | Evidence |
+| -- | --------- | ------ | -------- |
+| 1  | N orders, 0 paid → total = order value, not paid-only | HANDLED | 0014 never filters by status; integration test line 141-151 (2 non-paid orders → total 80000) |
+| 2  | Sentinel customers not collapsed (keyed by id) | HANDLED | Read keys on `customers.id`; integration test line 195-211 (two sentinel customers, distinct counts) |
+| 3  | Very long history → bounded read + truncation footer; totals over ALL | HANDLED | `.limit(CUSTOMER_ORDER_HISTORY_LIMIT=50)`; `ordersTruncated` (`customer-read.ts:208`); footer `page.tsx:152-156`; totals from RPC over all orders |
+| 4  | Differing addresses → each distinct once, most-recent-first | HANDLED | `dedupeAddresses` keeps first occurrence, input newest-first; unit + integration tested |
+| 5  | Zero orders / orphaned customer_id | HANDLED | RPC returns count 0/total 0/NULL dates; empty history panel; no divide-by-zero. Integration test line 180-192 |
+| 6  | null contact_phone / null line2 | HANDLED | phone omitted when null (`page.tsx:65,260`); line2 omitted in AddressBlock (`page.tsx:286`) |
+| 7  | Hostile / injection id | HANDLED | `UUID_PATTERN` guard → null before any DB call; p_customer_id is typed `uuid` (no string injection surface) |
+
+## AC-9 Verdict
+
+**PASS — agree by construction.** The list count (`admin_customer_order_counts`, 0013)
+does `count(*) ... where o.customer_id = any($ids) group by o.customer_id`. The detail
+aggregate (`admin_customer_aggregates`, 0014) does `count(*) ... where o.customer_id =
+p_customer_id`. Same table (`public.orders`), same filter column, no status filter, no
+soft-delete filter, no off-by-one on either side. Both key strictly on `customer_id`,
+never email/phone. The integration test seeds N orders for one id and asserts
+`aggregate.order_count === listCount` directly (line 154-165), and also asserts the
+zero-order case reconciles (both show 0, line 191).
+
+## Environmental-Issue Verdict
+
+**Genuinely environmental, NOT a code bug — and less severe than the dev-done write-up
+implies.** Independently verified:
+
+1. **0014 SQL grants are correct** — `revoke all ... from public` + `grant execute ... to
+   service_role`, no anon/authenticated grant. Byte-identical posture to 0013.
+2. **Live DB confirms the posture holds** — `has_function_privilege` on the running local
+   instance returns `anon=f, service_role=t, public=f` for `admin_customer_aggregates`.
+3. **The anon-denial integration test PASSES** on the currently-running DB (migrations
+   applied via `supabase migration up --local`, not `db reset`): the full T18 integration
+   file runs **9/9 green, including the anon-denial test**. The dev-done note said this
+   test "fails identically" due to a stray `pg_default_acl` from the aborted `db reset`;
+   that ACL is not present on this instance, so the test passes here. The `db reset`
+   container conflict (analytics/Studio `schema_migrations_pkey`) is a real environmental
+   artifact, but it does not make T18 code wrong and does not need chasing. No fix.
 
 ## Fix Summary
 
-- Critical: 0/0
-- Major: 4/4 fixed (M-1 data loss, M-2 search, M-3 switch honesty, config test) — 0 skipped
-- Minor: 2/6 fixed (m-1 active index, m-2 dup import), 4 skipped with justification (backlog)
+- Critical: 0/0 fixed
+- Major: 0/0 fixed
+- Minor: 0/2 fixed, 2 SKIPPED (both justified: m-1 not-a-defect, m-2 ticket-sanctioned copy)
 
-## Quality Score: 8.5/10
+## Quality Score: 9/10
 
-Strong, trust-correct foundation that reuses the proven checkout boundary faithfully. Docked for: a real data-loss bug (silently-dropped internal note) that unit tests missed despite AC-18 claiming write-branch coverage, a broken multi-word search, and a dev-done misdiagnosis (a deterministic stale test reported as an environmental flake — a reporting-correctness miss). All fixed inline; gates green.
+Faithful, complete, well-tested pattern-copy. Every AC and edge case verified in code and
+(for the DB-touching ones) against the live database — not trusted from dev-done. AC-9
+integrity holds by construction and is asserted. Money is integer-cents end to end.
+Section isolation and the UUID→notFound guard mirror the shipped order-read exactly. One
+point off only for the NUL-delimiter's invisible-in-source rendering (a legibility trap
+for future maintainers, though functionally correct) and the acknowledged 2nd-copy
+Panel/TotalRow duplication now on the DRY radar.
 
 ## Recommendation: APPROVE
 
-All critical/major issues fixed in this pass. tsc 0, eslint 0, unit 1982/1982, integration 257/257. Proceed to S5 QA (standard-tier quality gate).
+No critical or major issues to fix; both minors are justified skips (one is a non-defect,
+one is explicitly ticket-sanctioned with a backlog note). Gates green: tsc 0, eslint 0,
+unit 2001/2001, T18 integration 9/9 (isolated). Proceed to S5 (QA, ultraqa) — the
+standard-tier quality gate. Suggested QA focus: re-confirm AC-9 and the anon-denial on a
+clean CI reset if the local `db reset` container conflict can be cleared; exercise the
+375px mobile card layout and long-history truncation footer live.
