@@ -1,302 +1,171 @@
-# Task: T16 — B2B landing page (offices, quote form)
+# Task: T17 — Admin: manual order entry (phone / offline orders)
 
 ## Priority
 
-**High** — B2B is a confirmed audience (PRODUCT.md, 2026-08-02) and the only remaining
-Phase-1 storefront surface before T14 launch-hardening (T14 is `blocked by T16` so its
-metadata/sitemap/perf pass must cover this page). It is fully unblocked (T15 shipped) and
-reuses two proven, shipped stacks (T13 contact-relay + T15 Casa de Azulejo world), so it is
-high-value at low incremental risk.
+**High** — The owner is non-technical and sells by phone / in-showroom (PRODUCT_SPEC: "Operator: the business owner… Admin UX must be simple and forgiving"). Today an offline sale cannot be recorded at all: the only way an order exists is a customer completing storefront checkout + Mercado Pago. Every phone/showroom sale is currently invisible to stock, order history, packing slips, and the customer list. This closes a real revenue-recording gap and is an owner-approved scope addition (2026-08-03). Not launch-blocking for the storefront itself, hence High not Critical.
 
 ## Complexity
 
-**medium** — New page + a new server-action/email-relay flow, ~14–18 files changed, follows
-existing patterns end-to-end (T13 contact stack for the quote form, T15 home components for
-the page body). It adds a new form schema (6 fields incl. an enum), a new pure guard, a new
-rate-limiter instance, a new pure email template, and a new dispatch seam — all mirroring
-existing code with no new data model, no migration, no new dependency, no architectural
-change. It is above `low` (more than a pattern-copy: a genuinely new field set + enum +
-template) and below `high` (no new subsystem, no integration, no schema change).
+**medium** — New feature surface (a create-order form + product/variant picker + one server action + one lib input/write pair + a source badge), ~8–14 files changed, but it **rides entirely on existing, proven infrastructure**: the atomic `create_order` RPC (0008), the reusable server-side price/stock resolver `revalidateLines` + `assembleOrder` (`src/lib/checkout/`), the `advance_order_status` payment-only path (0009/0010), the `AdminPage` `actions` slot, the `TextField`/`MoneyField`/`SelectField`/`SwitchField` primitives, and the `requireSession()`→write→`revalidatePath` action grammar (T12). **No new order-creation RPC, no new order data model.** The genuinely new work is (a) a catalog product/variant picker UI, (b) resolving the `contact_email` NOT NULL constraint for email-less phone customers, and (c) making customer-facing email sends recipient-safe. NOT `high`: no new subsystem, no architectural change, no new integration, no new migration (recommended). NOT `low`: >5 files, a new UI surface (picker), and a real constraint decision.
 
 ## Feature Type
 
-**full-feature** — a new visible marketing surface (UI: hero, value sections, quote form,
-nav/footer links) AND new logic (server action, validation guard, rate limiter, email
-template + dispatch). All stages run at full depth; UI Design (Stage 3) runs because this is
-new-work page composition inside the committed DESIGN.md world.
+**full-feature** (full-stack). New admin UI (create form + product picker) AND new server logic (manual-order input validation, atomic create, source marking, optional offline-payment marking, recipient-safe emails). All standard-tier stages run at full depth. Admin surface is **es-MX only** (ADMIN FACTS) — no bilingual parity work.
 
 ## User Story
 
-As an **office manager furnishing a workspace for my team**, I want to **read why PosturPro
-is the right ergonomics partner for offices and request a volume quote in one form**, so that
-**I can get pricing for outfitting my team without a self-serve checkout or a phone call**.
+As the **store owner taking a phone or in-showroom order**, I want to **create a real order on a customer's behalf — picking catalog products with live stock and server-verified prices, entering their contact + shipping details, and marking it either pending-payment (charge later / on delivery) or already paid offline** — so that **the sale reserves stock, gets an order number, appears in my normal order list/detail with a clear "phone/manual" marker, and flows through the same fulfillment pipeline as an online order, without forcing a phone customer to have an email address.**
 
 ## Background
 
-PRODUCT.md now names a confirmed B2B audience: *"offices furnishing workspaces — evaluate
-chairs for teams, request volume quotes through a quote form (no self-serve volume pricing)."*
-The three positioning pillars (ergonomics authority, multi-brand breadth, value for money)
-are the persuasion spine; there is **no volume price list and no B2B checkout** — the CTA is a
-quote-request form that relays to the owner.
+**What exists today** (verified in code — see research report):
 
-Everything this page needs already exists and shipped:
+- `create_order(payload jsonb)` (0008) is a `SECURITY DEFINER`, `search_path=''`, **`service_role`-only** RPC that atomically: guarded-decrements per-line stock (race-safe last-unit floor via `WHERE stock >= qty RETURNING id`), bumps `sales_count`, creates a `customers` row + `orders` snapshot + `order_items` + initial `order_status_history` row (with `transition_kind`), generates the `PP-000000` order number from `order_number_seq`, and is idempotency-keyed (a repeat key returns the original order, `reused:true`). Admin actions already invoke `service_role` RPCs (T12 `cancel_order`, `advance_order_status`), so **`create_order` is callable from an admin action as-is** — it does not inspect caller identity beyond the grant.
+- `revalidateLines(submitted)` + `assembleOrder(...)` (`src/lib/checkout/checkout-read.ts`, `order.ts`) are a **clean, reusable server-side trust boundary**: given `{ productId, variantId, quantity }[]` (no trusted price), they re-read products/variants by id from the live DB, compute the effective unit price (`variant.price_override_cents ?? product.price_cents`), re-check live stock, and return either validated live-priced lines or per-line issues (`out-of-stock` / `price-changed` / `unavailable`). This IS "the same trust rules as checkout."
+- `advance_order_status(p_order_id, p_order_status, p_payment_status, p_payment_method, p_mp_payment_id, p_note)` (0009/0010, `service_role`-only) supports a **payment-only mode** (`p_order_status = NULL`): sets `payment_status` (+ optional `payment_method`), derives `transition_kind='paid'` (`email_transition_kind`), and writes an audit history row. This is the legal path to "record offline payment as paid" (matches T12's payment-only precedent).
+- `orders.payment_method text` (nullable) already exists, is already read into `AdminOrderDetail.paymentMethod`, and is displayed on the order detail. The admin order list/detail, filters, list-query, `AdminPage` `actions` slot, and form primitives (`src/components/admin/form/fields.tsx`: `TextField`, `MoneyField`, `SelectField`, `TextareaField`, `SwitchField`, `Banner`) are all in place.
 
-- **T13 contact-relay stack** — a public, unauthenticated write path with layered abuse
-  controls (honeypot → validate → rate-limit → relay), a `useActionState` client form with a
-  full state matrix, a dedicated per-IP sliding-window limiter, and a pure es-MX email
-  template dispatched to the owner via `sendContactRelay`. The quote form is this exact
-  pattern with a different field set.
-- **T15 "Casa de Azulejo" world (DESIGN.md)** — cobalt line-and-wash on milk-white glaze,
-  grout-seam borders, roman-caps Libre Caslon Text captions in cartouche frames, the
-  `Hero`/`EditorialBand`/`HomeSectionHeader` components, the config-driven image-slot system
-  (`imagery.ts`, `string | null` → `next/image` cartouche or blank-tile glyph), and the
-  `.enter-fade`/`.stagger`/`.link-arrow` motion layer. The landing page **lives inside this
-  world**; it composes these blocks, it does not invent a new look.
+**What's missing / why this matters:**
 
-What is missing: the page itself (`/empresas`, both locales), a quote-specific form + action +
-guard + rate-limiter + email template + dispatch seam, its i18n copy, and the nav/footer link.
-
-**Truth constraint (PRODUCT.md hard rule, binding):** no fabricated proof. No invented client
-logos, testimonials, customer names, review counts, sales figures, "trusted by N offices",
-"X chairs delivered", or press. Breadth is shown via the **real seeded brands** (or an honest
-"multi-marca" claim), value/ergonomics via honest positioning copy only. Every image slot
-defaults to the existing licensed-stock or a null blank-tile — never proof imagery.
+- **No create-order entry point in admin.** The orders list header (`AdminPage actions`) has only a "Clientes" link — no create affordance (`src/app/admin/(app)/orders/page.tsx`).
+- **`orders.contact_email` is NOT NULL AND `customers.email` is NOT NULL** (0003). `create_order` inserts `contact_email` verbatim (no `nullif`) into BOTH tables. A phone customer may have no email → this constraint must be resolved.
+- **Customer-facing email sends are not recipient-safe.** In `src/lib/email/dispatch.ts`, `sendOrderConfirmation` / `sendPaymentReceived` / `sendShipped` / `sendCancelled` / `sendVoucherInstructions` all resolve `to: order.contactEmail` and guard **only** `order unreadable` — there is no recipient-format guard. An email-less manual order would push an empty/sentinel `to` to the provider on any later T12 status change (shipped/cancelled/refund), producing repeated `{ok:false}` provider failures + log noise. This must be hardened as part of T17.
+- **No source marker is set for manual orders.** Existing orders leave `payment_method` NULL until a payment webhook stamps `card|oxxo|spei|wallet`.
 
 ## Acceptance Criteria
 
 Each criterion is binary — PASS or FAIL.
 
-- [ ] **AC-1:** A B2B landing page renders at `/empresas` (es-MX, no prefix) and `/en/empresas`
-      (English), each returning HTTP 200, inside the storefront shell (header + footer), in the
-      Casa de Azulejo world (`.theme-storefront` scope, cobalt palette, roman-caps headings).
-- [ ] **AC-2:** The page presents the Persuade-mode content structure grounded ONLY in
-      PRODUCT.md truth: (a) a hero pitch (ergonomics-authority headline + volume/fleet framing +
-      a "Request a quote" primary CTA that scroll-anchors to the form), (b) a "why PosturPro for
-      offices" value section covering the three pillars (ergonomics authority, multi-brand
-      breadth, value/volume), (c) a "how it works / quote process" section, (d) the quote form.
-- [ ] **AC-3:** The page contains **zero fabricated proof** — no invented testimonials, client
-      names/logos, review counts, sales/office-count figures, or press. Any breadth claim uses
-      real seeded brands or an honest "multi-marca" statement; any image slot is licensed-stock
-      or a null blank-tile placeholder (never proof imagery). (Grep-auditable: no hardcoded
-      numbers presented as social proof.)
-- [ ] **AC-4:** The quote form collects: **company** (required), **contact name** (required),
-      **email** (required, shape-validated), **phone** (optional), **team size** (required —
-      a constrained native `<select>` over a small enum of ranges, e.g. 1–10 / 11–50 / 51–200 /
-      200+, so it is never free-text garbage), and **needs / message** (required). All
-      labels/placeholders/options come from the i18n dictionary in both locales.
-- [ ] **AC-5:** Submitting a valid quote form relays an email to the store owner via a new
-      `sendQuoteRelay` dispatch seam using a **new pure `renderQuoteRelay` template** (es-MX to
-      the owner) that includes every submitted field (company, contact, email, phone, team
-      size, needs); the visitor's email is set as `replyTo`. On the configured dev/CI path
-      (`EMAIL_OWNER_ADDRESS` set + `EMAIL_DEV_PREVIEW=1`) the relay resolves `{ ok: true }` and
-      the form shows the success state.
-- [ ] **AC-6:** The quote form implements the FULL serializable state matrix (mirroring the
-      contact form): `idle` → `submitting` (button disabled + "Enviando…") → one of
-      `success` (form clears, focus moves to a `role="status"` banner, auto-hides after
-      `QUOTE_SUCCESS_FEEDBACK_MS`) / `invalid` (field errors + first-invalid focus + values
-      preserved) / `rate-limited` (`role="alert"`, values preserved) / `error` (`role="alert"`,
-      generic copy, raw provider reason NEVER surfaced, Retry re-submits preserved values).
-- [ ] **AC-7:** Abuse controls are present and correct, in order: **honeypot** (off-screen
-      `left-[-9999px]` + `aria-hidden` wrapper + `tabIndex=-1` field) → filled → FAKE success,
-      no send; **validation** (trim-then-check every field, control-char strip on company/name,
-      email shape via `EMAIL_PATTERN`, team-size must be an allowed enum value) → invalid → no
-      send; **rate limit** (a DEDICATED per-IP sliding-window limiter INSTANCE with its own
-      key-space, built from `createSlidingWindowLimiter`, with a `QUOTE_RATE_LIMIT_DISABLED=1`
-      server-only test hatch) → over-limit → no send.
-- [ ] **AC-8:** A nav link to `/empresas` is added to the primary navigation (it flows into
-      BOTH the desktop header and the mobile drawer via `NAV_ITEMS`) and a footer link is added;
-      both use i18n labels and resolve to the live page in both locales — ZERO dead links.
-      Existing nav/footer links are unchanged.
-- [ ] **AC-9:** The page ships with sane per-page SEO metadata via `generateMetadata`
-      (locale-resolved `title` + `description`) in BOTH locales, following the existing per-page
-      pattern (no shared helper). (T14 hardens sitemap/OG/canonical later.)
-- [ ] **AC-10:** The page follows DESIGN.md: sections use cobalt cartouche frames / grout-seam
-      borders / roman-caps `font-heading` section titles; any image slot is a `string | null`
-      config slot rendered in a cartouche or degraded to the blank-tile chair/building glyph
-      (never a broken `<img>`, zero CLS); mount motion reuses `.enter-fade`
-      (transform/opacity, `ease-out` enter, `prefers-reduced-motion`-gated). Admin is untouched
-      (firewall holds — no file under `src/app/admin/`, `src/components/admin/`, or
-      `src/components/ui/*` edited).
-- [ ] **AC-11:** Every storefront-visible pairing meets WCAG AA; any text over imagery sits on
-      the cobalt scrim/caption bar (8.37:1); form fields are labeled with associated error text
-      (`aria-describedby`), the team-size control is a native labeled `<select>` (keyboard +
-      SR-usable), and status is glyph + text (never color alone).
-- [ ] **AC-12:** No horizontal overflow at 375px and 768px; the page is usable and legible on
-      mobile (mobile-first per PRODUCT.md "the phone is the store").
-- [ ] **AC-13:** Bilingual parity is exact — every new key exists in BOTH `es-MX.json` and
-      `en.json`; `keys-used.test.ts` `CONSUMED_KEYS` is updated; the message-parity test passes
-      with zero asymmetry.
-- [ ] **AC-14:** All new logic is unit-tested (quote guard incl. team-size enum validation,
-      quote rate-limiter, `renderQuoteRelay` template, and the `submitQuoteForm` action branch
-      matrix: honeypot / invalid / rate-limited / relay-ok / relay-!ok / relay-throw); an e2e
-      spec asserts both-locale render, nav/footer link, form labeled + honeypot off-screen +
-      validation error + default error-on-submit. `tsc --noEmit`, `eslint`, and the full unit
-      suite are green.
+**Entry point & auth**
+
+- [ ] AC-1: The admin order list (`/admin/orders`) shows a primary "Nuevo pedido" button in the `AdminPage` `actions` slot (mirroring the products-list `admin-products-new` CTA: `Button asChild` + `PlusSignIcon` + `Link`), linking to `/admin/orders/new`, with `data-testid="admin-orders-new"`. The existing "Clientes" link is retained.
+- [ ] AC-2: `/admin/orders/new` renders the manual-order form only for an authenticated admin. The page AND the `createManualOrder` server action each call `requireSession()` **before any DB read/write** (T12 AC-30). An unauthenticated request is redirected to login and the action performs no write.
+
+**Form — customer & shipping**
+
+- [ ] AC-3: The form collects contact name, contact email (**optional** — AC-11), contact phone (optional), and the full Mexican shipping address (full name, line1, optional line2, city, state, postal code, optional delivery notes, optional RFC) — matching the columns `create_order` persists.
+- [ ] AC-4: Shipping state and postal code are validated with the **same** Mexican-address rules used at checkout (reuse `src/lib/checkout/address.ts`); an invalid CP/state fails validation with a field-level error and no order is created.
+
+**Form — product/variant picker with live trust**
+
+- [ ] AC-5: The admin adds one or more line items by searching the catalog (by name/SKU) and picking a product; if the product has variants, a variant MUST be chosen; quantity per line is entered (integer ≥ 1).
+- [ ] AC-6: The picker shows **live stock** for the selected product/variant and the **server-recalculated** unit price at selection time — the live effective price (`variant.price_override_cents ?? product.price_cents`), never an admin-entered price (v1: catalog prices only; manual price override is Out of Scope).
+- [ ] AC-7: On submit, line prices and stock are **re-verified server-side** via `revalidateLines` — client-sent prices are ignored. If any line is out-of-stock or its price changed since selection, the order is **not** created and the admin sees a per-line message (which line, live price / live stock) to adjust and resubmit.
+
+**Shipping charge**
+
+- [ ] AC-8: Shipping defaults to the value derived from Store Settings (flat rate / free-shipping threshold, via the existing checkout shipping resolver applied to the revalidated subtotal) and is **admin-overridable** on the form (a `MoneyField`). The final `shipping_cents` is whatever the admin confirms. Totals (`subtotal`/`shipping`/`discount`/`tax`/`total`) are assembled server-side by `assembleOrder` so every DB CHECK (`orders_total_identity`, `order_items_line_total_identity`) holds.
+
+**Atomic creation**
+
+- [ ] AC-9: Submitting a valid form creates a real order through the existing atomic `create_order` RPC: stock reserved (decremented), `order_number` issued from the sequence, `order_items` + an initial `order_status_history` row written, and a `customers` row created — all in one transaction. A generated per-submission idempotency key prevents a double-submit creating two orders.
+- [ ] AC-10: The created order has `status = pending_payment` and (unless marked paid, AC-15) `payment_status = pending`, identical to a fresh checkout order — so it enters the normal list/detail/status pipeline with no special-casing. `locale` in the payload is set to `es-MX` (owner-taken order).
+
+**Email-optional / contact_email**
+
+- [ ] AC-11: The contact email field is **optional**. If blank, the order is still created (constraint resolved per the Technical Approach decision). A blank email never blocks creation.
+- [ ] AC-12: The confirmation email is **opt-in** for manual orders (a `SwitchField`, default OFF — phone customers commonly lack email / the owner already spoke to them). When opted in AND a valid email was provided, `sendOrderConfirmation` fires. When not opted in, or no valid email, no confirmation is sent and this is NOT an error.
+- [ ] AC-13 (recipient-safety, cross-cutting): After T17, the customer-facing sends (`sendOrderConfirmation`, `sendPaymentReceived`, `sendShipped`, `sendCancelled`, `sendVoucherInstructions`) **skip the provider call and return a benign result (`{ ok: true, sent: false }`) when `order.contactEmail` is absent or not a valid email**, so a later T12 status change (shipped/cancelled/refund) on an email-less manual order never errors or spams the provider. The status-change action surfaces this as `emailSent: false`, exactly like today's email-fail path — never a 500.
+
+**Source marking**
+
+- [ ] AC-14: The created manual order is marked manual/phone-sourced via `orders.payment_method = 'manual'` (single-sourced constant `MANUAL_ORDER_PAYMENT_METHOD` in `order-constants.ts`). The order **detail** displays a clear glyph+text badge "Pedido manual / telefónico". Listing/filtering the source is a nice-to-have (see Technical Approach) — the detail badge is the required surface.
+
+**Offline payment as paid**
+
+- [ ] AC-15: The form offers a payment choice: **"Marcar pendiente de pago"** (default — charge later / on delivery) or **"Registrar pago recibido (offline)"**. Choosing "pago recibido" marks the order paid via `advance_order_status` **payment-only mode** (`p_order_status = NULL`, `p_payment_status = 'paid'`, `p_payment_method = 'manual'`) **after** creation, writing a `transition_kind='paid'` audit history row. Choosing pending leaves `payment_status = 'pending'`.
+- [ ] AC-16: When an offline order is marked paid, **no "payment received" email is sent** by default: `sendPaymentReceived` is a payment-webhook seam dedupe-keyed on `mp_payment_id` (which a manual order lacks), and `fireTransitionEmail` intentionally sends nothing for `transition_kind='paid'`. The only possible customer email is the AC-12 confirmation (if opted in with a valid email).
+
+**Pipeline integration**
+
+- [ ] AC-17: The created order appears immediately in `/admin/orders` (list revalidated) and its detail (`/admin/orders/[id]`) renders the full order (contact, shipping, items, totals, history incl. the create + optional paid rows, source badge) with zero errors, and a packing slip can be printed for it.
+
+**Tests**
+
+- [ ] AC-18: A pure `manual-order-input.ts` has unit tests: valid payload; missing required contact/shipping fields; invalid CP/state; zero-item order; invalid quantity (0/neg/non-int/INT4 cap); blank vs valid email branching; payment-choice branching; confirmation opt-in branching. A `manual-order-write.ts` has unit tests: `create_order` payload shape (deps mocked); the optional confirmation-send branch; the optional `advance_order_status` paid branch; source-marking. Mirrors the T12 `order-*-input.test.ts` / `order-*-write.test.ts` pairs.
+- [ ] AC-19: An integration test against local Supabase creates a manual order end-to-end through `create_order` and (paid variant) `advance_order_status` via the service-role client, asserting: stock decremented, order number issued, `payment_method='manual'`, history rows present with correct `transition_kind`; and — email-less variant — that the recipient-safe guard makes a subsequent `sendShipped`-style resolve to the no-recipient skip (not an error). Mirrors `tests/integration/admin-orders-*.integration.test.ts` (server-only aliased to empty.js).
+- [ ] AC-20: An admin e2e (serial DEV-server project per E2E/ENV INFRA) logs in, opens `/admin/orders/new`, adds a line via the picker, fills contact (email-less variant) + shipping, submits pending-payment, and asserts the new order appears and opens on detail with the manual badge.
 
 ## Edge Cases
 
-At least 5 that MUST be handled:
-
-1. **Team-size enum tampering** — a client submits a `teamSize` value not in the allowed set
-   (crafted POST, altered `<option>`). The guard rejects it as `invalid` (field error), never
-   relays, never trusts client-supplied enum text. Expected: `{ status: "invalid" }` with a
-   `teamSizeInvalid` field error. (An EMPTY team size → `teamSizeRequired`.)
-2. **Honeypot filled by a bot** — the off-screen `company_url` (honeypot) field is filled.
-   Expected: FAKE `{ status: "success" }`, NO email send, a `console.warn` — indistinguishable
-   from real success on the client.
-3. **Owner email unconfigured** (`EMAIL_OWNER_ADDRESS` unset, the real Phase-1 default) —
-   `sendQuoteRelay` returns `{ ok: false, reason: "owner address unavailable" }`. Expected:
-   the action maps it to `{ status: "error" }` with the generic message, the raw reason is
-   logged server-side only and NEVER surfaced, values preserved, Retry offered.
-4. **Rate-limit flood** — a single IP submits more than `QUOTE_MAX_SUBMISSIONS_PER_WINDOW`
-   valid quotes inside the window. Expected: over-limit submissions return
-   `{ status: "rate-limited" }`, no send, values preserved; the quote limiter uses its OWN
-   instance/map so it never shares a bucket with the contact form (a legitimate contact
-   message must not be throttled by quote traffic and vice versa).
-5. **All-whitespace / oversized / control-char fields** — company/name/needs of only spaces
-   trim to empty → required errors; a `needs` body over `QUOTE_MESSAGE_MAX` is capped/rejected
-   before it reaches the template (which additionally HTML-escapes); CR/LF/control chars in
-   company/name are stripped so the relay subject line stays single-line (header-injection
-   defense, mirrors `stripControlChars` in the contact guard).
-6. **Missing/absent locale or empty content tables** — the page is copy-driven from the i18n
-   dictionary (NOT a DB `static_pages` row), so it renders even if content tables are empty; an
-   unknown locale resolves to `defaultLocale` (es-MX) via `hasLocale`, never 500s.
-7. **`prefers-reduced-motion`** — `.enter-fade` degrades to opacity-only; no section relies on
-   motion to be understood.
-8. **JS-disabled / slow network** — the form is a real `<form action={serverAction}>`; server
-   re-validates the trimmed values (the real boundary); the page content is server-rendered so
-   the pitch is fully readable with no client JS.
+1. **Stock race on create** — Admin picks a product showing stock 1; between selection and submit another order (online or another admin tab) buys the last unit. Expected: `create_order`'s guarded decrement matches zero rows → raises `OUT_OF_STOCK:<pid>:<vid|->` → whole transaction rolls back → the action maps it to a per-line "sin stock" message; NO partial order, NO negative stock. (Reuses the exact checkout mechanism.)
+2. **Zero-item order** — Admin submits with no line items. Expected: input validation rejects ("Agrega al menos un producto"); `create_order` is never called (an empty `items` array would otherwise create a $0, line-less order).
+3. **Duplicate / double submit** — Admin double-clicks submit or the action re-runs. Expected: a per-submission idempotency key (minted once on form load) is threaded into `create_order`; the second call returns the original (`reused:true`) → exactly one order, one stock decrement. Submit is also disabled while in flight.
+4. **Email absent** — Phone customer has no email; admin leaves it blank and does not opt into confirmation. Expected: order created successfully (constraint resolved), `payment_method='manual'`, no customer email attempted; a later "Marcar enviado" sends no email and shows `emailSent:false` without error (AC-13).
+5. **Price change mid-entry** — Admin selected a product at $4,999; before submit the live price changed to $5,499. Expected: `revalidateLines` flags the line `price-changed` with the live price; order not created; admin sees "el precio cambió a $5,499" per line and can resubmit — never silently charges the stale price.
+6. **Invalid quantity** — Admin enters 0, negative, non-integer, or beyond the INT4 sanity cap. Expected: input validation rejects with a field error; `create_order` never called (defends the `quantity > 0` CHECK and the shared INT4 parser boundary).
+7. **Marked-paid + email-less** — Admin records offline payment as paid for an email-less order. Expected: `advance_order_status` payment-only sets `paid` + `payment_method='manual'` + a `transition_kind='paid'` history row; no `sendPaymentReceived` (no `mp_payment_id`); no confirmation unless opted-in with a valid email; no error.
 
 ## Error States Table
 
 | Trigger | User Sees | System Does |
-| --- | --- | --- |
-| Required field empty / email malformed / team-size not in enum | Inline field error(s) under the offending field(s); focus jumps to first invalid; typed values preserved | Server action returns `{ status: "invalid", fieldErrors, values }`; NO email send |
-| Honeypot field filled (bot) | Success banner (identical to real success) | `console.warn`; returns fake `{ status: "success" }`; NO send |
-| Same IP exceeds quote rate limit in window | `role="alert"` `bg-warning/10` banner: "Espera un momento antes de enviar otra solicitud." (values kept) | Dedicated quote limiter returns false → `{ status: "rate-limited" }`; NO send |
-| Owner email unconfigured OR provider/timeout failure | `role="alert"` generic error: "No pudimos enviar tu solicitud, inténtalo de nuevo."; button label → "Reintentar"; values kept | `sendQuoteRelay` → `{ ok:false, reason }`; reason logged server-side ONLY; mapped to `{ status: "error" }` |
-| Unexpected exception during relay | Same generic error state as above | Exception caught in the action; logged with context; NEVER thrown to client |
-| Unknown locale in URL | Page renders in es-MX (default) | `resolveLocale` falls back to `routing.defaultLocale`; never 500 |
+| ------- | --------- | ----------- |
+| Out-of-stock line on submit (edge 1) | Per-line banner "Sin stock — quedan N" on the affected line; values preserved | `create_order` raises `OUT_OF_STOCK`, tx rolls back; action maps to line issue; no order, no stock change |
+| Price changed since selection (edge 5) | Per-line "El precio cambió a $X"; values preserved | `revalidateLines` returns `price-changed`; action aborts before `create_order`; nothing written |
+| Zero items (edge 2) | Form-level error ("Agrega al menos un producto") | Input validation fails; no RPC call |
+| Invalid CP / state (AC-4) | Field-level error on postal code / state | `address.ts` validators fail; no RPC call |
+| Invalid quantity (edge 6) | Field-level error on the line quantity | Input validation fails; no RPC call |
+| Double submit (edge 3) | Button disabled ("Creando…"); one order on completion | Idempotency key → `create_order` returns `reused:true`; one order |
+| Session expired mid-form | Redirect to `/admin/login` on submit | `requireSession()` redirects before any write |
+| `advance_order_status` paid step fails after create | Order still created (pending); banner "Pedido creado, pero no se pudo marcar pagado — hazlo desde el detalle" | Create succeeded; paid step non-applied; NOT rolled back (order exists) |
+| Confirmation email fails (opted in, valid email) | Non-blocking notice "Pedido creado. El correo de confirmación no pudo enviarse." | Order created; `sendOrderConfirmation` `{ok:false}`; surfaced as `emailSent:false`, no rollback |
+| Email-less order later shipped/cancelled (AC-13) | On the T12 status action: "Estado actualizado (sin correo — falta email)" | Send skipped at the no-recipient guard; `emailSent:false`; no provider call, no 500 |
 
 ## UX Requirements
 
-For EVERY state the UI can be in:
+For every state of `/admin/orders/new`:
 
-- **Loading (submit in flight):** submit button disabled, label → "Enviando…" / "Sending…";
-  form remains visible and filled; no layout shift. (Page itself is server-rendered — no page
-  spinner.)
-- **Empty (initial page load):** the full pitch renders immediately (hero → value → process →
-  form); image slots that are `null` show the intentional cobalt blank-tile glyph (a
-  Building/Chair line-glyph), which reads as premium-not-broken per DESIGN.md placeholder
-  posture. The form is empty with placeholders and a visible primary submit.
-- **Error (form-level):** a `role="alert"` `text-destructive` banner with glyph + generic
-  copy above the submit; the raw provider reason is never shown; button becomes "Reintentar".
-- **Error (field-level):** `text-destructive` message under the field, `aria-invalid` +
-  `aria-describedby` wired; first invalid field receives focus.
-- **Rate-limited:** a `role="alert"` `bg-warning/10 text-warning` banner (calm, glyph + text),
-  values preserved.
-- **Success:** form clears, focus moves to a `role="status"` `.enter-fade` banner ("¡Solicitud
-  enviada! Te contactaremos pronto." / "Request sent! We'll be in touch."), auto-hides after
-  `QUOTE_SUCCESS_FEEDBACK_MS` (6000). Next step implied: "we'll contact you".
-- **Mobile (375px):** single column; hero copy stacks above (or without) media; value cards
-  stack; form fields full-width, ≥44px touch targets (reuse the contact `fieldClasses`
-  `min-h-11`); native mobile picker for the `<select>`; no horizontal overflow.
-- **Tablet (768px):** value section may go 2-up; hero may split copy/media; container
-  `max-w-(--breakpoint-xl)` with `px-4 md:px-6 lg:px-8`; no overflow.
+- **Loading**: Standard admin shell (`AdminPage title="Nuevo pedido"`); the catalog product search shows a spinner/skeleton while querying; submit shows "Creando…" and is disabled during the in-flight action.
+- **Empty**: Fresh form with zero line items — a clear "Agrega productos al pedido" empty row with the product-search affordance prominent; totals show $0 until a line is added.
+- **Error**: Field-level errors under the relevant inputs (contact/shipping/quantity); per-line issue banners (out-of-stock / price-changed) attached to the offending line with the live value; a form-level error region (`role="alert"`, `Banner tone="error"`) for whole-form failures (zero items, session). Values preserved on re-render.
+- **Success**: On create, redirect to the new order's detail (`/admin/orders/[id]`) with an inline success banner ("Pedido PP-000123 creado", `role="status"`, `.enter-fade`, auto-hide ~6s) — the standard T12 create→detail landing so the owner continues fulfillment.
+- **Mobile (375px)**: Single-column stacked form; line items render as stacked cards (product, variant, qty, live price, remove), not a wide table; `min-w-0` + `break-words` on long product names/SKUs (T12 UX overflow fix); product-search results full-width, tappable; no horizontal overflow.
+- **Tablet (768px)**: Two-column contact/shipping where space allows; line items may use a compact table; totals panel visible alongside or below.
+
+Motion follows the shipped admin grammar (enter `ease-out`, transform/opacity only, `prefers-reduced-motion` honored, hover gated to hover-capable pointers). Status/source badges are **glyph + text**, never color alone (mirror `ProductStatusBadge` / order badges). Admin copy is **es-MX only**.
 
 ## Technical Approach
 
 ### Files to Create
 
-- `src/app/[locale]/empresas/page.tsx` — the B2B landing RSC. Resolves locale, sets
-  `generateMetadata` (namespace `empresas.metadata`, returns `{title, description}`), composes
-  the pitch sections, resolves the quote-form labels server-side, renders `<QuoteForm/>`.
-  Bespoke static segment (own folder) — takes precedence over `[pageSlug]` and `[...rest]`; no
-  `RESERVED_SLUGS` change needed (the generic route only pre-renders `STATIC_PAGE_SLUGS`, and
-  `/empresas` is not among them).
-- `src/app/[locale]/empresas/quote-form.tsx` — the sole client island. Copies
-  `contact-form.tsx` grammar verbatim (`useActionState`, off-screen honeypot, full state
-  matrix, first-invalid focus, success clear+focus+auto-hide, Retry), adapted to the quote
-  fields; team size is a labeled native `<select>` over `QUOTE_TEAM_SIZES`.
-- `src/app/[locale]/empresas/actions.ts` — `"use server"` `submitQuoteForm(prevState, formData)`.
-  Honeypot → fake success; `validateQuoteSubmission` → invalid; `checkQuoteRateLimit` →
-  rate-limited; `sendQuoteRelay` → success/error mapping. Never throws to client.
-- `src/app/[locale]/empresas/quote-form-state.ts` — serializable `QuoteFormState` +
-  `QuoteFormValues` + `initialQuoteFormState` (mirrors `contact-form-state.ts`), imported by
-  both the action and the client form (lives OUTSIDE the `"use server"` module — that module
-  may only export async functions).
-- `src/lib/quote/submit-guard.ts` — PURE `validateQuoteSubmission` (trim + control-char strip
-  on company/name; email `EMAIL_PATTERN`; **team-size membership check against
-  `QUOTE_TEAM_SIZES`**; length caps) + `isQuoteHoneypotTripped`. Field-key + error-key unions.
-- `src/lib/quote/rate-limit.ts` — a DEDICATED `createSlidingWindowLimiter` instance +
-  `checkQuoteRateLimit(ip, now?)` + `QUOTE_RATE_LIMIT_DISABLED=1` hatch + test helpers
-  (`resetQuoteRateLimitState`, `quoteRateLimitKeyCount`). Mirrors `contact/rate-limit.ts`.
-- `src/lib/config/quote.ts` — non-secret tunables: `QUOTE_COMPANY_MAX`, `QUOTE_NAME_MAX`,
-  `QUOTE_EMAIL_MAX`, `QUOTE_PHONE_MAX`, `QUOTE_MESSAGE_MAX`, `QUOTE_TEAM_SIZES` (the allowed
-  enum tuple, single-sourced for the guard + the `<select>`), `QUOTE_RATE_LIMIT_WINDOW_MS`,
-  `QUOTE_MAX_SUBMISSIONS_PER_WINDOW`, `QUOTE_RATE_LIMIT_MAX_KEYS`, `QUOTE_SUCCESS_FEEDBACK_MS`.
-- `src/lib/email/templates/quote-relay.ts` — PURE `renderQuoteRelay(input, chrome)` →
-  `RenderedEmail`, es-MX to the owner, every field rendered (needs quoted verbatim +
-  HTML-escaped via existing `escapeHtml`), following `contact-relay.ts` structure
-  (`wrapEmail`/`renderHeading`/`renderParagraph`/`renderCallout`). `QuoteRelayInput` type
-  exported here.
-- `src/lib/quote/submit-guard.test.ts`, `src/lib/quote/rate-limit.test.ts`,
-  `src/lib/email/templates/quote-relay.test.ts`, `src/app/[locale]/empresas/actions.test.ts` —
-  unit tests mirroring the contact equivalents.
-- `e2e/empresas-quote.spec.ts` — both-locale render, nav/footer link, form labeled + honeypot
-  off-screen + validation error + default error-on-submit.
+- `src/app/admin/(app)/orders/new/page.tsx` — create-order route (RSC shell): `requireSession()`, resolve Store Settings for the default shipping charge, render the client form. Mirrors `products/new/page.tsx`.
+- `src/app/admin/(app)/orders/new/manual-order-form.tsx` — client form island (`"use client"`, `useActionState`): contact + shipping fields (`TextField`/`SelectField`/`TextareaField`), the line-items editor + product/variant picker, shipping-override `MoneyField`, payment-choice radio/select, confirmation-email `SwitchField` (default off), submit with in-flight disable + idempotency key.
+- `src/components/admin/orders/manual-order-line-editor.tsx` (+ a product-picker subcomponent) — searchable catalog product/variant picker showing live stock + server-recalculated price. Reuse the products `list-query`/search for search, `dropdown.tsx` grammar, and the storefront `variant-selector.tsx` interaction pattern (no existing admin product picker exists — this is the main new UI).
+- `src/lib/admin/orders/manual-order-input.ts` (+ `.test.ts`) — **pure** input parse/validate → typed `ManualOrderInput`; contact (optional email via `EMAIL_PATTERN`), shipping (reuse `address.ts`), lines (≥1, `quantity>0` via the shared INT4 parser), payment choice, confirmation opt-in. No I/O.
+- `src/lib/admin/orders/manual-order-write.ts` (+ `.test.ts`) — write orchestration: `revalidateLines` → on issues, return them; else `assembleOrder` → `create_order` (service-role, idempotency key, resolved `contact_email`, `locale='es-MX'`, `payment_method` NOT settable via create_order so stamp after) → set `payment_method='manual'` → if paid-choice, `advance_order_status` payment-only paid (also carries `payment_method='manual'`) → if confirmation opt-in + valid email, `sendOrderConfirmation`. Returns typed result (orderId, orderNumber, lineIssues?, emailSent, markedPaid).
+- `tests/integration/admin-orders-manual.integration.test.ts` — end-to-end against local Supabase (AC-19).
+- `e2e/admin-orders-manual.spec.ts` — admin serial e2e (AC-20).
 
 ### Files to Modify
 
-- `src/lib/config.ts` — add `export * from "./config/quote";` (barrel re-export).
-- `src/lib/email/dispatch.ts` — add `sendQuoteRelay(input): Promise<DispatchResult>` seam
-  (mirrors `sendContactRelay`: resolve owner address or `{ok:false}`, render, `sendWithTimeout`,
-  `replyTo = input.fromEmail`; NO ledger — not order-scoped) + import `renderQuoteRelay`.
-- `src/components/layout/nav-items.ts` — add `{ key: "offices", href: "/empresas" }` and extend
-  the closed `NavItem["key"]` union with `"offices"`. (Flows into desktop header +
-  `mobile-nav.tsx` automatically — both iterate `NAV_ITEMS`.)
-- `src/components/layout/site-footer.tsx` — add an `/empresas` link (a new `{ key: "offices",
-  href: "/empresas" }` entry in the STORE or HELP group, or its own small group).
-- `src/messages/es-MX.json` + `src/messages/en.json` — add the `empresas` namespace (metadata,
-  hero, value pillars, process steps, form labels/placeholders/team-size options/errors/
-  success/rate-limited/retry/honeypot), `nav.items.offices`, `footer.links.offices` — in
-  lockstep.
-- `src/messages/keys-used.test.ts` — register all new `empresas.*`, `nav.items.offices`,
-  `footer.links.offices` keys in `CONSUMED_KEYS`.
-- `src/components/layout/nav-items.test.ts` — extend for the new item if it asserts the set.
-- (Optional) `src/lib/config/imagery.ts` — add `B2B_HERO_IMAGE: string | null` if the page
-  uses a dedicated hero image; otherwise reuse `EDITORIAL_BAND_IMAGE` or ship `null`.
+- `src/app/admin/(app)/orders/page.tsx` — add the "Nuevo pedido" CTA to `AdminPage actions` (copy the `admin-products-new` pattern; keep the Clientes link).
+- `src/app/admin/(app)/orders/actions.ts` — add `createManualOrder(prevState, formData)`: `requireSession()` first → call `manual-order-write` → `revalidatePath(ADMIN_ORDERS_PATH)` (+ detail) → redirect to detail on success. Follows the existing `advanceStatus`/`cancelOrder` grammar.
+- `src/lib/email/dispatch.ts` — **recipient-safety guard (AC-13)**: add a `resolveCustomerRecipient(order)` helper returning a valid address or null (validate with `EMAIL_PATTERN`); in each customer-facing send, if null → return `{ ok: true, sent: false }` (benign skip) instead of pushing an empty `to`. Real-email behavior unchanged. Add a unit test for the skip branch.
+- `src/lib/admin/orders/order-constants.ts` — add `MANUAL_ORDER_PAYMENT_METHOD = "manual"`.
+- `src/lib/admin/orders/order-status-meta.ts` — add the source badge label/glyph (a `sourceBadge`/`isManualOrder` helper) so the detail (and optionally list) renders "Pedido manual / telefónico" from `payment_method === 'manual'`.
+- `src/app/admin/(app)/orders/[id]/page.tsx` (or the detail header component) — render the manual-source badge when `paymentMethod === 'manual'`.
+- (Optional, if cheap) `src/lib/admin/orders/order-list-query.ts` — add `payment_method` to the row select so the list can badge manual orders; `order-list-filters.ts` — a `source` filter (nice-to-have; may be deferred without failing an AC).
 
 ### Data Model Changes
 
-- **None.** No migration, no `static_pages` row (the page is copy-driven from i18n, matching
-  the homepage, not the generic static-page route). Quote submissions are relayed by email
-  only (PRODUCT.md: "no self-serve volume pricing"); persistence is out of scope.
+- **None required.** `orders.payment_method` (nullable text) carries the `'manual'` marker. `create_order`, `advance_order_status`, `customers`, `order_items`, `order_status_history` are reused unchanged. Migration count stays at **0013**.
+- **Contact_email decision (recommended, no migration):** keep `contact_email`/`customers.email` NOT NULL; when the admin leaves email blank, `manual-order-write` substitutes a **single, well-defined non-delivering placeholder** (e.g. the store's own contact email from Store Settings, or a documented no-reply sentinel) so both NOT NULL columns are satisfied, AND the recipient-safety guard (AC-13) ensures no send is ever attempted to that placeholder (guard treats the sentinel / store-address-as-customer as no-recipient). This avoids a 2-column nullable migration + auditing every downstream reader that assumes a string. See research report Q2 for the tradeoff of the rejected alternatives (nullable migration; raw sentinel visible in list/search).
 
 ### API Endpoints
 
-- **None new (no route handler).** The quote submission is a **Next.js Server Action**
-  (`submitQuoteForm`) consumed via `useActionState` — same mechanism as the contact form.
-  - Request (FormData): `company`, `name`, `email`, `phone?`, `teamSize` (enum),
-    `needs` (message), `company_url` (honeypot).
-  - Response (`QuoteFormState`): `{ status: "idle"|"success"|"invalid"|"rate-limited"|"error",
-    fieldErrors?, values?, submissionId }`.
+- **No new HTTP endpoints.** All work is via the Next server action `createManualOrder` (`orders/actions.ts`), consistent with the whole admin surface. Underlying DB access is the existing `service_role` RPCs `create_order` and `advance_order_status`.
 
 ### Dependencies
 
-- **None new.** Reuses `next-intl`, `@hugeicons/react` + `@hugeicons/core-free-icons`,
-  `next/image`, the shared `createSlidingWindowLimiter`, the T9 email
-  layout/render/provider/`escapeHtml`, and the T15 component/token/motion layer.
+- **None new.** Reuses in-repo modules: `@/lib/checkout/checkout-read` (`revalidateLines`), `@/lib/checkout/order` (`assembleOrder`, `formatOrderNumber`), `@/lib/checkout/address`, the Store-Settings shipping resolver, `@/lib/email/dispatch`, `@/lib/admin/require-session`, the `@/lib/admin/rpc` typed args for `create_order`/`advance_order_status`, `@/components/admin/form/fields`, `@/components/admin/admin-page`, `@/components/product/variant-selector` (pattern), `@/lib/config/checkout` (`EMAIL_PATTERN`).
 
 ## Out of Scope
 
-- Persisting quote requests to the database or an admin "quotes" inbox (email relay only, per
-  PRODUCT.md "no self-serve volume pricing"; a quotes table is a future task).
-- Volume/fleet **pricing** — no price list, no tiered B2B pricing, no B2B checkout (explicit
-  PRODUCT.md constraint).
-- Real client logos / testimonials / proof imagery (no real evidence exists — forbidden).
-- Sitemap.xml, structured data, OG images, canonical/hreflang hardening, cookie consent,
-  analytics, full image-perf pass — all owned by **T14** (this page ships with sane
-  `title`/`description` only so T14 can harden it).
-- CFDI / invoicing, customer accounts (Phase 2/3).
-- Any admin, `src/components/ui/*`, or `:root`/shared-`sans` change (firewall).
+- **Manual price override / manual discount per line** — v1 uses catalog prices only (server-recalculated); a price-override field is explicitly deferred (flagged, not built).
+- **Discount-code entry on manual orders** — the `create_order` discount path exists but is not exposed here in v1.
+- **A "payment received (offline)" customer email** — not sent (AC-16); `sendPaymentReceived` stays a payment-webhook seam.
+- **Editing an existing order's line items after creation** — manual orders are immutable snapshots like online orders (status transitions only, via T12).
+- **Customer account linking / dedupe** — a manual order creates a guest `customers` row exactly like checkout (Phase 1 has no accounts).
+- **True nullable `contact_email` / `customers.email` schema change** — recommended against (see decision); documented as the alternative if a later review requires it (would be migration 0014).
+- **A dedicated `source`/`channel` enum column** — reusing `payment_method='manual'` is the least-invasive marker; a first-class source column is a Phase-2 cleanup if manual orders proliferate.
+- **Bilingual admin** — admin is es-MX only.
