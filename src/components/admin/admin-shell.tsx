@@ -34,10 +34,12 @@ const DRAWER_EXIT_MS = 260;
 /** Resolve the active section from the current pathname (data-driven from nav). */
 function useActiveSection(): AdminSectionId {
   const pathname = usePathname();
-  const match = ADMIN_NAV_ITEMS.find(
+  // Longest matching href wins: the "Panel" item's href (`/admin`) is a prefix
+  // of EVERY admin route, so a plain first-match would mark it active everywhere.
+  const match = ADMIN_NAV_ITEMS.filter(
     (item) => item.status === "live" && pathname.startsWith(item.href),
-  );
-  return match?.id ?? "settings";
+  ).sort((a, b) => b.href.length - a.href.length)[0];
+  return match?.id ?? "panel";
 }
 
 export function AdminShell({ storeName, unansweredCount = 0, children }: AdminShellProps) {

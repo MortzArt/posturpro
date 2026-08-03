@@ -10,6 +10,7 @@
  */
 import type { IconSvgElement } from "@hugeicons/react";
 import {
+  DashboardSquare01Icon,
   Settings01Icon,
   Package01Icon,
   ShoppingCart01Icon,
@@ -31,7 +32,7 @@ export const ADMIN_COOKIE_PATH = "/admin" as const;
 /** Login route (the ONE admin path reachable while unauthenticated). */
 export const ADMIN_LOGIN_PATH = "/admin/login" as const;
 
-/** Admin root — redirects to the settings landing (no dead dashboard). */
+/** Admin root — the dashboard ("Panel", T12: new-order indicator + store summary). */
 export const ADMIN_ROOT_PATH = "/admin" as const;
 
 /** Settings landing (the single working section in Phase 1). */
@@ -77,6 +78,7 @@ export const ADMIN_SESSION_VERSION = 1 as const;
 
 /** The admin sections; drives nav + active-state resolution. */
 export type AdminSectionId =
+  | "panel"
   | "settings"
   | "products"
   | "taxonomy"
@@ -125,6 +127,13 @@ export const ADMIN_NAV_GROUP_CATALOG = "Catálogo" as const;
  * setting `href` — no shell/nav rewrite.
  */
 export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
+  {
+    id: "panel",
+    label: "Panel",
+    href: ADMIN_ROOT_PATH,
+    icon: DashboardSquare01Icon,
+    status: "live",
+  },
   {
     id: "settings",
     label: "Configuración",
