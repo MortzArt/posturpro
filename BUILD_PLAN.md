@@ -57,7 +57,7 @@ Scope authority: PRODUCT_SPEC.md. Anything not in Phase 1 of the spec is out of 
 - [x] **T18 — Admin: customer detail page** (tier: standard; PlanResearch → UI Design → Dev → ReviewFix → QA PASS, HIGH, 2026-08-03; owner-approved scope addition 2026-08-03)
   A single page per customer, reachable by clicking a row in the existing Customers list (/admin/orders/customers). Shows: (1) order history — every order number for that customer with date created, total, and status/payment badges, each row linking to the order detail; (2) contact + shipping addresses used across their orders; (3) lifetime totals — order count, total spent, first/last order date. Customer identity keyed as the customers list already groups them. Admin-only (requireSession), es-MX, neutral admin theme. Search already exists on the list. `blocked by: T12`
 
-- [ ] **T14 — SEO, analytics & launch hardening** (tier: full-cycle)
+- [x] **T14 — SEO, analytics & launch hardening** (tier: full-cycle; ran high — all 12 stages, SHIP 9/10 HIGH, 2026-08-04; Group B analytics/Sentry/CSP decisions owner-gated, see tasks/deploy-readiness-checklist.md)
   Clean URLs, per-page metadata, product structured data, sitemap.xml; analytics; cookie consent banner; image optimization + performance pass; error monitoring; backup verification; final security review of the whole store (secrets, admin auth, webhook, RLS). **Runs LAST — after T15/T16 so metadata/sitemap/perf cover the final surfaces. Go-live additionally gated on T8 Phase 5 owner sign-off.** `blocked by: T12, T13, T15, T16`
 
 ## Rules for this plan

@@ -1,10 +1,17 @@
 # Pipeline State
 Task: T14 — SEO, analytics & launch hardening
 Tier: full-cycle
-Stage: 12
-Agent: ultraverify
-Last Updated: 2026-08-04 00:45
+Stage: COMPLETE
+Agent: —
+Last Updated: 2026-08-04 01:30
 Notes: LAST build task. Full-cycle. T14 is deploy-readiness — after it, owner deploys to Vercel + hosted Supabase for client QA. Go-live also gated on T8 Phase 5 owner sign-off.
+
+=== T14 S12 (Verify, ultraverify) COMPLETE — SHIP, 9/10, confidence HIGH (2026-08-04) === T14 DONE → PHASE 1 COMPLETE ===
+- ALL GATES INDEPENDENTLY RE-RUN: tsc=0; eslint 19 T14 files clean; unit 2041/2041 (127 files); INTEGRATION 275/275 (26 files, live seeded DB — resolves QA's environmental gap, stack healthy, anon-denial RLS passes live); build exit 0 (3 taxonomy ƒ Dynamic); prod curl matrix ALL GREEN (taxonomy 200 both locales +?page=2/99; sitemap 118 loc=118 unique +354 hreflang; robots 6 disallows incl /en funnel; real 404s; PDP Product 8999.00 MXN InStock + Breadcrumb; home Org+WebSite; canonical+hreflang(3, x-default→es-MX) all 9 indexable surfaces; faceted noindex,follow preserved; counter 0/2000; JSON-LD XSS-safe); secret scan 44 chunks 0 hits; Group A 14/14 PASS; Group B all recorded not built (correct); 6 stage commits, tree clean.
+- E2E 516 tests: 395 pass / 68 fail / 53 skip — EVERY failure root-caused NON-T14: 20 stale admin.spec.ts login expectation (/admin/settings vs T12 /admin — pre-existing debt); ~40 add-to-cart cascade PROVEN ENVIRONMENTAL (verify's own repeated e2e runs placed 19 real orders draining test variant PP-0001-V1-1 to stock 0 → Agotado → disabled button; after db:seed restore, cart 5/5 isolated); ~6 seed/config-guard drift (WhatsApp FAB enabled by pre-T14 commit 94159d2; catalog test needs a zero-product taxonomy); ~2 mobile timing flakes. AC-A6 not-found.spec.ts 12/12. git log confirms T14 touched no cart/checkout/admin/config source. Orchestrator's stale-server lead resolved: run hit :3000 = v16.2.12 correct build; v16.2.9 orphan was :3199, killed.
+- EXCEPTIONS GRANTED: 68 e2e non-T14 buckets; >8KB-URL 500 (pre-existing, 414-rejected at edge, firewalled); tsconfig auto-inject reverted.
+- OWNER HANDOFF (tasks/ship-decision.md + deploy-readiness-checklist.md): set NEXT_PUBLIC_SITE_URL=real domain (unset → localhost SEO poisoning) + all secrets in Vercel; NEVER set *_RATE_LIMIT_DISABLED in prod; post-migrate anon-denial RLS sweep (checklist §2) after db push; apply B6 CSP report-only-first BEFORE any 3rd-party script; rotate ADMIN_SESSION_SECRET/ADMIN_PASSWORD_HASH/MP token/hosted key before go-live; B-group vendor decisions (analytics/Sentry/backup) pending owner; GO-LIVE separately gated on T8 Phase 5 owner sandbox sign-off.
+- STALE-TEST DEBT left for a future task: admin.spec.ts post-login expectation (20 fails); e2e seed-drift guards. PHASE 1 = 16/16 tasks [x]. Next: owner deploy for client QA (see memory deploy-plan), or Continuous Improvement Mode.
 
 === T14 S11 (Hacker, ultrahacker) COMPLETE — PASS, Chaos Score 1/10, 0 T14 bugs (2026-08-04) ===
 - 1 finding, PRE-EXISTING + FIREWALLED (not fixed, by design): >8100-char URL path on taxonomy [slug] → controlled REDACTED 500 (getCategory fail() throws past PostgREST URI limit → error.tsx boundary). Not T14 code (T3/T5 fail()/unstable_cache predate; force-dynamic only made it reachable and strictly improved prior behavior); NOT deploy-reachable (Vercel edge rejects >8KB paths with 414 before the function); zero internal/DB/secret/stack leak verified. Fixing (throw→notFound) would mask real DB errors as 404s. Logged Phase-2 improvement #10 (page-level length guard).
