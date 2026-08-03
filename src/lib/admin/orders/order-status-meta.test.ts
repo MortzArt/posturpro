@@ -16,6 +16,7 @@ import {
   isAllowedNextStatus,
   deriveCancelledAt,
   transitionKindLabel,
+  paymentBadgeIsRedundant,
   type CancellableHistoryEntry,
 } from "./order-status-meta";
 import type { OrderStatus } from "@/lib/supabase/database.types";
@@ -120,5 +121,20 @@ describe("transitionKindLabel", () => {
   it("hides a non-material `noop` / null kind", () => {
     expect(transitionKindLabel("noop")).toBeNull();
     expect(transitionKindLabel(null)).toBeNull();
+  });
+});
+
+describe("paymentBadgeIsRedundant", () => {
+  it("hides the payment badge when it would echo the order badge", () => {
+    expect(paymentBadgeIsRedundant("pending_payment", "pending")).toBe(true);
+    expect(paymentBadgeIsRedundant("paid", "paid")).toBe(true);
+  });
+
+  it("shows the payment badge whenever it adds information", () => {
+    expect(paymentBadgeIsRedundant("pending_payment", "failed")).toBe(false);
+    expect(paymentBadgeIsRedundant("pending_payment", "authorized")).toBe(false);
+    expect(paymentBadgeIsRedundant("cancelled", "paid")).toBe(false);
+    expect(paymentBadgeIsRedundant("cancelled", "refunded")).toBe(false);
+    expect(paymentBadgeIsRedundant("shipped", "paid")).toBe(false);
   });
 });

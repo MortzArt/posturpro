@@ -7,6 +7,7 @@ import { ADMIN_ORDERS_PATH } from "@/lib/admin/constants";
 import { buildOrderListQueryString, type OrderListFilters } from "@/lib/admin/orders/order-list-filters";
 import { OrderStatusBadge } from "@/components/admin/orders/order-status-badge";
 import { PaymentStatusBadge } from "@/components/admin/orders/payment-status-badge";
+import { paymentBadgeIsRedundant } from "@/lib/admin/orders/order-status-meta";
 import { OrderRowActions } from "@/components/admin/orders/order-row-actions";
 import { ListPagination } from "@/components/admin/orders/list-pagination";
 import type { AdminOrderRow } from "@/lib/admin/orders/order-list-query";
@@ -80,7 +81,11 @@ function DesktopTable({ rows }: { rows: AdminOrderRow[] }) {
               </td>
               <td className="px-3 py-2 text-right tabular-nums">{formatMXN(row.totalCents)}</td>
               <td className="px-3 py-2"><OrderStatusBadge status={row.orderStatus} /></td>
-              <td className="px-3 py-2"><PaymentStatusBadge status={row.paymentStatus} /></td>
+              <td className="px-3 py-2">
+                {paymentBadgeIsRedundant(row.orderStatus, row.paymentStatus) ? null : (
+                  <PaymentStatusBadge status={row.paymentStatus} />
+                )}
+              </td>
               <td className="px-3 py-2 text-right">
                 <OrderRowActions orderId={row.id} orderNumber={row.orderNumber} />
               </td>
@@ -113,7 +118,9 @@ function MobileCards({ rows }: { rows: AdminOrderRow[] }) {
             </p>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <OrderStatusBadge status={row.orderStatus} />
-              <PaymentStatusBadge status={row.paymentStatus} />
+              {paymentBadgeIsRedundant(row.orderStatus, row.paymentStatus) ? null : (
+                <PaymentStatusBadge status={row.paymentStatus} />
+              )}
             </div>
           </div>
           <OrderRowActions orderId={row.id} orderNumber={row.orderNumber} />

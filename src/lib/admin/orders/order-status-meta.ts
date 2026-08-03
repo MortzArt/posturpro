@@ -100,6 +100,22 @@ export const PAYMENT_STATUS_META: Record<PaymentStatus, OrderStatusMeta> = {
 };
 
 /**
+ * True when the payment badge would only echo the order badge (identical
+ * label — `pending_payment`+`pending` and `paid`+`paid` both collapse to one
+ * visible label). List/card rows hide the payment badge in that case so a row
+ * never shows the same badge twice; it renders only when it adds information
+ * (authorized, failed, refunded, or a divergent pair like cancelled+paid).
+ */
+export function paymentBadgeIsRedundant(
+  orderStatus: OrderStatus,
+  paymentStatus: PaymentStatus,
+): boolean {
+  return (
+    ORDER_STATUS_META[orderStatus].label === PAYMENT_STATUS_META[paymentStatus].label
+  );
+}
+
+/**
  * Forward-only lifecycle rank, mirroring the DB `order_status_rank` (0009):
  * pending_payment(0) → paid(1) → preparing(2) → shipped(3) → delivered(4) →
  * cancelled(5, highest). The stepper renders ranks 0..4; `cancelled` replaces it.
