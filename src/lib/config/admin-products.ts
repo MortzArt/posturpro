@@ -20,6 +20,17 @@ export const ADMIN_PRODUCTS_PER_PAGE = 25;
 /** Inventory-adjustment ledger rows per page in the history view. */
 export const ADMIN_LEDGER_PER_PAGE = 20;
 
+/**
+ * Max order-history rows the admin customer-detail page (T18) fetches for one
+ * customer. Bounds the index-backed `orders WHERE customer_id` read so it can
+ * never approach PostgREST's 1000-row cap. Under Phase-1's one-row-per-order
+ * model almost every customer has exactly 1 order, so this is a generous ceiling;
+ * when a customer exceeds it the page shows "Mostrando los N más recientes de M"
+ * and the exact lifetime totals still come from the `admin_customer_aggregates`
+ * RPC (which counts/sums over ALL orders), never from this bounded slice.
+ */
+export const CUSTOMER_ORDER_HISTORY_LIMIT = 50;
+
 /** Max debounce for the list search box before pushing to the URL (ms). */
 export const ADMIN_SEARCH_DEBOUNCE_MS = 300;
 

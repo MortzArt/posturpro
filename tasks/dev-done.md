@@ -1,89 +1,88 @@
-# Dev Summary: T17 — Admin manual / phone order entry
+# Dev Summary: T18 — Admin customer detail page
 
-Standard-tier S3 (Dev). Full-stack, admin es-MX only. **Migration count: NONE added — 0013 stays latest** (rides `create_order`/`advance_order_status` unchanged; source-marks via `payment_method='manual'`; resolves email-optional via a non-delivering sentinel + recipient guard).
+Standard tier, Stage S3 (ultradev). Feature type: full-stack (logic-heavy).
+Complexity: low. Pattern-copy on the fully-built T12 substrate.
 
 ## Files Changed
 
 | Path | Change | Summary |
 |------|--------|---------|
-| `src/lib/email/recipient.ts` | created | `NO_EMAIL_PLACEHOLDER` + `isMailableAddress` + `resolveCustomerRecipient` — single recipient-safety authority (AC-13). |
-| `src/lib/email/dispatch.ts` | modified | AC-13 guard on all 6 customer-facing sends: absent/malformed/sentinel recipient → benign `{ok:true,sent:false}` skip before any provider call. Real-email unchanged. |
-| `src/lib/admin/orders/manual-order-input.ts` | created | PURE validator → `ManualOrderInput`. Email optional; shipping reuses CP/state/field-max rules (email-optional sibling of `validateAddress`); lines ≥1, qty∈[1,INT4_MAX], UUID ids; pesos→cents; payment-choice + confirm opt-in. |
-| `src/lib/admin/orders/manual-order-write.ts` | created | revalidateLines→issues \| assembleOrder(flat)→create_order (sentinel email if blank, es-MX, live-priced items)→source stamp→optional paid advance→optional confirmation. Post-create failures never roll back. |
-| `src/lib/admin/orders/manual-order-catalog.ts` | created | Picker search: active products by name/SKU + batch variants+covers; live `variant.price_override_cents ?? product.price_cents`. |
-| `src/lib/admin/orders/manual-order-form-read.ts` | created | PURE FormData→raw + echoed values (parallel per-line arrays). |
-| `src/app/admin/(app)/orders/manual-order-form-state.ts` | created | `ManualOrderFormState` union (no success — success redirects). |
-| `src/app/admin/(app)/orders/new/page.tsx` | created | RSC shell: session-first, Store-Settings shipping seed, mint idempotency key, render form. |
-| `src/app/admin/(app)/orders/new/manual-order-form.tsx` | created | useActionState island: 5 sections, live summary, sticky bar, disable-while-pending, values re-seed, focusFirstInvalid, confirm gated on valid email. |
-| `src/components/admin/orders/manual-order-line-editor.tsx` | created | Picker (combobox+in-flow listbox, 300ms debounce, roving keys, agotado skipped) + line editor (cards, qty stepper, per-line issues, hidden inputs, next/image). |
-| `src/components/admin/orders/source-badge.tsx` | created | `☎ Pedido manual / telefónico` badge. |
-| `src/components/admin/orders/order-created-banner.tsx` | created | Detail landing banner (auto-hide success + persistent paid/email notices, role=status, .enter-fade, RM-safe). |
-| `src/app/admin/(app)/orders/actions.ts` | modified | `createManualOrder(prevState,formData)` + `searchManualOrderCatalog(term)`, both session-first. |
-| `src/app/admin/(app)/orders/page.tsx` | modified | "Nuevo pedido" primary CTA before Clientes (+ on error header). |
-| `src/app/admin/(app)/orders/[id]/page.tsx` | modified | Source badge; "Sin correo" instead of sentinel; created banner from searchParams. |
-| `src/lib/admin/orders/order-constants.ts` | modified | `MANUAL_ORDER_PAYMENT_METHOD`. |
-| `src/lib/admin/orders/order-status-meta.ts` | modified | `isManualOrder` + `SOURCE_BADGE_META`. |
-| `src/lib/config/admin-products.ts` | modified | `MANUAL_ORDER_CATALOG_LIMIT`. |
-| `src/components/admin/form/fields.tsx` | modified | `MoneyField` optional `value`/`onChange` (backward-compatible) for the live total. |
-| `src/lib/email/recipient.test.ts` | created | Guard unit tests. |
-| `src/lib/email/dispatch.test.ts` | modified | +5 AC-13 skip cases. |
-| `src/lib/admin/orders/manual-order-input.test.ts` | created | Input matrix. |
-| `src/lib/admin/orders/manual-order-write.test.ts` | created | Write branch map (mocked). |
-| `src/lib/admin/orders/manual-order-form-read.test.ts` | created | FormData reader. |
-| `tests/integration/admin-orders-manual.integration.test.ts` | created | AC-19. |
-| `e2e/admin-orders-manual.spec.ts` | created | AC-20. |
+| `supabase/migrations/0014_admin_customer_aggregates.sql` | created | `admin_customer_aggregates(p_customer_id uuid)` RPC → single row `(order_count bigint, total_cents bigint, first_order_at timestamptz, last_order_at timestamptz)` over ALL the customer's orders. Verbatim 0013 posture: `security definer` + pinned empty `search_path` + `revoke from public` + `grant execute to service_role`. `stable`, idempotent (`create or replace`). `sum(total_cents)`→bigint = exact integer math (AC-8); zero-order customer → count 0 / total 0 / NULL dates. |
+| `src/lib/supabase/types/rpc.ts` | modified | Added `AdminCustomerAggregatesArgs` + `AdminCustomerAggregatesRow` **`type` aliases** (never `interface` — T8 gotcha) and the `admin_customer_aggregates` entry in `DatabaseFunctions`. |
+| `src/lib/config/admin-products.ts` | modified | Added `CUSTOMER_ORDER_HISTORY_LIMIT = 50` (named const; bounds the history read below PostgREST's 1000-row cap — edge 3). |
+| `src/lib/admin/orders/customer-read.ts` | created | `server-only` `getAdminCustomer(id): Promise<AdminCustomerDetail \| null>`. Clone of `order-read.ts`: `UUID_PATTERN`→`null`→`notFound()`; core `customers` read; section-isolated `Promise.all([readHistory, readTotals])` (either failing degrades, never throws to the page — AC-13). History bounded + newest-first (index-backed by `orders_customer_id_idx`). Totals from the 0014 RPC over ALL orders. Exports the PURE `dedupeAddresses` (dedup on full tuple, most-recent-first — AC-6/edge 4). |
+| `src/lib/admin/orders/customer-read.test.ts` | created | Unit test for `dedupeAddresses`: empty→[], collapse-identical, distinct-most-recent-first, single-field-difference-is-distinct, delimiter-boundary safety, nullable line2 preserved. |
+| `src/app/admin/(app)/orders/customers/[id]/page.tsx` | created | Server component (`dynamic = "force-dynamic"`). `try/catch`→top-level error branch; `getAdminCustomer`→`null`→`notFound()`. Single-column composition: back-link → identity (name/email-via-`isMailableAddress`/phone) → `TotalsPanel` → `OrderHistoryPanel` (desktop table + mobile cards, linked order numbers, `paymentBadgeIsRedundant` suppression, empty/section-error/truncated branches) → `ContactPanel` (contact + de-duped addresses). Copies the order-detail `Panel`/`TotalRow` helpers verbatim. |
+| `src/app/admin/(app)/orders/customers/[id]/loading.tsx` | created | Opacity-only pulse skeleton (back-link + identity bars + 3 panel skeletons), cloning the order-detail `loading.tsx` shape for the single-column layout. |
+| `src/components/admin/orders/customer-table.tsx` | modified | AC-1: wrapped the name cell (desktop `<td>` + mobile card `<p>`) in a `Link` to `${ADMIN_CUSTOMERS_PATH}/${row.id}` with `focus-visible:underline` + `data-testid={`admin-customer-row-${row.id}`}`; added `nav-hover hover:bg-muted/40` to the desktop `<tr>`. Email stays plain `select-text`. Imported `Link`; updated the "Rows do NOT link" docstring. |
+| `src/components/admin/orders/customer-table.test.tsx` | created | AC-1 unit test: both desktop + mobile name links carry the right `href` + `data-testid`, focus affordance present, email is NOT a link, empty page renders no links. |
+| `tests/integration/admin-customer-detail.integration.test.ts` | created | Live-DB integration test (serviceClient + tracked cleanup): aggregate count/int-cents-sum/first-last; **count-equals-list invariant** (AC-9, vs `admin_customer_order_counts`); null-customer exclusion; 0-paid customer sums order value (edge 1); zero-order shape (edge 5); email-less sentinel keyed by id never merged (edge 2); `dedupeAddresses` (AC-6/edge 4); anon-denied grant. |
 
-## AC Coverage: 20/20 (see per-AC map below)
-- AC-1/2 CTA + session-first (page+action). AC-3/4 contact+shipping + shared CP/state. AC-5/6/7 picker variant-required + live stock/server price + revalidate re-verify (abort-before-create). AC-8 shipping default+override via assembleOrder. AC-9/10 atomic create + idempotency + pending/pending + es-MX. AC-11/12/13 email optional + confirm opt-in gated + recipient guard. AC-14 payment_method=manual + detail badge. AC-15/16 paid via advance_order_status payment-only + no payment-received email. AC-17 lands list+detail. AC-18/19/20 tests all green.
+**Counts:** 6 files created, 3 modified. 1 migration (0014). +3 test files (2 unit, 1 integration).
 
-## Edge Cases (7/7)
-stock race (guarded decrement); zero-item (no-items); double-submit (idempotency + in-flight disable); email absent (sentinel+guard); price-change (lineIssues adopt live price); invalid qty (line-invalid); paid+email-less (paid, no send).
+## Data-Testids Added
+- `customer-back-link` — back-link to Clientes (page.tsx)
+- `admin-customer-detail-error` — top-level read-failure alert (page.tsx)
+- `customer-history-error` — section-scoped history-read-failed banner (page.tsx)
+- `customer-history-empty` — zero-orders empty state (page.tsx)
+- `customer-history-truncated` — "Mostrando los N más recientes de M" footer (page.tsx)
+- `customer-order-row-{id}` — desktop history order-number link (page.tsx)
+- `customer-order-card-{id}` — mobile history order-number link (page.tsx)
+- `admin-customer-row-{id}` — customer-list name link, desktop + mobile (customer-table.tsx)
 
-## Migration = NONE (0013 latest confirmed).
+## Key Decisions
+- **Migration ADDED (0014 RPC)** over an in-app aggregate query: the history read is bounded, so totals MUST be computed separately over ALL orders. Summing an unbounded PostgREST select would hit the same 1000-row cap 0013 exists to dodge. The RPC is one round-trip, exact, and mirrors 0013's security posture verbatim (research "RPC preferred").
+- **Route param = raw `customers.id` UUID** — the detail's order set (`orders WHERE customer_id = id`) equals the list's count by construction (AC-9). Never keyed on email/phone (would merge distinct one-row-per-order customers).
+- **"Total gastado" = sum of ALL order totals** (not paid-only) so the headline reconciles with the visible history + the list count (edge 1).
+- **`dedupeAddresses` exported + pure** — testable without the DB; the DB-touching `getAdminCustomer` is covered by the live integration test.
+- **Single readable column** (`flex flex-col gap-6`) at all breakpoints per the binding ui-design.md (low content volume; order history is the tallest section and wants full width).
 
-## Test Status
-- tsc --noEmit: clean. eslint (all touched incl tests+e2e): clean.
-- Unit: +60 new/updated (recipient 8, dispatch +5, input 24, write 14, form-read 9). Full suite 1977 pass / 1 PRE-EXISTING env flake (`config.test.ts` WHATSAPP_PHONE_E164 — fails identically on clean baseline with my changes stashed; a shell WHATSAPP env leak, not T17).
-- Integration: full suite 24 files / 257 tests pass after reset+reseed (was 253/23 → +4, +1 file).
-- e2e admin-orders-manual (chromium): 3/3 pass.
+## Deviations from Ticket
+- None. The ticket/ui-design permitted either an RPC or an in-app aggregate; I chose the RPC (the recommended option). `CUSTOMER_ORDER_HISTORY_LIMIT` placed in the existing `config/admin-products` module (re-exported from `@/lib/config`) rather than a new file — consistent with the ticket's "small admin constants module" note and avoids a one-const file.
 
-## Live Spot-Check (:3000)
-Email-less pending order → detail with ☎ badge + "Sin correo" + created banner + order number; CP-invalid blocks with field error (no order). Paid path + with-email confirmation proven in integration (paid → payment_status=paid, payment_method=manual, transition_kind=paid history row). Stock decrement + idempotency asserted vs live local Supabase.
+## Edge Cases Handled
+- **Edge 1 (0-paid customer)**: totals sum order *value* regardless of payment status — asserted in the integration test; the RPC never filters by status.
+- **Edge 2 (sentinel not collapsed)**: keyed on `customers.id`; two sentinel customers with differing phones each show only their own order — integration test + live spot-check ("Sin correo").
+- **Edge 3 (long history)**: history bounded by `CUSTOMER_ORDER_HISTORY_LIMIT`; `ordersTruncated` → "Mostrando los N más recientes de M"; totals still reflect ALL M (from the RPC).
+- **Edge 4 (differing addresses)**: `dedupeAddresses` on the full tuple, most-recent-first — unit + integration tested.
+- **Edge 5 (zero orders / orphaned)**: RPC returns count 0 / total 0 / NULL dates; empty history panel; no divide-by-zero, no 500 — integration test.
+- **Edge 6 (null phone / line2)**: phone omitted when null; line2 omitted from the address block when null.
+- **Edge 7 (hostile id)**: `UUID_PATTERN` guard → `null` → `notFound()` before any DB call — live spot-check (`not-a-uuid` → 404).
+- **AC-13 (section isolation)**: `historyFailed` renders a scoped `role="alert"` banner while totals/contact still render.
 
-## Deviations
-None material. Optional list-badge/source filter (may-defer per ticket) not added — required detail badge present. Manual price override / discount code stay Out of Scope.
+## How to Test
+1. Log in at `/admin/login` (`admin@posturpro.mx` / `posturpro-dev-2026`).
+2. Go to `/admin/orders/customers`; click a customer NAME → lands on `/admin/orders/customers/{id}` with identity, "Totales del cliente", "Historial de pedidos (N)" (linked order numbers → order detail), "Datos de contacto y envío".
+3. Open an email-less manual customer → shows "Sin correo" (not the invalid literal).
+4. Visit `/admin/orders/customers/not-a-uuid` and `/admin/orders/customers/11111111-1111-1111-1111-111111111111` → in-shell 404.
+5. Resize to 375px → history renders as cards; no horizontal overflow.
+
+## Known Limitations
+- No history pagination (Phase-1 one-row-per-order reality; the truncation footer is the honest signal above `CUSTOMER_ORDER_HISTORY_LIMIT`). Documented in ui-design.md; a future ticket can add `ListPagination` if real volume demands it.
+- Read-only view (editing/merging/deleting customers are explicitly out of scope).
 
 ## Dependencies Added
-None (no npm packages, no migration).
+- None.
 
-## Review + Fix Pass (S4 ReviewFix — ultrareviewfix, standard tier)
+## Verification Status
+- `npx tsc --noEmit`: **clean** (whole project).
+- `eslint` on all 9 touched files: **clean**.
+- Full unit suite: **2001 passed / 119 files** (+17 across the two new unit files).
+- New unit tests: 11/11. New integration tests: **9/9** (`admin-customer-detail`); `admin-customer-counts` co-run 6/6 → 15/15 for the two customer-RPC files.
+- Live spot-check on :3000 (minted admin session cookie): good customer → full detail w/ linked order; sentinel → "Sin correo"; non-UUID + missing-UUID → in-shell 404; customers list rows carry `admin-customer-row-{id}` links (AC-1).
 
-Single-pass review + inline fix over all 28 files of `c02dca9`. Trust core verified in code (not trusted from this summary): client prices never trusted (`revalidateLines` sole authority), `requireSession()` on page + create action + catalog-search action, server-minted idempotency key, AC-13 guard on all 6 sends, offline-paid via `advance_order_status` payment-only (no receipt email), no XSS surface. **0 critical.**
-
-### Issues Found & Fixed
-
-| ID  | Severity | Title                                              | Status  | File                                             | Fix Applied |
-| --- | -------- | -------------------------------------------------- | ------- | ------------------------------------------------ | ----------- |
-| M-1 | MAJOR    | "Nota interna" collected but silently dropped (data loss) | FIXED | `manual-order-write.ts`                    | Post-create `maybePersistInternalNote` → `order_internal_notes` via `addOrderNote`; blank/reused-skip; failure never rolls back; +4 unit tests |
-| M-2 | MAJOR    | Space key blocks multi-word catalog search         | FIXED   | `manual-order-line-editor.tsx:212`               | Drop `" "` as activation key; Enter-only (ARIA APG editable combobox) |
-| M-3 | MAJOR    | Confirmation switch submits "off" while shown "on" | FIXED   | `manual-order-form.tsx:288`                       | Re-key SwitchField on `emailValid` → remounts unchecked when email invalid |
-| —   | MAJOR    | config.test.ts WHATSAPP flake **misdiagnosed** as env leak — actually STALE test | FIXED | `config.test.ts:74`      | Source `WHATSAPP_PHONE_E164` is now `5215512345678`; assertion rewritten to follow the constant. Unit suite now 1982/1982 GREEN, 0 failures |
-| m-1 | MINOR    | Initial activeIndex could target aria-disabled row | FIXED   | `manual-order-line-editor.tsx:120`               | `firstSelectableIndex(found)` — highlight first in-stock target |
-| m-2 | MINOR    | Duplicate `@/lib/money` import                     | FIXED   | `manual-order-form.tsx:9`                         | Merged into one import |
-| m-3 | MINOR    | Qty stepper clamps to MAX_SAFE_INTEGER (no client stock cap) | SKIPPED | —                                     | Server authoritative on stock (edge 1); UX-only, deferrable |
-| m-4 | MINOR    | Two count formulas in form-read parallel-array reader | SKIPPED | —                                             | Not exploitable (editor emits all per-line fields); backlog |
-| m-5 | MINOR    | `manual-order-line-editor.tsx` 554 lines (> soft cap) | SKIPPED | —                                             | Under 1000 hard cap; split risky mid-review; backlog |
-| m-6 | MINOR    | Effective-price re-derivation duplicated form↔editor | SKIPPED | —                                             | Both agree; DRY-with-judgment; backlog |
-
-### Summary
-- Critical: 0/0
-- Major: 4/4 fixed, 0 skipped
-- Minor: 2/6 fixed, 4 skipped (clean-code backlog)
-
-### Gates (re-run, not trusted)
-- tsc --noEmit: **0**. eslint (changed files): **0**.
-- Unit: **1982/1982 (117 files)** — the previously-reported "flake" is eliminated (it was the stale config test, now fixed). +4 new manual-order-write tests.
-- Integration: **24 files / 257 tests pass** (after reset+reseed) incl. `admin-orders-manual.integration.test.ts`.
-- e2e: not re-run this stage (no e2e-affecting change; dev-run 3/3 stands).
-
-### Verdict: APPROVE, 8.5/10. Proceed to S5 QA (standard-tier quality gate).
+### Environment note (NOT a T18 defect)
+The FULL integration suite showed 8 residual failures unrelated to T18: the local
+`supabase db reset` aborts on an **analytics/Studio container** Ecto migration
+conflict (`schema_migrations_pkey`), so the reset never re-runs migrations in the
+canonical role context. That leaves (a) storage buckets unprovisioned (the
+`admin-storage` / image-reconciliation failures) and (b) a stray `pg_default_acl`
+that auto-grants `EXECUTE` to `anon` on every new function — which makes the
+"denied to the anon role" test fail **identically** for `admin_customer_aggregates`
+(0014, mine), `admin_customer_order_counts` (0013), `cancel_order` (0012), and
+`create_order` (0008). Proof it is environmental and my SQL is correct:
+`has_function_privilege('public', 'admin_customer_aggregates', 'execute') = false`
+(my `revoke from public` worked); after clearing the stray default ACL the two
+customer-RPC files pass **15/15** including both anon-denial tests. On a clean CI
+reset (historically 253/253 green) these pass. No T18 code change can or should
+"fix" this — the RPC posture is verbatim 0013.

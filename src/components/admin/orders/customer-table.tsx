@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { displayRangeFor } from "@/lib/catalog/pagination";
 import { ADMIN_PRODUCTS_PER_PAGE } from "@/lib/config";
 import { ADMIN_CUSTOMERS_PATH } from "@/lib/admin/constants";
@@ -7,8 +8,9 @@ import type { AdminCustomerRow } from "@/lib/admin/orders/customer-list-query";
 
 /**
  * CustomerTable (T12 AC-24) — desktop table + mobile card list of customers with
- * their order count. Rows do NOT link (customer accounts are out of scope); the
- * email is selectable text. Mirrors `OrderTable`. Server component.
+ * their order count. The name cell links to the customer-detail page (T18,
+ * `${ADMIN_CUSTOMERS_PATH}/{id}`); the email stays selectable plain text (only
+ * the identifier cell links, mirroring `OrderTable`). Server component.
  */
 interface CustomerTableProps {
   rows: AdminCustomerRow[];
@@ -38,8 +40,16 @@ export function CustomerTable({ rows, totalCount, page, lastPage, filters }: Cus
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id} className="border-b border-border last:border-0 align-top">
-                <td className="max-w-48 break-words px-3 py-2 font-medium">{row.fullName}</td>
+              <tr key={row.id} className="nav-hover border-b border-border last:border-0 align-top hover:bg-muted/40">
+                <td className="max-w-48 break-words px-3 py-2 font-medium">
+                  <Link
+                    href={`${ADMIN_CUSTOMERS_PATH}/${row.id}`}
+                    className="text-foreground outline-none hover:underline focus-visible:underline"
+                    data-testid={`admin-customer-row-${row.id}`}
+                  >
+                    {row.fullName}
+                  </Link>
+                </td>
                 <td className="max-w-64 break-words px-3 py-2 text-muted-foreground select-text">{row.email}</td>
                 <td className="hidden px-3 py-2 text-muted-foreground lg:table-cell">{row.phone ?? "—"}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{row.orderCount}</td>
@@ -53,7 +63,15 @@ export function CustomerTable({ rows, totalCount, page, lastPage, filters }: Cus
         {rows.map((row) => (
           <li key={row.id} className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
             <div className="min-w-0">
-              <p className="truncate font-medium">{row.fullName}</p>
+              <p className="truncate font-medium">
+                <Link
+                  href={`${ADMIN_CUSTOMERS_PATH}/${row.id}`}
+                  className="text-foreground outline-none hover:underline focus-visible:underline"
+                  data-testid={`admin-customer-row-${row.id}`}
+                >
+                  {row.fullName}
+                </Link>
+              </p>
               <p className="truncate text-xs text-muted-foreground select-text">{row.email}</p>
             </div>
             <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">

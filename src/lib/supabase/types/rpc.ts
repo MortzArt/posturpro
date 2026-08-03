@@ -208,6 +208,30 @@ export type AdminCustomerOrderCountRow = {
 };
 
 /**
+ * Args for the `admin_customer_aggregates` RPC (T18, 0014). Takes ONE customer
+ * id and returns a single lifetime-aggregate row (count, summed `total_cents`,
+ * first/last order dates) computed over ALL of that customer's orders — so the
+ * detail-page totals are exact regardless of the bounded history-page size and
+ * never truncate at PostgREST's 1000-row cap. `service_role`-only. `type` alias
+ * (T8 gotcha: never an interface, or the Database generic collapses to `never`).
+ */
+export type AdminCustomerAggregatesArgs = {
+  p_customer_id: string;
+};
+
+/**
+ * The single lifetime-aggregate row from `admin_customer_aggregates`. `count`/
+ * `sum` come back as SQL `bigint` → serialized as JS `number` by PostgREST; the
+ * dates are `null` when the customer has no orders (min/max over zero rows).
+ */
+export type AdminCustomerAggregatesRow = {
+  order_count: number;
+  total_cents: number;
+  first_order_at: string | null;
+  last_order_at: string | null;
+};
+
+/**
  * The `Database["public"]["Functions"]` block. Args/Returns reference the `type`
  * aliases above — keep them aliases (T8 gotcha).
  */
@@ -283,6 +307,10 @@ export type DatabaseFunctions = {
   admin_customer_order_counts: {
     Args: AdminCustomerOrderCountsArgs;
     Returns: AdminCustomerOrderCountRow[];
+  };
+  admin_customer_aggregates: {
+    Args: AdminCustomerAggregatesArgs;
+    Returns: AdminCustomerAggregatesRow[];
   };
   bump_admin_session_version: {
     Args: Record<string, never>;
