@@ -1,13 +1,28 @@
 "use client";
 
-import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 /**
  * Minimal accessible dropdown menu (T11) — the ticket marks a `dropdown-menu`
- * primitive optional, so this is a small hand-rolled one for the product-row
- * `⋮` actions: click/keyboard toggle, outside-click + Esc close, `role="menu"`
+ * primitive optional, so this is a small hand-rolled one for the product/order-
+ * row `⋮` actions: click/keyboard toggle, outside-click + Esc close, `role="menu"`
  * / `menuitem`, focus returns to the trigger on close. No new runtime dep.
+ *
+ * The menu is PORTALED to `document.body` and positioned `fixed` from the
+ * trigger's bounding rect, so it is never clipped by an ancestor's
+ * `overflow` (the orders/products tables scroll horizontally — an `absolute`
+ * menu was cut off at the table edge). Position is recomputed on open and on
+ * scroll/resize while open.
  */
 interface DropdownContextValue {
   open: boolean;
@@ -67,6 +82,16 @@ export function DropdownMenuTrigger({
   );
 }
 
+/** Gap in px between the trigger and the menu (matches the old `mt-1`). */
+const MENU_OFFSET_PX = 4;
+/** Assumed menu width for `end`-aligned positioning before it is measured (`min-w-44` = 11rem). */
+const MENU_MIN_WIDTH_PX = 176;
+
+interface MenuPosition {
+  top: number;
+  left: number;
+}
+
 export function DropdownMenuContent({
   children,
   align = "end",
@@ -76,6 +101,33 @@ export function DropdownMenuContent({
 }) {
   const { open, setOpen, menuId, triggerId, triggerRef } = useDropdown();
   const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<MenuPosition | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  // Position the menu from the trigger rect (viewport coords → `position: fixed`).
+  useLayoutEffect(() => {
+    if (!open) return;
+    const reposition = (): void => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const width = menuRef.current?.offsetWidth ?? MENU_MIN_WIDTH_PX;
+      const rawLeft = align === "end" ? rect.right - width : rect.left;
+      // Clamp within the viewport so the menu is never pushed off-screen.
+      const maxLeft = window.innerWidth - width - MENU_OFFSET_PX;
+      const left = Math.max(MENU_OFFSET_PX, Math.min(rawLeft, maxLeft));
+      setPosition({ top: rect.bottom + MENU_OFFSET_PX, left });
+    };
+    reposition();
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open, align, triggerRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -99,20 +151,23 @@ export function DropdownMenuContent({
     };
   }, [open, setOpen, triggerRef]);
 
-  if (!open) return null;
-  return (
+  if (!open || !mounted) return null;
+  return createPortal(
     <div
       ref={menuRef}
       id={menuId}
       role="menu"
       aria-labelledby={triggerId}
-      className={cn(
-        "dialog-content-motion absolute z-50 mt-1 min-w-44 rounded-md border border-border bg-card p-1 shadow-lg outline-none",
-        align === "end" ? "right-0" : "left-0",
-      )}
+      style={{
+        top: position?.top ?? 0,
+        left: position?.left ?? 0,
+        visibility: position ? "visible" : "hidden",
+      }}
+      className="dialog-content-motion fixed z-50 min-w-44 rounded-md border border-border bg-card p-1 shadow-lg outline-none"
     >
       {children}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
