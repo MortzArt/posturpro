@@ -55,3 +55,35 @@ None material. Optional list-badge/source filter (may-defer per ticket) not adde
 
 ## Dependencies Added
 None (no npm packages, no migration).
+
+## Review + Fix Pass (S4 ReviewFix — ultrareviewfix, standard tier)
+
+Single-pass review + inline fix over all 28 files of `c02dca9`. Trust core verified in code (not trusted from this summary): client prices never trusted (`revalidateLines` sole authority), `requireSession()` on page + create action + catalog-search action, server-minted idempotency key, AC-13 guard on all 6 sends, offline-paid via `advance_order_status` payment-only (no receipt email), no XSS surface. **0 critical.**
+
+### Issues Found & Fixed
+
+| ID  | Severity | Title                                              | Status  | File                                             | Fix Applied |
+| --- | -------- | -------------------------------------------------- | ------- | ------------------------------------------------ | ----------- |
+| M-1 | MAJOR    | "Nota interna" collected but silently dropped (data loss) | FIXED | `manual-order-write.ts`                    | Post-create `maybePersistInternalNote` → `order_internal_notes` via `addOrderNote`; blank/reused-skip; failure never rolls back; +4 unit tests |
+| M-2 | MAJOR    | Space key blocks multi-word catalog search         | FIXED   | `manual-order-line-editor.tsx:212`               | Drop `" "` as activation key; Enter-only (ARIA APG editable combobox) |
+| M-3 | MAJOR    | Confirmation switch submits "off" while shown "on" | FIXED   | `manual-order-form.tsx:288`                       | Re-key SwitchField on `emailValid` → remounts unchecked when email invalid |
+| —   | MAJOR    | config.test.ts WHATSAPP flake **misdiagnosed** as env leak — actually STALE test | FIXED | `config.test.ts:74`      | Source `WHATSAPP_PHONE_E164` is now `5215512345678`; assertion rewritten to follow the constant. Unit suite now 1982/1982 GREEN, 0 failures |
+| m-1 | MINOR    | Initial activeIndex could target aria-disabled row | FIXED   | `manual-order-line-editor.tsx:120`               | `firstSelectableIndex(found)` — highlight first in-stock target |
+| m-2 | MINOR    | Duplicate `@/lib/money` import                     | FIXED   | `manual-order-form.tsx:9`                         | Merged into one import |
+| m-3 | MINOR    | Qty stepper clamps to MAX_SAFE_INTEGER (no client stock cap) | SKIPPED | —                                     | Server authoritative on stock (edge 1); UX-only, deferrable |
+| m-4 | MINOR    | Two count formulas in form-read parallel-array reader | SKIPPED | —                                             | Not exploitable (editor emits all per-line fields); backlog |
+| m-5 | MINOR    | `manual-order-line-editor.tsx` 554 lines (> soft cap) | SKIPPED | —                                             | Under 1000 hard cap; split risky mid-review; backlog |
+| m-6 | MINOR    | Effective-price re-derivation duplicated form↔editor | SKIPPED | —                                             | Both agree; DRY-with-judgment; backlog |
+
+### Summary
+- Critical: 0/0
+- Major: 4/4 fixed, 0 skipped
+- Minor: 2/6 fixed, 4 skipped (clean-code backlog)
+
+### Gates (re-run, not trusted)
+- tsc --noEmit: **0**. eslint (changed files): **0**.
+- Unit: **1982/1982 (117 files)** — the previously-reported "flake" is eliminated (it was the stale config test, now fixed). +4 new manual-order-write tests.
+- Integration: **24 files / 257 tests pass** (after reset+reseed) incl. `admin-orders-manual.integration.test.ts`.
+- e2e: not re-run this stage (no e2e-affecting change; dev-run 3/3 stands).
+
+### Verdict: APPROVE, 8.5/10. Proceed to S5 QA (standard-tier quality gate).

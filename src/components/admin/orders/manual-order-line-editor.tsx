@@ -117,7 +117,10 @@ function ProductPicker({ disabled, existingKeys, onAdd }: ProductPickerProps) {
         return;
       }
       setResults(found);
-      setActiveIndex(0);
+      // Highlight the first IN-STOCK target, not blindly row 0 — row 0 may be an
+      // out-of-stock (aria-disabled) option, and aria-activedescendant must not
+      // point at a non-selectable row. Falls back to 0 when nothing is in stock.
+      setActiveIndex(firstSelectableIndex(found));
     } catch (caught) {
       if (requestIdRef.current === requestId) {
         console.error(`[manual-order] picker search failed: ${caught instanceof Error ? caught.message : "unknown"}`);
@@ -209,7 +212,10 @@ function ProductPicker({ disabled, existingKeys, onAdd }: ProductPickerProps) {
     } else if (event.key === "End") {
       event.preventDefault();
       if (selectableIndexes.length > 0) setActiveIndex(selectableIndexes[selectableIndexes.length - 1]);
-    } else if (event.key === "Enter" || event.key === " ") {
+    } else if (event.key === "Enter") {
+      // Enter ONLY — this is an editable (`type="search"`) combobox, so Space must
+      // stay a literal character so multi-word queries ("faja lumbar") work. The
+      // ARIA APG uses Enter for editable-combobox selection, not Space.
       const target = targets[activeIndex];
       if (target && target.stock > 0) {
         event.preventDefault();
@@ -285,6 +291,12 @@ function ProductPicker({ disabled, existingKeys, onAdd }: ProductPickerProps) {
 }
 
 /** Flatten product results into selectable rows (one per variant / no-variant). */
+/** Index (in the flattened target list) of the first in-stock target, else 0. */
+function firstSelectableIndex(results: CatalogProductResult[]): number {
+  const index = flattenTargets(results).findIndex((target) => target.stock > 0);
+  return index >= 0 ? index : 0;
+}
+
 function flattenTargets(results: CatalogProductResult[]): SelectableTarget[] {
   const targets: SelectableTarget[] = [];
   for (const product of results) {

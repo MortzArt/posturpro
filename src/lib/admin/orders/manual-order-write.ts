@@ -28,6 +28,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidateLines, type LineIssue, type SubmittedLine } from "@/lib/checkout/checkout-read";
 import { assembleOrder, type OrderLine } from "@/lib/checkout/order";
 import { advanceOrderStatus } from "@/lib/payments/advance-order";
+import { addOrderNote } from "@/lib/admin/orders/order-notes-write";
 import { sendOrderConfirmation } from "@/lib/email/dispatch";
 import { isMailableAddress, NO_EMAIL_PLACEHOLDER } from "@/lib/email/recipient";
 import type { CreateOrderPayload } from "@/lib/supabase/database.types";
@@ -90,6 +91,7 @@ export async function createManualOrder(
 
   const wantsPaid = input.paymentChoice === "paid";
   const markResult = await markSourceAndPayment(created.orderId, wantsPaid);
+  await maybePersistInternalNote(created.orderId, input.internalNote, created.reused);
   const emailSent = await maybeSendConfirmation(created.orderId, input);
 
   return {
@@ -261,6 +263,28 @@ async function stampManualSource(orderId: string): Promise<void> {
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : "unknown";
     console.error(`[manual-order] source stamp threw for ${orderId}: ${message}`);
+  }
+}
+
+/**
+ * Persist the admin's optional "Nota interna" onto the created order as an
+ * `order_internal_notes` row (the same team-only store the detail renders and
+ * `addInternalNote` writes to). `create_order` has no note field, so this is a
+ * post-create step. Skipped when blank. Skipped on an idempotent replay
+ * (`reused`) so a double-submit never appends the note twice. Failure-isolated —
+ * a note-write failure NEVER rolls back the created order.
+ */
+async function maybePersistInternalNote(
+  orderId: string,
+  internalNote: string | null,
+  reused: boolean,
+): Promise<void> {
+  if (internalNote === null || reused) {
+    return;
+  }
+  const result = await addOrderNote(orderId, internalNote);
+  if (!result.ok) {
+    console.error(`[manual-order] internal note not saved for ${orderId}: ${result.reason}`);
   }
 }
 

@@ -6,8 +6,7 @@ import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import { TextField, SelectField, TextareaField, MoneyField, SwitchField, Banner } from "@/components/admin/form/fields";
 import { ManualOrderLineEditor } from "@/components/admin/orders/manual-order-line-editor";
-import { formatMXN } from "@/lib/money";
-import { pesosToCents } from "@/lib/money";
+import { formatMXN, pesosToCents } from "@/lib/money";
 import { EMAIL_PATTERN } from "@/lib/config/checkout";
 import { computeShipping } from "@/lib/cart/shipping";
 import { createManualOrder } from "@/app/admin/(app)/orders/actions";
@@ -285,10 +284,20 @@ function PagoSection({ values, emailValid, disabled }: {
         <PaymentOption value="pending" label="Marcar pendiente de pago" helper="Cobra después o al entregar." checked={choice === "pending"} disabled={disabled} onSelect={setChoice} testid="manual-order-payment-pending" />
         <PaymentOption value="paid" label="Registrar pago recibido (offline)" helper="Se marca como pagado ahora mismo." checked={choice === "paid"} disabled={disabled} onSelect={setChoice} testid="manual-order-payment-paid" />
       </div>
+      {/*
+        Re-key on `emailValid` so the toggle REMOUNTS when the email becomes
+        invalid — a disabled checkbox is not submitted, so a switch left visually
+        "on" after the email was cleared would silently submit `false`. Remounting
+        forces it back to unchecked (default off) whenever email is invalid, so
+        the UI never shows "on" while it will submit "off". When a valid email is
+        present it seeds from the echoed value. The write layer also double-gates
+        on a mailable address (AC-12), so no email is ever sent to a bad address.
+      */}
       <SwitchField
+        key={emailValid ? "confirm-enabled" : "confirm-disabled"}
         name="send_confirmation"
         label="Enviar correo de confirmación al cliente"
-        defaultChecked={values?.send_confirmation ?? false}
+        defaultChecked={emailValid ? (values?.send_confirmation ?? false) : false}
         disabled={disabled || !emailValid}
         helper={emailValid ? "Se enviará solo si capturaste un correo válido." : "Agrega un correo válido para poder enviarlo."}
         testid="manual-order-confirm-email"

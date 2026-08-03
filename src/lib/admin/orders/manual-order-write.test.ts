@@ -26,14 +26,15 @@ vi.mock("@/lib/email/dispatch", () => ({
   sendOrderConfirmation: (...args: unknown[]) => sendOrderConfirmation(...args),
 }));
 
-// Capture the create_order payload + the source-stamp UPDATE.
+// Capture the create_order payload + the source-stamp UPDATE + the internal-note INSERT.
 const rpc = vi.fn();
 const updateEq = vi.fn();
 const update = vi.fn(() => ({ eq: updateEq }));
+const insert = vi.fn();
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     rpc: (...args: unknown[]) => rpc(...args),
-    from: () => ({ update }),
+    from: (table: string) => (table === "order_internal_notes" ? { insert } : { update }),
   }),
 }));
 
@@ -42,6 +43,7 @@ import type { ManualOrderInput } from "./manual-order-input";
 import { NO_EMAIL_PLACEHOLDER } from "@/lib/email/recipient";
 
 const PRODUCT = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
+const ORDER_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
 
 const VALIDATED_LINE = {
   productId: PRODUCT,
@@ -79,13 +81,14 @@ function input(overrides: Partial<ManualOrderInput> = {}): ManualOrderInput {
 beforeEach(() => {
   revalidateLines.mockReset().mockResolvedValue({ ok: true, lines: [VALIDATED_LINE] });
   rpc.mockReset().mockResolvedValue({
-    data: { order_id: "order-1", order_number: "PP-000123", confirmation_token: "tok", reused: false },
+    data: { order_id: ORDER_ID, order_number: "PP-000123", confirmation_token: "tok", reused: false },
     error: null,
   });
   advanceOrderStatus.mockReset().mockResolvedValue({ ok: true, result: { applied: true, reason: "payment_updated" } });
   sendOrderConfirmation.mockReset().mockResolvedValue({ ok: true, sent: true });
   update.mockClear();
   updateEq.mockReset().mockResolvedValue({ error: null });
+  insert.mockReset().mockResolvedValue({ error: null });
 });
 
 describe("line-issue abort (AC-7, edges 1/5) — BEFORE create", () => {
@@ -152,6 +155,45 @@ describe("paid choice (AC-15/16)", () => {
   });
 });
 
+describe("internal note (AC-3) — persisted as an order_internal_notes row", () => {
+  it("does not insert a note when the internal note is blank/null", async () => {
+    await createManualOrder({ input: input({ internalNote: null }), idempotencyKey: "idem-1" });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("inserts the internal note onto the created order when present", async () => {
+    await createManualOrder({
+      input: input({ internalNote: "Cliente pagó en efectivo en showroom" }),
+      idempotencyKey: "idem-1",
+    });
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({ order_id: ORDER_ID, body: "Cliente pagó en efectivo en showroom" }),
+    );
+  });
+
+  it("does NOT re-insert the note on an idempotent replay (reused:true)", async () => {
+    rpc.mockResolvedValue({
+      data: { order_id: ORDER_ID, order_number: "PP-000123", confirmation_token: "tok", reused: true },
+      error: null,
+    });
+    await createManualOrder({
+      input: input({ internalNote: "nota" }),
+      idempotencyKey: "idem-1",
+    });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("never rolls back the order when the note insert fails", async () => {
+    insert.mockResolvedValue({ error: { message: "boom" } });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const result = await createManualOrder({
+      input: input({ internalNote: "nota" }),
+      idempotencyKey: "idem-1",
+    });
+    expect(result.ok).toBe(true);
+  });
+});
+
 describe("confirmation branch (AC-12)", () => {
   it("does not send when not opted in", async () => {
     const result = await createManualOrder({ input: input({ sendConfirmation: false }), idempotencyKey: "idem-1" });
@@ -174,7 +216,7 @@ describe("confirmation branch (AC-12)", () => {
       idempotencyKey: "idem-1",
     });
     expect(result.ok && result.emailSent).toBe(true);
-    expect(sendOrderConfirmation).toHaveBeenCalledWith("order-1");
+    expect(sendOrderConfirmation).toHaveBeenCalledWith(ORDER_ID);
   });
 
   it("surfaces emailSent:false (order NOT rolled back) when the send fails", async () => {

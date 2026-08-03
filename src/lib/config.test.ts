@@ -70,9 +70,14 @@ describe("T2 locale config (AC-1, AC-17)", () => {
 });
 
 describe("T2 WhatsApp config (AC-8, edge case 7)", () => {
-  it("ships an empty phone placeholder by default so the FAB stays hidden", () => {
-    expect(WHATSAPP_PHONE_E164).toBe("");
-    expect(isWhatsAppConfigured(WHATSAPP_PHONE_E164)).toBe(false);
+  it("keeps WHATSAPP_PHONE_E164 and isWhatsAppConfigured in agreement", () => {
+    // The constant is a build-time value in `config/shared.ts`. Whatever it is
+    // set to, `isWhatsAppConfigured` must classify it consistently: a non-empty
+    // digits-only E.164 number → the FAB renders; an empty placeholder → hidden.
+    // (When it shipped empty the FAB stayed hidden; it is now enabled with a
+    // real number. This assertion follows the constant instead of hard-coding
+    // the empty default, so it never goes stale when the number is toggled.)
+    expect(isWhatsAppConfigured(WHATSAPP_PHONE_E164)).toBe(WHATSAPP_PHONE_E164.length > 0);
   });
 
   it("provides a non-empty Spanish prefill message for when a number is set", () => {
