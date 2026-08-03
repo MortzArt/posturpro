@@ -1,10 +1,18 @@
 # Pipeline State
 Task: T14 — SEO, analytics & launch hardening
 Tier: full-cycle
-Stage: 5
-Agent: ultrareview
-Last Updated: 2026-08-03 22:05
+Stage: 6
+Agent: ultrafix
+Last Updated: 2026-08-03 22:20
 Notes: LAST build task. Full-cycle. T14 is deploy-readiness — after it, owner deploys to Vercel + hosted Supabase for client QA. Go-live also gated on T8 Phase 5 owner sign-off.
+
+=== T14 S5 (Review, ultrareview) COMPLETE — APPROVE-WITH-FIXES, 8.5/10 (2026-08-03) ===
+- 0 CRITICAL, 2 MAJOR (both crawl-hygiene, NOT security), 4 MINOR. tasks/review-findings.md written. All 14 Group-A ACs PASS on behavior; A9/A10 carry the 2 majors.
+- SECURITY CENTER CONFIRMED SAFE (probed, not trusted): escapeForScriptSafe in json-ld.tsx runs on the SERIALIZED JSON, </script> breakout + raw U+2028/U+2029 all neutralized (regex verified to match the code point); site-url.ts is env-only, never reads Host header — no host-header injection.
+- M-1 robots.ts:19-28: disallow covers /checkout + /carrito but NOT /en/checkout + /en/carrito (locale-prefixed routes; the /en/sillas? faceted rule WAS duplicated, cart/checkout missed). /admin + /api are app-root, correctly covered.
+- M-2 sitemap.ts: /contacto emitted TWICE per locale — hard-coded in STATIC_HREFS (line 49) AND via listPublishedStaticPageSlugs() (line 99; seed publishes all 9 static pages incl contacto). Fix: Set de-dupe or drop from STATIC_HREFS.
+- Gates independently re-run: tsc=0, eslint clean, unit 2025/2025 (123 files). Edge3 note: taxonomy generateStaticParams not try/catch-wrapped but acceptable per AC-A14 alternative (checklist mandates build-time DB access).
+- Next: Stage 6 (Fix, ultrafix) — fix M-1 + M-2 mandatory, 4 minors optional/judgment.
 
 === T14 S4 (Dev, ultradev) COMPLETE — Group A 14/14 implemented + prod-server-verified (2026-08-03) ===
 - 20 files changed (14 modified, 6+ created). Created: src/app/sitemap.ts, src/app/robots.ts, src/lib/seo/{site-url,metadata,json-ld,breadcrumb}.ts, src/components/seo/json-ld.tsx, 4 SEO test files, tasks/deploy-readiness-checklist.md. Modified: 3 taxonomy [slug] pages, home, PDP, sillas, empresas, contacto, [pageSlug], layout, static-pages.ts, playwright.config.ts, package.json, e2e/not-found.spec.ts.
