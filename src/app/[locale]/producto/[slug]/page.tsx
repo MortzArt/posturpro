@@ -8,6 +8,7 @@ import {
   CATALOG_PATH,
   QUESTION_MAX,
   SEED_STORE_NAME,
+  productPath,
   truncateForMeta,
 } from "@/lib/config";
 import {
@@ -25,7 +26,12 @@ import {
 import type { StockState } from "@/lib/catalog/types";
 import type { ProductDetail } from "@/lib/catalog/product-detail.types";
 import type { RecentlyViewedEntry } from "@/lib/recently-viewed";
-import { Breadcrumbs } from "@/components/catalog/breadcrumbs";
+import { Breadcrumbs, type Crumb } from "@/components/catalog/breadcrumbs";
+import { JsonLd } from "@/components/seo/json-ld";
+import { buildAlternates, buildOpenGraph, localeUrl } from "@/lib/seo/metadata";
+import { buildProductLd } from "@/lib/seo/json-ld";
+import { crumbsToBreadcrumbLd } from "@/lib/seo/breadcrumb";
+import type { Locale } from "@/i18n/routing";
 import { ProductPurchasePanel } from "@/components/product/product-purchase-panel";
 import { ProductSpecs } from "@/components/product/product-specs";
 import { ProductQa } from "@/components/product/product-qa";
@@ -62,7 +68,7 @@ export async function generateMetadata({
   params,
 }: ProductPageProps): Promise<Metadata> {
   const { locale, slug } = await params;
-  const activeLocale = hasLocale(routing.locales, locale)
+  const activeLocale: Locale = hasLocale(routing.locales, locale)
     ? locale
     : routing.defaultLocale;
   const product = await getProduct(slug);
@@ -73,9 +79,22 @@ export async function generateMetadata({
   const description = product.description?.trim()
     ? truncateForMeta(product.description)
     : t("metadata.descriptionFallback");
+  const title = t("metadata.titlePattern", { name: product.name, store });
+  const href = productPath(product.slug);
+  const primaryImage =
+    product.images.find((image) => image.isPrimary) ?? product.images[0] ?? null;
   return {
-    title: t("metadata.titlePattern", { name: product.name, store }),
+    title,
     description,
+    alternates: buildAlternates(href, activeLocale),
+    openGraph: buildOpenGraph({
+      title,
+      description,
+      href,
+      locale: activeLocale,
+      type: "article",
+      images: primaryImage?.url ? [primaryImage.url] : undefined,
+    }),
   };
 }
 
@@ -101,16 +120,32 @@ export default async function ProductPage({ params }: ProductPageProps) {
     product.images[0] ??
     null;
 
+  const activeLocale = locale as Locale;
+  const productUrl = localeUrl(productPath(product.slug), activeLocale);
+  const crumbs: Crumb[] = [
+    { label: t("breadcrumb.home"), href: "/" },
+    { label: t("breadcrumb.catalog"), href: CATALOG_PATH },
+    { label: product.name },
+  ];
+  const productLd = buildProductLd({
+    name: product.name,
+    description: product.description,
+    brandName: product.brandName,
+    priceCents: product.priceCents,
+    stockState: product.stockState,
+    imageUrl: primaryImage?.url ?? null,
+    url: productUrl,
+  });
+
   return (
     <div className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
+      <JsonLd
+        data={[productLd, crumbsToBreadcrumbLd(crumbs, activeLocale)]}
+      />
       <Breadcrumbs
         ariaLabel={t("breadcrumb.ariaLabel")}
         moreLabel={tCatalog("pagination.morePages")}
-        items={[
-          { label: t("breadcrumb.home"), href: "/" },
-          { label: t("breadcrumb.catalog"), href: CATALOG_PATH },
-          { label: product.name },
-        ]}
+        items={crumbs}
       />
 
       <section className="enter-fade mt-2">

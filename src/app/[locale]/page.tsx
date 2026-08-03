@@ -9,9 +9,16 @@ import {
   HOME_FEATURED_BRANDS,
   HERO_IMAGE,
   EDITORIAL_BAND_IMAGE,
+  SEED_STORE_NAME,
 } from "@/lib/config";
 import { listProducts, listBrands } from "@/lib/catalog/queries";
+import { getStoreSettingsStatic } from "@/lib/store-settings";
 import type { CatalogBrand, CatalogProductCard } from "@/lib/catalog/types";
+import { JsonLd } from "@/components/seo/json-ld";
+import { buildAlternates, buildOpenGraph } from "@/lib/seo/metadata";
+import { buildOrganizationLd, buildWebSiteLd } from "@/lib/seo/json-ld";
+import { getSiteUrl, absoluteUrl } from "@/lib/seo/site-url";
+import type { Locale } from "@/i18n/routing";
 import { Hero } from "@/components/home/hero";
 import { EditorialBand } from "@/components/home/editorial-band";
 import { FeaturedProducts } from "@/components/home/featured-products";
@@ -36,11 +43,44 @@ export async function generateMetadata({
   params,
 }: HomePageProps): Promise<Metadata> {
   const { locale } = await params;
-  const activeLocale = hasLocale(routing.locales, locale)
+  const activeLocale = (hasLocale(routing.locales, locale)
     ? locale
-    : routing.defaultLocale;
+    : routing.defaultLocale) as Locale;
   const t = await getTranslations({ locale: activeLocale, namespace: "metadata" });
-  return { title: t("title"), description: t("description") };
+  const title = t("title");
+  const description = t("description");
+  return {
+    title,
+    description,
+    alternates: buildAlternates("/", activeLocale),
+    openGraph: buildOpenGraph({
+      title,
+      description,
+      href: "/",
+      locale: activeLocale,
+      type: "website",
+      images: HERO_IMAGE ? [absoluteUrl(HERO_IMAGE)] : undefined,
+    }),
+  };
+}
+
+/**
+ * Build the site-wide `Organization` + `WebSite` JSON-LD for the homepage
+ * (T14 AC-A12). Store name resolves from `store_settings` (falling back to the
+ * seed name); the logo uses the hero image when configured.
+ */
+async function buildHomeJsonLd() {
+  const settings = await getStoreSettingsStatic();
+  const siteName = settings?.store_name ?? SEED_STORE_NAME;
+  const origin = getSiteUrl().origin;
+  return [
+    buildOrganizationLd({
+      name: siteName,
+      url: origin,
+      logoUrl: HERO_IMAGE ? absoluteUrl(HERO_IMAGE) : null,
+    }),
+    buildWebSiteLd({ name: siteName, url: origin }),
+  ];
 }
 
 /** Read the featured chairs, degrading to `[]` on any read failure (edge 9). */
@@ -71,14 +111,16 @@ export default async function HomePage({ params }: HomePageProps) {
   const { locale } = await params;
   setRequestLocale(locale);
 
-  const [t, products, brands] = await Promise.all([
+  const [t, products, brands, homeJsonLd] = await Promise.all([
     getTranslations("home"),
     readFeaturedProducts(),
     readFeaturedBrands(),
+    buildHomeJsonLd(),
   ]);
 
   return (
     <>
+      <JsonLd data={homeJsonLd} />
       <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-16 md:px-6 md:py-24 lg:px-8">
         <Hero
           headline={t("hero.title")}

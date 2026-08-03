@@ -5,6 +5,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { routing } from "@/i18n/routing";
 import { getStoreSettingsStatic } from "@/lib/store-settings";
 import { SEED_STORE_NAME } from "@/lib/config";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import { sans, headingSerif } from "@/app/fonts";
 import { DirectionContract } from "@/components/layout/direction-contract";
 import { SiteHeader } from "@/components/layout/site-header";
@@ -33,7 +34,13 @@ export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
 }
 
-/** Localized metadata from the `metadata` dictionary (AC-12). */
+/**
+ * Localized metadata from the `metadata` dictionary (T2 AC-12) + the store-wide
+ * SEO base (T14 AC-A11/A13/A14): `metadataBase` (from the PUBLIC site-URL env,
+ * never a secret) so every page's relative canonical/OG resolves to an absolute
+ * URL, and a default `openGraph` block all pages inherit. Per-page metadata
+ * overrides `title`/`description`/`alternates`/`openGraph` on top of this base.
+ */
 export async function generateMetadata({
   params,
 }: {
@@ -44,9 +51,24 @@ export async function generateMetadata({
     ? locale
     : routing.defaultLocale;
   const t = await getTranslations({ locale: activeLocale, namespace: "metadata" });
+  const settings = await getStoreSettingsStatic();
+  const siteName = settings?.store_name ?? SEED_STORE_NAME;
   return {
+    metadataBase: getSiteUrl(),
     title: t("title"),
     description: t("description"),
+    openGraph: {
+      type: "website",
+      siteName,
+      title: t("title"),
+      description: t("description"),
+      locale: activeLocale.replace("-", "_"),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: t("title"),
+      description: t("description"),
+    },
   };
 }
 

@@ -140,6 +140,48 @@ async function readStaticPage(
   };
 }
 
+/**
+ * List every PUBLISHED static-page slug (for the sitemap, T14 AC-A9). Reads
+ * through the RLS-enforced public client, so anon only ever sees
+ * `is_published = true` rows. Cached under {@link STATIC_PAGES_CACHE_TAG} and
+ * cookie-free. Degrades to `[]` on any error (edge: DB unreachable at build →
+ * the sitemap keeps its catalog + static routes, never 500 — AC-A14).
+ */
+export function listPublishedStaticPageSlugs(): Promise<string[]> {
+  const cached = unstable_cache(
+    async () => {
+      try {
+        const supabase = createPublicClient();
+        const { data, error } = await supabase
+          .from("static_pages")
+          .select("slug")
+          .eq("is_published", true)
+          .order("slug", { ascending: true });
+        if (error) {
+          console.warn(
+            `[static-pages] Failed to list published slugs: ${error.message}. ` +
+              "Sitemap will omit static pages.",
+          );
+          return [];
+        }
+        return (data ?? [])
+          .map((row) => row.slug)
+          .filter((slug): slug is string => typeof slug === "string");
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        console.warn(
+          `[static-pages] Unexpected error listing published slugs: ${message}. ` +
+            "Sitemap will omit static pages.",
+        );
+        return [];
+      }
+    },
+    ["static-pages", "published-slugs"],
+    { tags: [STATIC_PAGES_CACHE_TAG], revalidate: CATALOG_REVALIDATE_SECONDS },
+  );
+  return cached();
+}
+
 /** Per-(slug, locale) cached readers, memoized so each pair caches independently. */
 const cachedReaders = new Map<
   string,

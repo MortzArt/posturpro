@@ -10,7 +10,10 @@ import {
   CONTACT_SUBJECT_MAX,
   CONTACT_MESSAGE_MAX,
 } from "@/lib/config";
+import { staticPagePath } from "@/lib/config";
 import { getStaticPageBySlug } from "@/lib/content/static-pages";
+import { buildAlternates } from "@/lib/seo/metadata";
+import type { Locale } from "@/i18n/routing";
 import { Breadcrumbs } from "@/components/catalog/breadcrumbs";
 import { StaticPageBody } from "@/components/content/static-page-body";
 import { ContactForm, type ContactFormLabels } from "./contact-form";
@@ -35,11 +38,15 @@ export async function generateMetadata({
   params,
 }: ContactPageProps): Promise<Metadata> {
   const { locale } = await params;
+  const activeLocale = resolveLocale(locale) as Locale;
   const t = await getTranslations({
-    locale: resolveLocale(locale),
+    locale: activeLocale,
     namespace: "contact",
   });
-  return { title: t("metadata.title") };
+  return {
+    title: t("metadata.title"),
+    alternates: buildAlternates(staticPagePath(CONTACT_SLUG), activeLocale),
+  };
 }
 
 /** Assemble the flat, serializable label bag the client form consumes. */
@@ -56,7 +63,13 @@ function buildLabels(
     subjectPlaceholder: t("subject.placeholder"),
     message: t("message.label"),
     messagePlaceholder: t("message.placeholder"),
-    charCount: t("charCount"),
+    // `t.raw` — this is an interpolation TEMPLATE ("{count}/{max}") filled
+    // client-side by `interpolate()` in `<CharacterCounter>`. Calling `t()`
+    // would try to ICU-format it with no `count`/`max` context, throw
+    // FORMATTING_ERROR, and fall back to rendering the raw KEY ("charCount")
+    // verbatim to the user (T14 AC-A3). `t.raw` returns the template untouched
+    // — the codebase pattern (empresas `form.charCount`, PDP `qa.form.counter`).
+    charCount: t.raw("charCount"),
     submit: t("submit"),
     submitting: t("submitting"),
     honeypot: t("honeypot"),

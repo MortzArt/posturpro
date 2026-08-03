@@ -11,8 +11,10 @@
     "test:watch": "vitest",
     "test:integration": "bash scripts/run-integration.sh",
     "test:e2e": "playwright test",
+    "e2e:server": "NEXT_QA_DIST_DIR=.next-e2e next build && NEXT_QA_DIST_DIR=.next-e2e next start -p 3000",
     "db:seed": "tsx scripts/seed.ts",
     "db:reset": "supabase db reset",
+    "db:reset:seed": "supabase db reset && tsx scripts/seed.ts",
     "db:reset:remote": "supabase db reset --linked",
     "db:push": "supabase db push",
     "db:types": "supabase gen types typescript --local"

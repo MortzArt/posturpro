@@ -3,8 +3,15 @@ import { notFound } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { hasLocale } from "next-intl";
 import { routing } from "@/i18n/routing";
-import { STATIC_PAGE_SLUGS, isStaticPageSlug } from "@/lib/config";
+import {
+  STATIC_PAGE_SLUGS,
+  isStaticPageSlug,
+  staticPagePath,
+  truncateForMeta,
+} from "@/lib/config";
 import { getStaticPageBySlug } from "@/lib/content/static-pages";
+import { buildAlternates } from "@/lib/seo/metadata";
+import type { Locale } from "@/i18n/routing";
 import { Breadcrumbs } from "@/components/catalog/breadcrumbs";
 import { StaticPageBody } from "@/components/content/static-page-body";
 
@@ -43,9 +50,14 @@ export async function generateMetadata({
   if (!isStaticPageSlug(pageSlug)) {
     return {};
   }
-  const activeLocale = resolveLocale(locale);
+  const activeLocale = resolveLocale(locale) as Locale;
   const page = await getStaticPageBySlug(pageSlug, activeLocale);
-  return page ? { title: page.title } : {};
+  if (!page) return {};
+  return {
+    title: page.title,
+    description: page.body.trim() ? truncateForMeta(page.body) : undefined,
+    alternates: buildAlternates(staticPagePath(pageSlug), activeLocale),
+  };
 }
 
 export default async function StaticPage({ params }: StaticPageProps) {

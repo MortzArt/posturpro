@@ -4,6 +4,8 @@ import { hasLocale } from "next-intl";
 import { routing } from "@/i18n/routing";
 import { getPathname } from "@/i18n/navigation";
 import { CATALOG_PATH, SEARCH_PARAM_KEYS, SORT_KEYS } from "@/lib/config";
+import { buildAlternates } from "@/lib/seo/metadata";
+import type { Locale } from "@/i18n/routing";
 import {
   hasNoFilters,
   parseCatalogFilters,
@@ -77,9 +79,15 @@ export async function generateMetadata({
       ? `${CATALOG_PATH}?page=${pageParam}`
       : CATALOG_PATH;
 
+  // hreflang alternates for the clean /sillas surface (T14 AC-A11). The existing
+  // page-N / faceted `canonical` above is PRESERVED — we only add per-locale
+  // `languages`. Faceted views stay `noindex,follow`, so their hreflang still
+  // points crawlers at the clean, indexable catalog in each locale.
+  const { languages } = buildAlternates(CATALOG_PATH, locale as Locale);
+
   return {
     title: t("metadata.catalogTitle"),
-    alternates: { canonical },
+    alternates: { canonical, languages },
     robots: hasFacetParams ? { index: false, follow: true } : undefined,
   };
 }

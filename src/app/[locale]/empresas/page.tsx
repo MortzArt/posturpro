@@ -19,6 +19,8 @@ import {
   QUOTE_MESSAGE_MAX,
 } from "@/lib/config";
 import { listBrands } from "@/lib/catalog/queries";
+import { buildAlternates, buildOpenGraph } from "@/lib/seo/metadata";
+import type { Locale } from "@/i18n/routing";
 import type { CatalogBrand } from "@/lib/catalog/types";
 import { Hero } from "@/components/home/hero";
 import { FeaturedBrands } from "@/components/home/featured-brands";
@@ -51,13 +53,24 @@ export async function generateMetadata({
   params,
 }: B2BPageProps): Promise<Metadata> {
   const { locale } = await params;
+  const activeLocale = resolveLocale(locale) as Locale;
   const t = await getTranslations({
-    locale: resolveLocale(locale),
+    locale: activeLocale,
     namespace: "empresas",
   });
+  const title = t("metadata.title");
+  const description = t("metadata.description");
   return {
-    title: t("metadata.title"),
-    description: t("metadata.description"),
+    title,
+    description,
+    alternates: buildAlternates("/empresas", activeLocale),
+    openGraph: buildOpenGraph({
+      title,
+      description,
+      href: "/empresas",
+      locale: activeLocale,
+      type: "website",
+    }),
   };
 }
 

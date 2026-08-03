@@ -1,10 +1,19 @@
 # Pipeline State
 Task: T14 — SEO, analytics & launch hardening
 Tier: full-cycle
-Stage: 4
-Agent: ultradev
-Last Updated: 2026-08-03 21:30
+Stage: 5
+Agent: ultrareview
+Last Updated: 2026-08-03 22:05
 Notes: LAST build task. Full-cycle. T14 is deploy-readiness — after it, owner deploys to Vercel + hosted Supabase for client QA. Go-live also gated on T8 Phase 5 owner sign-off.
+
+=== T14 S4 (Dev, ultradev) COMPLETE — Group A 14/14 implemented + prod-server-verified (2026-08-03) ===
+- 20 files changed (14 modified, 6+ created). Created: src/app/sitemap.ts, src/app/robots.ts, src/lib/seo/{site-url,metadata,json-ld,breadcrumb}.ts, src/components/seo/json-ld.tsx, 4 SEO test files, tasks/deploy-readiness-checklist.md. Modified: 3 taxonomy [slug] pages, home, PDP, sillas, empresas, contacto, [pageSlug], layout, static-pages.ts, playwright.config.ts, package.json, e2e/not-found.spec.ts.
+- AC RESULTS (each verified vs RUNNING prod server, not just green build): A2 taxonomy [slug] ×3 now ƒ Dynamic via force-dynamic — real seeded slugs 200 both locales incl ?page=2 (were 500 DYNAMIC_SERVER_USAGE). A3/A4 contact t.raw → counter "0/2000", grep sole offender. A5/A6 playwright webServer → prod build + ALL 4 rate flags; new request-level test proves bogus route = real 404. A7/A8 db:reset:seed single path + hosted-apply checklist w/ post-migrate RLS anon-denial assertion. A9-A12 sitemap.xml (120 URLs, 360 hreflang alternates, well-formed), robots.txt, canonical+hreflang every indexable surface (/sillas faceted-noindex PRESERVED), Product/BreadcrumbList/Organization/WebSite JSON-LD valid. A13 zero server-secret values in client bundle. A14 sitemap + generateStaticParams degrade safely on DB outage.
+- GATES: tsc --noEmit=0 (whole project); eslint clean (all touched); unit 2025/2025 (123 files, +24 SEO tests, no regression from 2001 baseline); build exit 0 → next start curl matrix all green.
+- GROUP B: recorded NOT built (decision log in dev-done.md). Cookieless @vercel/analytics recommended ⇒ NO cookie banner shipped.
+- RISKS flagged for later stages: (S5 Review) JSON-LD escaping in json-ld.tsx is security-load-bearing — scrutinize; (S9 Security) the one real gap = absent CSP/security-headers layer (B6), prereq to any 3rd-party script.
+- Artifacts: tasks/dev-done.md + tasks/deploy-readiness-checklist.md.
+- Next: Stage 5 (Review, ultrareview) — adversarial line-by-line on all 20 changed files; then Stage 6 (Fix).
 
 === T14 S3 (UI Design, ultradesign) COMPLETE — LIGHTWEIGHT pass (2026-08-03) ===
 - tasks/ui-design.md OVERWRITTEN with the T14 spec (prior T18 spec in git). Three parts:

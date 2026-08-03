@@ -61,4 +61,28 @@ test.describe("localized 404 inside the shell (AC-10)", () => {
     )
     expect(overflow).toBeLessThanOrEqual(1)
   })
+
+  /**
+   * T14 AC-A6 — a bogus route returns a REAL 404 STATUS on the prod e2e server.
+   * This is a pure status check via `request` (no browser hydration), so it can
+   * ONLY pass on a `next start` server: `next dev` streams `notFound()` as a 200
+   * document, which is exactly the masking bug the prod-build webServer fixes.
+   * A raw request also proves the status is set on the FIRST byte, not patched in
+   * by client JS.
+   */
+  test("bogus route returns a real 404 status, not a dev 200 doc (AC-A6)", async ({
+    request,
+  }) => {
+    const missing = await request.get("/no-existe-esta-ruta-t14", {
+      maxRedirects: 0,
+    })
+    expect(missing.status()).toBe(404)
+
+    // A missing taxonomy slug likewise 404s (getCategory → null → notFound),
+    // and does so with a real status now that the route is `force-dynamic`.
+    const missingCategory = await request.get("/categorias/no-existe-t14", {
+      maxRedirects: 0,
+    })
+    expect(missingCategory.status()).toBe(404)
+  })
 })
