@@ -86,16 +86,41 @@ SUPABASE_SECRET_KEY=<hosted-secret-key> \
 On some environments a stray `pg_default_acl` grant can hand `anon` EXECUTE on new
 functions. Verify anon is denied on every privileged surface after `db push`:
 
+> **CONFIRMED ON HOSTED (2026-08-23):** this drift is real, and worse than the
+> original query below could see. Hosted Supabase default ACLs (`pg_default_acl`
+> FOR ROLE postgres) grant ALL on tables + EXECUTE on functions to
+> anon/authenticated for every object `db push` creates — EVERY privileged RPC
+> (including SECURITY DEFINER `create_order`/`record_refund`, which bypass RLS)
+> came out anon-executable. Migration `0015_enforce_grant_posture.sql` revokes
+> the strays AND strips anon/authenticated from the default ACLs so later
+> migrations can't re-drift. Keep running this sweep after every `db push`.
+
 ```bash
-# Against the hosted DB, anon must be DENIED on orders/customers/payments/PII and
-# on the privileged RPCs. Expect: anon = false for each grant.
+# Sweep ALL functions — not just admin_%. Allowlist: search_products +
+# is_active_product are anon-executable BY DESIGN (0007/0002); everything else
+# in public must show anon_exec = f.
 psql "<hosted-connection-string>" -c "
-  SELECT proname, has_function_privilege('anon', oid, 'EXECUTE') AS anon_can_exec
+  SELECT proname, has_function_privilege('anon', oid, 'EXECUTE') AS anon_exec
   FROM pg_proc
   WHERE pronamespace = 'public'::regnamespace
-    AND proname LIKE 'admin_%';
+    AND proname NOT IN ('search_products', 'is_active_product')
+    AND proname !~ '^(gin_|gtrgm_|set_limit$|show_|similarity|word_similarity|strict_word)'
+  ORDER BY proname;
 "
-# Every row must show anon_can_exec = f. If any is t, REVOKE it before flipping traffic.
+# And sweep anon table DATA privileges — must be EXACTLY the storefront read
+# surface (brands/categories/styles/tags/product_*/products_public/static_pages/
+# store_settings/translations SELECT + product_questions SELECT,INSERT):
+psql "<hosted-connection-string>" -c "
+  SELECT table_name, string_agg(privilege_type, ',' ORDER BY privilege_type)
+  FROM information_schema.role_table_grants
+  WHERE table_schema = 'public' AND grantee = 'anon'
+    AND privilege_type IN ('SELECT','INSERT','UPDATE','DELETE')
+  GROUP BY table_name ORDER BY table_name;
+"
+# Any extra row/privilege → REVOKE before flipping traffic (see migration 0015).
+# No psql? The same queries run via the Management API:
+#   curl -X POST https://api.supabase.com/v1/projects/<ref>/database/query \
+#     -H "Authorization: Bearer <access-token>" -d '{"query":"..."}'
 ```
 
 Also confirm RLS is enabled and anon reads only `products_public` (no
