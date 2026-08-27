@@ -1,7 +1,15 @@
 # Pipeline State
+Task: T21 — Storefront restyle Phase B: Factorial grammar across the remaining storefront
+Tier: standard
+Stage: 1 (PlanResearch)
+Agent: ultraplanner-research
+Last Updated: 2026-08-27
+Notes: Owner APPROVED T20 Phase A homepage 2026-08-27 → Phase B unlocked. Scope: catalog/search/PDP/cart/checkout/empresas/static/404 restyled to T20 grammar; admin firewall untouched; content/copy/data unchanged; shared components (product-card, section-header, QuoteForm) restyled deliberately. Key inputs: tasks/reference/factorial-style-analysis.md, T20 spec in tasks/ui-design.md (753 lines), DESIGN.md T20 amendment, T20 archive below (risks: font scoping seam, css-line-count cap, /empresas hero aspect-[4/3] style-pinning test, headingSerif kept for Phase B /empresas decision).
+
+=== T20 archive ===
 Task: T20 — Storefront restyle: Factorial design language, Phase A homepage (owner approval gate)
 Tier: standard
-Stage: COMPLETE (Phase A) — AWAITING OWNER APPROVAL for Phase B
+Stage: COMPLETE — owner APPROVED Phase A 2026-08-27 → Phase B = T21
 Agent: —
 Last Updated: 2026-08-27
 S5 COMPLETE (tasks/qa-report.md): PASS HIGH. 25/25 AC, 8/8 edges, +58 tests (12 unit + 46 e2e incl computed-style grammar checks: DM Sans storefront / Inter admin, pure-white, pill geometry, factorial-card shadow, anchor offsets, focus ring, zero console errors, 6-page inheritance smoke). Unit 2187/2187 (134 files). Zero code bugs. 11 pre-existing e2e failures proven NOT T20 (DB-down hangs ×4, i18n parallel flake ×7 — green in isolation). NEXT: owner reviews homepage → if approved, create T21 (Phase B: roll Factorial grammar across catalog/PDP/cart/checkout/empresas/static/404).
