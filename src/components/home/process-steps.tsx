@@ -23,7 +23,11 @@ const STAGGER_STEP_MS = 50;
 
 export function ProcessSteps(props: ProcessStepsProps) {
   return (
-    <div className="flex flex-col gap-8" data-testid="process-steps">
+    <div
+      id="proceso"
+      className="flex flex-col gap-8 scroll-mt-28"
+      data-testid="process-steps"
+    >
       <div className="flex max-w-2xl flex-col gap-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-primary">
           {props.eyebrow}

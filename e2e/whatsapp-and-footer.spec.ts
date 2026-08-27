@@ -1,83 +1,112 @@
 import { expect, test } from "@playwright/test"
 
 /**
- * WhatsApp FAB + footer degrade (T2 AC-7, AC-8, AC-15, edge cases 2 & 7).
+ * WhatsApp FAB + footer (T2 AC-7/8, T19 AC-16/17, edges 2 & 5).
  *
- * WhatsApp: `WHATSAPP_PHONE_E164` ships EMPTY by design, so the FAB must NOT be
- * rendered (edge case 7 — never a numberless `wa.me/` link). If a future build
- * sets a number, the anchor must carry the correct href + security rel attrs;
- * that path is covered by the `buildWhatsAppUrl` unit tests. The footer must
- * render its chrome regardless of whether `store_settings` is readable (the E2E
- * DB may lack the row → graceful degrade, edge case 2).
+ * WhatsApp: as of commit 94159d2 `WHATSAPP_PHONE_E164` carries a (placeholder)
+ * number, so `isWhatsAppConfigured()` is TRUE and the FAB IS rendered — with a
+ * valid, numbered `wa.me/<digits>` deep link (never a numberless `wa.me/`). The
+ * footer's contact line is therefore a real WhatsApp anchor. The
+ * unconfigured/degrade path (FAB hidden, `footer-whatsapp-text` plain text,
+ * never `wa.me//`) is exercised by the `buildWhatsAppUrl` unit tests, which cover
+ * the null-phone branch directly without depending on env.
+ *
+ * Footer (T19): the shell footer was restyled to the mockup's deep-green
+ * 5-column layout (brand + Catálogo / Empresas / Compañía / Contacto). This spec
+ * pins the T19 testids + hrefs. The white text wordmark replaces the SVG on the
+ * green field; copyright still carries the current year; static static-page links
+ * moved to on-page anchors + brand/catalog routes.
  */
 
-test.describe("WhatsApp FAB config guard (AC-8, edge case 7)", () => {
-  test("is NOT rendered while the phone number is unconfigured (empty placeholder)", async ({
+test.describe("WhatsApp FAB (AC-17)", () => {
+  test("renders with a valid numbered wa.me deep link (never numberless)", async ({
     page,
   }) => {
     await page.goto("/")
-    // Empty WHATSAPP_PHONE_E164 ⇒ buildWhatsAppUrl returns null ⇒ no button.
-    await expect(page.getByTestId("whatsapp-button")).toHaveCount(0)
-    // And crucially: no broken numberless wa.me anchor anywhere on the page.
-    await expect(page.locator('a[href^="https://wa.me/"]')).toHaveCount(0)
+    // Configured placeholder number ⇒ buildWhatsAppUrl resolves ⇒ FAB present.
+    const fab = page.getByTestId("whatsapp-button")
+    await expect(fab).toHaveCount(1)
+    // The deep link must carry actual digits — never a broken numberless anchor.
     await expect(page.locator('a[href="https://wa.me/"]')).toHaveCount(0)
+    await expect(
+      page.locator('a[href^="https://wa.me/"][href$="/"]'),
+    ).toHaveCount(0)
+    // The footer contact line is the numbered anchor (not the degrade text).
+    await expect(page.getByTestId("footer-whatsapp")).toHaveAttribute(
+      "href",
+      /^https:\/\/wa\.me\/\d+/,
+    )
   })
 })
 
-test.describe("footer graceful degrade (AC-7, AC-15, edge case 2)", () => {
-  test("renders store name, static-page links, and copyright regardless of store_settings", async ({
+test.describe("footer restyle + graceful degrade (T19 AC-16, edge 2)", () => {
+  test("renders the white wordmark, mockup columns, and copyright with the year", async ({
     page,
   }) => {
     await page.goto("/")
 
-    // Store name always resolves (config fallback when the row is absent).
-    await expect(page.getByTestId("footer-store-name")).not.toBeEmpty()
+    // Deep-green footer + white text wordmark (SVG would vanish on green).
+    await expect(page.getByTestId("site-footer")).toBeVisible()
+    await expect(page.getByTestId("footer-wordmark")).not.toBeEmpty()
 
-    // Real Spanish static-page slugs — LIVE after T13 (combined shipping/returns
-    // slug was split into /envios + /devoluciones).
-    await expect(page.getByTestId("footer-link-about")).toHaveAttribute(
+    // Catálogo column — catalog + brand routes.
+    await expect(page.getByTestId("footer-link-all-chairs")).toHaveAttribute(
       "href",
-      "/sobre-nosotros",
+      "/sillas",
     )
-    await expect(page.getByTestId("footer-link-shipping")).toHaveAttribute(
+    await expect(page.getByTestId("footer-link-hm")).toHaveAttribute(
       "href",
-      "/envios",
-    )
-    await expect(page.getByTestId("footer-link-returns")).toHaveAttribute(
-      "href",
-      "/devoluciones",
-    )
-    await expect(page.getByTestId("footer-link-faq")).toHaveAttribute(
-      "href",
-      "/preguntas-frecuentes",
-    )
-    await expect(page.getByTestId("footer-link-contact")).toHaveAttribute(
-      "href",
-      "/contacto",
+      "/marcas",
     )
 
-    // Copyright with the current year.
+    // Empresas column — business quote route.
+    await expect(page.getByTestId("footer-link-quote")).toHaveAttribute(
+      "href",
+      "/empresas",
+    )
+
+    // Compañía column — on-page anchors (process / trust / impact).
+    await expect(page.getByTestId("footer-link-process")).toHaveAttribute(
+      "href",
+      "/#proceso",
+    )
+    await expect(page.getByTestId("footer-link-trust")).toHaveAttribute(
+      "href",
+      "/#garantia",
+    )
+
+    // Contact: email is a real mailto; copyright carries the current year.
+    await expect(page.getByTestId("footer-email")).toHaveAttribute(
+      "href",
+      /^mailto:/,
+    )
     await expect(page.getByTestId("footer-copyright")).toContainText(
       String(new Date().getFullYear()),
     )
   })
 
-  test("free-shipping slot is present (reserved) whether or not the line has content (no CLS)", async ({
+  test("social + legal links render exactly once each (no duplicate chrome)", async ({
     page,
   }) => {
     await page.goto("/")
-    // The slot always exists (height reserved). Content may be empty when the
-    // store_settings row is unavailable — the shell never breaks either way.
-    await expect(page.getByTestId("footer-free-shipping")).toHaveCount(1)
+    for (const id of [
+      "footer-social-instagram",
+      "footer-social-linkedin",
+      "footer-social-facebook",
+      "footer-legal-privacy",
+      "footer-legal-terms",
+    ]) {
+      await expect(page.getByTestId(id)).toHaveCount(1)
+    }
   })
 
-  test("footer static-page links carry the /en prefix in English (AC-6)", async ({
+  test("footer catalog link carries the /en prefix in English (AC-6/AC-20)", async ({
     page,
   }) => {
     await page.goto("/en")
-    await expect(page.getByTestId("footer-link-about")).toHaveAttribute(
+    await expect(page.getByTestId("footer-link-all-chairs")).toHaveAttribute(
       "href",
-      "/en/sobre-nosotros",
+      "/en/sillas",
     )
   })
 })

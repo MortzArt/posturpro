@@ -29,8 +29,9 @@ test.describe("mobile drawer at 375px (AC-5)", () => {
     const panel = page.getByTestId("mobile-nav-panel")
     await expect(panel).toBeVisible()
     await expect(panel).toHaveAttribute("data-state", "open")
+    // Nav items are catalog/process/business/trust (T19 AC-16 header restyle).
     await expect(page.getByTestId("mobile-nav-item-catalog")).toBeVisible()
-    await expect(page.getByTestId("mobile-nav-item-contact")).toBeVisible()
+    await expect(page.getByTestId("mobile-nav-item-trust")).toBeVisible()
   })
 
   test("shell is exposed to assistive tech when the drawer is closed, hidden only while open (AC-17 regression)", async ({
@@ -42,10 +43,15 @@ test.describe("mobile drawer at 375px (AC-5)", () => {
     // whole page from screen readers on every route. With the closed drawer
     // unmounted, the shell must be fully in the accessibility tree.
     await page.goto("/")
-    // Closed: the h1 (and headings generally) are reachable via role.
+    // Closed: the h1 (and headings generally) are reachable via role, and the
+    // shell chrome is NOT hidden from AT. After the T19 layout change (topbar +
+    // an always-on WhatsApp FAB), Radix's modal `hideOthers` marks the drawer
+    // portal's SIBLINGS — i.e. the individual shell elements (header, sections,
+    // footer), not a single wrapper div — so we assert on the persistent
+    // <header> as the representative shell element.
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
-    const shellWrapper = page.locator("main").locator("..")
-    await expect(shellWrapper).not.toHaveAttribute("aria-hidden", "true")
+    const shellHeader = page.locator("header")
+    await expect(shellHeader).not.toHaveAttribute("aria-hidden", "true")
 
     // Open: Radix's modal correctly hides the background from AT while the
     // drawer is the active modal layer.
@@ -54,12 +60,12 @@ test.describe("mobile drawer at 375px (AC-5)", () => {
       "data-state",
       "open",
     )
-    await expect(shellWrapper).toHaveAttribute("aria-hidden", "true")
+    await expect(shellHeader).toHaveAttribute("aria-hidden", "true")
 
     // Close (Esc): the guard is released — the shell is exposed again.
     await page.keyboard.press("Escape")
     await expect(page.getByTestId("mobile-nav-panel")).toHaveCount(0)
-    await expect(shellWrapper).not.toHaveAttribute("aria-hidden", "true")
+    await expect(shellHeader).not.toHaveAttribute("aria-hidden", "true")
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
   })
 

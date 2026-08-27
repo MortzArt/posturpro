@@ -41,7 +41,7 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background">
-      <div className="mx-auto flex h-14 max-w-(--breakpoint-xl) items-center gap-3 px-4 md:h-16 md:px-6 lg:px-8">
+      <div className="mx-auto flex h-14 max-w-(--breakpoint-xl) items-center gap-2 px-4 md:h-16 md:gap-3 md:px-6 lg:px-8">
         <MobileNav />
 
         <Link
@@ -56,7 +56,10 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
             width={132}
             height={26}
             priority
-            className="h-6 w-auto md:h-7"
+            // Cap the width on the narrowest phones (≤320px) so the logo can
+            // never push the right-side controls off-screen (edge 7 / AC-11);
+            // full size returns at sm+ where there is room.
+            className="h-5 w-auto max-w-[88px] sm:h-6 sm:max-w-none md:h-7"
           />
         </Link>
 

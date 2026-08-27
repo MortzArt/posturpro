@@ -39,8 +39,8 @@ test.describe("language toggle (AC-6, AC-17)", () => {
 
     await expect(page).toHaveURL(/\/en$/)
     await expect(page.locator("html")).toHaveAttribute("lang", "en")
-    // English nav label now present (was "Sillas" in Spanish).
-    await expect(page.getByTestId("header-nav-catalog")).toHaveText(/chairs/i)
+    // English nav label now present (T19 nav: "Catálogo" → "Catalog").
+    await expect(page.getByTestId("header-nav-catalog")).toHaveText(/catalog/i)
   })
 
   test("does not full-page reload when toggling (client navigation)", async ({
@@ -120,6 +120,7 @@ test.describe("language toggle (AC-6, AC-17)", () => {
     await expect(page).toHaveURL(/\/$/) // back to unprefixed Spanish
     // URL and rendered strings agree — no stuck loading, last press wins.
     await expect(page.locator("html")).toHaveAttribute("lang", "es-MX")
-    await expect(page.getByTestId("header-nav-catalog")).toHaveText(/sillas/i)
+    // T19 nav label in Spanish is "Catálogo".
+    await expect(page.getByTestId("header-nav-catalog")).toHaveText(/cat[áa]logo/i)
   })
 })

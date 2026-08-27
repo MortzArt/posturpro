@@ -26,7 +26,10 @@ describe("catalog read path (live local DB, read-only)", () => {
     const db = anonClient();
     const { data, error } = await db
       .from("products_public")
-      .select("id,slug,name,price_cents,brands(name,slug,logo_url)")
+      // condition_grade is now part of the view contract (T19 AC-2/AC-9); select
+      // it here to prove the migration-0016 column is projected AND that adding
+      // it did not widen the view to leak cost_price_cents.
+      .select("id,slug,name,price_cents,condition_grade,brands(name,slug,logo_url)")
       .eq("status", "active")
       .limit(5);
 
@@ -36,6 +39,8 @@ describe("catalog read path (live local DB, read-only)", () => {
     for (const row of data ?? []) {
       // The view forwards the brand FK → embed resolves to a to-one object.
       expect(row.brands).not.toBeNull();
+      // condition_grade is exposed (present as a key, even when NULL) — AC-2/AC-9.
+      expect(Object.keys(row)).toContain("condition_grade");
       // cost_price_cents must be absent from the raw payload (view omits it).
       expect(Object.keys(row)).not.toContain("cost_price_cents");
     }

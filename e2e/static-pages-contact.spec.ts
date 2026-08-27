@@ -14,25 +14,21 @@ import { expect, test } from "@playwright/test"
  * exhaustively at the action level (contacto/actions.test.ts).
  */
 
-test.describe("homepage featured sections (T13 AC-7, AC-9)", () => {
-  test("renders the featured chairs + brands sections from the seeded catalog", async ({
+test.describe("homepage featured sections (T19 AC-18, AC-19)", () => {
+  test("renders the real featured-products section + the brand bar from the seeded catalog", async ({
     page,
   }) => {
     await page.goto("/")
-    // Seeded catalog is non-empty → both sections present (not omitted).
+    // Seeded catalog is non-empty → the real featured-products section renders
+    // (T19 AC-19: real products via listProducts, hidden/empty-safe on failure).
     await expect(page.getByTestId("featured-products")).toBeVisible()
-    await expect(page.getByTestId("featured-brands")).toBeVisible()
-    // At least one brand tile renders.
-    await expect(
-      page.getByTestId("featured-brand-tile").first(),
-    ).toBeVisible()
-    // "View all" affordances link to the catalog + brands index.
+    // T19 replaced the T13 per-brand featured tiles with a static brand bar
+    // (AC-18) — assert the new element, not the removed `featured-brands`.
+    await expect(page.getByTestId("brand-bar")).toBeVisible()
+    // "View all" affordance still links to the catalog.
     await expect(
       page.getByTestId("featured-products-view-all"),
     ).toHaveAttribute("href", "/sillas")
-    await expect(
-      page.getByTestId("featured-brands-view-all"),
-    ).toHaveAttribute("href", "/marcas")
   })
 
   test("has no horizontal overflow at 375px", async ({ page }) => {
@@ -214,28 +210,53 @@ test.describe("contact form (T13 AC-11, AC-13, AC-15, AC-20)", () => {
   })
 })
 
-test.describe("footer navigation resolves (T13 AC-10)", () => {
-  test("every footer static-page link navigates to a real 200 page", async ({
+test.describe("footer navigation resolves (T19 AC-16)", () => {
+  test("footer ROUTE links navigate to a real 200 page", async ({ page }) => {
+    await page.goto("/")
+    // T19 restyled the footer to the mockup's columns. The route links (not the
+    // on-page anchors) must each resolve to a 200 document.
+    const routeTestIds = [
+      "footer-link-all-chairs", // /sillas
+      "footer-link-hm", // /marcas
+      "footer-link-quote", // /empresas
+    ] as const
+    // Collect all hrefs in ONE homepage load, then navigate each directly — no
+    // goBack() loop (its timing under parallel workers on the shared server was
+    // flaky). Each goto is an independent, order-independent assertion.
+    const hrefs: { testId: string; href: string }[] = []
+    for (const testId of routeTestIds) {
+      const href = await page.getByTestId(testId).getAttribute("href")
+      expect(href, testId).toBeTruthy()
+      hrefs.push({ testId, href: href as string })
+    }
+    for (const { testId, href } of hrefs) {
+      const response = await page.goto(href)
+      expect(response?.status(), `${testId} → ${href}`).toBe(200)
+    }
+  })
+
+  test("footer ANCHOR links point to a real on-page section target", async ({
     page,
   }) => {
     await page.goto("/")
-    const linkTestIds = [
-      "footer-link-about",
-      "footer-link-shipping",
-      "footer-link-returns",
-      "footer-link-warranty",
-      "footer-link-faq",
-      "footer-link-contact",
-      "footer-link-privacy",
-      "footer-link-terms",
-      "footer-link-showroom",
+    // Compañía-column links are same-document anchors (`/#proceso`, `/#garantia`,
+    // `/#impacto`) — a hash navigation returns no network response, so assert the
+    // fragment target EXISTS on the homepage instead of a status code.
+    const anchorTestIds = [
+      "footer-link-process",
+      "footer-link-trust",
+      "footer-link-sustainability",
     ] as const
-    for (const testId of linkTestIds) {
+    for (const testId of anchorTestIds) {
       const href = await page.getByTestId(testId).getAttribute("href")
       expect(href, testId).toBeTruthy()
-      const response = await page.goto(href as string)
-      expect(response?.status(), `${testId} → ${href}`).toBe(200)
-      await page.goBack()
+      const hash = new URL(href as string, "http://localhost").hash // e.g. "#proceso"
+      expect(hash, `${testId} carries a fragment`).toMatch(/^#.+/)
+      // The homepage must contain an element with that id (real scroll target).
+      await expect(
+        page.locator(hash),
+        `${testId} → ${hash} exists on the homepage`,
+      ).toHaveCount(1)
     }
   })
 })
