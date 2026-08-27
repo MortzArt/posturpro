@@ -37,3 +37,4 @@ export * from "./config/imagery";
 export * from "./config/contact";
 export * from "./config/quote";
 export * from "./config/calculator";
+export * from "./config/footer-links";

@@ -1,0 +1,230 @@
+/* ======================================================================== *
+ * MOTION LAYER — CATALOG SURFACES (extracted from globals.css, T19 M-1 split)
+ * ------------------------------------------------------------------------
+ * Product-detail-page motion (gallery crossfade, zoom trigger, thumbnail hover,
+ * price crossfade, zoom dialog) and the search / filters / sort motion (select
+ * content, pending dim, clear-button fade). Split out of `globals.css`; see
+ * `motion-shell.css` header for the rationale + the enforcing guard test.
+ * Consumes the `--ease-*` tokens from `globals.css`. transform/opacity only,
+ * < 300ms, ease-out enter, interruptible, reduced-motion gated.
+ * ======================================================================== */
+
+/* ======================================================================== *
+ * PRODUCT DETAIL PAGE MOTION (T4)
+ * ------------------------------------------------------------------------
+ * All transform/opacity only, < 300ms, ease-out for enter, interruptible (CSS
+ * transitions + keyed elements), and reduced-motion gated. See ui-design.md
+ * Motion Spec M1–M9. Hover is gated behind hover-capable pointers.
+ * ======================================================================== */
+
+/* M1 — Gallery main-image crossfade. The <Image> is keyed on the active image
+ * id, so each swap remounts a fresh element that fades in via @starting-style;
+ * a subtle blur masks the crossfade (Emil: blur bridges two overlapping states).
+ * Keyed + transition = interruptible → rapid variant/thumb retargets never stick
+ * on a stale frame (edge 8). Reduced motion: instant opacity, no blur. */
+.gallery-image {
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity 200ms var(--ease-out),
+    filter 200ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gallery-image {
+    transition: opacity 120ms ease;
+    filter: none;
+
+    @starting-style {
+      opacity: 0;
+      filter: none;
+    }
+  }
+}
+
+/* M4 — Zoom trigger + swatches press feedback (high-frequency → press only, no
+ * enter/hover motion). scale(0.97) on :active. Reduced motion drops it. */
+.gallery-zoom-trigger,
+.swatch-press {
+  transition: transform 120ms var(--ease-out);
+}
+.gallery-zoom-trigger:active,
+.swatch-press:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gallery-zoom-trigger:active,
+  .swatch-press:active {
+    transform: none;
+  }
+}
+
+/* M6 — Thumbnail hover (non-selected): opacity lift only, gated to real hover. */
+@media (hover: hover) and (pointer: fine) {
+  .thumb-hover {
+    transition: opacity 120ms ease;
+    opacity: 0.7;
+  }
+  .thumb-hover:hover {
+    opacity: 1;
+  }
+}
+
+/* M5 — Price / stock-line crossfade on variant change. The value span is keyed
+ * on its text, so a change remounts it and it fades in. Reduced motion: instant. */
+.price-value {
+  opacity: 1;
+  transition: opacity 150ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .price-value {
+    transition: none;
+
+    @starting-style {
+      opacity: 1;
+    }
+  }
+}
+
+/* M2/M3 — Zoom Dialog. MODAL → transform-origin: center (Emil modals exempt from
+ * trigger-origin). Content: opacity + scale(0.95→1), 200ms enter / 150ms exit,
+ * off Radix [data-state]. Scrim: opacity fade. CSS transitions (interruptible).
+ * Reduced motion: opacity only, no transform. */
+.gallery-zoom-scrim {
+  opacity: 1;
+  transition: opacity 200ms var(--ease-out);
+}
+.gallery-zoom-scrim[data-state="closed"] {
+  opacity: 0;
+  transition: opacity 150ms var(--ease-out);
+}
+.gallery-zoom-scrim[data-state="open"] {
+  @starting-style {
+    opacity: 0;
+  }
+}
+.gallery-zoom-dialog {
+  transform-origin: center;
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+}
+.gallery-zoom-dialog[data-state="closed"] {
+  opacity: 0;
+  transform: scale(0.95);
+  transition:
+    opacity 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
+}
+.gallery-zoom-dialog[data-state="open"] {
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gallery-zoom-dialog,
+  .gallery-zoom-dialog[data-state="open"],
+  .gallery-zoom-dialog[data-state="closed"] {
+    transform: none;
+    transition: opacity 150ms ease;
+  }
+  .gallery-zoom-dialog[data-state="open"] {
+    @starting-style {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* ======================================================================== *
+ * SEARCH / FILTERS / SORT MOTION (T5)
+ * ------------------------------------------------------------------------
+ * Retrofits the shadcn Select onto the repo's interruptible [data-state] CSS
+ * transition pattern, and adds the client pending-dim. The mobile filter Sheet
+ * reuses `.drawer-panel`/`.drawer-scrim` (spatial consistency with MobileNav),
+ * swatches reuse `.swatch-press`, the grid reuses `.stagger`, and NoResults
+ * reuses `.enter-fade` — no new motion invented for those. All transform/opacity
+ * only, < 300ms, ease-out enter, interruptible, reduced-motion gated (AC-18).
+ * ======================================================================== */
+
+/* M-3 — SortSelect content. Origin-aware Scale in ("Pop in", no bounce): scales
+ * from the trigger via Radix's --radix-select-content-transform-origin (set in
+ * the className). CSS transition (not keyframes) so a mid-open dismiss retargets
+ * smoothly. Open 200ms, close 150ms. Reduced motion: opacity only, no scale. */
+.select-content-motion {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+}
+.select-content-motion[data-state="open"] {
+  will-change: transform;
+}
+.select-content-motion[data-state="closed"] {
+  opacity: 0;
+  transform: scale(0.96);
+  transition-duration: 150ms;
+}
+.select-content-motion[data-state="open"] {
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .select-content-motion,
+  .select-content-motion[data-state="open"],
+  .select-content-motion[data-state="closed"] {
+    transform: none;
+    transition: opacity 150ms ease;
+  }
+  .select-content-motion[data-state="open"] {
+    @starting-style {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* M-7 — Pending dim on the current grid while a client-initiated filter/sort
+ * change re-queries (useTransition isPending). Comprehension aid → opacity only,
+ * kept under reduced motion (opacity is RM-safe). Interruptible by nature. */
+.grid-pending {
+  opacity: 0.6;
+  transition: opacity 200ms ease;
+}
+.grid-idle {
+  opacity: 1;
+  transition: opacity 200ms ease;
+}
+
+/* m-6 — Under reduced motion, keep the dim STATE (opacity is a comprehension
+ * cue, not decoration) but drop the transition so nothing animates. */
+@media (prefers-reduced-motion: reduce) {
+  .grid-pending,
+  .grid-idle {
+    transition-duration: 0ms;
+  }
+}
+
+/* M-6 — Search clear button fade-in (opacity only; RM-safe, kept as-is). */
+.clear-fade {
+  opacity: 1;
+  transition: opacity 120ms ease;
+
+  @starting-style {
+    opacity: 0;
+  }
+}

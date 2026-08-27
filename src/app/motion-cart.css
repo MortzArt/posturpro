@@ -1,0 +1,232 @@
+/* ======================================================================== *
+ * MOTION LAYER — CART / ADMIN / HOME (extracted from globals.css, T19 M-1 split)
+ * ------------------------------------------------------------------------
+ * Cart motion (count pill, add-to-cart label crossfade, press feedback, stepper
+ * press, free-shipping progress fill), the admin dialog/alert-dialog pop-in and
+ * reorder shift, and the T19 homepage/CTA motion (cta-press, savings-calculator
+ * bar fill, FAQ chevron). Split out of `globals.css`; see `motion-shell.css`
+ * header for the rationale + the enforcing guard test. Consumes the `--ease-*`
+ * tokens from `globals.css`. transform/opacity only, ease-out enter,
+ * interruptible, reduced-motion gated.
+ * ======================================================================== */
+
+/* ======================================================================== *
+ * CART MOTION (T6)
+ * ------------------------------------------------------------------------
+ * All transform/opacity only, < 300ms enter, ease-out, interruptible (CSS
+ * transitions + keyed elements), reduced-motion gated. The line-list entrance
+ * reuses `.stagger`, number crossfades reuse `.price-value`, the empty/skeleton
+ * swap reuses `.enter-fade` — no new motion invented for those. See
+ * ui-design.md components §1, §2, §4, §5, §8.
+ * ======================================================================== */
+
+/* §1 — Header count pill Scale in. Keyed on itemCount, so a change remounts a
+ * fresh pill that scales+fades from scale(0.9) (never scale(0) — emil). Enter
+ * only; the exit is just the pill unmounting (count → 0). Reduced motion:
+ * opacity only, no scale. */
+.cart-badge-pill {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cart-badge-pill {
+    transition: opacity 120ms ease;
+    transform: none;
+
+    @starting-style {
+      opacity: 0;
+      transform: none;
+    }
+  }
+}
+
+/* §2 — Add-to-cart label crossfade with a light blur mask (emil: blur bridges
+ * two overlapping states). Two absolutely-stacked spans inside a fixed-size
+ * button; the inactive span is opacity:0 + blur, the active one opacity:1. CSS
+ * transition (not keyframe) so a re-click during "Agregado ✓" retargets
+ * smoothly — interruptible. Reduced motion: opacity only, no blur. */
+.cart-add-label {
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity 180ms var(--ease-out),
+    filter 180ms var(--ease-out);
+}
+.cart-add-label[data-hidden="true"] {
+  opacity: 0;
+  filter: blur(2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cart-add-label {
+    transition: opacity 150ms ease;
+    filter: none;
+  }
+  .cart-add-label[data-hidden="true"] {
+    filter: none;
+  }
+}
+
+/* Press feedback for the primary cart CTAs (add-to-cart, checkout). scale(0.98)
+ * on :active; instant feedback (Apple §1). Reduced motion drops it. */
+.cart-press {
+  transition: transform 100ms var(--ease-out);
+}
+.cart-press:active {
+  transform: scale(0.98);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cart-press:active {
+    transform: none;
+  }
+}
+
+/* Stepper button press feedback (high-frequency → press only, no enter/hover
+ * motion). scale(0.97) on :active. Reduced motion drops it. */
+.cart-step-press {
+  transition: transform 90ms var(--ease-out);
+}
+.cart-step-press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cart-step-press:active {
+    transform: none;
+  }
+}
+
+/* §5 — Free-shipping progress fill: transform:scaleX ONLY (never width →
+ * compositor-friendly, no layout thrash). origin-left; the fill width is 100%
+ * and scaleX(pct) reveals it. Reduced motion: snap the scale (transition:none)
+ * and let the opacity/color carry comprehension.
+ *
+ * DURATION 400ms — over the 300ms UI-motion bar ON PURPOSE: this is an
+ * EXPLANATORY progress reveal (how close the cart is to free shipping), which
+ * STANDARDS.md exempts from the 300ms ceiling. The T19 `.calc-bar-fill` mirrors
+ * this. */
+.cart-progress-fill {
+  transform-origin: left center;
+  transition: transform 400ms var(--ease-out);
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cart-progress-fill {
+    transition: none;
+  }
+}
+
+/* T11 admin — dialog/alert-dialog content Pop-in (scale .96→1 + fade), origin
+ * center so modals stay centered. Enter 180ms / exit 140ms, --ease-out.
+ * Reduced motion: opacity only, no scale. */
+.dialog-content-motion {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+.dialog-content-motion[data-state="closed"] {
+  opacity: 0;
+  transform: scale(0.96);
+  transition-duration: 140ms;
+}
+.dialog-content-motion[data-state="open"] {
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dialog-content-motion,
+  .dialog-content-motion[data-state="open"],
+  .dialog-content-motion[data-state="closed"] {
+    transform: none;
+    transition: opacity 140ms ease;
+  }
+  .dialog-content-motion[data-state="open"] {
+    @starting-style {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* T11 admin — image/variant reorder shift (items slide to make room during a
+ * drag). transform only (compositor-friendly). Reduced motion: snap. The
+ * dragged card's lift is applied inline (JS-driven), not via this class. */
+.reorder-item {
+  transition: transform 200ms var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .reorder-item {
+    transition: none;
+  }
+}
+
+/* ======================================================================== *
+ * T19 HOMEPAGE / CTA MOTION
+ * ------------------------------------------------------------------------
+ * Three new classes; all transform/opacity only, ease-out, interruptible (CSS
+ * transitions, no keyframes), reduced-motion gated. See ui-design.md PART H
+ * (M1 / M6 / M9).
+ * ======================================================================== */
+
+/* M1 — CTA button press feedback (mirrors .cart-press). scale(0.97) on :active
+ * gives instant tactile response. Reduced motion drops it. */
+.cta-press {
+  transition: transform 120ms var(--ease-out);
+}
+.cta-press:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cta-press:active {
+    transform: none;
+  }
+}
+
+/* M6 — Savings-calculator bar fill (mirrors .cart-progress-fill). transform:
+ * scaleX ONLY (never width → compositor-friendly, no layout thrash). The fill
+ * is width:100% and scaleX(fraction) reveals it; origin-left. Reduced motion:
+ * snap (transition:none).
+ *
+ * DURATION 400ms — over the 300ms UI-motion bar ON PURPOSE. STANDARDS.md exempts
+ * EXPLANATORY/marketing motion, and this bar IS the explanation: it demonstrates
+ * the value prop (how much less a PosturPro chair costs vs. new) by animating the
+ * two bars filling to their relative lengths — a slower reveal lets the eye read
+ * the gap. It deliberately mirrors the already-shipped `.cart-progress-fill`
+ * (also 400ms) for a consistent progress-reveal feel. ease-out (not linear) is
+ * acceptable on a one-shot mount reveal per the STANDARDS easing table. */
+.calc-bar-fill {
+  transform-origin: left center;
+  transition: transform 400ms var(--ease-out);
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .calc-bar-fill {
+    transition: none;
+  }
+}
+
+/* M9 — FAQ chevron rotate on native <details> open. The ＋ glyph rotates 45° to
+ * read as ✕. transform only; the panel itself reveals instantly (native
+ * <details> can't animate height cross-browser without JS — honest + cheap).
+ * Reduced motion: instant swap (no transition). */
+.faq-chevron {
+  transition: transform 200ms var(--ease-out);
+}
+details[open] .faq-chevron {
+  transform: rotate(45deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .faq-chevron {
+    transition: none;
+  }
+}

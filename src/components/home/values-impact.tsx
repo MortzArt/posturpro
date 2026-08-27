@@ -32,17 +32,29 @@ interface ValuesImpactProps {
   disclaimer: string;
 }
 
-const CARD_ICONS: readonly IconSvgElement[] = [
-  Tag01Icon,
-  CheckmarkBadge01Icon,
-  Award01Icon,
-  LicenseIcon,
-];
+/**
+ * Icons are paired 1:1 with the four value cards here, not looked up by
+ * `CARD_ICONS[index]` — so a positional drift (e.g. adding a 5th card) can never
+ * render `undefined`. The tuple type is the same 4-length as `cards`, so the
+ * compiler enforces the pairing.
+ */
+const CARD_ICONS: readonly [
+  IconSvgElement,
+  IconSvgElement,
+  IconSvgElement,
+  IconSvgElement,
+] = [Tag01Icon, CheckmarkBadge01Icon, Award01Icon, LicenseIcon];
 
 /** Stagger step between cards; capped so the grid settles ≤ ~200ms. */
 const STAGGER_STEP_MS = 50;
 
 export function ValuesImpact(props: ValuesImpactProps) {
+  // Pair each card with its icon up front (both are fixed 4-tuples) so the JSX
+  // never indexes into a parallel array.
+  const cardsWithIcons = props.cards.map((card, index) => ({
+    card,
+    icon: CARD_ICONS[index],
+  }));
   return (
     <div className="flex flex-col gap-8" data-testid="values-impact">
       <div className="flex max-w-2xl flex-col gap-2">
@@ -58,19 +70,14 @@ export function ValuesImpact(props: ValuesImpactProps) {
       </div>
 
       <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {props.cards.map((card, index) => (
+        {cardsWithIcons.map(({ card, icon }, index) => (
           <li
             key={card.title}
             className="stagger flex flex-col gap-3 rounded-md border border-border bg-card p-5"
             style={{ transitionDelay: `${index * STAGGER_STEP_MS}ms` }}
           >
             <span className="flex size-10 items-center justify-center rounded-md bg-secondary text-primary">
-              <HugeiconsIcon
-                icon={CARD_ICONS[index]}
-                size={20}
-                strokeWidth={2}
-                aria-hidden
-              />
+              <HugeiconsIcon icon={icon} size={20} strokeWidth={2} aria-hidden />
             </span>
             <h3 className="font-heading text-base font-semibold text-foreground">
               {card.title}
@@ -82,8 +89,11 @@ export function ValuesImpact(props: ValuesImpactProps) {
 
       <div id="impacto" className="scroll-mt-28">
         <dl className="enter-fade grid grid-cols-1 gap-6 rounded-md bg-secondary p-6 text-center sm:grid-cols-3">
-          {props.figures.map((figure) => (
-            <div key={figure.label} className="flex flex-col gap-1">
+          {props.figures.map((figure, index) => (
+            // Keyed on position: `figures` is a fixed 3-tuple that never reorders
+            // or filters, so the index is stable — avoids a duplicate-key warning
+            // if two placeholder figures ever share a label (m-4).
+            <div key={index} className="flex flex-col gap-1">
               <dt className="font-heading text-2xl font-bold tabular-nums text-primary">
                 {figure.figure}
               </dt>

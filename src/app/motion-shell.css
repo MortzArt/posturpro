@@ -1,0 +1,314 @@
+/* ======================================================================== *
+ * MOTION LAYER — SHELL / GLOBAL (extracted from globals.css, T19 M-1 split)
+ * ------------------------------------------------------------------------
+ * App-shell + cross-page motion: the mobile nav drawer, the WhatsApp FAB, the
+ * language toggle, the low-frequency enter-fade, the static-heading :target
+ * accent, nav hover, the inline link-arrow nudge, the catalog card lift, and
+ * the grid stagger entrance.
+ *
+ * WHY THIS FILE EXISTS: the motion layer is Emil's authority (not brand) and is
+ * imported by `globals.css` via `@import`. It was split out of `globals.css`
+ * (which crossed the CLAUDE.md 1,000-line hard cap) into three domain files —
+ * `motion-shell.css` (this file), `motion-catalog.css`, and `motion-cart.css`.
+ * A guard test (`src/app/css-line-count.test.ts`) enforces the cap on every
+ * *.css so this can never silently regress. Consumes the `--ease-*` tokens
+ * defined in `globals.css` `:root` (loaded first). transform/opacity only,
+ * enter uses ease-out, every effect is reduced-motion gated.
+ * ======================================================================== */
+
+/* ======================================================================== *
+ * MOBILE NAV DRAWER MOTION (T2 AC-13)
+ * ------------------------------------------------------------------------
+ * CSS TRANSITIONS (not keyframes) so a mid-open dismiss is interruptible and
+ * retargets smoothly. Radix Dialog sets data-state="open"|"closed" on the
+ * force-mounted overlay and panel; we transition transform/opacity ONLY off
+ * that attribute. Enter uses --ease-drawer at 300ms; exit is faster (200ms).
+ * Reduced motion drops the slide (transform:none) and keeps an opacity fade.
+ * ======================================================================== */
+.drawer-scrim {
+  opacity: 0;
+  transition: opacity 300ms var(--ease-drawer);
+}
+.drawer-scrim[data-state="open"] {
+  opacity: 1;
+}
+.drawer-scrim[data-state="closed"] {
+  opacity: 0;
+  transition-duration: 200ms;
+  /* The scrim is force-mounted (so its fade is a CSS transition), so when
+   * closed it still covers the viewport at z-60. It MUST NOT intercept clicks
+   * or it blankets the whole shell and makes every control (toggle, hamburger,
+   * nav, CTAs) dead. Radix's DismissableLayer sets an INLINE
+   * `pointer-events: auto` on the force-mounted overlay, so overriding it
+   * requires `!important`. (T2 QA bug: the Tailwind `data-[state=closed]:
+   * pointer-events-none` utility never compiled AND could not have won against
+   * the inline style anyway.) */
+  pointer-events: none !important;
+}
+
+.drawer-panel {
+  transform: translateX(-100%);
+  transition: transform 300ms var(--ease-drawer);
+}
+/* `will-change` is transient by design: only hint the compositor while the
+ * panel is open (forceMount keeps it in the DOM when closed — a permanent
+ * layer on an off-screen panel is wasteful). (T2 m-4) */
+.drawer-panel[data-state="open"] {
+  transform: translateX(0);
+  will-change: transform;
+}
+.drawer-panel[data-state="closed"] {
+  transform: translateX(-100%);
+  transition-duration: 200ms;
+  /* Same force-mount guard as the scrim: a closed (off-screen) panel must not
+   * capture pointer events. Radix sets inline `pointer-events: auto`, so this
+   * needs `!important` to win. The panel is translated off-screen when closed,
+   * but a 0-width sliver at the left edge could still catch a tap. */
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-panel,
+  .drawer-panel[data-state="open"],
+  .drawer-panel[data-state="closed"] {
+    transform: none;
+    transition: opacity 200ms ease;
+    will-change: opacity;
+  }
+  .drawer-panel {
+    opacity: 0;
+  }
+  .drawer-panel[data-state="open"] {
+    opacity: 1;
+  }
+}
+
+/* ======================================================================== *
+ * WHATSAPP FAB MOTION (T2 AC-13)
+ * ------------------------------------------------------------------------
+ * Pop-in entrance from scale(0.95)+opacity:0 (never scale(0)), press feedback,
+ * and a hover lift gated behind hover-capable pointers. transform/opacity only.
+ * Uses @starting-style for the mount transition (no JS mount flag needed).
+ * ======================================================================== */
+.fab-pop {
+  transform: scale(1);
+  opacity: 1;
+  transition:
+    transform 180ms var(--ease-out),
+    box-shadow 120ms ease;
+
+  @starting-style {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+}
+.fab-pop:active {
+  transform: scale(0.97);
+  transition-duration: 120ms;
+}
+@media (hover: hover) and (pointer: fine) {
+  .fab-pop:hover {
+    transform: translateY(-1px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fab-pop {
+    transition: opacity 200ms ease;
+
+    @starting-style {
+      transform: none;
+      opacity: 0;
+    }
+  }
+  .fab-pop:active,
+  .fab-pop:hover {
+    transform: none;
+  }
+}
+
+/* ======================================================================== *
+ * LANGUAGE TOGGLE MOTION (T2 AC-13)
+ * ------------------------------------------------------------------------
+ * Label crossfade on locale change + press feedback. transform/opacity only.
+ * The label span is keyed to the locale, so switching remounts it; the
+ * `@starting-style` makes that fresh element crossfade in (opacity + a subtle
+ * scale) rather than snap — matching the AC-13 motion table (150ms ease-out,
+ * opacity + optional scale(0.97)). Without the starting style the transition
+ * had no state change to animate and was inert.
+ * ======================================================================== */
+.toggle-label {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+.toggle-press {
+  transition: transform 120ms var(--ease-out);
+}
+.toggle-press:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .toggle-label {
+    transition: opacity 150ms ease;
+    transform: none;
+
+    @starting-style {
+      opacity: 0;
+      transform: none;
+    }
+  }
+  .toggle-press:active {
+    transform: none;
+  }
+}
+
+/* ======================================================================== *
+ * ENTER FADE for low-frequency pages (404 / error). transform/opacity only;
+ * @starting-style entrance; reduced motion drops the translate. (T2 AC-13)
+ * ======================================================================== */
+.enter-fade {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .enter-fade {
+    transition: opacity 200ms ease;
+
+    @starting-style {
+      transform: none;
+      opacity: 0;
+    }
+  }
+}
+
+/* ======================================================================== *
+ * STATIC-PAGE HEADING :target ACCENT (T13 FAQ deep-links)
+ * ------------------------------------------------------------------------
+ * A `#slug` deep link to an FAQ question frames the targeted `<h2>` with a
+ * subtle left accent bar. COLOR/BORDER ONLY — no motion, so it is inherently
+ * reduced-motion-safe and works on first paint with zero client JS. `scroll-mt`
+ * (set on the element) keeps the target below the sticky header.
+ * ======================================================================== */
+.static-heading:target {
+  border-left: 2px solid var(--ring);
+  padding-left: 0.75rem;
+  margin-left: -0.75rem;
+}
+
+/* Nav item hover — color only, gated behind hover-capable pointers (AC-13). */
+@media (hover: hover) and (pointer: fine) {
+  .nav-hover {
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+}
+
+/* ======================================================================== *
+ * INLINE LINK ARROW NUDGE (home "Marcas →")
+ * ------------------------------------------------------------------------
+ * A directional hint (Apple #8 — hint in the direction of the gesture): the
+ * arrow slides a hair toward its destination on hover. transform-only, gated
+ * behind hover-capable pointers so it never sticks on touch, and dropped under
+ * reduced motion. `.group/brands` is the parent inline link.
+ * ======================================================================== */
+.link-arrow {
+  transition: transform 150ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .group\/brands:hover .link-arrow {
+    transform: translateX(2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .link-arrow {
+    transition: none;
+  }
+  .group\/brands:hover .link-arrow {
+    transform: none;
+  }
+}
+/* ======================================================================== *
+ * CATALOG CARD LIFT (T3)
+ * ------------------------------------------------------------------------
+ * Product/index-tile hover + press treatment. transform/opacity only; hover
+ * gated behind hover-capable pointers so it never sticks on touch; press feels
+ * responsive (Emil "respond on pointer-down"); reduced motion drops transforms.
+ * The image scale target is a child with `.card-image`.
+ * ======================================================================== */
+.card-lift {
+  transition: box-shadow 200ms var(--ease-out);
+}
+.card-lift:active {
+  transform: scale(0.99);
+  transition: transform 160ms var(--ease-out);
+}
+.card-lift .card-image {
+  transition: transform 200ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .card-lift:hover {
+    box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.06));
+  }
+  .card-lift:hover .card-image {
+    transform: scale(1.02);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-lift,
+  .card-lift:active {
+    transform: none;
+  }
+  .card-lift .card-image,
+  .card-lift:hover .card-image {
+    transform: none;
+  }
+}
+
+/* ======================================================================== *
+ * GRID STAGGER ENTRANCE (T3)
+ * ------------------------------------------------------------------------
+ * Cards/tiles enter with opacity + a small rise; the per-item delay is set
+ * inline (`style={{ transitionDelay }}`) and capped by the caller so a full
+ * grid finishes staggering in ≤ ~200ms. CSS transition (not keyframes) so it
+ * stays interruptible and off the main thread. Reduced motion: opacity only,
+ * no translate, no delay.
+ * ======================================================================== */
+.stagger {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stagger {
+    transition: opacity 200ms ease;
+    transition-delay: 0ms !important;
+
+    @starting-style {
+      opacity: 0;
+      transform: none;
+    }
+  }
+}

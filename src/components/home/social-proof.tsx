@@ -30,8 +30,12 @@ export function SocialProof(props: SocialProofProps) {
       </h2>
       <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {props.testimonials.map((testimonial, index) => (
+          // Keyed on position: `testimonials` is a fixed 2-tuple that never
+          // reorders or filters, so the index is stable — and it avoids a
+          // duplicate-key React warning if two placeholders ever share an
+          // attribution (m-4).
           <li
-            key={testimonial.attribution}
+            key={index}
             className="stagger flex flex-col gap-3 rounded-md border border-border bg-card p-6"
             style={{ transitionDelay: `${index * STAGGER_STEP_MS}ms` }}
           >

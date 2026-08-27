@@ -4,6 +4,9 @@ import {
   BRANDS_PATH,
   CATALOG_PATH,
   EMPRESAS_PATH,
+  FOOTER_LEGAL_LINKS,
+  FOOTER_LINK_PLACEHOLDER,
+  FOOTER_SOCIAL_LINKS,
   SEED_STORE_NAME,
   WHATSAPP_DISPLAY,
   WHATSAPP_PHONE_E164,
@@ -35,6 +38,25 @@ const LINK_CLASS = cn(
 const HEADING_CLASS =
   "font-heading text-xs font-semibold uppercase tracking-wide text-primary-foreground";
 
+/**
+ * Resolve a social/legal link's href from the centralized config (n-3), falling
+ * back to the placeholder sentinel if the key is not configured. Keeps the i18n
+ * labels as STATIC `t()` calls (so key-usage analysis + next-intl typing stay
+ * intact) while sourcing the swappable destination from one place.
+ */
+function socialHref(key: string): string {
+  return (
+    FOOTER_SOCIAL_LINKS.find((link) => link.key === key)?.href ??
+    FOOTER_LINK_PLACEHOLDER
+  );
+}
+function legalHref(key: string): string {
+  return (
+    FOOTER_LEGAL_LINKS.find((link) => link.key === key)?.href ??
+    FOOTER_LINK_PLACEHOLDER
+  );
+}
+
 export async function SiteFooter() {
   const t = await getTranslations("home.footer");
   const waUrl = buildWhatsAppUrl(WHATSAPP_PHONE_E164, WHATSAPP_PREFILL_MESSAGE_ES);
@@ -63,7 +85,7 @@ export async function SiteFooter() {
               ].map((social) => (
                 <li key={social.key}>
                   <a
-                    href="#"
+                    href={socialHref(social.key)}
                     aria-label={social.label}
                     data-testid={`footer-social-${social.key}`}
                     className={LINK_CLASS}
@@ -142,10 +164,18 @@ export async function SiteFooter() {
           <p data-testid="footer-copyright">{t("copyright")}</p>
           <p className="max-w-md">{t("payments")}</p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <a href="#" className={LINK_CLASS} data-testid="footer-legal-privacy">
+            <a
+              href={legalHref("privacy")}
+              className={LINK_CLASS}
+              data-testid="footer-legal-privacy"
+            >
               {t("legalPrivacy")}
             </a>
-            <a href="#" className={LINK_CLASS} data-testid="footer-legal-terms">
+            <a
+              href={legalHref("terms")}
+              className={LINK_CLASS}
+              data-testid="footer-legal-terms"
+            >
               {t("legalTerms")}
             </a>
           </div>

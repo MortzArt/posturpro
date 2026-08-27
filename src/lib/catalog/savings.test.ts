@@ -8,8 +8,10 @@ import {
 describe("computeSavings", () => {
   it("computes the Aeron default (43% / $16,600) from reference prices", () => {
     const aeron = CALCULATOR_MODELS.find((c) => c.id === "aeron");
-    expect(aeron).toBeDefined();
-    const result = computeSavings(aeron!);
+    if (!aeron) {
+      throw new Error("expected an 'aeron' entry in CALCULATOR_MODELS");
+    }
+    const result = computeSavings(aeron);
     // new 38,500 − postur 21,900 = 16,600 MXN → 1,660,000 cents
     expect(result.savingsCents).toBe(1_660_000);
     expect(result.savingsPct).toBe(43);

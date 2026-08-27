@@ -38,7 +38,10 @@ describe("SavingsCalculator (T19 AC-23, edge 9)", () => {
 
     await user.click(screen.getByTestId("calc-select"));
     // Radix Select renders options in a portal listbox.
-    const sayl = CALCULATOR_MODELS.find((m) => m.id === "sayl")!;
+    const sayl = CALCULATOR_MODELS.find((m) => m.id === "sayl");
+    if (!sayl) {
+      throw new Error("expected a 'sayl' entry in CALCULATOR_MODELS");
+    }
     await user.click(screen.getByText(`${sayl.brand} — ${sayl.model}`));
 
     // Sayl: (1,950,000 − 980,000) / 1,950,000 ≈ 50%.

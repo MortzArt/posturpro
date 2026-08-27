@@ -331,3 +331,15 @@ Deferred (rated OK/justified — intentionally NOT actioned): >50-line money-pat
 functions; payment-panel split; rate-limiter file duplication (intentional seams,
 both delegate to shared sliding-window.ts).
 - [ ] **E2E-HARNESS: `gotoPDP` strict-mode violation on mobile project** — helper asserts `getByTestId("product-gallery").toBeVisible()` unscoped while PDP renders two galleries (desktop + mobile, one hidden) → ~8 pre-existing Pixel-7 failures in T11-untouched specs (both dev & prod builds). Scope the locator to the visible instance. Found by T11 QA 2026-07-15; not a product bug.
+- [x] **A7 (T19 M-1) — Split `globals.css` (1005 lines, breached the 1,000-line
+  hard cap; ESLint silently ignores `.css` so nothing enforced it).** Extracted the
+  motion layer into three domain files, each `@import`ed at the top of
+  `globals.css`: `src/app/motion-shell.css` (314 — drawer/FAB/toggle/enter-fade/
+  nav/card-lift/stagger), `src/app/motion-catalog.css` (230 — PDP + search/filters),
+  `src/app/motion-cart.css` (227 — cart/admin/home CTA). `globals.css` now 290
+  lines (tokens + firewall docs only). Motion moved byte-identical (no behavior
+  change; verified the classes are present in the production CSS bundle). Added an
+  enforcement guard `src/app/css-line-count.test.ts` that walks every `*.css` under
+  `src/` and fails on the 1,000-line hard cap (+ a ~600 guidance ceiling) — closes
+  the "ESLint doesn't lint CSS" gap permanently. Verified: tsc 0, eslint clean,
+  vitest 2160/2160, build exit 0.
