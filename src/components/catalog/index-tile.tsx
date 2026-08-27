@@ -37,12 +37,12 @@ export function IndexTile({
         href={href}
         data-testid={testId}
         className={cn(
-          "card-lift flex h-full flex-col gap-2 rounded-md border border-border bg-card p-4 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "card-lift factorial-card flex h-full flex-col gap-2 p-4 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         )}
       >
         <span className="flex items-center gap-3">
           {leading}
-          <span className="font-heading text-sm font-medium uppercase tracking-wide text-foreground">
+          <span className="font-heading text-sm font-medium tracking-[-0.02em] text-foreground">
             {name}
           </span>
         </span>

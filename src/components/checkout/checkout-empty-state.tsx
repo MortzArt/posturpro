@@ -39,7 +39,7 @@ export function CheckoutEmptyState({ browseHref, labels }: CheckoutEmptyStatePro
       <Link
         href={browseHref}
         data-testid="checkout-empty-cta"
-        className={cn(buttonVariants({ variant: "default" }), "cart-press h-11 w-full max-w-xs px-6 text-sm sm:w-auto")}
+        className={cn(buttonVariants({ variant: "cta", size: "xl" }), "cart-press w-full max-w-xs sm:w-auto")}
       >
         {labels.cta}
       </Link>

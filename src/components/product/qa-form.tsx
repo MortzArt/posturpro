@@ -117,7 +117,7 @@ export function QaForm({ productId, slug, maxName, maxQuestion, labels }: QaForm
 
   return (
     <div className="mt-6">
-      <h2 className="mb-3 text-sm font-medium tracking-tight text-foreground">
+      <h2 className="mb-3 text-sm font-medium tracking-[-0.02em] text-foreground">
         {labels.formHeading}
       </h2>
 
@@ -228,7 +228,8 @@ export function QaForm({ productId, slug, maxName, maxQuestion, labels }: QaForm
 
         <Button
           type="submit"
-          size="lg"
+          variant="cta"
+          size="xl"
           disabled={pending}
           data-testid="qa-submit"
           className="min-h-11 px-4 sm:w-auto sm:self-end"
@@ -269,7 +270,7 @@ function SuccessNote({
       role="status"
       tabIndex={-1}
       data-testid="qa-success"
-      className="enter-fade flex items-start gap-3 rounded-md bg-muted/50 p-3 outline-none"
+      className="stat-card enter-fade flex items-start gap-3 p-3 outline-none"
     >
       <HugeiconsIcon
         icon={CheckmarkCircle02Icon}

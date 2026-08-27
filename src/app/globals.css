@@ -26,8 +26,8 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   /* The `font-heading` utility emits `font-family: var(--font-heading-family)`.
    * That runtime var defaults to `--font-sans` (admin, not-found → Inter) and is
-   * overridden to Libre Caslon Text ONLY under `.theme-storefront` (T15) — the
-   * firewall at the font seam (AC-5/AC-12). Not self-referential, so no cycle. */
+   * overridden to DM Sans ONLY under `.theme-storefront` (T20) — the firewall at
+   * the font seam (AC-5/AC-12). Not self-referential, so no cycle. */
   --font-heading: var(--font-heading-family);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -252,9 +252,9 @@
    * `--font-heading-family` resolver to DM Sans ONLY under this scope, so the
    * `font-heading` utility renders DM Sans 700 on the storefront while
    * admin/not-found keep the `:root` default (Inter). The body-face override
-   * lives in theme-storefront.css. Libre Caslon Text no longer renders on the
-   * homepage/shell (AC-4); it stays wired for the shared Hero on /empresas
-   * (Phase B) via `--font-heading-serif`. */
+   * lives in theme-storefront.css. DM Sans is now the single storefront face
+   * across the whole store (T21, Phase B); the legacy Libre Caslon serif was
+   * retired with its font import (Decision D-1). */
   --font-heading-family: var(--font-dm-sans), "Helvetica Neue", Helvetica, Arial,
     sans-serif;
 

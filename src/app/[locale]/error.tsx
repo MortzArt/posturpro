@@ -43,7 +43,7 @@ export default function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
           className="text-destructive"
           aria-hidden
         />
-        <h1 className="font-heading text-xl font-semibold tracking-tight text-foreground">
+        <h1 className="font-heading text-xl font-semibold tracking-[-0.04em] text-foreground sm:font-bold">
           {t("title")}
         </h1>
         <p className="max-w-md text-sm text-muted-foreground">
@@ -51,7 +51,8 @@ export default function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
         </p>
         <Button
           type="button"
-          size="lg"
+          variant="cta"
+          size="xl"
           className="mt-2 min-h-11 px-4"
           data-testid="error-retry"
           onClick={reset}

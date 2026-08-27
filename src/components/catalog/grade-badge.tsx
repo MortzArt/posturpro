@@ -35,7 +35,7 @@ export function GradeBadge({ grade, label, className }: GradeBadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex max-w-[45%] items-center gap-1 truncate rounded-full border border-primary/20 bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground",
+        "inline-flex max-w-[45%] items-center gap-1 truncate rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground",
         className,
       )}
       data-testid="grade-badge"

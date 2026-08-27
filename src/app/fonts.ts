@@ -1,4 +1,4 @@
-import { Inter, Libre_Caslon_Text, DM_Sans } from "next/font/google";
+import { Inter, DM_Sans } from "next/font/google";
 
 /**
  * Body/UI face — SHARED with admin + not-found.tsx. Bound to `--font-sans`,
@@ -12,22 +12,6 @@ import { Inter, Libre_Caslon_Text, DM_Sans } from "next/font/google";
 export const sans = Inter({
   subsets: ["latin", "latin-ext"],
   variable: "--font-sans",
-  display: "swap",
-});
-
-/**
- * Storefront display/heading face — Casa de Azulejo (T15). A broad, warm
- * transitional roman with the brushed-caps character of painted azulejo tile
- * captions and full Latin-Extended-A coverage (inverted marks + tilde-ñ, edge
- * 4). Bound to `--font-heading-serif` and wired to `--font-heading` ONLY under
- * `.theme-storefront` (see globals.css), so admin dialogs keep the sans heading
- * (firewall, AC-5/AC-12). `latin-ext` covers es-MX glyphs; `display: "swap"`.
- */
-export const headingSerif = Libre_Caslon_Text({
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "700"],
-  style: ["normal", "italic"],
-  variable: "--font-heading-serif",
   display: "swap",
 });
 

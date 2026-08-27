@@ -31,7 +31,7 @@ import { CtaBanner } from "@/components/home/cta-banner";
 /**
  * Homepage (T19 rebuild). Client-approved 13-section structure + copy expressed
  * in the site's own design language (brand greens + orange CTAs, shadcn/ui,
- * Libre Caslon Text). Stays a thin server-component composition shell: it reads
+ * DM Sans — Factorial grammar, T20/T21). Stays a thin server-component composition shell: it reads
  * featured products (degrading to `[]` on failure — the catalog section is then
  * omitted, edge 4) and passes pre-resolved strings to each section component.
  *

@@ -49,11 +49,11 @@ export function OrderSummary({
 }: OrderSummaryProps) {
   return (
     <section
-      className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 md:p-5"
+      className="factorial-card flex flex-col gap-4 p-4 md:p-5"
       data-testid="order-summary"
       aria-label={labels.heading}
     >
-      <h2 className="font-heading text-sm font-medium uppercase tracking-wide text-foreground">
+      <h2 className="font-heading text-sm font-medium tracking-[-0.02em] text-foreground">
         {labels.heading}
       </h2>
 
@@ -87,8 +87,8 @@ export function OrderSummary({
         href={checkoutHref}
         data-testid="checkout-cta"
         className={cn(
-          buttonVariants({ variant: "default" }),
-          "cart-press h-11 w-full gap-1.5 text-sm",
+          buttonVariants({ variant: "cta", size: "xl" }),
+          "cart-press w-full",
         )}
       >
         {labels.checkout}

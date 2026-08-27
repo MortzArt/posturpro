@@ -182,7 +182,7 @@ export function FilterPanel({
       {/* JS-off sort control: a native <select> inside the filter form. The
           client toolbar SortSelect is the JS-on enhancement (Open Question 1). */}
       <label className="flex flex-col gap-2">
-        <span className="font-heading text-sm font-semibold uppercase tracking-wide">{labels.sortLabel}</span>
+        <span className="font-heading text-sm font-semibold tracking-[-0.02em]">{labels.sortLabel}</span>
         <select
           name={keys.orden}
           defaultValue={selected.sort}
@@ -199,7 +199,7 @@ export function FilterPanel({
 
       <div className="flex flex-col gap-2">
         {/* Submit is the JS-off apply path; harmless when JS enhances live. */}
-        <Button type="submit" size="lg" className="min-h-11" data-testid="filter-apply">
+        <Button type="submit" variant="cta" size="xl" className="min-h-11" data-testid="filter-apply">
           {labels.apply}
         </Button>
         {hasActiveFilters ? (

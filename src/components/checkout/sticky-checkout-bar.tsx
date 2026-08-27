@@ -39,9 +39,11 @@ export function StickyCheckoutBar({
       </span>
       <Button
         type="submit"
+        variant="cta"
+        size="xl"
         disabled={submitDisabled}
         data-testid="checkout-submit-sticky"
-        className="cart-press h-11 gap-1.5 px-6 text-sm"
+        className="cart-press gap-1.5"
       >
         {pending ? submittingLabel : submitLabel}
         {pending ? null : (

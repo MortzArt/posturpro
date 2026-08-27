@@ -16,7 +16,7 @@ interface ProductSpecsProps {
 export function ProductSpecs({ rows, heading }: ProductSpecsProps) {
   return (
     <section className="mt-10 md:mt-12" data-testid="product-specs">
-      <h2 className="mb-4 font-heading text-sm uppercase tracking-wide text-foreground">
+      <h2 className="mb-4 font-heading text-sm tracking-[-0.02em] text-foreground">
         {heading}
       </h2>
       <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">

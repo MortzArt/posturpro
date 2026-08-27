@@ -134,7 +134,7 @@ export function FilterSheet({ activeCount, labels, children }: FilterSheetProps)
               <FocusScope asChild loop trapped>
                 <div className="flex h-full flex-col">
                   <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-                    <Dialog.Title className="font-heading text-base font-semibold uppercase tracking-wide">
+                    <Dialog.Title className="font-heading text-base font-semibold tracking-[-0.02em]">
                       {labels.title}
                     </Dialog.Title>
                     <Dialog.Close asChild>
@@ -157,7 +157,8 @@ export function FilterSheet({ activeCount, labels, children }: FilterSheetProps)
                   <div className="shrink-0 border-t border-border bg-card/80 p-4 backdrop-blur">
                     <Button
                       type="button"
-                      size="lg"
+                      variant="cta"
+                      size="xl"
                       className="min-h-11 w-full"
                       data-testid="filter-sheet-apply"
                       onClick={() => setOpen(false)}

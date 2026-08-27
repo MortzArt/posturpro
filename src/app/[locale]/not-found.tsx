@@ -15,17 +15,17 @@ export default async function NotFound() {
       <div className="enter-fade flex flex-col items-center gap-3">
         <p
           aria-hidden
-          className="flex size-24 items-center justify-center rounded-md border border-border bg-muted font-heading text-4xl font-semibold tracking-wide text-muted-foreground"
+          className="stat-card flex size-24 items-center justify-center font-heading text-4xl font-semibold tracking-[-0.04em] text-muted-foreground"
         >
           {t("code")}
         </p>
-        <h1 className="font-heading text-xl font-semibold tracking-tight text-foreground">
+        <h1 className="font-heading text-xl font-semibold tracking-[-0.04em] text-foreground sm:font-bold">
           {t("title")}
         </h1>
         <p className="max-w-md text-sm text-muted-foreground">
           {t("description")}
         </p>
-        <Button asChild size="lg" className="mt-2 min-h-11 px-4">
+        <Button asChild variant="cta" size="xl" className="mt-2 min-h-11 px-4">
           <Link href="/" data-testid="not-found-home">
             {t("backHome")}
           </Link>

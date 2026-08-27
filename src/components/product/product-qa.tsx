@@ -42,7 +42,7 @@ export function ProductQa({
 
   return (
     <section className="mt-10 md:mt-12" data-testid="product-qa">
-      <h2 className="mb-4 font-heading text-sm uppercase tracking-wide text-foreground">
+      <h2 className="mb-4 font-heading text-sm tracking-[-0.02em] text-foreground">
         {heading}
       </h2>
 
@@ -86,7 +86,7 @@ function QaItem({
       </p>
       <p className="mt-0.5 text-xs text-muted-foreground">{item.authorName}</p>
       {item.answer ? (
-        <div className="mt-2 rounded-md bg-muted/50 p-3 text-sm/relaxed break-words text-foreground">
+        <div className="stat-card mt-2 p-3 text-sm/relaxed break-words text-foreground">
           <span className="sr-only">{answerPrefix}: </span>
           {item.answer}
         </div>

@@ -42,8 +42,8 @@ export function CartEmptyState({ browseHref, labels }: CartEmptyStateProps) {
         href={browseHref}
         data-testid="cart-empty-cta"
         className={cn(
-          buttonVariants({ variant: "default" }),
-          "cart-press h-11 w-full max-w-xs px-6 text-sm sm:w-auto",
+          buttonVariants({ variant: "cta", size: "xl" }),
+          "cart-press w-full max-w-xs sm:w-auto",
         )}
       >
         {labels.cta}

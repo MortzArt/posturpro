@@ -86,7 +86,7 @@ export function RecentlyViewed({
 
   return (
     <section className="mt-10 md:mt-12" data-testid="recently-viewed">
-      <h2 className="mb-4 font-heading text-sm uppercase tracking-wide text-foreground">
+      <h2 className="mb-4 font-heading text-sm tracking-[-0.02em] text-foreground">
         {heading}
       </h2>
       <ul className="flex snap-x gap-4 overflow-x-auto pb-2 sm:grid sm:grid-cols-3 sm:gap-x-4 sm:gap-y-8 sm:overflow-visible lg:grid-cols-4">

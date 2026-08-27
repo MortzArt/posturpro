@@ -46,17 +46,16 @@ export function Hero({
   return (
     <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-12">
       <div className="enter-fade order-1 flex max-w-xl flex-col gap-4">
-        <h1 className="text-balance font-heading text-4xl font-bold tracking-tight text-primary sm:text-5xl lg:text-6xl">
+        <h1 className="text-balance font-heading text-4xl font-bold leading-[1.05] tracking-[-0.04em] text-foreground sm:text-5xl lg:text-6xl">
           {headline}
         </h1>
-        <p className="max-w-prose text-sm leading-relaxed text-muted-foreground sm:text-base">
+        <p className="max-w-prose text-base leading-relaxed text-muted-foreground">
           {subcopy}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-4">
-          {/* Primary CTA is orange (T19 AC-13: every primary CTA across the
-              storefront — incl. the B2B page, this Hero's sole consumer — uses
-              the --cta orange token, not the green default). */}
-          <Button asChild variant="cta" size="lg" className="min-h-11 px-4">
+          {/* Primary CTA is the orange Factorial pill (AC-EMP-2: matches the
+              homepage hero grammar — --cta orange token, xl pill, not green). */}
+          <Button asChild variant="cta" size="xl">
             <Link href={ctaHref} data-testid="hero-cta-catalog">
               {ctaLabel}
             </Link>
@@ -93,32 +92,39 @@ function HeroMedia({
   imageAlt: string;
   fallbackIcon: IconSvgElement;
 }) {
+  // Whisper-green tint canvas holding a white floating media card (Factorial
+  // grammar, matching HomeHero). The inner card keeps `aspect-[4/3]` on BOTH
+  // the image and the fallback tile (hero.test.tsx pins).
   if (imageUrl) {
     return (
-      <span className="relative order-2 block aspect-[4/3] w-full overflow-hidden rounded-md border border-primary/30 bg-muted shadow-sm">
-        <Image
-          src={imageUrl}
-          alt={imageAlt}
-          fill
-          priority
-          sizes="(min-width: 1024px) 50vw, 100vw"
-          className="object-cover"
-        />
-      </span>
+      <div className="order-2 rounded-lg bg-[var(--tint-green)] p-4 sm:p-6">
+        <span className="factorial-card relative block aspect-[4/3] w-full overflow-hidden rounded-md">
+          <Image
+            src={imageUrl}
+            alt={imageAlt}
+            fill
+            priority
+            sizes="(min-width: 1024px) 50vw, 100vw"
+            className="object-cover"
+          />
+        </span>
+      </div>
     );
   }
   return (
-    <span
-      aria-hidden
-      data-testid="hero-image-fallback"
-      className="order-2 flex aspect-[4/3] w-full items-center justify-center rounded-md border border-primary/30 bg-muted"
-    >
-      <HugeiconsIcon
-        icon={fallbackIcon}
-        size={72}
-        strokeWidth={1.5}
-        className="text-muted-foreground/40"
-      />
-    </span>
+    <div className="order-2 rounded-lg bg-[var(--tint-green)] p-4 sm:p-6">
+      <span
+        aria-hidden
+        data-testid="hero-image-fallback"
+        className="factorial-card flex aspect-[4/3] w-full items-center justify-center rounded-md"
+      >
+        <HugeiconsIcon
+          icon={fallbackIcon}
+          size={72}
+          strokeWidth={1.5}
+          className="text-muted-foreground/40"
+        />
+      </span>
+    </div>
   );
 }

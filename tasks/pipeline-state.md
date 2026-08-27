@@ -1,9 +1,10 @@
 # Pipeline State
 Task: T21 — Storefront restyle Phase B: Factorial grammar across the remaining storefront
 Tier: standard
-Stage: 2 (Dev — UI Design skipped; T20 ui-design.md is the design authority, interior decisions resolved in ticket)
-Agent: ultradev
+Stage: 3 (ReviewFix)
+Agent: ultrareviewfix
 Last Updated: 2026-08-27
+S2/Dev COMPLETE (tasks/dev-done.md): 57 files (56 source + DESIGN.md), class-only, zero new tokens/deps. Shared leaves restyled centrally (product-card, index-tile, category-tree, Hero, b2b-sections, static-page-body, brand-logo, grade-badge); catalog-chrome/PDP/cart/checkout/static-error parallelized across 5 sub-agents w/ non-overlapping file sets. D-1 done: headingSerif/Libre Caslon fully retired (0 refs). All landmines respected: discount input uppercase kept, 15 eyebrow uppercase sites removed, hero.test.tsx pins kept, semantic status cards keep tint+border, admin 0 files touched, root not-found/global-error untouched. Gates: tsc 0, eslint 0, vitest 2187/2187 (134 files), build 133/133, css-line-count green (globals 322 / theme-storefront 75). Screenshots: scratchpad/t21-preview/ (16 PNGs desktop+mobile).
 Notes: Owner APPROVED T20 Phase A homepage 2026-08-27 → Phase B unlocked. Scope: catalog/search/PDP/cart/checkout/empresas/static/404 restyled to T20 grammar; admin firewall untouched; content/copy/data unchanged; shared components (product-card, index-tile, Hero, QuoteForm, static-page-body) restyled deliberately/centrally. Key inputs: tasks/reference/factorial-style-analysis.md, T20 spec in tasks/ui-design.md (753 lines), DESIGN.md T20 amendment.
 S1 COMPLETE (tasks/next-ticket.md + research-report.md): Complexity=MEDIUM, feature-type=ui-only. All primitives already exist from T20 (.factorial-card/.stat-card/.pill-outline/pill Button cta+xl/--tint-green/--shadow-factorial/--radius:1rem/DM Sans) — Phase B APPLIES them, doesn't build. ~35-45 files, all class-only edits (no line-count risk, no deps, no migration). Ticket: 10 global AC + per-surface AC blocks (CAT/PDP/CART/CHK/EMP/STATIC/ERR); 8 edges; error-states table; test-impact table.
 KEY DECISIONS resolved in ticket: D-1 RETIRE headingSerif (Libre Caslon dead since T20 rebind; remove from fonts.ts+layout.tsx+globals comments; zero-risk fallback = leave exported-unwired); D-2 KEEP interior rhythm py-8 md:py-10 (NOT homepage 112px band); D-3 gradient moments stay homepage-only; D-4 badges/progress stay rounded-full; D-5 discount Apply is NOT orange (secondary).

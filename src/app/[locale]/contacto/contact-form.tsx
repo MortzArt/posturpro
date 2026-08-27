@@ -247,7 +247,8 @@ export function ContactForm({ labels, maxLengths }: ContactFormProps) {
 
         <Button
           type="submit"
-          size="lg"
+          variant="cta"
+          size="xl"
           disabled={pending}
           data-testid="contact-submit"
           className="min-h-11 px-4 sm:w-auto sm:self-start"

@@ -41,6 +41,22 @@
 > T20 preserves verbatim; read every T19 "tinted glaze / serif heading" reference
 > as superseded by this Factorial grammar for the homepage + shell.
 
+> **T21 AMENDMENT (2026-08-27) — Factorial grammar rolled store-wide (Phase B).**
+> The owner approved Phase A; T21 applied the SAME T20 grammar (no new tokens or
+> recipes) to every remaining storefront surface — catalog + taxonomy, filters/
+> search, PDP, cart, checkout + confirmation, /empresas + the shared `Hero`,
+> static/policy/contact/showroom pages, and the in-shell 404/error pages. Class-
+> only edits: `.factorial-card` / `.stat-card` for card finish, orange `cta`/`xl`
+> pills for primary CTAs (`.pill-outline` secondaries), `-0.04em`/`-0.02em`
+> heading tightness, and sentence case (all `uppercase` eyebrows removed except
+> the functional discount-code input value). Semantic status cards
+> (destructive/warning/success) KEEP their tint+border — signal, not chrome. The
+> interior rhythm stays tighter than the homepage band family (Decision D-2).
+> `headingSerif` (Libre Caslon Text) was RETIRED (Decision D-1): removed from
+> `fonts.ts` + `[locale]/layout.tsx` and its stale comments cleaned from
+> `globals.css` — DM Sans is now the single storefront face store-wide. The admin
+> firewall is unchanged (no admin file touched; Inter + `rounded-md` hold).
+
 > **T19 AMENDMENT (2026-08-27) — palette supersedes this document's color story.**
 > The client delivered official brand logos; the owner mandated their palette
 > site-wide. The cobalt color system described below is **decommissioned** and

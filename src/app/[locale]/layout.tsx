@@ -6,7 +6,7 @@ import { routing } from "@/i18n/routing";
 import { getStoreSettingsStatic } from "@/lib/store-settings";
 import { SEED_STORE_NAME } from "@/lib/config";
 import { getSiteUrl } from "@/lib/seo/site-url";
-import { sans, headingSerif, dmSans } from "@/app/fonts";
+import { sans, dmSans } from "@/app/fonts";
 import { DirectionContract } from "@/components/layout/direction-contract";
 import { SiteTopbar } from "@/components/layout/site-topbar";
 import { SiteHeader } from "@/components/layout/site-header";
@@ -106,7 +106,6 @@ export default async function LocaleLayout({
       className={cn(
         "h-full",
         sans.variable,
-        headingSerif.variable,
         dmSans.variable,
       )}
     >

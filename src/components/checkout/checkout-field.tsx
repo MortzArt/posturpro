@@ -110,8 +110,8 @@ export function CheckoutCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 md:p-5">
-      <h2 className="font-heading text-sm font-medium uppercase tracking-wide text-foreground">
+    <section className="factorial-card flex flex-col gap-4 p-4 md:p-5">
+      <h2 className="font-heading text-sm font-medium tracking-[-0.02em] text-foreground">
         {heading}
       </h2>
       {children}

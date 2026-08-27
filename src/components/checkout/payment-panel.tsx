@@ -189,7 +189,7 @@ function Card({ children, testId, extra }: { children: React.ReactNode; testId: 
   return (
     <div
       data-testid={testId}
-      className={cn("enter-fade mt-6 rounded-lg border border-border bg-card p-4 md:p-5", extra)}
+      className={cn("factorial-card enter-fade mt-6 p-4 md:p-5", extra)}
     >
       {children}
     </div>
@@ -257,7 +257,7 @@ function FailedCard({
   const title = reason === "expired" ? labels.expiredTitle : labels.failedTitle;
   const body = reason === "expired" ? labels.expiredBody : labels.failedBody;
   return (
-    <Card testId="payment-panel-failed" extra="border-destructive/30 bg-destructive/5">
+    <Card testId="payment-panel-failed" extra="border border-destructive/30 bg-destructive/5">
       <div className="flex flex-col gap-4" aria-busy={pending} role="alert" data-failure-reason={reason}>
         <div className="flex items-start gap-2 text-sm text-destructive">
           <HugeiconsIcon icon={Alert02Icon} size={18} strokeWidth={2} aria-hidden className="mt-0.5 shrink-0" />
@@ -287,7 +287,7 @@ function UnavailableCard({
   retryLabel: string;
 }) {
   return (
-    <Card testId="payment-panel-unavailable" extra="border-warning/30 bg-warning/10">
+    <Card testId="payment-panel-unavailable" extra="border border-warning/30 bg-warning/10">
       <div className="flex flex-col gap-4" aria-busy={pending} role="alert">
         <div className="flex items-start gap-2 text-sm text-foreground">
           <span className="mt-0.5 shrink-0 text-warning" aria-hidden>
@@ -308,7 +308,7 @@ function UnavailableCard({
  */
 function StaleCard({ labels }: { labels: PaymentPanelLabels }) {
   return (
-    <Card testId="payment-panel-stale" extra="border-warning/30 bg-warning/10">
+    <Card testId="payment-panel-stale" extra="border border-warning/30 bg-warning/10">
       <div className="flex flex-col gap-4" role="status">
         <div className="flex items-start gap-2 text-sm text-foreground">
           <span className="mt-0.5 shrink-0 text-warning" aria-hidden>
@@ -346,7 +346,7 @@ function ProcessingCard({
   onRetry: () => void;
 }) {
   return (
-    <Card testId="payment-panel-processing" extra="border-warning/30 bg-warning/10">
+    <Card testId="payment-panel-processing" extra="border border-warning/30 bg-warning/10">
       <div className="flex flex-col gap-3" role="status">
         <div className="flex items-start gap-2 text-sm text-foreground">
           <span className="mt-0.5 shrink-0 text-warning" aria-hidden>
@@ -428,11 +428,11 @@ function PayButton({
       disabled={pending}
       data-testid={testId}
       className={cn(
-        buttonVariants({ variant: "default" }),
+        buttonVariants({ variant: "cta", size: "xl" }),
         // `sm:self-start` lets `sm:w-auto` win over the parent flex-col's default
         // `align-items: stretch` — full-width thumb target on mobile, sized-to-
         // content on ≥sm (matches the checkout/"Seguir comprando" CTA proportions).
-        "cart-press h-11 w-full gap-1.5 px-6 text-sm sm:w-auto sm:min-w-56 sm:self-start",
+        "cart-press w-full gap-1.5 sm:w-auto sm:min-w-56 sm:self-start",
       )}
     >
       {label}
@@ -460,8 +460,8 @@ function RetryButton({
       disabled={pending}
       data-testid={testId}
       className={cn(
-        buttonVariants({ variant: "default" }),
-        "cart-press h-11 w-full gap-1.5 px-6 text-sm sm:w-auto sm:min-w-56 sm:self-start",
+        buttonVariants({ variant: "cta", size: "xl" }),
+        "cart-press w-full gap-1.5 sm:w-auto sm:min-w-56 sm:self-start",
       )}
     >
       <HugeiconsIcon icon={Refresh01Icon} size={16} strokeWidth={2} aria-hidden />

@@ -90,7 +90,8 @@ export function AddToCartButton({
     <>
       <Button
         type="button"
-        variant="default"
+        variant="cta"
+        size="xl"
         data-testid="add-to-cart-button"
         data-state={confirming ? "confirming" : "idle"}
         onClick={handleClick}

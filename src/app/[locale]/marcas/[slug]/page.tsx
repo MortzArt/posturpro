@@ -101,7 +101,7 @@ export default async function BrandPage({
             logoAlt={t("brand.logoAlt", { brand: brand.name })}
             size="lg"
           />
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
+          <h1 className="font-heading text-xl font-semibold tracking-[-0.04em] sm:text-2xl sm:font-bold">
             {brand.name}
           </h1>
         </div>

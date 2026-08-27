@@ -48,7 +48,7 @@ export default async function StylesIndexPage({ params }: StylesIndexProps) {
         ]}
       />
       <header className="mb-6 mt-2 flex flex-col gap-2 md:mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+        <h1 className="font-heading text-2xl font-semibold tracking-[-0.04em] sm:text-3xl sm:font-bold">
           {t("styles.title")}
         </h1>
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground sm:text-base">

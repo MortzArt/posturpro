@@ -24,7 +24,7 @@ interface CatalogBannerProps {
 
 export function CatalogBanner({ imageUrl, imageAlt }: CatalogBannerProps) {
   return (
-    <div className="enter-fade relative mb-6 aspect-[42/9] w-full overflow-hidden rounded-md border border-primary/30 bg-muted shadow-sm md:mb-8">
+    <div className="enter-fade relative mb-6 aspect-[42/9] w-full overflow-hidden rounded-md bg-muted shadow-sm md:mb-8">
       {imageUrl ? (
         <Image
           src={imageUrl}

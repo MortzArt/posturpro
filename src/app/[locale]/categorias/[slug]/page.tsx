@@ -127,7 +127,7 @@ export default async function CategoryPage({
         items={crumbs}
       />
       <header className="mb-6 mt-2 flex flex-col gap-2 md:mb-8">
-        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
+        <h1 className="font-heading text-xl font-semibold tracking-[-0.04em] sm:text-2xl sm:font-bold">
           {category.name}
         </h1>
         {category.description ? (

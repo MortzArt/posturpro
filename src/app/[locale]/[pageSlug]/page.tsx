@@ -86,7 +86,7 @@ export default async function StaticPage({ params }: StaticPageProps) {
         items={[{ label: t("breadcrumb.home"), href: "/" }, { label: page.title }]}
       />
       <header className="mb-6 mt-2 md:mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+        <h1 className="font-heading text-2xl font-semibold tracking-[-0.04em] sm:text-3xl sm:font-bold">
           {page.title}
         </h1>
       </header>

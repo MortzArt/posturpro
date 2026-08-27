@@ -124,9 +124,9 @@ export function OxxoSpeiInstructions({
           aria-label={labels.viewVoucherAria}
           data-testid="payment-voucher-link"
           className={cn(
-            buttonVariants({ variant: "default" }),
+            buttonVariants({ variant: "cta", size: "xl" }),
             // `sm:self-start` lets `sm:w-auto` win over the card's flex-col stretch.
-            "cart-press h-11 w-full gap-1.5 text-sm sm:w-auto sm:min-w-56 sm:self-start",
+            "cart-press w-full gap-1.5 sm:w-auto sm:min-w-56 sm:self-start",
           )}
         >
           {labels.viewVoucher}

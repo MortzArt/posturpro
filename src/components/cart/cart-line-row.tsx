@@ -110,7 +110,7 @@ export function CartLineRow({
           <div className="min-w-0">
             <Link
               href={productPath(line.slug)}
-              className="line-clamp-2 rounded-sm text-sm font-medium tracking-tight text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="line-clamp-2 rounded-sm text-sm font-medium tracking-[-0.02em] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
               data-testid="cart-line-name"
             >
               {line.name}

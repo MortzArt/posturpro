@@ -105,7 +105,7 @@ export function DiscountCodeField({
           onClick={onApply}
           disabled={applyDisabled}
           data-testid="checkout-discount-apply"
-          className="cart-step-press inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-border bg-background px-4 text-sm font-medium text-foreground outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-60"
+          className="pill-outline cart-step-press inline-flex min-h-11 shrink-0 items-center justify-center px-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-60"
         >
           {checking ? labels.checking : labels.apply}
         </button>

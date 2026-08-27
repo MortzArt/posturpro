@@ -234,7 +234,7 @@ export default async function B2BPage({ params }: B2BPageProps) {
         id="cotizacion"
         className="mx-auto max-w-(--breakpoint-xl) scroll-mt-24 px-4 py-8 md:px-6 md:py-10 lg:px-8"
       >
-        <h2 className="font-heading text-2xl font-bold tracking-wide text-foreground sm:text-3xl">
+        <h2 className="font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:text-[2rem]">
           {t("form.heading")}
         </h2>
         <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground sm:text-base">

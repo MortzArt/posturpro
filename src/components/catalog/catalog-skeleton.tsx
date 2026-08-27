@@ -11,8 +11,8 @@ import { PRODUCTS_PER_PAGE } from "@/lib/config";
 /** A single skeleton card (image box + two text bars). */
 function SkeletonCard() {
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-card">
-      <div className="m-2 aspect-[4/5] rounded-md border border-primary/30 bg-muted motion-safe:animate-pulse" />
+    <div className="factorial-card overflow-hidden">
+      <div className="m-2 aspect-[4/5] rounded-md bg-muted motion-safe:animate-pulse" />
       <div className="flex flex-col gap-2 p-3 md:p-4">
         <div className="h-3 w-1/3 rounded bg-muted motion-safe:animate-pulse" />
         <div className="h-4 w-2/3 rounded bg-muted motion-safe:animate-pulse" />

@@ -80,7 +80,7 @@ export default async function ConfirmationPage({ params, searchParams }: Confirm
         >
           <HugeiconsIcon icon={CheckmarkCircle02Icon} size={48} strokeWidth={1.5} />
         </span>
-        <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground" data-testid="confirmation-heading">
+        <h1 className="font-heading text-2xl font-semibold tracking-[-0.04em] text-foreground" data-testid="confirmation-heading">
           {isPaidHero ? t("confirmation.paidTitle") : t("confirmation.receivedTitle")}
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -108,7 +108,7 @@ export default async function ConfirmationPage({ params, searchParams }: Confirm
         <Link
           href={CATALOG_PATH}
           data-testid="confirmation-keep-shopping"
-          className={cn(buttonVariants({ variant: "secondary" }), "cart-press h-11 gap-1.5 px-6 text-sm")}
+          className={cn(buttonVariants({ variant: "outline", size: "xl" }), "pill-outline cart-press gap-1.5")}
         >
           {t("confirmation.keepShopping")}
           <HugeiconsIcon icon={ArrowRight01Icon} size={16} strokeWidth={2} aria-hidden />
@@ -156,8 +156,8 @@ function summaryLabels(t: Translator): SummaryLabels {
 
 function OrderSummaryCard({ order, labels }: { order: OrderView; labels: SummaryLabels }) {
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 md:p-5" data-testid="confirmation-summary">
-      <h2 className="font-heading text-sm font-medium uppercase tracking-wide text-foreground">
+    <section className="factorial-card flex flex-col gap-3 p-4 md:p-5" data-testid="confirmation-summary">
+      <h2 className="font-heading text-sm font-medium tracking-[-0.02em] text-foreground">
         {labels.heading}
       </h2>
       <ul className="flex flex-col gap-2 text-sm">
@@ -220,8 +220,8 @@ function shippingLabels(t: Translator): ShippingLabels {
 
 function ShippingCard({ order, labels }: { order: OrderView; labels: ShippingLabels }) {
   return (
-    <section className="flex flex-col gap-1 rounded-lg border border-border bg-card p-4 text-sm md:p-5" data-testid="confirmation-shipping">
-      <h2 className="mb-2 font-heading text-sm font-medium uppercase tracking-wide text-foreground">
+    <section className="factorial-card flex flex-col gap-1 p-4 text-sm md:p-5" data-testid="confirmation-shipping">
+      <h2 className="mb-2 font-heading text-sm font-medium tracking-[-0.02em] text-foreground">
         {labels.heading}
       </h2>
       <p className="break-words font-medium text-foreground">{order.shippingFullName}</p>

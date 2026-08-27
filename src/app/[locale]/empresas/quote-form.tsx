@@ -318,10 +318,10 @@ export function QuoteForm({ labels, maxLengths }: QuoteFormProps) {
         <Button
           type="submit"
           variant="cta"
-          size="lg"
+          size="xl"
           disabled={pending}
           data-testid="quote-submit"
-          className="min-h-11 px-4 sm:w-auto sm:self-start"
+          className="sm:w-auto sm:self-start"
         >
           {pending
             ? labels.submitting

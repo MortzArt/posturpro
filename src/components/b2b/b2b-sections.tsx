@@ -3,8 +3,8 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 /**
  * B2BPillars + B2BProcess (T16 §2/§3) — two small, pure presentational SERVER
  * components for the `/empresas` value spine. Both render a labeled tile grid in
- * the Casa de Azulejo grammar (grout-seam `border-border` tiles on `bg-card`,
- * roman-caps titles, `.enter-fade` mount + `.stagger` tile cascade). Grouped in
+ * the Factorial grammar (floating white `.factorial-card` tiles, sentence-case
+ * titles, `.enter-fade` mount + `.stagger` tile cascade). Grouped in
  * one file because they share the same tile grammar and neither is large (SRP:
  * "render a labeled tile grid"). Strings + icons are pre-resolved by the RSC and
  * passed in (pre-resolved-labels discipline — no client JS, no i18n hook).
@@ -42,7 +42,7 @@ interface B2BPillarsProps {
 export function B2BPillars({ heading, items }: B2BPillarsProps) {
   return (
     <div className="enter-fade" data-testid="b2b-pillars">
-      <h2 className="mb-6 font-heading text-2xl font-bold tracking-wide text-foreground sm:mb-8 sm:text-3xl">
+      <h2 className="mb-6 font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:mb-8 sm:text-[2rem]">
         {heading}
       </h2>
       <ul className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:gap-6">
@@ -51,15 +51,15 @@ export function B2BPillars({ heading, items }: B2BPillarsProps) {
             key={item.title}
             style={staggerStyle(index)}
             data-testid="b2b-pillar-tile"
-            className="stagger flex flex-col gap-3 rounded-md border border-border bg-card p-5"
+            className="stagger factorial-card flex flex-col gap-3 p-5"
           >
             <span
               aria-hidden
-              className="flex size-10 items-center justify-center rounded-md bg-secondary text-primary"
+              className="flex size-10 items-center justify-center rounded-md bg-[var(--tint-green)] text-primary"
             >
               <HugeiconsIcon icon={item.icon} size={24} strokeWidth={1.8} />
             </span>
-            <h3 className="font-heading text-lg font-semibold tracking-tight text-foreground sm:text-xl">
+            <h3 className="font-heading text-lg font-semibold tracking-[-0.02em] text-foreground sm:text-xl">
               {item.title}
             </h3>
             <p className="text-sm leading-relaxed text-muted-foreground">
@@ -89,7 +89,7 @@ interface B2BProcessProps {
 export function B2BProcess({ heading, id, steps }: B2BProcessProps) {
   return (
     <div id={id} className="enter-fade scroll-mt-24" data-testid="b2b-process">
-      <h2 className="mb-6 font-heading text-2xl font-bold tracking-wide text-foreground sm:mb-8 sm:text-3xl">
+      <h2 className="mb-6 font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:mb-8 sm:text-[2rem]">
         {heading}
       </h2>
       <ol className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:gap-6">
@@ -98,7 +98,7 @@ export function B2BProcess({ heading, id, steps }: B2BProcessProps) {
             key={step.title}
             style={staggerStyle(index)}
             data-testid="b2b-process-step"
-            className="stagger flex flex-col gap-3 rounded-md border border-border bg-card p-5"
+            className="stagger factorial-card flex flex-col gap-3 p-5"
           >
             <span
               aria-hidden
@@ -106,7 +106,7 @@ export function B2BProcess({ heading, id, steps }: B2BProcessProps) {
             >
               {index + 1}
             </span>
-            <h3 className="font-heading text-lg font-semibold tracking-tight text-foreground sm:text-xl">
+            <h3 className="font-heading text-lg font-semibold tracking-[-0.02em] text-foreground sm:text-xl">
               {step.title}
             </h3>
             <p className="text-sm leading-relaxed text-muted-foreground">
