@@ -265,3 +265,80 @@ describe("PaymentPanel — pay action + redirect handoff", () => {
     await waitFor(() => expect(assignSpy).toHaveBeenCalledWith("https://mp/ok"));
   });
 });
+
+/**
+ * T21 Phase B — semantic-vs-chrome card grammar (AC-5 / edge 6; C-1 regression).
+ *
+ * The Factorial restyle turned the neutral payment shell into `.factorial-card`,
+ * whose recipe is `border: 0` and — critically — is UNLAYERED, so it beats a
+ * Tailwind `border` utility (which sits in the `utilities` @layer) regardless of
+ * specificity. That silently collapsed the destructive/warning borders on the
+ * four semantic status cards to 0px (C-1, invisible to tsc/eslint/unit/build).
+ *
+ * The fix gave `Card` a `semantic` flag: neutral cards keep `.factorial-card`;
+ * semantic cards render `rounded-[var(--radius)]` INSTEAD, so no unlayered rule
+ * fights the caller's Tailwind `border` + tint. These tests lock that contract
+ * at the class level so the seam can never silently regress:
+ *   - a semantic card must NOT carry `.factorial-card` (or the border dies), and
+ *     MUST carry the tint + `border` utility classes (the signal).
+ *   - a neutral (chrome) card MUST carry `.factorial-card` (floating white).
+ * The real computed-style ≥1px proof lives in the e2e grammar spec (only a
+ * browser resolves the cascade); this is the fast, always-run guard.
+ */
+describe("PaymentPanel — semantic vs chrome card grammar (AC-5 / edge 6, C-1)", () => {
+  it("failed (destructive): keeps a real border + tint and does NOT use .factorial-card", () => {
+    renderPanel({ kind: "failed", reason: "declined" });
+    const card = screen.getByTestId("payment-panel-failed");
+    // .factorial-card (border:0, unlayered) would suppress the border — it must
+    // be ABSENT on a semantic card, or C-1 silently returns.
+    expect(card.className).not.toContain("factorial-card");
+    // The signal: a Tailwind border utility + the destructive tint survive.
+    expect(card.className).toContain("border");
+    expect(card.className).toContain("border-destructive/30");
+    expect(card.className).toContain("bg-destructive/5");
+    // Factorial radius is still preserved via the token utility.
+    expect(card.className).toContain("rounded-[var(--radius)]");
+  });
+
+  it.each([
+    { testId: "payment-panel-unavailable", tintClass: "bg-warning/10" },
+    { testId: "payment-panel-processing", tintClass: "bg-warning/10" },
+    { testId: "payment-panel-stale", tintClass: "bg-warning/10" },
+  ] as const)(
+    "warning card $testId keeps border+tint and drops .factorial-card",
+    async ({ testId, tintClass }) => {
+      // Drive each warning state: unavailable + stale come from action results;
+      // processing is a DB-derived state.
+      if (testId === "payment-panel-processing") {
+        renderPanel({ kind: "processing" });
+      } else {
+        createPaymentPreference.mockResolvedValue({
+          status: testId === "payment-panel-stale" ? "not-payable" : "unavailable",
+        });
+        renderPanel({ kind: "unpaid" });
+        fireEvent.click(screen.getByTestId("payment-pay-now"));
+        await waitFor(() => expect(screen.getByTestId(testId)).toBeInTheDocument());
+      }
+      const card = screen.getByTestId(testId);
+      expect(card.className).not.toContain("factorial-card");
+      expect(card.className).toContain("border");
+      expect(card.className).toContain("border-warning/30");
+      expect(card.className).toContain(tintClass);
+      expect(card.className).toContain("rounded-[var(--radius)]");
+    },
+  );
+
+  it("neutral chrome cards (unpaid, paid) DO use .factorial-card (floating white)", () => {
+    renderPanel({ kind: "unpaid" });
+    expect(screen.getByTestId("payment-panel-unpaid").className).toContain(
+      "factorial-card",
+    );
+    cleanup();
+    renderPanel({ kind: "paid", method: "card", refunded: false });
+    const paid = screen.getByTestId("payment-panel-paid");
+    expect(paid.className).toContain("factorial-card");
+    // A neutral card must NOT carry a semantic border/tint (it is chrome).
+    expect(paid.className).not.toContain("border-destructive");
+    expect(paid.className).not.toContain("border-warning");
+  });
+});
