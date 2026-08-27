@@ -1,10 +1,14 @@
 # Pipeline State
 Task: T21 — Storefront restyle Phase B: Factorial grammar across the remaining storefront
 Tier: standard
-Stage: 1 (PlanResearch)
-Agent: ultraplanner-research
+Stage: 2 (Dev — UI Design skipped; T20 ui-design.md is the design authority, interior decisions resolved in ticket)
+Agent: ultradev
 Last Updated: 2026-08-27
-Notes: Owner APPROVED T20 Phase A homepage 2026-08-27 → Phase B unlocked. Scope: catalog/search/PDP/cart/checkout/empresas/static/404 restyled to T20 grammar; admin firewall untouched; content/copy/data unchanged; shared components (product-card, section-header, QuoteForm) restyled deliberately. Key inputs: tasks/reference/factorial-style-analysis.md, T20 spec in tasks/ui-design.md (753 lines), DESIGN.md T20 amendment, T20 archive below (risks: font scoping seam, css-line-count cap, /empresas hero aspect-[4/3] style-pinning test, headingSerif kept for Phase B /empresas decision).
+Notes: Owner APPROVED T20 Phase A homepage 2026-08-27 → Phase B unlocked. Scope: catalog/search/PDP/cart/checkout/empresas/static/404 restyled to T20 grammar; admin firewall untouched; content/copy/data unchanged; shared components (product-card, index-tile, Hero, QuoteForm, static-page-body) restyled deliberately/centrally. Key inputs: tasks/reference/factorial-style-analysis.md, T20 spec in tasks/ui-design.md (753 lines), DESIGN.md T20 amendment.
+S1 COMPLETE (tasks/next-ticket.md + research-report.md): Complexity=MEDIUM, feature-type=ui-only. All primitives already exist from T20 (.factorial-card/.stat-card/.pill-outline/pill Button cta+xl/--tint-green/--shadow-factorial/--radius:1rem/DM Sans) — Phase B APPLIES them, doesn't build. ~35-45 files, all class-only edits (no line-count risk, no deps, no migration). Ticket: 10 global AC + per-surface AC blocks (CAT/PDP/CART/CHK/EMP/STATIC/ERR); 8 edges; error-states table; test-impact table.
+KEY DECISIONS resolved in ticket: D-1 RETIRE headingSerif (Libre Caslon dead since T20 rebind; remove from fonts.ts+layout.tsx+globals comments; zero-risk fallback = leave exported-unwired); D-2 KEEP interior rhythm py-8 md:py-10 (NOT homepage 112px band); D-3 gradient moments stay homepage-only; D-4 badges/progress stay rounded-full; D-5 discount Apply is NOT orange (secondary).
+LANDMINES for Dev: (1) discount-code-field.tsx:101 uppercase is on the INPUT VALUE (functional) — KEEP it; AC-3 removes uppercase only at 15 eyebrow/heading sites (list in ticket). (2) hero.test.tsx pins aspect-[4/3]+hero-image-fallback+.enter-fade on shared Hero (/empresas only) — keep pins, only type/CTA/canvas classes change. (3) catalog.spec.ts pins 2-col grid @375px — column count frozen. (4) product-detail.spec.ts pins compare-at strikethrough; empresas-quote/static-pages-contact pin honeypot left-offset — all frozen. (5) factorial-restyle.spec.ts already has a 6-page inheritance smoke (must stay green; QA EXTENDS it). (6) theme-firewall.spec.ts admin checks must stay green (no admin file touched). (7) SEMANTIC status cards (destructive/warning/success) KEEP tint+border — only neutral chrome → .factorial-card. (8) src/app/not-found.tsx (root) + global-error.tsx = deliberately un-themed, DO NOT touch.
+HIGHEST-LEVERAGE FILE: src/components/catalog/product-card.tsx (5+ consumers: catalog/taxonomy/search/home-featured/recently-viewed) — restyle once. Pattern source = the DONE T20 homepage (home-hero→Hero, values-impact→b2b-sections, section-header→taxonomy links).
 
 === T20 archive ===
 Task: T20 — Storefront restyle: Factorial design language, Phase A homepage (owner approval gate)

@@ -1,171 +1,226 @@
-# Task: T20 — Storefront restyle in the Factorial design language (Phase A: homepage + shared shell)
+# Task: T21 — Storefront restyle Phase B: Factorial grammar across the remaining storefront
 
 ## Priority
 
-**High** — Owner-requested (recorded 2026-08-27), blocks the Phase B whole-storefront rollout, and gates on owner approval. Not Critical: the storefront is already shipped and functional (T19); this is a presentation upgrade, not a defect fix or launch blocker. But it is the owner's active priority and the single next deliverable, so High.
+**High** — T20 (Phase A) shipped and the owner explicitly approved the homepage + shell on 2026-08-27, unlocking Phase B. The rest of the storefront (catalog, PDP, cart, checkout, /empresas, static pages, error pages) still renders the old "Casa de Azulejo" page-level grammar (serif-era `uppercase tracking-wide` headings, `rounded-md border` info cards, green default buttons) inside the new Factorial shell — a visible inconsistency between the homepage and every deeper page. This is the last task before the storefront reads as one coherent design language. Not launch-blocking (the site works), but it is the highest-value open item and directly owner-requested.
 
 ## Complexity
 
 **medium** — justified against the criteria:
 
-- NOT low: it touches **well more than 5 files** (globals.css tokens + fonts.ts + locale layout + Button primitive + 12 homepage section components + 6 shell components ≈ 20–24 files), and introduces **new design primitives** that don't exist today — a DM Sans wiring, a pill-button grammar, a Factorial radius-16 + layered-triple-shadow card spec, an oversized naked-stat treatment, and hairline FAQ rows.
-- NOT high: **no new data models, no new API endpoints, no new integrations, no architectural change, no backend.** Content, copy, i18n, data wiring, SEO/JSON-LD, calculator logic, and the T16 quote embed are all **frozen** (T19). The token-firewall architecture already exists (`.theme-storefront` scope + `--font-heading-family` resolver) and is reused, not rebuilt. Every storefront color already flows through a token utility, so the color-role remap is a scoped token-block edit, not a per-component color sweep.
+- **Breadth is high (many pages)** but every page follows the SAME small set of transforms, and the *grammar already exists*: T20 created `.factorial-card`, `.stat-card`, `.pill-outline`, the `--gradient-*`/`--shadow-factorial` tokens, the `--radius: 1rem` bump, the DM Sans wiring, and the pill `Button` variants. Phase B is applying that vocabulary — not inventing it.
+- **No new data models, no new dependencies, no architectural change.** It is class edits + a few `Button variant`/`className` swaps + uppercase removals + heading-tracking updates. `ui-only`.
+- **Estimated ~35–45 files touched** — above the medium ceiling of 15 in raw count, but each edit is a mechanical pattern application, not new logic. The one genuinely non-trivial decision (the shared `Hero` on `/empresas` + retiring `headingSerif`) is resolved in this ticket (see AC-EMP block + Decision D-1). No file gains meaningful line count (class-only edits), so no `max-lines` risk.
+- Not **high**: there is no new system, no integration, no schema. The risk surface is regression (firewall, style-pinned tests, css-line-count guard), not novel construction.
 
-The higher-than-typical file count is offset because most per-component edits are near-mechanical class swaps against tokens, not new logic. Standard tier (no hacker stage) is the correct routing.
+Feature Type + this classification route the standard pipeline: PlanResearch → **skip UI Design at full depth** (the T20 `tasks/ui-design.md` spec IS the design authority; the design stage, if run, only extends it with the interior-page decisions in this ticket) → Dev → ReviewFix → QA.
 
 ## Feature Type
 
-**ui-only** — styling/presentation changes only. No hooks, state, data-fetching, or business-logic changes. Security & Arch (if run) go lightweight; the **admin font/theme firewall** is the one security-relevant surface and is called out explicitly. **UI Design (Stage 3) and UX (Stage 8) run at full depth** — translating the Factorial grammar into our palette is a visual-craft task; load `impeccable` + `emil-design-eng` + `apple-design` and use `animation-vocabulary` terms in the design spec.
+**ui-only** (maps to `full-cycle`'s `ui-only` class: Security & Arch run lightweight; the whole task is presentation).
+
+Determines pipeline depth: this is a pure restyle — no server actions, RPCs, queries, i18n messages, testids, anchors, or props change except where a **test must be updated for a deliberate visual change** (AC-3 uppercase removals; see Test-Impact table). No backend stage runs at depth.
 
 ## User Story
 
-As the **store owner**, I want the storefront homepage restyled in the clean, confident Factorial design language (one geometric sans, pure-white page, pill buttons, floating cards on tinted canvases, oversized naked stat numerals, hairline FAQ rows) while keeping my brand greens, orange CTAs, logo, and all existing content, so that I can **review a single homepage** locally and approve the direction before authorizing the full-store Phase B rollout.
+As a **shopper (or B2B buyer) moving from the homepage into the catalog, a product page, the cart, checkout, /empresas, or a policy page**, I want **every storefront page to look like the same brand — the pure-white, DM Sans, orange-pill Factorial language the homepage now uses** — so that **the store feels like one polished, trustworthy product instead of a redesigned front door bolted onto older interior pages.**
 
 ## Background
 
-**What exists today (T19, shipped 2026-08-26 — content frozen):**
+**What exists today:** T20 restyled the homepage (`/[locale]`, 13 sections) and the shared shell (topbar, header, footer, mobile-nav, WhatsApp FAB) to the Factorial grammar, scoped under `.theme-storefront` with a new `--font-dm-sans` and a `--radius: 1rem` bump. The shell change means every storefront page ALREADY inherits: DM Sans body/heading font, pure-white background, white hairline footer, and pill nav/header CTA. The `factorial-restyle.spec.ts` "inheritance smoke" test already proves 6 interior pages render the white footer + DM Sans + no overflow.
 
-- Homepage `src/app/[locale]/page.tsx` is a thin server-component shell composing sections from `src/components/home/*`, each fed pre-resolved i18n strings. Sections alternate `bg="background"` / `bg="muted"` bands at `py-14 md:py-20` inside a `max-w-(--breakpoint-xl)` container.
-- Headings use the `font-heading` utility → **Libre Caslon Text** (serif, T15 "Casa de Azulejo"), resolved only under `.theme-storefront`. Body/UI uses `font-sans` → **Inter**, which is **SHARED with `/admin`**.
-- Surfaces alternate a faint green-tinted "milk-glaze" `--muted` against a slightly-green `--background`. Owner wants a **pure-white page** with tinted *objects* (gray/pastel cards) instead of section tints.
-- Buttons are `rounded-md` (shadcn `Button`, `cva` variants incl. a `cta` orange variant and an `xl` ≥44px size). Factorial wants **pills** (`rounded-full`, 2px self-colored border).
-- Cards are hand-rolled per component (**no `src/components/ui/card.tsx` primitive exists**) using `rounded-md border-border bg-card p-*`. Factorial wants radius-16 + a layered triple soft-shadow for floating cards, and flat gray/no-shadow stat cards.
-- Stats render inline (`hero-stats.tsx`, `values-impact.tsx`, `process-steps.tsx`) with `tabular-nums`; Factorial wants **~56px naked numerals in flat gray cards**.
-- FAQ is `faq-accordion.tsx` — a CSS-only native `<details>/<summary>` accordion with a rotating chevron; Factorial wants **bare hairline rows**, no card.
-- Icons throughout the homepage + shell are **`@hugeicons/react` (core-free-icons)** — the CLAUDE.md-mandated set. (Do not swap icon sets.)
-- Motion: entrance animations exist — `.enter-fade` (hero/banners), `.stagger` (grids/lists), `.card-lift`, `.fab-pop`, `.drawer-*` — defined in `motion-shell.css` / `motion-catalog.css`, all reduced-motion-safe.
-- Shell: `site-topbar.tsx` (deep-green utility row) + `site-header.tsx` (sticky, `border-b border-border bg-background`) + `site-footer.tsx` (currently a **deep-green** footer) + `whatsapp-button.tsx` (FAB) + `mobile-nav.tsx` (client drawer, focus-trap + scroll-lock) + `language-toggle.tsx`.
+**What's still old:** the *page bodies* of every non-home surface still carry the pre-Factorial grammar:
+- `uppercase tracking-wide` section/eyebrow headings (13 component sites + 4 page/heading sites — full list in AC-3).
+- `rounded-md border border-border bg-card` info/panel cards instead of `.factorial-card` (floating white, layered soft shadow) or `.stat-card` (flat gray).
+- `variant="default"` / `variant="secondary"` / `size="lg"` primary buttons instead of the orange `variant="cta"` pill grammar.
+- `tracking-tight` / `tracking-wide` page `<h1>`s instead of the Factorial `-0.04em` heading tightness.
+- The shared `Hero` (used ONLY by `/empresas`, since the homepage uses `home-hero`) still uses `text-primary`, `tracking-tight`, `size="lg"` green CTA, and a bordered media box — pre-Factorial. `headingSerif` (Libre Caslon) is still exported in `fonts.ts` and wired on `<html>`, kept alive in T20 *specifically for a Phase B decision on `/empresas`* (see Decision D-1).
 
-**What's changing (presentation only):** per `tasks/reference/factorial-style-analysis.md` — DM Sans everywhere at 700/−0.04em headings; pure-white page; pill grammar; Factorial card/shadow specs; the ~112px/40px section-rhythm family; oversized stat numerals; hairline FAQ; Factorial nav/footer patterns. Color roles remap: Factorial red→our orange `#f95326`; its ink→our deep green `#094220`; its teal links→our green `#0f7f3c`; its pastel tints→8–12% tints of our greens/orange; its twice-used peach→aqua gradient→a soft green→warm-tint gradient.
+**Why it matters:** the homepage sets the expectation; the interior pages break it. This closes the gap with zero content/behavior change.
 
-**The firewall constraint (critical):** `--font-sans` (Inter) is imported by BOTH `src/app/[locale]/layout.tsx` (storefront) AND `src/app/admin/layout.tsx` (admin). Swapping the body face on `--font-sans` would leak DM Sans into `/admin`. DM Sans must be wired through a **storefront-scoped variable** (via the existing `.theme-storefront` seam, mirroring how `--font-heading-serif` is scoped today), never `--font-sans`.
-
-**Why it matters:** the owner explicitly wants to see and approve the new look on one page before committing to Phase B — this is the approval gate.
+**Authority stack (in order):**
+1. `tasks/ui-design.md` (the 753-line T20 spec) — owns the *look*: exact token values, the `.factorial-card`/`.stat-card`/`.pill-outline` recipes, the pill `Button` contract, the `-0.04em` heading rule, the "no uppercase / sentence case" rule, motion restraint. **This ticket does NOT redefine any of that** — it maps it onto the remaining pages.
+2. `tasks/reference/factorial-style-analysis.md` — the measured source grammar.
+3. `DESIGN.md` T20 amendment — the canonical narrative.
+4. This ticket — resolves the interior-page-specific decisions the T20 spec deferred (Hero/`headingSerif`, interior page rhythm, badge/pill treatment, error-page grammar) and enumerates per-surface acceptance criteria + test impact.
 
 ## Acceptance Criteria
 
 Each criterion is binary — PASS or FAIL.
 
-**Typography**
+### Global / cross-cutting
 
-- [ ] AC-1: DM Sans (via `next/font/google`, weights 400/500/600/700, subsets `latin`+`latin-ext`) is loaded and is the family rendered for **all** homepage + shell text — headings, body, UI, buttons, numbers — verified in browser computed styles on `/es-MX` and `/en`.
-- [ ] AC-2: Homepage headings render weight 700, `-0.04em` tracking (≈ `tracking-[-0.04em]`), tight (~1.1) leading; body renders weight 400, `1.5` leading, `0` tracking, in the secondary-ink color (not heading ink); small/utility text uses `-0.02em`.
-- [ ] AC-3: No uppercase eyebrows / no `uppercase` transforms remain on homepage headings, eyebrow labels, footer column titles, or stat labels (Factorial is sentence case, headline-first). The current `uppercase` usages (cert-tag, values-impact, process-steps, b2b, trust-faq, footer, mobile-nav headers) are removed or converted to sentence case.
-- [ ] AC-4: Libre Caslon Text no longer renders anywhere on the homepage or shared shell.
+- [ ] **AC-1 (Firewall — hard constraint):** `/admin` and `/admin/login` compute **Inter**, carry **no** `.theme-storefront` class and **no** `--font-dm-sans` custom property on `<body>`, keep `rounded-md` (admin `--radius: 0.625rem`), and show no orange `cta` pill / no `.factorial-card`. Verified by the existing `theme-firewall.spec.ts` + `factorial-restyle.spec.ts` admin checks passing unchanged. No admin file is touched by this task.
+- [ ] **AC-2 (Palette + logo frozen):** No hardcoded hex/oklch/rgb is introduced in any touched file. Brand greens (`--primary` `#094220`, `--ring`/brand green `#0f7f3c`), orange CTA (`--cta` `#f95326` with its dark AA foreground), and the logo SVGs are unchanged. Every color flows through an existing token.
+- [ ] **AC-3 (No uppercase — sentence case everywhere):** The `uppercase` utility is removed from every storefront **eyebrow/heading** site (sentence-case copy already lives in i18n). The complete removal set: `catalog/category-tree.tsx`, `catalog/filter-panel.tsx`, `catalog/filter-sheet.tsx` (Dialog.Title), `catalog/filter-controls.tsx` (FacetGroup legend), `catalog/no-results.tsx`, `catalog/index-tile.tsx`, `content/static-page-body.tsx` (`.static-heading`), `product/product-qa.tsx`, `product/product-specs.tsx`, `product/recently-viewed.tsx`, `checkout/checkout-field.tsx`, `checkout/checkout-summary.tsx`, `cart/order-summary.tsx`, plus page `<h1>`s in `sillas/page.tsx`, `showroom/page.tsx`, and the two `checkout/confirmacion/[token]/page.tsx` section headings. **EXCEPTION (must be KEPT):** `checkout/discount-code-field.tsx:101` uses `uppercase` on the discount-code **input value** — this is functional (codes are entered uppercase), NOT an eyebrow. Do NOT remove it.
+- [ ] **AC-4 (Heading tightness):** Every restyled page `<h1>`/section `<h2>` uses the Factorial tracking (`tracking-[-0.04em]` for large headings ≥24px, `tracking-[-0.02em]` for small labels) and DM Sans weight 600/700 per the T20 section-h2 recipe. No storefront heading uses `tracking-wide` after this task (grep returns zero in touched files).
+- [ ] **AC-5 (Card grammar):** Every page-body info/panel/summary card that was `rounded-md/lg border border-border bg-card` becomes either `.factorial-card` (floating white, layered `--shadow-factorial`, borderless — for content/summary/product panels) or `.stat-card` (flat gray, borderless — for quiet canvases/answer blocks), per the per-surface mapping below. Semantic status cards that intentionally carry a tint+border (error `destructive/*`, warning `warning/*`, success `success/*`) KEEP their tinted border — they are signal, not chrome (see AC-14 / edge 6).
+- [ ] **AC-6 (Primary CTA pills):** Every **primary** call-to-action on a restyled page is an orange pill via `variant="cta"` (+ `size="xl"` where it was `size="lg"` / a large button), rendering `rounded-full`, solid `--cta` fill, 2px self-colored border, dark AA foreground, 100ms hover color-swap, no lift. Secondary/tertiary actions use `.pill-outline` (2px ink-outline pill) or stay quiet text links. The specific CTA set is enumerated per surface below.
+- [ ] **AC-7 (Pure white ground):** No restyled page introduces or retains an alternating full-bleed tinted section background. Page ground stays `--background` (pure white); separation comes from rhythm + tinted *objects* (`.stat-card`, `--tint-green` canvases). The two homepage gradient moments (`.gradient-band`/`.gradient-banner`) are NOT added to interior pages.
+- [ ] **AC-8 (Content/behavior frozen):** No copy, i18n key, server action, RPC, query, prop, `data-testid`, anchor id, `scroll-mt`, aria attribute, honeypot offset, form validation, or column-count changes — except the test updates required by AC-3. The `catalog.spec.ts` 2-column-at-375px grid assertion still passes; `product-detail.spec.ts` strikethrough assertion still passes; `empresas-quote.spec.ts` + `static-pages-contact.spec.ts` honeypot `left` offset assertions still pass.
+- [ ] **AC-9 (css-line-count guard):** `globals.css` stays < 600 (currently 320) and < 1000 hard cap; `theme-storefront.css` stays ≤ ~180 lines (currently 75) even after any shared recipe additions. If a new shared recipe is needed (e.g. a reused field-input recipe), it goes in `theme-storefront.css`, not inline-repeated. `css-line-count.test.ts` passes.
+- [ ] **AC-10 (Inheritance smoke stays green + extends):** `factorial-restyle.spec.ts`'s existing 6-page inheritance smoke (white footer + DM Sans + no h-overflow + no console errors, incl. 404) passes unchanged. New per-surface grammar assertions (a catalog page `<h1>` is not `uppercase`; a PDP `.factorial-card` exists with shadow + no border; the /empresas hero CTA is an orange pill) are added at QA.
 
-**Firewall (admin isolation)**
+### Catalog & taxonomy (`/sillas`, `/categorias`(+slug), `/marcas`(+slug), `/estilos`(+slug))
 
-- [ ] AC-5: `/admin` and `/admin/login` render **Inter unchanged** — DM Sans does NOT appear in admin computed styles (verified in a browser on an admin route, not just by code read).
-- [ ] AC-6: `/admin` colors, radius, and layout are unchanged: no diff under `src/app/admin/**`, and the neutral `:root`/`.dark` token blocks are not edited in any way that reaches admin.
+- [ ] **AC-CAT-1:** Page `<h1>`s (`sillas`, category/brand/style index + detail) drop `uppercase`/`tracking-wide`/`tracking-tight` and adopt the Factorial heading recipe (`font-heading font-semibold sm:font-bold tracking-[-0.04em]`). Detail-page `<h1>`s that show a brand logo + name keep their structure; only type classes change.
+- [ ] **AC-CAT-2:** `product-card.tsx` (the single most-reused component; shared by catalog, taxonomy, search, homepage featured, and recently-viewed) is restyled **once, centrally**: outer `Link` becomes a `.factorial-card` (floating white, layered shadow, borderless) keeping `.card-lift` hover + `overflow-hidden` + focus ring; the inner image tile keeps `aspect-[4/5]` (layout-critical) and its rounded clip resolves via `--radius`; the product-name `<h2>` uses `tracking-[-0.02em]` (drop `tracking-tight`). `data-testid="product-card"`/`"product-card-link"` frozen. No per-page fork.
+- [ ] **AC-CAT-3:** `product-grid.tsx` keeps its exact column counts (`grid-cols-2 md:grid-cols-3 lg:grid-cols-4`) — the `catalog.spec.ts` 2-up-at-375px assertion must stay green. Gap may align to the Factorial rhythm but column count is frozen.
+- [ ] **AC-CAT-4:** `index-tile.tsx` + `category-tree.tsx` link cards become `.factorial-card` (keeping `.card-lift`, `.stagger`, nested `border-l` tree indent as a hairline), names drop `uppercase tracking-wide` → `tracking-[-0.02em]`. Used by `/marcas`, `/estilos`, `/categorias`, and homepage `featured-brands` — restyle centrally.
+- [ ] **AC-CAT-5:** Filter/search chrome — `filter-panel.tsx`, `filter-sheet.tsx`, `filter-controls.tsx` legends/titles drop `uppercase tracking-wide`; the filter Apply button becomes `variant="cta"`; `filter-sheet` keeps its Radix Dialog behavior, hairline header/footer borders resolve via `--border`. `active-filters.tsx` chips, `sort-select.tsx`, `search-box.tsx` inherit new tokens; verify chips read as quiet pills/badges (no orange).
+- [ ] **AC-CAT-6:** `no-results.tsx` + `empty-state.tsx` — heading drops `tracking-tight`, icon tile becomes a `.stat-card` (flat gray, borderless), CTA becomes `variant="cta" size="xl"`. `catalog-banner.tsx` + `brand-logo.tsx` + `catalog-skeleton.tsx` + `pagination.tsx` + `breadcrumbs.tsx` inherit new radius/tokens; `catalog-banner` drops its `border-primary/30` for the hairline/borderless treatment; pagination buttons keep `outline` behavior (they are navigation, not the primary CTA).
+- [ ] **AC-CAT-7:** `stock-badge.tsx` and `grade-badge.tsx` keep `rounded-full` (they are already pills) and their semantic colors; `grade-badge` drops the `border-primary/20` if it reads as chrome, keeping the tint chip legible (matches the T20 cert-tag borderless treatment). Color is never the only signal (icons stay).
 
-**Surfaces & color**
+### Product detail page (`/producto/[slug]`)
 
-- [ ] AC-7: The homepage page background is **pure white**; sections do NOT alternate full-bleed backgrounds. Separation comes from vertical rhythm + tinted *objects* (gray/pastel cards) and, at most, the two Factorial gradient moments (form band + radius-32 CTA banner).
-- [ ] AC-8: Brand palette preserved: deep green `#094220`, brand green `#0f7f3c`, CTA orange `#f95326` with its dark warm-brown AA foreground (`--cta-foreground`, 5.30:1). Logo files (`public/brand/logo.svg`, `icon.svg`) unchanged.
-- [ ] AC-9: The loud saturated color (orange) appears ONLY on primary CTAs (≈ ≤5 per screen); the calm secondary (green `#0f7f3c`) carries links/checks; everything else is ink + white + whisper-tints.
+- [ ] **AC-PDP-1:** `product-purchase-panel.tsx` info panel becomes `.factorial-card`; `<h1>` becomes `tracking-[-0.04em]`, no uppercase; the `.price-value` crossfade class + all price testids frozen.
+- [ ] **AC-PDP-2:** `product-gallery.tsx` main image + thumbnails: borders resolve to hairline `--border`, radius via `--radius`; `aspect-[4/5]` and all zoom/lightbox testids + Radix Dialog behavior frozen.
+- [ ] **AC-PDP-3:** `product-specs.tsx`, `product-qa.tsx`, `recently-viewed.tsx` section headings drop `uppercase tracking-wide` → sentence-case `font-heading` label with `tracking-[-0.02em]`; spec/Q&A hairline row dividers resolve via `--border`; the Q&A answer block + `qa-form.tsx` success note become `.stat-card` (flat gray) or a quiet tinted block; the Q&A submit button becomes `variant="cta" size="xl"`.
+- [ ] **AC-PDP-4:** `add-to-cart-button.tsx` becomes `variant="cta" size="xl"` (orange pill), keeping the `.cart-press` press feedback, the two-label crossfade, `data-state`, and disabled/out-of-stock behavior. `variant-selector.tsx` swatch borders resolve to hairline; selected `ring-2 ring-primary` frozen. `pdp-skeleton.tsx` radius bumps inherit via `--radius`.
 
-**Components**
+### Cart (`/carrito`)
 
-- [ ] AC-10: All homepage buttons and the header CTA are pills (`rounded-full`); primary CTA = solid orange + 2px self-colored border + dark-brown text; secondary = 2px ink-outline transparent; hover swaps to a lighter tint via a ~`.1s ease` color transition (no scale/lift on hover). The `cta` and `xl` Button variants render as pills on the storefront without changing admin button radius.
-- [ ] AC-11: Floating content cards use radius 16 (12 for small info cards) + the layered triple soft shadow (`0 -8px 16px / 0 16px 24px / 0 4px 8px`, green-tinted via `--shadow-color`), no border; flat stat/canvas cards use gray/whisper-green, no shadow, no border.
-- [ ] AC-12: Stat numerals render oversized (~56/64, weight 700, −0.04em) as naked numbers in flat gray cards (hero stats, values-impact figures, process-step numbers per the analysis).
-- [ ] AC-13: FAQ renders as bare hairline-separated rows (1px bottom border, no card), question 18/600 ink, chevron rotates on open, answer 16/400 gray. The native `<details>/<summary>` behavior, deep-link slug IDs, and keyboard/focus a11y are preserved.
-- [ ] AC-14: Section vertical rhythm follows the Factorial scale (~112px desktop / ~40px mobile band family), applied consistently via the page `Section` helper.
+- [ ] **AC-CART-1:** `cart-page-client.tsx` `<h1>` drops `tracking-tight` → Factorial heading recipe, no uppercase.
+- [ ] **AC-CART-2:** `order-summary.tsx` card becomes `.factorial-card`; its heading drops `uppercase tracking-wide`; the checkout CTA becomes `variant="cta" size="xl"`. `cart-empty-state.tsx` CTA becomes `variant="cta" size="xl"`.
+- [ ] **AC-CART-3:** `cart-line-row.tsx` name drops `tracking-tight`, image link keeps `.card-lift` + radius via `--radius`; the Remove button stays a quiet `ghost` text action (destructive-adjacent, not a primary CTA). `quantity-stepper.tsx`, `free-shipping-progress.tsx`, `cart-count-badge.tsx` inherit radius/tokens; the progress bar stays `rounded-full` (a pill bar reads correctly); the count pill stays `rounded-full`.
 
-**Shell**
+### Checkout (`/checkout` + `/checkout/confirmacion/[token]`)
 
-- [ ] AC-15: Header is a white sticky bar with a 1px bottom hairline (no drop shadow), sentence-case 500-weight nav links, and a solid orange pill CTA on the right. Footer follows the Factorial pattern (**white**, hairline-separated, column titles 600 / links 500, hover underline) with **content unchanged** — note this changes the footer from deep-green to white (design-stage decision to confirm, but the analysis mandates a white footer). Topbar utility row retains its content. WhatsApp float retained.
-- [ ] AC-16: Mobile nav still opens/closes, traps focus, scroll-locks, auto-closes at `lg`, and is keyboard-operable exactly as before; only its visual styling is updated. `language-toggle` behavior unchanged.
+- [ ] **AC-CHK-1:** `checkout-flow-client.tsx` + confirmation-page `<h1>`s drop `tracking-tight` → Factorial recipe, no uppercase. Confirmation section headings drop `uppercase tracking-wide`.
+- [ ] **AC-CHK-2:** `checkout-field.tsx` `CheckoutCard` + `checkout-fields.tsx` sections + `checkout-summary.tsx` + confirmation `OrderSummaryCard`/`ShippingCard` become `.factorial-card`; their `uppercase tracking-wide` section headings become sentence-case with `-0.02em`. `checkout-skeleton.tsx` card shells mirror `.factorial-card` for a matching pre-hydration silhouette.
+- [ ] **AC-CHK-3:** Primary submit CTAs — `checkout-summary` submit, `sticky-checkout-bar.tsx` submit, `checkout-empty-state.tsx` CTA, `payment-panel.tsx` pay/retry primary buttons, `oxxo-spei-instructions.tsx` View-Voucher CTA — become `variant="cta" size="xl"` (orange pill). The confirmation "Keep Shopping" button becomes `.pill-outline` (secondary). Field inputs (`fieldClasses`, discount input, reference code) inherit radius via `--radius`; the discount Apply button reads as a pill/outline secondary (not orange — orange is reserved for the true primary action).
+- [ ] **AC-CHK-4:** `discount-code-field.tsx` keeps its input-value `uppercase` (AC-3 exception); the applied-code pill + savings/error notes keep their semantic `success`/`destructive` colors.
 
-**Content & wiring frozen**
+### /empresas B2B landing + shared Hero (Decision D-1)
 
-- [ ] AC-17: All T19 copy (both locales), i18n keys, real-product wiring, grade badges, the T16 quote-form embed (in `b2b-section`), the savings-calculator logic/results (test pins `43%`/`50%`/`aria-live`), placeholder figures + disclaimers, and SEO/JSON-LD (`generateMetadata`, Organization + WebSite LD, canonical/alternates) are unchanged and still render/function.
-- [ ] AC-18: The shared catalog `product-card.tsx` / `product-grid.tsx` (used by the homepage "Featured products" section AND by `/sillas` + `/marcas/[slug]`) is **not** restyled — the catalog pages' appearance is unchanged. Any homepage featured-section treatment is achieved via the section wrapper/header only, leaving the card as-is.
-- [ ] AC-19: Deep-link anchor IDs are preserved: `#catalogo`, `#calculadora` (page), and the section IDs used by nav/footer/anchors (`#proceso`, `#impacto`, `#garantia`, `#empresas`, `#cotizacion`) still resolve with correct `scroll-mt` offset under the restyled sticky header.
+- [ ] **AC-EMP-1:** `b2b-sections.tsx` (`B2BPillars` + `B2BProcess`) tiles become `.factorial-card`; the pillar icon tile bg becomes `bg-[var(--tint-green)]` (matching the homepage `values-impact` icon-tile treatment); titles drop `tracking-tight`→`tracking-[-0.02em]`; headings adopt the section-h2 recipe (drop `tracking-wide`); the process step number seal stays quiet (green/ink, NOT orange). `.enter-fade`/`.stagger` + all testids frozen.
+- [ ] **AC-EMP-2:** The shared `Hero` (`home/hero.tsx`, used ONLY by `/empresas`) is restyled to the Factorial hero grammar to match `home-hero`: `<h1>` `text-primary tracking-tight` → `text-foreground tracking-[-0.04em] leading-[1.05]`; subcopy steps up to `text-base`; primary CTA `size="lg"`→`size="xl"` pill (already `variant="cta"`); the secondary link may become a `.pill-outline` OR stay the `.link-arrow` text link (dev's call, both AA); the media box canvas adopts the `home-hero` treatment (whisper-tint canvas wrapping a borderless floating media card) **while keeping the inner `aspect-[4/3]` box on BOTH the image and the fallback tile — the `hero.test.tsx` unit test pins `aspect-[4/3]` + `hero-image-fallback` + `.enter-fade` and MUST stay green.**
+- [ ] **AC-EMP-3:** The `/empresas` page-level quote-section `<h2>` (`empresas/page.tsx:237`) drops `tracking-wide` → section-h2 recipe. The `QuoteForm` (`empresas/quote-form.tsx`, shared with the homepage `b2b-section`) is restyled **once, centrally**: its container/card and submit button already use the T20 pill CTA (verify `variant="cta"`); its inputs inherit new tokens. No per-page fork — the homepage `b2b-section` and `/empresas` both consume the same restyled form.
+- [ ] **AC-EMP-4 (Decision D-1 — retire `headingSerif`):** `Libre Caslon Text` (`headingSerif`) is no longer referenced by any storefront surface after this task. Because the `--font-heading-family` rebind under `.theme-storefront` already resolves headings to DM Sans, Libre Caslon renders nowhere on the storefront even today — the export + `<html>` variable are now dead weight kept only "for the /empresas decision." **Decision: remove `headingSerif` from `fonts.ts`, drop `headingSerif.variable` from `[locale]/layout.tsx`, and clean the now-stale comments in `globals.css` referencing "Phase B via `--font-heading-serif`."** Safe: grep confirms no `.font-heading-serif` utility or `--font-heading-serif` consumer exists outside those two files + comments. (Zero-risk fallback if the reviewer prefers: leave `headingSerif` exported-but-unwired and only delete the comments; ship the removal, note the fallback in dev-done.)
 
-**Quality bars**
+### Static pages + error pages
 
-- [ ] AC-20: AA contrast holds for every text/background and every pill (orange pills keep the dark-brown foreground; no white-on-orange). New pastel tints (8–12%) keep overlaid text AA.
-- [ ] AC-21: `prefers-reduced-motion` respected. Per the analysis Factorial has NO scroll-triggered reveals — the design stage decides whether to keep the existing `.enter-fade`/`.stagger` entrances (acceptable, they are subtle + reduced-motion-safe) or reduce them; either way NO new scroll-reveal motion is added, hover transitions stay ≤ ~.15s `ease-out` and interruptible.
-- [ ] AC-22: Layout intact and usable at **320px** and up, in both `es-MX` and `en` (longer Spanish strings + accented glyphs do not clip, overflow, or force horizontal scroll).
-- [ ] AC-23: `npm run test` passes (existing suites green). `src/app/css-line-count.test.ts` passes — no `.css` file exceeds 600 (guidance) / 1000 (hard cap). Strict TS: no `any`, no non-null `!`. `npm run lint` clean. No file exceeds the ~400-line target introduced by this task; the 1000-line hard cap is not breached (`b2b-section` 150, `mobile-nav` 323, `site-footer` 252 are the largest touched — keep them under the caps).
-- [ ] AC-24: No layout-shift regression from the font swap (`display:"swap"`, sensible fallback stack).
-- [ ] AC-25: Homepage `npm run build` succeeds and runs locally for owner review — ending Phase A at the approval gate.
+- [ ] **AC-STATIC-1:** `content/static-page-body.tsx` `.static-heading` drops `uppercase tracking-wide` → sentence-case `font-heading` heading with `tracking-[-0.02em]` (keeps the `:target` accent-bar + `scroll-mt-24` deep-link behavior). Covers About/Shipping/Returns/Warranty/FAQ/Privacy/Terms via `[pageSlug]`, plus Contact + Showroom bodies. Page `<h1>`s in `[pageSlug]`, `contacto`, `showroom` adopt the Factorial heading recipe (showroom drops `uppercase`).
+- [ ] **AC-STATIC-2:** `contacto/contact-form.tsx` submit becomes `variant="cta" size="xl"`; field inputs inherit radius/tokens; success/error banners keep their semantic colors. Showroom map panel + `viewOnMaps` link inherit new tokens (border → hairline).
+- [ ] **AC-ERR-1:** `[locale]/not-found.tsx` + `[locale]/error.tsx` (both render inside the `.theme-storefront` shell) adopt the Factorial grammar: `<h1>` heading recipe, the 404 code tile becomes a `.stat-card` (flat gray, borderless), the primary action becomes `variant="cta" size="xl"`. These pages already inherit DM Sans + white ground from the shell.
+- [ ] **AC-ERR-2 (deliberate exclusions, documented):** `src/app/not-found.tsx` (root, no-locale) and `src/app/global-error.tsx` (root layout crash) render their OWN `<html>` OUTSIDE `.theme-storefront` (root not-found uses only `sans.variable`=Inter; global-error uses inline `system-ui`). These are intentionally minimal, firewall-adjacent last-resort shells and are **out of scope** — they must NOT gain DM Sans or `.theme-storefront` (that would require a second full shell). Leave both unchanged; note the exclusion in dev-done.
 
 ## Edge Cases
 
-At least 5 that MUST be handled:
+At least 5, each with expected behavior:
 
-1. **Font leak into admin.** Wiring DM Sans on `--font-sans` (the shared variable) silently restyles `/admin`. Expected: DM Sans wired via a storefront-scoped variable only; admin computed styles still show Inter (verify in browser on `/admin`).
-2. **Featured-products card is shared with catalog.** `home/featured-products.tsx` → `catalog/product-grid.tsx` → `catalog/product-card.tsx`, also used by `/sillas` and `/marcas/[slug]`. Expected: do NOT edit `product-card.tsx` presentation; style at the section/header level only, so the catalog page (Phase B) is visibly unchanged.
-3. **Other shared components leak to non-home pages.** `section-header.tsx` (also used by `featured-brands`), `featured-brands.tsx` (→ `/marcas` index via `IndexTile`), and the `b2b-section` QuoteForm (shared with `/empresas`), plus `home/hero.tsx` + `home/featured-brands.tsx` (imported by `/empresas`). Expected: do not page-level restyle these for non-home effect; changes limited to what the homepage needs, and any inherited shell/token change to other pages is acceptable but NOT a page-level restyle (Phase B).
-4. **Featured-products section omitted when zero products.** The page returns `null` for that section when the catalog read fails (`readFeaturedProducts` → `[]`). Expected: restyled rhythm/spacing looks correct with the section absent.
-5. **`es-MX` longer strings + accented glyphs.** Spanish headings are longer and use `á é í ó ú ñ ¿ ¡`. Expected: DM Sans `latin`+`latin-ext` subsets prevent mid-word fallback; tight `-0.04em` headings do not clip/overflow at 320px in either locale; the mobile type scale steps down (h1 44→36 per analysis).
-6. **CSS line-count cap.** globals.css is ~290 lines today; adding DM Sans binding + pill/shadow/spacing/pastel/gradient tokens must stay under the 600 guidance ceiling (hard cap 1000, enforced by `css-line-count.test.ts`). Expected: if additions approach the ceiling, extract a small imported CSS file (mirroring the `motion-*.css` split) rather than breaching.
-7. **Reduced-motion + no new scroll reveals.** Expected: no entrance-on-scroll motion added; existing entrances stay reduced-motion-safe; pill/hover transitions ≤ ~.15s `ease-out`, interruptible, disabled under `prefers-reduced-motion`.
-8. **Footer color change ripples to every page.** The footer currently is deep-green on all pages; switching it to a white Factorial footer changes every storefront page's footer immediately (it is the shared shell, in scope). Expected: this is acceptable/expected shell inheritance — confirm the white footer reads correctly against every existing page body, not just the homepage, at design/UX review.
+1. **Discount-code input uppercase (AC-3 landmine):** A naive `uppercase`-removal sweep would strip `discount-code-field.tsx:101`, breaking functional code-entry casing. Expected: that one `uppercase` is KEPT; only eyebrow/heading `uppercase` is removed. Dev greps and hand-classifies each hit.
+2. **Empty catalog / zero results:** `/sillas` with a filter that matches nothing renders `no-results.tsx`; a category/brand/style with zero products renders `empty-state.tsx`. Expected: both show the restyled `.stat-card` icon tile + orange `cta` CTA, still SSR-visible with JS off (the `sillas` page's no-Suspense SSR-first invariant is preserved — no restyle touches the render mode).
+3. **Product with no cover image / no grade / single variant:** `product-card` renders the placeholder glyph tile; `grade-badge` is omitted when `conditionGrade` is null. Expected: `.factorial-card` renders identically with the placeholder; badge omission unchanged; no broken layout.
+4. **`/empresas` hero with null image (`B2B_HERO_IMAGE` null):** `Hero` degrades to `hero-image-fallback` (Building glyph tile). Expected: the fallback tile keeps `aspect-[4/3]` + `aria-hidden` (the `hero.test.tsx` pins), now sitting on the new tint-canvas treatment — no CLS, no broken `<img>`, the unit test stays green.
+5. **es-MX long strings at 320px on restyled pages:** tight `-0.04em` headings + long Spanish labels ("Solicitar cotización", checkout field labels, `no-results` copy). Expected: no horizontal scroll, no glyph clip at 320px in either locale (`latin-ext` already loaded); the `factorial-restyle.spec.ts` overflow smoke stays ≤1px.
+6. **Confirmation page in OXXO/SPEI pending state:** `payment-panel` shows the warning-tinted voucher card. Expected: the warning `warning/*` border+tint is KEPT (a payment-status signal, not chrome), while surrounding order/shipping cards become `.factorial-card`. Signal vs chrome not blurred.
+7. **Reduced-motion user on any restyled page:** Expected: pill hover is color-only (no transform), `.card-lift`/`.stagger`/`.enter-fade` degrade per the existing RM rules; no new keyframes introduced.
+8. **Admin session navigating to a storefront page mid-session:** Expected: crossing from `/admin` to `/sillas` swaps `<body>` from Inter/neutral to DM Sans/Factorial cleanly (the firewall is a `.theme-storefront` scope, not a global mutation); admin stays untouched. No leak either direction.
 
 ## Error States Table
 
-Presentation-layer task — "errors" are build/style/regression failures, not new runtime user errors (data wiring frozen).
-
 | Trigger | User Sees | System Does |
 | --- | --- | --- |
-| Featured-products catalog read fails | Homepage renders without the "Featured products" section; rhythm still correct | `readFeaturedProducts` catches, logs a warn, returns `[]`, section returns `null` (unchanged from T19) |
-| DM Sans font file fails to load | Fallback stack (`DM Sans, Helvetica, Arial, sans-serif`) renders; no invisible text, minimal CLS | `display:"swap"` shows fallback then swaps |
-| `es-MX` heading overflows at 320px | Text wraps cleanly within container, no horizontal scroll | Responsive type scale + container padding; tracking kept, size steps down on mobile (h1 44→36) |
-| Contrast regression on a new pastel tint | (must not ship) AA failure | Caught at UX/verify contrast check; tints defined at 8–12% keep overlaid text AA |
-| CSS file exceeds 600 lines | (must not ship) test red | `css-line-count.test.ts` fails the build; split the CSS |
-| Reduced-motion user | Pills/accordion snap without transition; no entrances | `@media (prefers-reduced-motion: reduce)` zeroes transitions (existing pattern) |
-| Font leaks into admin | (must not ship) admin renders DM Sans | Storefront-scoped font variable; caught at firewall AC-5 browser check |
+| Catalog RPC fails / DB down on `/sillas` | The `[locale]/error.tsx` boundary — now Factorial-styled: DM Sans heading, orange `cta` retry pill, digest reference | Logs the error client-side; never leaks stack; `reset()` re-renders |
+| Zero products match a filter | Restyled `no-results.tsx`: `.stat-card` icon tile, sentence-case heading, popular-chairs strip, orange `cta` CTA | Renders SSR-first (JS-off safe), `noindex,follow` metadata unchanged |
+| Category/brand/style has no products | Restyled `empty-state.tsx`: `.stat-card` tile + orange `cta` "back to catalog" | No behavior change; label resolution unchanged |
+| Unknown static slug / unpublished page | `notFound()` → restyled `[locale]/not-found.tsx` (in-shell, Factorial) | Route guard unchanged; localized copy unchanged |
+| Contact/quote form validation fails | Restyled inputs with `aria-invalid` + semantic `destructive` error text (colors KEPT); orange `cta` submit shows retry | Server re-validates (boundary unchanged); honeypot offset frozen |
+| OXXO/SPEI payment pending on confirmation | Warning-tinted voucher card (tint KEPT) beside `.factorial-card` order/shipping cards; orange `cta` View-Voucher | Payment polling/state machine unchanged |
+| Add-to-cart while out of stock | Disabled orange `cta` pill (`opacity-50`, `pointer-events-none`), `data-state` unchanged | Stock guard unchanged |
+| Root layout crash (no locale) | `global-error.tsx` bilingual `system-ui` fallback — DELIBERATELY un-restyled | Unchanged (firewall-adjacent last resort) |
 
 ## UX Requirements
 
-For every state the homepage/shell UI can be in:
+For every state a restyled page can be in:
 
-- **Loading:** Homepage is a server component (SSR/ISR) — no page-level spinner. Only interactive islands are the savings-calculator, mobile-nav, and language-toggle; their existing interaction states are preserved. Fonts use `display:swap` so first paint is never blank.
-- **Empty:** If featured products are empty, that section is omitted (no empty grid). All other sections have static content. No new empty states.
-- **Error:** No new error UI (data frozen). Font-load failure degrades to the fallback stack; catalog read failure omits the section (existing).
-- **Success (default view):** Pure-white page; DM Sans everywhere; oversized tight headings; orange pill CTAs; floating cards with the layered shadow on tinted canvases; naked stat numerals in gray cards; hairline FAQ; white sticky hairline header with orange pill CTA; white hairline footer. User's next actions are the same CTAs (catalog / business / WhatsApp).
-- **Mobile (375px, down to 320px):** Left-aligned per Factorial mobile; hero CTAs stack full-width as pills; section padding drops to the ~40px band; header collapses to hamburger + logo + pill CTA (existing mobile-nav, restyled); stat cards stack; FAQ rows full-width. No horizontal scroll at 320px in either locale.
-- **Tablet (768px):** Intermediate type scale (analysis md sizes, h1 ~36–40); card grids collapse per breakpoint; container padding `md:px-6`. Sticky header keeps current breakpoint behavior (restyle only).
+- **Loading:** `catalog-skeleton.tsx`, `pdp-skeleton.tsx`, `checkout-skeleton.tsx`, `cart-skeleton` (`animate-pulse` bars) mirror the restyled silhouette — skeleton card shells match `.factorial-card` radius so there is no visual jump on hydration. Radius resolves via `--radius`; no new spinner.
+- **Empty:** Cart → restyled `cart-empty-state` (icon + copy + orange `cta` "shop" CTA). Catalog no-results / entity empty → restyled `.stat-card` tile + orange `cta`. Q&A empty → `qa-empty` message. All keep their testids + CTAs.
+- **Error:** `[locale]/error.tsx` Factorial retry pill; form-level `destructive` banners keep semantic red; payment failure card keeps `destructive` tint. Recovery action = the orange `cta` retry / `reset()`.
+- **Success:** Order confirmation page — status icon + `.factorial-card` order/shipping cards + `.pill-outline` "keep shopping". Contact/quote success banner keeps its muted/status styling; add-to-cart shows the "Agregado ✓" crossfade.
+- **Mobile (375px):** Product grid stays exactly 2-up (frozen). Filter chrome collapses to the `filter-sheet` drawer (behavior frozen). Checkout shows the `sticky-checkout-bar` orange `cta`. Cart/checkout collapse to single column. All headings + long es-MX labels wrap with no h-scroll (edge 5). Container `px-4` unchanged.
+- **Tablet (768px):** Catalog sidebar `catalog-shell` 2-col grid engages at `lg`; below `lg` the sheet drawer is used (frozen). Taxonomy tiles go 2-up. Cart/checkout keep single-column until `lg`.
 
 ## Technical Approach
 
 ### Files to Create
 
-- **(conditional) a small storefront CSS file** (e.g. `src/app/theme-storefront.css`), imported at the top of `globals.css`, IF the new pill/shadow/spacing/pastel/gradient tokens push `globals.css` toward the 600-line ceiling. Prefer editing `globals.css` in place if it stays comfortably under 600.
-- **(optional) `src/components/ui/card.tsx` or `src/components/home/factorial-card.tsx`** — a single reusable Factorial-card wrapper (radius + layered shadow) to avoid copy-pasting the triple-shadow spec across ~6 sections (DRY). Design stage decides; keep < 400 lines.
+- **None required.** All primitives (`.factorial-card`, `.stat-card`, `.pill-outline`, `--tint-green`, `--shadow-factorial`, pill `Button` variants) already exist from T20. If dev finds a form-input recipe repeated ≥3× across cart/checkout/contact/quote (the shared `fieldClasses` string), extract it to a `.theme-storefront .field-input` recipe in `theme-storefront.css` (DRY, CLAUDE.md) — but only if it keeps that file ≤180 lines total. Otherwise edit in place.
 
 ### Files to Modify
 
-- **`src/app/fonts.ts`** — add `DM_Sans` from `next/font/google` (weights 400/500/600/700, subsets `latin`+`latin-ext`, `display:"swap"`) bound to a NEW variable (e.g. `--font-dm-sans`). Do NOT rebind `--font-sans`.
-- **`src/app/globals.css`** — in `.theme-storefront` (scoped) rebind the storefront body + heading families to DM Sans (via `--font-heading-family` and a storefront body-font override); set the storefront `--background` to pure white `oklch(1 0 0)` (removing the green-tinted glaze) while keeping card/muted objects tinted; add pastel-tint tokens (8–12% of our greens/orange), the twice-used gradient token, and a composite Factorial shadow token (or apply the triple shadow in a card utility); confirm/extend `--shadow-color`. Leave neutral `:root`/`.dark` (admin) untouched.
-- **`src/app/[locale]/layout.tsx`** — add the DM Sans `variable` to `<html className>`; keep `theme-storefront` on `<body>`. Do NOT touch `src/app/admin/layout.tsx`.
-- **`src/components/ui/button.tsx`** — give storefront buttons the pill grammar (add a pill treatment to `cta`/`xl` or apply `rounded-full` at storefront call sites), 2px self-colored border on primary, `.1s`-family color-swap hover, no scale/lift. Preserve AA `cta`/`cta-foreground`. Scope pill radius to storefront usage so admin buttons keep `rounded-md`.
-- **`src/app/[locale]/page.tsx`** — update the local `Section` helper: drop `bg="muted"` alternation (pure white), apply Factorial rhythm; keep `id` anchors + `scroll-mt`. Props/content unchanged.
-- **Home sections (restyle, props/content frozen):** `home-hero.tsx`, `hero-stats.tsx`, `cert-tag.tsx`, `brand-bar.tsx`, `values-impact.tsx`, `process-steps.tsx`, `b2b-section.tsx`, `social-proof.tsx`, `savings-calculator.tsx` (form/pill styling only; math frozen), `trust-faq.tsx` + `faq-accordion.tsx` (hairline rows), `cta-banner.tsx` (Factorial radius-32 gradient banner), `section-header.tsx` (restyle carefully — shared with `featured-brands`; keep its behavior). Apply DM Sans scale, pill CTAs, Factorial cards/shadows/pastel canvases, oversized numerals, sentence case, section rhythm.
-- **`featured-products.tsx`** — restyle the section wrapper/header ONLY; do NOT touch the shared `product-card.tsx`/`product-grid.tsx`.
-- **Shell:** `site-header.tsx` (white hairline sticky, pill CTA, 500-weight sentence-case links), `site-topbar.tsx` (utility-row styling), `site-footer.tsx` (Factorial white column/hairline pattern, content unchanged), `mobile-nav.tsx` (restyle only; behavior/a11y frozen), `whatsapp-button.tsx` (keep FAB; align to round grammar). `nav-items.ts` and `direction-contract.tsx` unchanged (data/logic).
+_Catalog / taxonomy (shared — restyle centrally):_
+- `src/components/catalog/product-card.tsx` — `.factorial-card`, name tracking. **Highest-leverage file** (5+ consumers).
+- `src/components/catalog/index-tile.tsx`, `category-tree.tsx` — `.factorial-card`, drop `uppercase tracking-wide`.
+- `src/components/catalog/filter-panel.tsx`, `filter-sheet.tsx`, `filter-controls.tsx` — drop `uppercase tracking-wide`; filter Apply → `variant="cta"`.
+- `src/components/catalog/no-results.tsx`, `empty-state.tsx` — `.stat-card` tile, heading tracking, `variant="cta" size="xl"` CTA.
+- `src/components/catalog/catalog-banner.tsx`, `brand-logo.tsx`, `catalog-skeleton.tsx`, `pagination.tsx`, `breadcrumbs.tsx`, `stock-badge.tsx`, `grade-badge.tsx`, `active-filters.tsx`, `sort-select.tsx`, `search-box.tsx`, `search-results.tsx`, `catalog-shell.tsx`, `catalog-grid-region.tsx` — token/radius inheritance + borderless/hairline cleanup where flagged; verify no orange leak.
+- Page `<h1>`s: `src/app/[locale]/sillas/page.tsx`, `categorias/page.tsx`(+`[slug]`), `marcas/page.tsx`(+`[slug]`), `estilos/page.tsx`(+`[slug]`) — heading recipe, drop `uppercase`/`tracking-wide`/`tracking-tight`.
+- `src/components/catalog/product-grid.tsx` — verify column counts frozen (likely no change).
+
+_PDP:_
+- `src/components/product/product-purchase-panel.tsx`, `product-gallery.tsx`, `product-specs.tsx`, `product-qa.tsx`, `qa-form.tsx`, `variant-selector.tsx`, `recently-viewed.tsx`, `pdp-skeleton.tsx` — cards → `.factorial-card`/`.stat-card`, drop uppercase headings, `qa-form` submit → `variant="cta" size="xl"`.
+- `src/components/cart/add-to-cart-button.tsx` — `variant="cta" size="xl"`.
+
+_Cart:_
+- `src/components/cart/cart-page-client.tsx`, `cart-line-row.tsx`, `cart-empty-state.tsx`, `order-summary.tsx`, `free-shipping-progress.tsx`, `quantity-stepper.tsx`, `cart-count-badge.tsx` — heading, `.factorial-card` summary, `variant="cta"` CTAs, radius inheritance.
+
+_Checkout:_
+- `src/components/checkout/checkout-flow-client.tsx`, `checkout-fields.tsx`, `checkout-field.tsx`, `checkout-summary.tsx`, `checkout-empty-state.tsx`, `checkout-skeleton.tsx`, `discount-code-field.tsx`, `oxxo-spei-instructions.tsx`, `payment-panel.tsx`, `sticky-checkout-bar.tsx` — `.factorial-card`, drop uppercase headings, `variant="cta"` primaries, KEEP semantic tints + discount input uppercase.
+- `src/app/[locale]/checkout/confirmacion/[token]/page.tsx` — heading, section headings, `.factorial-card`, `.pill-outline` keep-shopping.
+
+_/empresas + shared:_
+- `src/components/home/hero.tsx` — Factorial hero grammar (keep `aspect-[4/3]` + fallback + `.enter-fade`).
+- `src/components/b2b/b2b-sections.tsx` — `.factorial-card` tiles, tint icon, headings.
+- `src/app/[locale]/empresas/page.tsx` — quote-section `<h2>` recipe.
+- `src/app/[locale]/empresas/quote-form.tsx` — verify pill CTA, input tokens (central, shared with homepage).
+- `src/app/fonts.ts` + `src/app/[locale]/layout.tsx` — remove `headingSerif` (Decision D-1); clean stale `--font-heading-serif` comments in `globals.css`.
+
+_Static + error:_
+- `src/components/content/static-page-body.tsx` — `.static-heading` drop uppercase.
+- `src/app/[locale]/[pageSlug]/page.tsx`, `contacto/page.tsx`, `contacto/contact-form.tsx`, `showroom/page.tsx` — headings + `variant="cta"` submit + token inheritance.
+- `src/app/[locale]/not-found.tsx`, `error.tsx` — Factorial grammar (`.stat-card` code tile, `cta` action).
+
+_Docs:_
+- `DESIGN.md` — append a short T21 note (Phase B rolled the T20 grammar store-wide; `headingSerif` retired).
+
+**Do NOT touch:** all of `src/components/admin/**` + `src/app/[locale]/admin/**`; `src/app/not-found.tsx` (root); `src/app/global-error.tsx`; `:root`/`.dark` token blocks; `motion-*.css`; `nav-items.ts`; `direction-contract.tsx` logic; any server action / query / RPC / i18n message file; the `discount-code-field` input `uppercase`.
 
 ### Data Model Changes
 
-- **None.** No schema, no migration.
+- **None.** No migration, no schema, no generated-types change.
 
 ### API Endpoints
 
-- **None.** No route handlers touched; SEO generators unchanged.
+- **None.** No route handler, server action, or RPC changes.
 
 ### Dependencies
 
-- **`next/font/google` → `DM_Sans`** — available via the installed `next` package; no new npm install. Weights 400/500/600/700, subsets `latin`+`latin-ext`. No other new dependencies. Icons stay `@hugeicons/react` (do not add/swap icon sets).
+- **None added.** DM Sans, `@hugeicons/react`, Radix, shadcn base are all installed and wired from T20/prior tasks. `headingSerif` (Libre Caslon) is *removed* from the font bundle (Decision D-1) — a small bundle win, not a dep change.
+
+## Test Impact (existing suites affected by this restyle)
+
+| Test | Impact | Action |
+| --- | --- | --- |
+| `factorial-restyle.spec.ts` | Owns the T20 grammar checks + the 6-page inheritance smoke | Must stay green; QA EXTENDS it with per-surface assertions (catalog h1 not-uppercase, PDP `.factorial-card`, /empresas hero orange pill) |
+| `theme-firewall.spec.ts` | Admin firewall (Inter, no theme-storefront) | Must stay green unchanged (AC-1) — no admin file touched |
+| `hero.test.tsx` | Pins `aspect-[4/3]` + `hero-image-fallback` + `.enter-fade` on shared `Hero` (/empresas) | KEEP all pins; only type/CTA/canvas classes change (AC-EMP-2) — must stay green |
+| `catalog.spec.ts` | Pins 2-column grid at 375px (`gridTemplateColumns`) | Column count frozen (AC-CAT-3) — must stay green |
+| `product-detail.spec.ts` | Pins compare-at `textDecorationLine` (strikethrough) | Strikethrough preserved — must stay green |
+| `empresas-quote.spec.ts`, `static-pages-contact.spec.ts` | Pin honeypot `left` off-screen offset | Honeypot untouched (AC-8) — must stay green |
+| `faq-accordion.test.tsx` | T20 FAQ grammar (homepage) | Homepage not in Phase B scope — no impact |
+| Tests asserting `uppercase` | AC-3 removes uppercase at 17 sites | **Grep tests for `uppercase`/`tracking-wide` assertions first**; update any that pin the removed classes to assert sentence-case instead (these are the ONLY test changes AC-8 permits) |
+| `css-line-count.test.ts` | `globals.css`/`theme-storefront.css` caps | Keep both under caps (AC-9) — must stay green |
+| Unit render tests (product-card, order-summary, checkout-*, b2b) | Class-only edits; testids frozen | Should pass unchanged unless a test asserts a removed class string — update to new class |
+| Product-grade / cart / checkout / search e2e | Behavior frozen | Should pass unchanged; QA re-runs to confirm no regression from token/class swaps |
 
 ## Out of Scope
 
-- **Any page-level restyle of non-home storefront pages** — catalog listing, PDP, cart, checkout, `/empresas`, `/marcas`, static pages, 404/global-error. They inherit the new shell/tokens/fonts (expected + acceptable), but their page bodies are Phase B.
-- **`src/components/catalog/product-card.tsx` / `product-grid.tsx` presentation** — shared with catalog; do not restyle (would leak to Phase B pages).
-- **`src/components/home/hero.tsx` and `featured-brands.tsx` for /empresas or /marcas effect** — used by non-home pages; not restyled for those pages in Phase A.
-- **`/admin` (entire `src/app/admin/**`)** — untouched; firewall must hold.
-- **Content / copy / i18n / data wiring / SEO / JSON-LD / calculator logic / T16 quote embed** — frozen from T19; presentation only.
-- **New icon set (lucide etc.), new scroll-reveal animations, dark mode on storefront** — none (storefront is light-only by identity).
-- **Phase B rollout** — separate task, only after explicit owner approval of this Phase A homepage.
+- Any change to `/admin` (firewall — AC-1).
+- `src/app/not-found.tsx` (root) and `src/app/global-error.tsx` — deliberately un-themed last-resort shells (AC-ERR-2).
+- Any content, copy, i18n key, prop, testid, anchor, server action, RPC, query, validation, or column-count change (AC-8) — except the AC-3 test updates.
+- Adding the two homepage gradient moments (`.gradient-band`/`.gradient-banner`) to interior pages (AC-7).
+- New animations, scroll-reveals, marquees, or the Factorial sticky-nav "utility scrolls away" trick (T20 already decided against these).
+- Phase 2 features (customer accounts, rich-text editing, discount-code management UI).
+- Re-measuring or altering the Factorial source grammar — `tasks/reference/factorial-style-analysis.md` + `tasks/ui-design.md` are frozen authority.
