@@ -1,202 +1,105 @@
-# Code Review: T14 — SEO, Analytics & Launch Hardening (Group A)
+# Code Review: T19 — Homepage rebuild + product condition grades
 
 ## Summary
-Strong, disciplined implementation of all 14 Group-A blockers. The security-load-bearing
-JSON-LD escaping is **correct** (verified against a real `</script>` + U+2028/U+2029 probe),
-site-URL is env-only (no host-header injection), all gates pass (tsc 0, eslint clean,
-2025/2025 unit tests). Two real correctness defects: `robots.txt` disallow rules miss the
-English `/en/...` funnel paths, and the sitemap emits a **duplicate** `/contacto`
-entry. Neither is a security hole; both are SHOULD-FIX before the client-QA crawl.
-
-Gate results (independently run, not trusted from dev-done):
-- `npx tsc --noEmit` → **exit 0** (whole project).
-- eslint on all changed dirs (`src/app`, `src/lib/seo`, `src/components/seo`, `static-pages.ts`) → **clean**.
-- `npx vitest run` → **2025 passed / 2025** (123 files).
-- JSON-LD escape probe (`</script><script>`, raw U+2028, raw U+2029) → **all neutralized** (evidence below).
-
----
+Strong, defensively-written full-stack implementation. All 25 acceptance criteria are met (verified against actual code + the live local DB, not the dev summary). Backend migration is faithful to the 0005/0015 posture and idempotent; admin write/read round-trips the grade; all three storefront read paths project + guard it; i18n is at perfect parity (623/623 keys) with verbatim copy; SEO/JSON-LD preserved; calculator math is edge-safe. No Critical or Major correctness/security defects. The only Major is a process/rules issue: `globals.css` crossed the documented 1,000-line hard cap (1005) — not caught by tooling because ESLint does not lint CSS.
 
 ## Critical Issues (MUST FIX)
-
-_None._ I attacked the JSON-LD serialization and the site-URL resolver specifically and
-could not break either. Evidence recorded so the next stages don't have to re-derive it.
-
-**JSON-LD escaping — VERIFIED SAFE (not a finding, documented so it isn't re-litigated):**
-`escapeForScriptSafe` (`src/components/seo/json-ld.tsx:26-31`) runs on the **serialized**
-JSON string (`escapeForScriptSafe(JSON.stringify(node))`, line 45), not selectively on
-fields. Traced attack `name: "</script><script>alert(1)</script>"`:
-`JSON.stringify` → `{"name":"</script>..."}` → escape turns every `<` into `<` →
-`{"name":"</script>..."}`. No raw `<` survives, so the `</script>` sequence cannot
-terminate the element. Raw U+2028/U+2029 (which `JSON.stringify` passes through unescaped)
-are replaced with literal ` `/` ` — confirmed the `new RegExp("\\u2028","g")`
-matches the actual code point, not a literal backslash-u. `&` and `>` are left un-escaped,
-which is **fine inside a `<script>`** (they are not markup-significant in raw-text element
-content once `<` is neutralized).
-
----
+None.
 
 ## Major Issues (SHOULD FIX)
 
-### M-1: robots.txt disallow rules do not cover English (`/en/...`) funnel paths
+### M-1: `globals.css` exceeds the CLAUDE.md 1,000-line hard cap
 - **ID**: M-1
 - **Severity**: MAJOR
-- **File**: `src/app/robots.ts:19-28`
-- **Problem**: The disallow list is `["/admin", "/api/", "/checkout", "/carrito", "/sillas?", "/en/sillas?"]`.
-  `/carrito` and `/checkout` are locale-prefixed routes under `src/app/[locale]/` (confirmed:
-  both folders exist under `[locale]`), so the English funnel is served at `/en/carrito` and
-  `/en/checkout` — **neither is disallowed**. The faceted-noindex rule was correctly duplicated
-  for `/en/sillas?`, but the cart/checkout equivalents were not. `/admin` and `/api` ARE
-  app-root routes (confirmed `src/app/admin`, `src/app/api` are NOT under `[locale]`), so those
-  two are correct.
-- **Impact**: Crawlers can index the English cart and checkout pages (transient,
-  duplicate-content funnel URLs). Not a data leak (those pages are gated/empty for anon), but
-  it is exactly the crawl-surface hygiene AC-A10 is meant to enforce, asymmetrically applied
-  between locales.
-- **Suggested Fix**: Add `"/en/checkout"` and `"/en/carrito"` to the disallow array. (robots
-  prefix matching means `/checkout` covers `/checkout/*` but NOT `/en/checkout`.)
-- **Status**: FIXED — added `/en/checkout` and `/en/carrito` to the disallow array
-  (`src/app/robots.ts:26-30`), mirroring the existing `/en/sillas?` pattern. Audited the
-  full `[locale]` route set (`carrito`, `checkout`, `categorias`, `contacto`, `empresas`,
-  `estilos`, `marcas`, `producto`, `showroom`, `sillas`, `[pageSlug]`): only the cart/checkout
-  funnel is disallow-listed; `/sillas` was already mirrored; the rest are intentionally
-  crawlable. `/admin` + `/api/` confirmed app-root (no `/en` mirror needed). Proven live:
-  `curl /robots.txt` shows `Disallow: /en/checkout` and `Disallow: /en/carrito`. Regression
-  test added (`src/app/robots.test.ts`).
-
-### M-2: Sitemap emits a duplicate `/contacto` entry (both locales)
-- **ID**: M-2
-- **Severity**: MAJOR
-- **File**: `src/app/sitemap.ts:45-50, 91, 99, 119-120`
-- **Problem**: `STATIC_HREFS` hard-codes `staticPagePath(CONTACT_SLUG)` = `/contacto` (line 49).
-  Separately, `listPublishedStaticPageSlugs()` returns **every** published static-page slug —
-  and the seed publishes all 9 (`sobre-nosotros, envios, devoluciones, garantia,
-  preguntas-frecuentes, aviso-de-privacidad, terminos, contacto, showroom`; verified in
-  `scripts/seed-data/content.ts`), so `contacto` is mapped again at line 99. The final
-  `allHrefs` (line 119) therefore contains `/contacto` twice, producing a duplicate `<loc>`
-  per locale (4 duplicate rows total). Verified by simulation: `DUPLICATES: [ [ '/contacto', 2 ] ]`.
-- **Impact**: AC-A9's "no orphan/duplicate URLs" is violated. Duplicate `<loc>` entries are a
-  sitemap validity smell for a launch-QA crawl. `/showroom` is also pulled in via the dynamic
-  list — that one is CORRECT (it is a real crawlable route) and should stay.
-- **Suggested Fix**: De-dupe before emitting. Simplest: drop `staticPagePath(CONTACT_SLUG)`
-  from `STATIC_HREFS` (already covered by the published-slugs read), OR dedupe `allHrefs`
-  with a `Set` keyed on the resolved href in `sitemap()`. Prefer the `Set` so a future overlap
-  between STATIC_HREFS and the catalog reads can't reintroduce the bug.
-- **Status**: FIXED — de-duped in `sitemap()` (`src/app/sitemap.ts:117-127`) via a `Set`
-  keyed on the locale-agnostic href, `STATIC_HREFS` first so the hard-coded `/contacto` always
-  wins (survives even if the DB row is unpublished; the route exists regardless). Chose the
-  `Set` over dropping the STATIC_HREFS entry so any future overlap between STATIC_HREFS and the
-  catalog reads cannot reintroduce a duplicate. Proven live: `curl /sitemap.xml` → 118 `<loc>`
-  total = 118 unique (0 duplicates); `/contacto` and `/en/contacto` each appear exactly once;
-  `/showroom` retained. Regression test added (`src/app/sitemap.test.ts`).
-
----
+- **File**: `src/app/globals.css:1-1005` (was 927 pre-T19; T19 added the 3 motion classes at 954-1005)
+- **Problem**: CLAUDE.md Clean Code rules state "Hard cap: no file over 1,000 lines — enforced by ESLint `max-lines` (error); split before you reach it." The file is now **1005 lines**. The ESLint `max-lines` rule (`eslint.config.mjs:26`) has no `files` restriction, but eslint-config-next never applies a config to `.css` — I verified `npx eslint src/app/globals.css` returns "File ignored because no matching configuration was supplied." So the tooling silently does NOT enforce the cap on this file, and lint passes despite the violation. The written rule is nonetheless breached.
+- **Impact**: The single largest file in the repo, over the stated hard cap, growing with every feature's motion layer, with no CI guard to stop further growth. Future PRs will keep adding to it undetected.
+- **Suggested Fix**: Extract the motion layer (all `@keyframes` + the `.enter-*`, `.stagger`, `.*-fill`, `.faq-chevron`, `.cta-press` classes and their reduced-motion blocks) into `src/app/motion.css` and `@import` it from `globals.css`, bringing both under 400. Log the split in `tasks/clean-code-backlog.md`. Optionally add a CSS line-count check to CI so the cap is actually enforced.
+- **Status**: OPEN
 
 ## Minor Issues (NICE TO FIX)
 
-### m-1: Sitemap `<loc>` URLs are not XML-escaped for a literal `&` in a slug
-- **File**: `src/lib/seo/site-url.ts:57` (`new URL().toString()`), surfaced in `sitemap.ts`
-- **Detail**: `new URL(pathname, origin).toString()` percent-encodes spaces, `<`, `>`, and
-  unicode (verified: `a&b<c` → `a&b%3Cc`; `sillón-café` → `sill%C3%B3n-caf%C3%A9`) but leaves
-  a literal `&` intact. Next.js's `MetadataRoute.Sitemap` serializer XML-escapes `<loc>`
-  content, so this is defended one layer up, and slugs are DB-kebab-case in practice (no `&`).
-  Defensive-only; no action strictly required. Edge case 4 is otherwise satisfied.
-- **Status**: SKIPPED — already defended one layer up (Next's `MetadataRoute.Sitemap`
-  serializer XML-escapes `<loc>` content), slugs are DB-kebab-case (no `&` in practice), and
-  adding escaping in `site-url.ts` risks double-escaping the serializer's output. Sanctioned
-  pattern; no change to avoid churn/regression.
+### m-1: `.calc-bar-fill` / `.cart-progress-fill` transition is 400ms, over the 300ms UI-motion bar
+- **File**: `src/app/globals.css:897, 982`
+- **Problem**: `.claude/skills/review-animations/STANDARDS.md` sets "UI animations stay under 300ms," with an exception only for marketing/explanatory motion. The calculator savings bar is arguably explanatory (it demonstrates the value prop) and deliberately mirrors the already-shipped `.cart-progress-fill`, so it is defensible — but the comment at 893/978 only says "400ms ease-out" without invoking the exemption.
+- **Suggestion**: Either drop to ~300ms, or amend the comment to explicitly justify it as explanatory motion so a future reviewer doesn't re-flag it. A progress-style reveal is also a candidate for `linear` per the STANDARDS easing table; `ease-out` on a one-shot mount reveal is acceptable.
 
-### m-2: Product JSON-LD & OG images assume absolute URLs with no guard
-- **File**: `src/lib/seo/json-ld.ts:86`, `producto/[slug]/page.tsx:96,136`
-- **Detail**: `buildProductLd`/`buildOpenGraph` pass `primaryImage.url` straight through. OG
-  images get resolved against `metadataBase` by Next if relative, but **JSON-LD does not** — a
-  relative image URL would emit an invalid schema.org `image`. All image URLs are absolute
-  today (picsum in seed; Supabase `publicUrl` in prod), so correct now. Consider normalizing to
-  absolute in `buildProductLd` to make the invariant explicit rather than latent.
-- **Status**: SKIPPED — correct today (all image URLs are absolute by construction: picsum in
-  seed, Supabase `publicUrl` in prod). Normalizing would require threading the site origin into
-  `buildProductLd` (currently origin-free/pure) and would need to correctly pass through
-  absolute + `data:` URIs, expanding scope beyond the two majors. Out of scope for this fix
-  pass; no functional defect exists.
+### m-2: Non-null `!` used in two test files to silence `.find()`
+- **File**: `src/lib/catalog/savings.test.ts:12` (`computeSavings(aeron!)`), `src/components/home/savings-calculator.test.tsx:41` (`...find(...)!`)
+- **Problem**: CLAUDE.md: "the frontend never uses `any` or `!` to silence the compiler." These are in tests (lower stakes) and the arrays are statically non-empty, but the rule is worded absolutely.
+- **Suggestion**: Replace with an explicit assertion (`const aeron = CALCULATOR_MODELS.find(...); expect(aeron).toBeDefined(); if (!aeron) throw ...`) or a small `assertDefined` test helper.
 
-### m-3: PDP OpenGraph `type: "article"` for a product page
-- **File**: `src/app/[locale]/producto/[slug]/page.tsx:94`
-- **Detail**: A PDP uses OG `type: "article"`. The richer value for a product is `product`, but
-  Next's typed `openGraph` union favors `website`/`article` and `article` is defensible/valid.
-  Cosmetic; no functional impact.
-- **Status**: SKIPPED — `type: "product"` is not in Next's typed `openGraph` discriminated
-  union, so adopting it would require an `as`-cast or type escape hatch (banned by CLAUDE.md).
-  `article` is valid and renders correctly. Cosmetic; not worth a type-safety compromise.
+### m-3: `brand-bar` parses a display string on a hardcoded separator
+- **File**: `src/components/home/brand-bar.tsx:14`
+- **Problem**: `brands.split("·")` silently collapses to one "brand" if a translator ever changes the separator. `.filter(Boolean)` avoids empty `<li>`s but not a mistranslation.
+- **Suggestion**: Add a `keys-used`-style assertion that the `brandBar` string contains `·`, or move the brand list to a config array rather than parsing a display string.
 
-### m-4: `metadata.test.ts` mocks `getPathname`, under-verifying the store-wide hreflang scheme
-- **File**: `src/lib/seo/metadata.test.ts:14-17`
-- **Detail**: The test hard-codes the `as-needed` prefix rule in a mock rather than exercising
-  the real next-intl `getPathname`. The mock matches `routing` today, but a future routing
-  change (e.g. `localePrefix: "always"`) would silently pass this test while shipping a wrong
-  store-wide hreflang scheme. Dev correctly notes it is verified end-to-end by the build+curl
-  gate, but the unit test gives false confidence. Consider a guard test on `routing.localePrefix`.
-- **Status**: FIXED — added a guard test (`src/lib/seo/metadata.test.ts`, `describe("hreflang
-  mock guard (m-4)")`) asserting the real `routing.localePrefix === "as-needed"`,
-  `defaultLocale === "es-MX"`, and `locales === ["es-MX", "en"]`. If routing ever switches to
-  `localePrefix: "always"` (or the locale set changes), this test fails loudly instead of the
-  mock silently masking a wrong store-wide hreflang scheme.
+### m-4: Positional icon-to-card coupling
+- **File**: `src/components/home/values-impact.tsx:35-40,72`, `src/components/home/social-proof.tsx`, `src/components/home/hero-stats.tsx:19`
+- **Problem**: `CARD_ICONS[index]` and label-based keys (`stat.label`) rely on positional alignment / unique labels. If a 5th card is added to the tuple, `CARD_ICONS[4]` is `undefined` and renders nothing; if two placeholder stats ever share a label, React warns on duplicate keys (plausible during content iteration).
+- **Suggestion**: Pair the icon with the card in one structure; key stats on a stable id/figure rather than the translatable label.
 
----
+## Nits
+- **n-1**: `page.tsx` co-locates a `Section` helper with the page shell — fine now (well under 400), extract to `src/components/home/section.tsx` if the page grows (SRP).
+- **n-2**: Four separate `STAGGER_STEP_MS` constants (50/50/60/50) across section components — mild DRY smell; a shared motion-constants module with per-component overrides would centralize the "settles ≤ ~200ms" contract.
+- **n-3**: Footer social/legal links are `href="#"` placeholders (`site-footer.tsx`), and `WHATSAPP_DISPLAY = "+52 55 1234 5678"` (`src/lib/config/shared.ts:85`) is a placeholder number rendered to users. Intentional per owner decision (tracked in the placeholder checklist) — must be resolved before go-live.
+- **n-4**: `src/components/seo/json-ld.tsx:29-30` — the U+2028/U+2029 `.replace()` targets equal their replacements (no-ops); the `<` → escaped form is the one doing real work. Pre-existing (T14), not T19; the "XSS-safe single JSON-LD" claim still holds via the `<` escape.
+- **n-5**: `.drawer-panel[data-state="closed"]` uses `pointer-events: none` without `!important` while the sibling scrim uses `!important` (`globals.css:309 vs 330`). Pre-existing (T2) asymmetry; near-zero impact (panel is translated off-screen).
 
 ## Acceptance Criteria Verification
-
 | # | Criterion | Status | Evidence |
 |---|-----------|--------|----------|
-| A1 | build green | PASS | `tsc --noEmit` exit 0; eslint clean; dev-verified `next build` exit 0. |
-| A2 | taxonomy 500 fixed (force-dynamic ×3) | PASS | `export const dynamic = "force-dynamic"` on all 3: `categorias/[slug]:43`, `marcas/[slug]:39`, `estilos/[slug]:38`. Suspense/skeleton/EmptyState/grid untouched. Request-time 200 verified end-to-end (orchestrator + dev). |
-| A3 | charCount renders formatted N/M | PASS | `contacto/page.tsx:72` `charCount: t.raw("charCount")`. Renders `0/2000` (config `CONTACT_MESSAGE_MAX`; AC's 1200 was an estimate — intent met). |
-| A4 | no sibling raw-key leaks | PASS | PDP `qa.form.counter` (producto:266), recentlyViewed/stock templates, empresas `form.charCount` all use `t.raw`. No bare `t()` on an ICU template introduced. |
-| A5 | e2e prod server + 4 flags | PASS | `playwright.config.ts:29` → `npm run e2e:server` (`NEXT_QA_DIST_DIR=.next-e2e next build && next start`, package.json:14); all 4 flags (config:41-44); isolated dist dir. |
-| A6 | real 404 status | PASS | `e2e/not-found.spec.ts:73-87` `request.get(..., {maxRedirects:0})` asserts `status()===404` for bogus route AND missing taxonomy slug. |
-| A7 | reset+seed path | PASS | `package.json:17` `db:reset:seed` chains reset && seed; existing scripts preserved; checklist §3. |
-| A8 | hosted-apply path | PASS | `deploy-readiness-checklist.md` §2: link → `db push` 0001..0014 → seed + post-migrate anon-denial RLS assertion. |
-| A9 | sitemap both locales + hreflang | PASS (M-2) | Both locales × products/brands/categories(flattened)/styles/static-pages + home/`/sillas`/`/empresas`/`/contacto`, absolute `<loc>` + per-URL `alternates.languages`. Faceted excluded. **Defect: `/contacto` duplicated (M-2).** |
-| A10 | robots.txt | PASS (M-1) | Allows `/`, disallows `/admin` `/api/` `/checkout` `/carrito` + faceted `/sillas?`/`/en/sillas?`, absolute `Sitemap:`. **Defect: `/en/checkout` `/en/carrito` not disallowed (M-1).** |
-| A11 | canonical + hreflang store-wide | PASS | `buildAlternates` single-sources canonical + es-MX/en/x-default; applied home:55, PDP:89, empresas:66, contacto:48, `[pageSlug]`:59, taxonomy ×3, `/sillas` (sillas:86 adds `languages`, PRESERVES faceted-noindex + page-N canonical sillas:77-91). x-default → es-MX (metadata.ts:55). |
-| A12 | JSON-LD Product/Org/WebSite/Breadcrumb | PASS | PDP `[Product, BreadcrumbList]` (producto:142); home `[Organization, WebSite]` (page:123); taxonomy ×3 BreadcrumbList. Price = cents/100 2dp (`centsToMajorString`, unit-tested 129900→"1299.00" — no x100 error), MXN, availability from stockState, offer omitted when price<1 cent (edge 7). |
-| A13 | no secret in bundle | PASS | Site URL from `NEXT_PUBLIC_SITE_URL`/`_ORIGIN` only; no server secret in client; `static-pages.ts` is `import "server-only"`; secret-exposure tests green (2025/2025). |
-| A14 | build determinism / safe degrade | PASS | `sitemap.ts` `safeRead`→`[]` per source (no throw); `getSiteUrl` never throws (unit-tested); `listPublishedStaticPageSlugs`→`[]`; checklist §5 documents `NEXT_PUBLIC_SITE_URL` requirement. |
-
-**Group A: 14/14 PASS** — A9 and A10 carry MAJOR crawl-hygiene defects (M-2, M-1); functional behavior is correct.
-
----
+| AC-1 | Enum `A+/A/B` + nullable `condition_grade`, no default | PASS | Migration 27-37; live DB: enum labels = `A+,A,B`; column `is_nullable=YES default=NONE` |
+| AC-2 | `products_public` regen includes grade, omits `cost_price_cents`, keeps grant | PASS | View SQL 43-72 byte-identical to 0005 + `condition_grade`; live DB: view has `condition_grade`, no `cost_price_cents`; anon/authenticated = SELECT |
+| AC-3 | 0015 grant posture, idempotent | PASS | Only `grant select on products_public` (76) + read-only revoke (79-80); applied twice cleanly on live DB |
+| AC-4 | Existing rows NULL, no other data loss | PASS | `add column` no default/backfill; view additive; dev-verified 30 rows NULL |
+| AC-5 | Admin select: none + A+/A/B, default none, hydrated on edit | PASS | `product-form.tsx:264-278`; hydrated `product-read.ts:92` |
+| AC-6 | `parseProductInput` validates grade; `ProductParsed` gains field | PASS | `product-input.ts:95,222-223,291-300` |
+| AC-7 | create/update persist grade + revalidate; round-trips | PASS | `product-write.ts:45,93` `.insert/.update(values)`; bust `CATALOG_CACHE_TAG`; read hydrates `?? ""` |
+| AC-8 | Grade optional, no error when absent | PASS | `parseConditionGrade` ""→null; empty default |
+| AC-9 | `conditionGrade` on card; projected in list, search, PDP | PASS | `queries-internal.ts:55,215`; `search.ts:166-189`; `product-detail.ts:66,258` |
+| AC-10 | `<GradeBadge>` on card/PDP/home; null → nothing | PASS | `grade-badge.tsx:31`; card `:94-100`, PDP `:152-156` |
+| AC-11 | Token-driven, distinct from stock badge, no overlap 320px | PASS | tokens only; `max-w-[45%] truncate`; opposite corners |
+| AC-12 | `.theme-storefront` greens+mint, no cobalt, no hardcoded hex | PASS | green oklch tokens; no cobalt in active values; admin firewalled |
+| AC-13 | `--cta` orange w/ AA fg, every CTA | PASS | #f95326/#2a1206 = 5.30:1 AA; cta variant everywhere; zero `text-white` on cta |
+| AC-14 | Real logo header+footer, icon.svg favicon | PASS | SVGs exist; header `next/image` w/ alt; favicon metadata; footer white wordmark |
+| AC-15 | Topbar msgs + WA link, i18n, 320px-safe | PASS | 3 i18n msgs; config-gated WA (never `wa.me//`); `overflow-x-auto` |
+| AC-16 | Nav catalog/process/business/trust + orange CTA; 4+col footer | PASS | `nav-items.ts:23-28`; cta variant; 5-col footer + contact |
+| AC-17 | FAB reused, config-gated, not duplicated | PASS | `WhatsAppButton` once (`layout.tsx:126`); others are text links |
+| AC-18 | 13-section homepage in order + restyled cert-tag | PASS | `page.tsx` full composition + shell footer/FAB |
+| AC-19 | Real featured via listProducts, badges, PDP links, degrades | PASS | `page.tsx:93`; catch→`[]`→omit; cards link `/producto/[slug]` |
+| AC-20 | Every string next-intl both locales; MXN both | PASS | 623/623 parity; no hardcoded strings; `formatMXN` |
+| AC-21 | No media-notes; nullable image fallbacks | PASS | no dashed boxes; `hero-image-fallback` glyph tile |
+| AC-22 | Subtle asterisk disclaimers | PASS | small/muted beneath sections |
+| AC-23 | Client calculator edge-safe, no reload, no inline script, 8%/0% | PASS | island; div-by-zero + floor + clamp guarded; config `as const`; no `<script>` |
+| AC-24 | generateMetadata + Org/WebSite JSON-LD + alternates, once | PASS | `page.tsx:46-88`; `buildHomeJsonLd` = exactly 2 nodes, one render |
+| AC-25 | lint/test/build pass; size caps; no any/!/empty-catch | PARTIAL | tsc 0, vitest 2155/2155, TS/TSX lint clean (all re-run by me). BUT globals.css 1005 > 1000 (M-1); two `!` in tests (m-2). No `any`, no empty catch |
 
 ## Edge Case Verification
-
 | # | Edge Case | Status | Evidence |
 |---|-----------|--------|----------|
-| 1 | Taxonomy `?page=99` → 200 clamped | HANDLED | force-dynamic legalizes deep `await searchParams`; query layer clamps (pre-existing). |
-| 2 | Taxonomy zero active products | HANDLED | `<EmptyState>` branch untouched; sitemap includes the taxonomy URL safely. |
-| 3 | DB unreachable at build | MOSTLY HANDLED | `safeRead`→`[]` in sitemap; routes are force-dynamic/dynamic so render on request. NOTE: taxonomy `generateStaticParams` (categorias:54/marcas:42/estilos:41) are NOT try/catch-wrapped — a build-time DB outage could still surface there. Low risk + checklist recommends build-time DB reachability; acceptable per AC-A14's "OR the checklist mandates". |
-| 4 | Slug with URL-unsafe chars | MOSTLY HANDLED | `new URL()` encodes spaces/unicode/`<`/`>`; literal `&` left raw (m-1) but Next serializer XML-escapes `<loc>`. |
-| 5 | Locale-prefixed vs default URLs | HANDLED | `getPathname` with `as-needed`: es-MX unprefixed, en `/en`; x-default → es-MX (metadata.ts:55, sitemap.ts:66). |
-| 6 | Faceted `/sillas?marca=` excluded | HANDLED | Sitemap enumerates only clean hrefs; faceted view `noindex,follow` (sillas:91); robots disallows `/sillas?`/`/en/sillas?`. |
-| 7 | Product null/zero price / OOS in JSON-LD | HANDLED | `buildProductLd` omits `offers` when `priceCents<1` (json-ld.ts:90); `out`→OutOfStock. Unit-tested. |
-| 8 | Cookie banner reduced-motion / no-JS | N/A | Group B; cookieless analytics ⇒ banner not shipped. |
+| 1 | No grade → no badge/gap; admin "none" | HANDLED | conditional render; `defaultValue=""` |
+| 2 | Invalid grade at read → nothing, no throw | HANDLED | `isConditionGrade` in all read paths + badge; DB enum rejects `'X'` (verified) |
+| 3 | Tampered POST grade → field error, no write | HANDLED | `parseConditionGrade`→`grade-invalid`; aggregate check blocks |
+| 4 | Catalog read fails → section hidden, page renders | HANDLED | `readFeaturedProducts` catch→warn→`[]`→omit |
+| 5 | WA unconfigured → no `wa.me//`, links hide | HANDLED | `buildWhatsAppUrl` null → omitted; footer plain text; FAB null |
+| 6 | Reduced motion → instant | HANDLED | every motion class has reduce block; `.stagger` neutralizes inline delay |
+| 7 | 320px → stacks, no h-scroll | HANDLED | topbar `overflow-x-auto`; grids stack; badges `max-w-[45%]` |
+| 8 | `/en` → EN copy, MXN unchanged | HANDLED | EN keys present; `formatMXN` locale-independent |
+| 9 | Calc PosturPrice ≥ new price → clamp/floor | HANDLED | `Math.max(0,…)` + `Math.max(CALCULATOR_MIN_BAR_FRACTION,…)`; test passes |
+| 10 | B2B double-submit → rate-limited | HANDLED | reuses T16 `checkQuoteRateLimit` unchanged |
+| 11 | Honeypot → fake success, no email | HANDLED | reused T16; form only restyled |
+| 12 | Grade + long name + low-stock @320px → no overlap | HANDLED | opposite corners; `max-w-[45%] truncate`; `line-clamp-2` |
+| 13 | Migration re-run hosted → idempotent | HANDLED | applied twice on live DB cleanly; guarded enum + `if not exists` + drop/create |
+| 14 | JSON-LD after rebuild → Org/WebSite once | HANDLED | `buildHomeJsonLd` = 2 nodes, one `<JsonLd>` |
 
----
+## Quality Score: 9/10
 
-## Craft / Conventions
-- Strict TS; no `any`, no `!` in the diff; `JsonLdObject` typed recursively.
-- Small single-purpose functions; largest new file json-ld.ts:161 (well under caps).
-- Named constants for currency, availability enum, price threshold, locale tags — no magic values.
-- Error handling never silenced: every catch logs with context and degrades (sitemap, static-pages, home/empresas).
-- Tests meaningful: escape test asserts the security property (`not.toContain("<")`); `centsToMajorString` covers the x100 boundary; `buildProductLd` covers offer omission.
-- DRY: canonical/hreflang single-sourced (metadata.ts); breadcrumb JSON-LD reuses the visible `Crumb[]` array.
-- No animation code changed → `review-animations` STANDARDS not applicable.
+## Recommendation: FIX-REQUIRED (Major: 1) — then APPROVE
+Every acceptance criterion and edge case is met, verified against the live database and a full test/typecheck/lint re-run (not just the dev's claims). The single blocking item is M-1: `globals.css` (1005 lines) breaches the documented 1,000-line hard cap, and the breach is invisible to CI because ESLint does not lint CSS. Split the motion layer out of `globals.css` (and ideally add a CSS line-count guard). The Minor items are non-blocking cleanups. Once M-1 is resolved this is ship-ready.
 
----
-
-## Quality Score: 8.5/10
-Blocker fixes are correct and the security-critical serialization is genuinely safe (probed,
-not assumed). Loses points for two real crawl-hygiene defects (M-1 English disallow gap, M-2
-sitemap duplicate) and the mocked-`getPathname` test that under-verifies the hreflang scheme.
-
-## Recommendation: APPROVE-WITH-FIXES
-Ship after Stage 6 fixes M-1 (add `/en/checkout`, `/en/carrito` to robots disallow) and M-2
-(de-dupe `/contacto` in the sitemap). Minors m-1..m-4 are optional hardening. No CRITICAL
-issues; nothing blocks the pipeline from proceeding to Fix.
+### Severity Counts
+- Critical: 0
+- Major: 1 (M-1)
+- Minor: 4 (m-1..m-4)
+- Nit: 5 (n-1..n-5)
