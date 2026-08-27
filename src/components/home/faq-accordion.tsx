@@ -22,7 +22,9 @@ interface FaqAccordionProps {
 
 export function FaqAccordion({ items }: FaqAccordionProps) {
   return (
-    <div data-testid="faq-accordion">
+    // Top hairline on the wrapper so the FIRST row also has a top border
+    // (Factorial hairline rows, AC-13); each row keeps its bottom hairline.
+    <div data-testid="faq-accordion" className="border-t border-border">
       {items.map((item) => (
         <details
           key={item.id}
@@ -30,7 +32,7 @@ export function FaqAccordion({ items }: FaqAccordionProps) {
           className="faq-item group scroll-mt-28 border-b border-border"
           data-testid={`faq-item-${item.id}`}
         >
-          <summary className="faq-summary flex cursor-pointer list-none items-center justify-between gap-4 rounded-sm py-4 font-heading text-base font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          <summary className="faq-summary flex cursor-pointer list-none items-center justify-between gap-4 rounded-sm py-4 font-heading text-lg font-semibold tracking-[-0.02em] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
             {item.question}
             <HugeiconsIcon
               icon={Add01Icon}
@@ -40,7 +42,7 @@ export function FaqAccordion({ items }: FaqAccordionProps) {
               className="faq-chevron shrink-0 text-primary"
             />
           </summary>
-          <p className="pb-4 text-sm leading-relaxed text-muted-foreground">
+          <p className="pb-5 text-base leading-relaxed text-muted-foreground">
             {item.answer}
           </p>
         </details>

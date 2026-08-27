@@ -27,7 +27,7 @@ export async function SiteTopbar() {
   return (
     <div className="bg-primary text-primary-foreground" data-testid="site-topbar">
       <div className="mx-auto flex h-9 max-w-(--breakpoint-xl) items-center gap-4 px-4 md:px-6 lg:px-8">
-        <ul className="flex min-w-0 flex-1 items-center gap-3 overflow-x-auto whitespace-nowrap text-xs [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <ul className="flex min-w-0 flex-1 items-center gap-3 overflow-x-auto whitespace-nowrap text-xs tracking-[-0.02em] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <li>{t("msg1")}</li>
           <li aria-hidden>·</li>
           <li>{t("msg2")}</li>

@@ -33,42 +33,42 @@ export async function B2BSection() {
       data-testid="b2b-section"
     >
       <div className="enter-fade flex flex-col gap-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+        <p className="text-sm font-medium tracking-[-0.02em] text-muted-foreground">
           {t("eyebrow")}
         </p>
-        <h2 className="font-heading text-2xl font-bold tracking-wide text-foreground sm:text-3xl">
+        <h2 className="font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:text-[2rem]">
           {t("heading")}
         </h2>
-        <p className="max-w-prose text-sm leading-relaxed text-muted-foreground sm:text-base">
+        <p className="max-w-prose text-base leading-relaxed text-muted-foreground">
           {t("subcopy")}
         </p>
         <ul className="mt-2 flex flex-col gap-2">
           {values.map((value) => (
-            <li key={value} className="flex items-start gap-2 text-sm text-foreground">
+            <li key={value} className="flex items-start gap-2 text-base text-foreground">
               <HugeiconsIcon
                 icon={CheckmarkCircle02Icon}
                 size={18}
                 strokeWidth={2}
                 aria-hidden
-                className="mt-0.5 shrink-0 text-primary"
+                className="mt-0.5 shrink-0 text-[var(--ring)]"
               />
               {value}
             </li>
           ))}
         </ul>
         <div className="mt-2">
-          <p className="text-sm font-medium text-foreground">{t("segmentsHeading")}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{t("segments")}</p>
+          <p className="text-base font-medium text-foreground">{t("segmentsHeading")}</p>
+          <p className="mt-1 text-base text-muted-foreground">{t("segments")}</p>
         </div>
         <dl className="mt-2 flex gap-8">
           <div className="flex flex-col gap-1">
-            <dt className="font-heading text-2xl font-bold tabular-nums text-primary">
+            <dt className="font-heading text-3xl font-bold tabular-nums tracking-[-0.04em] text-foreground">
               {t("stat1Figure")}
             </dt>
             <dd className="text-sm text-muted-foreground">{t("stat1Label")}</dd>
           </div>
           <div className="flex flex-col gap-1">
-            <dt className="font-heading text-2xl font-bold tabular-nums text-primary">
+            <dt className="font-heading text-3xl font-bold tabular-nums tracking-[-0.04em] text-foreground">
               {t("stat2Figure")}
             </dt>
             <dd className="text-sm text-muted-foreground">{t("stat2Label")}</dd>
@@ -79,7 +79,7 @@ export async function B2BSection() {
 
       <div
         id="cotizacion"
-        className="scroll-mt-28 rounded-md border border-border bg-card p-5 sm:p-6"
+        className="factorial-card scroll-mt-28 p-6 sm:p-8"
       >
         <QuoteForm
           labels={buildFormLabels(tForm)}

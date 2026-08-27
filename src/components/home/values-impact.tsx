@@ -58,13 +58,13 @@ export function ValuesImpact(props: ValuesImpactProps) {
   return (
     <div className="flex flex-col gap-8" data-testid="values-impact">
       <div className="flex max-w-2xl flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+        <p className="text-sm font-medium tracking-[-0.02em] text-muted-foreground">
           {props.eyebrow}
         </p>
-        <h2 className="font-heading text-2xl font-bold tracking-wide text-foreground sm:text-3xl">
+        <h2 className="font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:text-[2rem]">
           {props.heading}
         </h2>
-        <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
+        <p className="text-base leading-relaxed text-muted-foreground">
           {props.subcopy}
         </p>
       </div>
@@ -73,31 +73,33 @@ export function ValuesImpact(props: ValuesImpactProps) {
         {cardsWithIcons.map(({ card, icon }, index) => (
           <li
             key={card.title}
-            className="stagger flex flex-col gap-3 rounded-md border border-border bg-card p-5"
+            className="stagger factorial-card flex flex-col gap-3 p-6"
             style={{ transitionDelay: `${index * STAGGER_STEP_MS}ms` }}
           >
-            <span className="flex size-10 items-center justify-center rounded-md bg-secondary text-primary">
+            <span className="flex size-11 items-center justify-center rounded-md bg-[var(--tint-green)] text-primary">
               <HugeiconsIcon icon={icon} size={20} strokeWidth={2} aria-hidden />
             </span>
-            <h3 className="font-heading text-base font-semibold text-foreground">
+            <h3 className="font-heading text-lg font-semibold tracking-[-0.02em] text-foreground">
               {card.title}
             </h3>
-            <p className="text-sm text-muted-foreground">{card.body}</p>
+            <p className="text-base text-muted-foreground">{card.body}</p>
           </li>
         ))}
       </ul>
 
       <div id="impacto" className="scroll-mt-28">
-        <dl className="enter-fade grid grid-cols-1 gap-6 rounded-md bg-secondary p-6 text-center sm:grid-cols-3">
+        <dl className="enter-fade grid grid-cols-1 gap-4 sm:grid-cols-3">
           {props.figures.map((figure, index) => (
             // Keyed on position: `figures` is a fixed 3-tuple that never reorders
             // or filters, so the index is stable — avoids a duplicate-key warning
             // if two placeholder figures ever share a label (m-4).
-            <div key={index} className="flex flex-col gap-1">
-              <dt className="font-heading text-2xl font-bold tabular-nums text-primary">
+            <div key={index} className="stat-card flex flex-col gap-2 p-6 text-center">
+              <dt className="font-heading text-4xl font-bold tabular-nums tracking-[-0.04em] text-foreground sm:text-5xl">
                 {figure.figure}
               </dt>
-              <dd className="text-sm text-secondary-foreground">{figure.label}</dd>
+              <dd className="text-sm tracking-[-0.02em] text-muted-foreground">
+                {figure.label}
+              </dd>
             </div>
           ))}
         </dl>

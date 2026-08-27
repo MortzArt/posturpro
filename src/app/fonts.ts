@@ -1,4 +1,4 @@
-import { Inter, Libre_Caslon_Text } from "next/font/google";
+import { Inter, Libre_Caslon_Text, DM_Sans } from "next/font/google";
 
 /**
  * Body/UI face — SHARED with admin + not-found.tsx. Bound to `--font-sans`,
@@ -28,5 +28,20 @@ export const headingSerif = Libre_Caslon_Text({
   weight: ["400", "700"],
   style: ["normal", "italic"],
   variable: "--font-heading-serif",
+  display: "swap",
+});
+
+/**
+ * Storefront body + display face (T20 — Factorial grammar). One geometric sans
+ * for everything: headings, body, UI, buttons, numbers. Wired to a NEW variable
+ * `--font-dm-sans` and applied ONLY under `.theme-storefront` (globals.css), so
+ * /admin + not-found keep Inter (firewall, AC-5/AC-6). `latin-ext` covers the
+ * es-MX glyphs (á é í ó ú ñ ¿ ¡) so tight -0.04em headings never fall back
+ * mid-word (edge 5). Four pinned weights keep the bundle bounded.
+ */
+export const dmSans = DM_Sans({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-dm-sans",
   display: "swap",
 });

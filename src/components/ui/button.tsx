@@ -5,7 +5,10 @@ import { Slot } from "radix-ui"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-md border border-transparent bg-clip-padding text-xs/relaxed font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  // Base hover is a COLOR SWAP only (Factorial `all .1s ease`): `transition-colors`
+  // avoids animating layout/transform on hover (Emil: name exact properties).
+  // Press feedback stays via `active:translate-y-px` / `.cta-press`.
+  "group/button inline-flex shrink-0 items-center justify-center rounded-md border border-transparent bg-clip-padding text-xs/relaxed font-medium whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
@@ -21,8 +24,10 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         // T19 CTA — owner-mandated orange, exclusively for primary CTAs. Dark
         // warm-brown foreground (AA 5.30:1; white would FAIL at 3.34:1). Press
-        // feedback via `.cta-press` (globals.css M1).
-        cta: "cta-press bg-cta text-cta-foreground shadow-sm hover:bg-cta-hover active:bg-cta-active",
+        // feedback via `.cta-press` (globals.css M1). T20 Factorial pill: full
+        // radius + 2px self-colored border that crossfades with the fill on
+        // hover; no shadow (Factorial CTAs are flat).
+        cta: "cta-press rounded-full border-2 border-cta bg-cta text-cta-foreground hover:bg-cta-hover hover:border-cta-hover active:bg-cta-active",
       },
       size: {
         default:
@@ -34,8 +39,10 @@ const buttonVariants = cva(
         "icon-xs": "size-5 rounded-sm [&_svg:not([class*='size-'])]:size-2.5",
         "icon-sm": "size-6 [&_svg:not([class*='size-'])]:size-3",
         "icon-lg": "size-8 [&_svg:not([class*='size-'])]:size-4",
-        // T19 hero / banner CTAs — ≥44px touch target.
-        xl: "h-11 min-w-11 gap-1.5 px-6 text-sm font-semibold [&_svg:not([class*='size-'])]:size-4",
+        // T20 hero / banner CTAs — Factorial large pill (48px ≥44 target,
+        // 16/600 label, generous px). `rounded-full` so even non-`cta` `xl`
+        // buttons (outline secondaries) are pills.
+        xl: "h-12 min-w-12 gap-1.5 rounded-full px-8 text-base font-semibold [&_svg:not([class*='size-'])]:size-4",
       },
     },
     defaultVariants: {

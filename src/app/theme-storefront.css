@@ -1,0 +1,75 @@
+/* ======================================================================== *
+ * STOREFRONT PRESENTATION RECIPES — Factorial grammar (T20, Phase A)
+ * ------------------------------------------------------------------------
+ * Storefront-scoped utility/component recipes too long for inline arbitrary
+ * values and reused across sections. Imported from globals.css (after the
+ * motion layer). Everything here is scoped under `.theme-storefront`, so admin
+ * never resolves it (firewall, AC-5/AC-6). Token VALUES live in the
+ * `.theme-storefront` block in globals.css; this file only consumes them.
+ *
+ * Authority: measured Factorial grammar owns the look; Emil owns motion
+ * restraint (transform/opacity, ease-out on enter, ≤~.15s hover color swaps,
+ * interruptible, reduced-motion-safe). No new keyframes, no scroll listeners.
+ * ======================================================================== */
+
+/* Body face for the storefront only (firewall). The <body> carries both
+ * `.theme-storefront` and `font-sans`; this scoped font-family overrides the
+ * `font-sans` utility for every descendant, so the whole storefront renders
+ * DM Sans while admin (no `.theme-storefront`, no `--font-dm-sans`) keeps Inter.
+ * Headings resolve DM Sans too via the `--font-heading-family` rebind in
+ * globals.css. (AC-1/AC-4/AC-5) */
+.theme-storefront,
+.theme-storefront .font-sans {
+  font-family:
+    var(--font-dm-sans), "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+/* (a) Floating white card — content / product / testimonial cards. Radius 16,
+ * borderless, layered triple soft shadow. Static (Factorial cards don't lift
+ * on hover). */
+.theme-storefront .factorial-card {
+  border-radius: var(--radius); /* 16px */
+  background: var(--card); /* white */
+  box-shadow: var(--shadow-factorial); /* layered triple soft shadow */
+  border: 0;
+}
+
+/* (b) Flat gray / canvas card — stats + tinted canvases. No shadow, no border. */
+.theme-storefront .stat-card {
+  border-radius: var(--radius); /* 16px */
+  background: var(--muted); /* flat gray */
+  border: 0;
+}
+
+/* Storefront secondary CTA: 2px ink-outline pill. Applied on
+ * <Button variant="outline"> at homepage/shell call sites (keeps admin
+ * `outline` unchanged). Hover swaps to a whisper-green tint over 100ms —
+ * color-only, interruptible, reduced-motion-safe. */
+.theme-storefront .pill-outline {
+  border-radius: 9999px;
+  border-width: 2px;
+  border-color: var(--primary);
+  background: transparent;
+  color: var(--primary);
+  transition: background-color 100ms ease, color 100ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .theme-storefront .pill-outline:hover {
+    background: var(--secondary);
+    color: var(--primary);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-storefront .pill-outline {
+    transition-duration: 0ms;
+  }
+}
+
+/* The two-and-only-two gradient moments (AC-7): calculator band + closing CTA
+ * banner. Both read as ink-on-pastel (AA ~10:1); no white-on-pastel. */
+.theme-storefront .gradient-band {
+  background: var(--gradient-factorial);
+}
+.theme-storefront .gradient-banner {
+  background: var(--gradient-factorial);
+}

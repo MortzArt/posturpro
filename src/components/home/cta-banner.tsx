@@ -3,11 +3,13 @@ import { Button } from "@/components/ui/button";
 import { CATALOG_PATH, EMPRESAS_PATH } from "@/lib/config";
 
 /**
- * CtaBanner (T19 D.10) — the closing conversion banner: a deep-green band (brand
- * identity payoff before the footer) with a heading and two CTAs — orange primary
- * (catalog) + mint secondary (business quote, 10.45:1 on green). Both full-width
- * stacked on mobile. Content enters with `.enter-fade`. Focus rings are white-ish
- * so they read on the green field.
+ * CtaBanner (T20 Factorial grammar) — the closing conversion banner: a radius-32
+ * gradient banner card (the second and only other gradient moment besides the
+ * calculator band, AC-7) inset on white, with ink text and two CTAs — orange
+ * pill primary (catalog) + 2px ink-outline pill secondary (business quote). Both
+ * full-width stacked on mobile. Content enters with `.enter-fade`. Ink over the
+ * lightest gradient stop ≈10:1 (AA PASS); the default green focus ring now reads
+ * on the pastel band, so the old white-ring overrides are removed.
  */
 
 interface CtaBannerProps {
@@ -19,10 +21,10 @@ interface CtaBannerProps {
 export function CtaBanner({ heading, cta1, cta2 }: CtaBannerProps) {
   return (
     <div
-      className="enter-fade rounded-lg bg-primary px-6 py-14 text-center text-primary-foreground"
+      className="enter-fade gradient-banner rounded-[2rem] px-6 py-14 text-center text-foreground sm:py-20"
       data-testid="cta-banner"
     >
-      <h2 className="mx-auto max-w-2xl text-balance font-heading text-3xl font-bold tracking-wide text-primary-foreground sm:text-4xl">
+      <h2 className="mx-auto max-w-2xl text-balance font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:text-[2.5rem]">
         {heading}
       </h2>
       <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4">
@@ -30,19 +32,16 @@ export function CtaBanner({ heading, cta1, cta2 }: CtaBannerProps) {
           asChild
           variant="cta"
           size="xl"
-          // Light focus ring so it reads on the deep-green band — matches the
-          // secondary CTA beside it; the default `--ring` (a green) would be
-          // near-invisible on this background (UX Stage 8 focus-ring parity).
-          className="w-full focus-visible:ring-primary-foreground/60 sm:w-auto"
+          className="w-full sm:w-auto"
           data-testid="cta-banner-catalog"
         >
           <Link href={CATALOG_PATH}>{cta1}</Link>
         </Button>
         <Button
           asChild
-          variant="secondary"
+          variant="outline"
           size="xl"
-          className="w-full focus-visible:ring-primary-foreground/60 sm:w-auto"
+          className="pill-outline w-full sm:w-auto"
           data-testid="cta-banner-business"
         >
           <Link href={EMPRESAS_PATH}>{cta2}</Link>

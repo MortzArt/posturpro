@@ -23,13 +23,13 @@ export function HomeSectionHeader({
 }: HomeSectionHeaderProps) {
   return (
     <div className="mb-6 flex flex-col gap-1 sm:mb-8 sm:flex-row sm:items-baseline sm:justify-between">
-      <h2 className="font-heading text-2xl font-bold tracking-wide text-foreground sm:text-3xl">
+      <h2 className="font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:text-[2rem]">
         {heading}
       </h2>
       <Link
         href={linkHref}
         data-testid={testId}
-        className="nav-hover group/brands inline-flex items-center gap-1 self-start rounded-sm text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="nav-hover group/brands inline-flex items-center gap-1 self-start rounded-sm text-base font-medium text-primary outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         {linkLabel}
         <HugeiconsIcon

@@ -11,6 +11,12 @@
 @import "./motion-catalog.css";
 @import "./motion-cart.css";
 
+/* Storefront presentation recipes (T20 — Factorial grammar). Split out to keep
+ * this file under the css-line-count guidance ceiling; holds the pill/card/
+ * gradient utilities + the scoped DM Sans body override. Storefront-scoped, so
+ * admin never sees it (firewall). */
+@import "./theme-storefront.css";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -189,29 +195,30 @@
  * border-border, rounded-md, bg-success, text-warning, bg-gold, bg-whatsapp).
  * ======================================================================== */
 .theme-storefront {
-  /* Brand palette (T19) — deep/brand green from the official logos replaces the
-   * T15 cobalt world. Milk-glaze ground carries a faint GREEN tint (not white).
-   * hex is sRGB reference; oklch is authoritative. All pairings WCAG AA verified
-   * (ui-design.md PART A.4). */
-  --background: oklch(0.985 0.008 158);
-  --foreground: oklch(0.28 0.055 158);
-  --card: oklch(1 0 0);
+  /* Brand palette (T19 hues preserved) re-grounded for the T20 Factorial grammar:
+   * pure-white page + flat near-neutral objects (separation comes from vertical
+   * rhythm + tinted OBJECTS, never alternating section backgrounds — AC-7). Brand
+   * greens / CTA orange / logo unchanged (AC-8). hex is sRGB reference; oklch is
+   * authoritative. All pairings WCAG AA verified (ui-design.md PART A.4/A.6). */
+  --background: oklch(1 0 0); /* pure white page (AC-7) */
+  --foreground: oklch(0.28 0.055 158); /* deep-green ink — headings/identity */
+  --card: oklch(1 0 0); /* white floating cards */
   --card-foreground: oklch(0.28 0.055 158);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.28 0.055 158);
   --primary: oklch(0.3346 0.0816 151.8);
   --primary-foreground: oklch(0.985 0.008 158);
-  --secondary: oklch(0.9615 0.0214 158.6);
+  --secondary: oklch(0.955 0.018 158); /* whisper-green tint object bg */
   --secondary-foreground: oklch(0.3346 0.0816 151.8);
-  --muted: oklch(0.955 0.012 158);
-  --muted-foreground: oklch(0.47 0.045 158);
+  --muted: oklch(0.968 0.004 158); /* flat near-neutral gray for stat/canvas cards */
+  --muted-foreground: oklch(0.44 0.030 158); /* body/secondary ink, less green; AA ≥4.5 on white */
   --accent: oklch(0.92 0.03 158);
   --accent-foreground: oklch(0.3346 0.0816 151.8);
   --destructive: oklch(0.55 0.20 27);
-  --border: oklch(0.88 0.02 158);
-  --input: oklch(0.88 0.02 158);
+  --border: oklch(0.90 0.010 158); /* hairlines — lighter, neutral */
+  --input: oklch(0.90 0.010 158);
   --ring: oklch(0.5234 0.1380 150.3);
-  --radius: 0.375rem;
+  --radius: 1rem; /* Factorial card radius base; drives the radius map (A.5) */
 
   /* CTA tokens (T19 AC-13) — owner-mandated orange #f95326, EXCLUSIVELY for
    * primary CTAs. Foreground is dark warm-brown (#2a1206), NOT white: white on
@@ -238,15 +245,39 @@
   --whatsapp: oklch(0.63 0.16 155);
   --whatsapp-foreground: oklch(1 0 0);
 
-  /* Green-tinted glaze shadow — depth reads as glaze, not gray. */
-  --shadow-color: oklch(0.3346 0.0816 151.8 / 0.12);
+  /* Softer neutral-green shadow for the layered Factorial card shadow (T20). */
+  --shadow-color: oklch(0.28 0.055 158 / 0.06);
 
-  /* Storefront display face (real binding — no longer aliasing --font-sans).
-   * Overrides the `--font-heading-family` resolver ONLY under this scope, so the
-   * `font-heading` utility renders Libre Caslon Text on the storefront while
-   * admin/not-found keep the `:root` default (Inter). */
-  --font-heading-family: var(--font-heading-serif), Georgia, "Times New Roman",
-    serif;
+  /* Storefront display + body face (T20 — Factorial grammar). Rebinds the
+   * `--font-heading-family` resolver to DM Sans ONLY under this scope, so the
+   * `font-heading` utility renders DM Sans 700 on the storefront while
+   * admin/not-found keep the `:root` default (Inter). The body-face override
+   * lives in theme-storefront.css. Libre Caslon Text no longer renders on the
+   * homepage/shell (AC-4); it stays wired for the shared Hero on /empresas
+   * (Phase B) via `--font-heading-serif`. */
+  --font-heading-family: var(--font-dm-sans), "Helvetica Neue", Helvetica, Arial,
+    sans-serif;
+
+  /* T20 Factorial primitives -------------------------------------------- */
+  /* Layered triple soft-shadow for floating white cards (re-tinted to our
+   * neutral-green --shadow-color). Applied via .factorial-card. */
+  --shadow-factorial:
+    0 -8px 16px var(--shadow-color), 0 16px 24px var(--shadow-color),
+    0 4px 8px var(--shadow-color);
+
+  /* Pastel tints (~8–12% of brand hues on white) for card canvases / icon
+   * tiles. AA-safe as BACKGROUNDS ONLY (text over them is ink/green). */
+  --tint-green: oklch(0.965 0.028 155); /* mint canvas */
+  --tint-orange: oklch(0.965 0.030 45); /* warm canvas */
+
+  /* The two-and-only-two gradient moments (soft-green → warm-tint @50%),
+   * left→right. Used by .gradient-band (calculator) + .gradient-banner
+   * (closing CTA). */
+  --gradient-factorial: linear-gradient(
+    100deg,
+    oklch(0.95 0.035 150 / 0.55),
+    oklch(0.955 0.035 55 / 0.5)
+  );
 }
 
 @layer base {

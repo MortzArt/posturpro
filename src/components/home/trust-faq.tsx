@@ -29,10 +29,10 @@ export function TrustFaq(props: TrustFaqProps) {
   return (
     <div id="garantia" className="scroll-mt-28" data-testid="trust-faq">
       <div className="flex max-w-2xl flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+        <p className="text-sm font-medium tracking-[-0.02em] text-muted-foreground">
           {props.eyebrow}
         </p>
-        <h2 className="font-heading text-2xl font-bold tracking-wide text-foreground sm:text-3xl">
+        <h2 className="font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:text-[2rem]">
           {props.heading}
         </h2>
       </div>
@@ -50,10 +50,10 @@ export function TrustFaq(props: TrustFaqProps) {
                 size={20}
                 strokeWidth={2}
                 aria-hidden
-                className="mt-0.5 shrink-0 text-primary"
+                className="mt-0.5 shrink-0 text-[var(--ring)]"
               />
-              <p className="text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">{guarantee.lead}</span>{" "}
+              <p className="text-base text-muted-foreground">
+                <span className="font-semibold text-foreground">{guarantee.lead}</span>{" "}
                 {guarantee.body}
               </p>
             </li>
@@ -61,7 +61,7 @@ export function TrustFaq(props: TrustFaqProps) {
         </ul>
 
         <div>
-          <p className="mb-2 font-heading text-base font-semibold text-foreground">
+          <p className="mb-2 font-heading text-lg font-semibold tracking-[-0.02em] text-foreground">
             {props.faqEyebrow}
           </p>
           <FaqAccordion items={props.faqItems} />

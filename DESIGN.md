@@ -3,6 +3,44 @@
 
 # DESIGN — PosturPro
 
+> **T20 AMENDMENT (2026-08-27) — Factorial design grammar supersedes the visual
+> world (Phase A: homepage + shared shell).**
+> The owner approved translating the Factorial (factorialhr.com/factorial-it)
+> design grammar onto the storefront in OUR brand palette. This replaces the
+> "Casa de Azulejo" world and the T19 serif/tinted-glaze presentation for the
+> homepage + shell (Phase B extends it store-wide after approval). What holds:
+>
+> • TYPE: one geometric sans — DM Sans 400/500/600/700 (next/font, latin+latin-ext),
+>   wired via a storefront-scoped `--font-dm-sans` (NOT `--font-sans`; admin keeps
+>   Inter — firewall). Headings 700 / -0.04em / ~1.1 leading; body 400 / 1.5 /
+>   soft-ink; small -0.02em. Sentence case everywhere — NO uppercase eyebrows,
+>   NO serif. Libre Caslon Text no longer renders on the homepage/shell.
+> • GROUND: pure white page (`--background: oklch(1 0 0)`). NO alternating section
+>   backgrounds. Separation = 112/64/40px rhythm + tinted OBJECTS (flat gray
+>   `--muted` cards, whisper-green/orange 8–12% tint canvases) + exactly TWO
+>   50%-opacity gradient moments (calculator band + radius-32 CTA banner).
+> • COMPONENTS: everything interactive is a PILL (`rounded-full`). Primary CTA =
+>   solid orange #f95326 + 2px self-border + warm-brown fg (AA 5.30:1), hover =
+>   lighter tint over 100ms, no scale/lift. Secondary = 2px ink-outline pill.
+>   Floating cards = radius-16, borderless, layered triple soft shadow
+>   (`--shadow-factorial`); flat stat/canvas cards = gray/tint, no shadow, no
+>   border. Stat numerals = ~56/700/-0.04em, naked, in flat gray cards. FAQ =
+>   bare hairline rows (no card). Nav + footer = white, 1px hairline, no drop
+>   shadow; footer flips deep-green → WHITE (Factorial pattern).
+> • COLOR DISCIPLINE: orange ONLY on primary CTAs (≤5/screen); brand green
+>   #0f7f3c (`--ring`) on link accents + check icons; deep green #094220
+>   (`--foreground`/`--primary`) is identity ink + chrome; everything else is
+>   ink + white + whisper-tints. Brand palette + logo unchanged.
+> • MOTION: restrained (Emil). NO scroll-reveal animations. 100ms hover color
+>   swaps; existing `.enter-fade`/`.stagger`/`.fab-pop`/`.drawer-*` retained
+>   (reduced-motion-safe); transform/opacity only.
+> • FIREWALL: all of the above is scoped to `.theme-storefront` + `--font-dm-sans`
+>   on `<html>`. `/admin` is untouched — Inter, neutral tokens, `rounded-md`.
+> Canonical spec: `tasks/ui-design.md` (T20). The T19 amendment below remains the
+> authority for the palette hex/oklch values and the CTA-token contract, which
+> T20 preserves verbatim; read every T19 "tinted glaze / serif heading" reference
+> as superseded by this Factorial grammar for the homepage + shell.
+
 > **T19 AMENDMENT (2026-08-27) — palette supersedes this document's color story.**
 > The client delivered official brand logos; the owner mandated their palette
 > site-wide. The cobalt color system described below is **decommissioned** and

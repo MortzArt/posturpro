@@ -29,13 +29,13 @@ export function ProcessSteps(props: ProcessStepsProps) {
       data-testid="process-steps"
     >
       <div className="flex max-w-2xl flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+        <p className="text-sm font-medium tracking-[-0.02em] text-muted-foreground">
           {props.eyebrow}
         </p>
-        <h2 className="font-heading text-2xl font-bold tracking-wide text-foreground sm:text-3xl">
+        <h2 className="font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:text-[2rem]">
           {props.heading}
         </h2>
-        <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
+        <p className="text-base leading-relaxed text-muted-foreground">
           {props.subcopy}
         </p>
       </div>
@@ -49,14 +49,14 @@ export function ProcessSteps(props: ProcessStepsProps) {
           >
             <span
               aria-hidden
-              className="font-heading text-4xl font-bold tabular-nums text-primary/25"
+              className="font-heading text-5xl font-bold tabular-nums tracking-[-0.04em] text-primary/25 sm:text-6xl"
             >
               {step.number}
             </span>
-            <h3 className="mt-2 font-heading text-base font-semibold text-foreground">
+            <h3 className="mt-2 font-heading text-lg font-semibold tracking-[-0.02em] text-foreground">
               {step.title}
             </h3>
-            <p className="text-sm text-muted-foreground">{step.body}</p>
+            <p className="text-base text-muted-foreground">{step.body}</p>
           </li>
         ))}
       </ol>

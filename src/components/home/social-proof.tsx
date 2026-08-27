@@ -25,7 +25,7 @@ const STAGGER_STEP_MS = 60;
 export function SocialProof(props: SocialProofProps) {
   return (
     <div className="flex flex-col gap-6" data-testid="social-proof">
-      <h2 className="font-heading text-2xl font-bold tracking-wide text-foreground sm:text-3xl">
+      <h2 className="font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:text-[2rem]">
         {props.heading}
       </h2>
       <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -36,7 +36,7 @@ export function SocialProof(props: SocialProofProps) {
           // attribution (m-4).
           <li
             key={index}
-            className="stagger flex flex-col gap-3 rounded-md border border-border bg-card p-6"
+            className="stagger factorial-card flex flex-col gap-3 p-6 sm:p-8"
             style={{ transitionDelay: `${index * STAGGER_STEP_MS}ms` }}
           >
             <HugeiconsIcon
@@ -46,7 +46,9 @@ export function SocialProof(props: SocialProofProps) {
               aria-hidden
               className="text-primary/40"
             />
-            <p className="text-base text-foreground">{testimonial.quote}</p>
+            <p className="text-xl font-normal leading-snug tracking-[-0.02em] text-foreground sm:text-2xl">
+              {testimonial.quote}
+            </p>
             <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
               <span className="flex size-8 items-center justify-center rounded-full bg-muted">
                 <HugeiconsIcon

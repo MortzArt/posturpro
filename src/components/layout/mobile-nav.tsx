@@ -220,7 +220,7 @@ function MobileNavBody({ t, onNavigate }: MobileNavBodyProps) {
   return (
     <>
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-            <Dialog.Title className="truncate font-heading text-base font-semibold uppercase tracking-wide text-foreground">
+            <Dialog.Title className="truncate font-heading text-lg font-semibold tracking-[-0.02em] text-foreground">
               {t("menuTitle")}
             </Dialog.Title>
             <Dialog.Description className="sr-only">
@@ -257,8 +257,8 @@ function MobileNavBody({ t, onNavigate }: MobileNavBodyProps) {
                 data-testid={`mobile-nav-item-${item.key}`}
                 onClick={onNavigate}
                 className={cn(
-                  "nav-hover flex items-center rounded-md px-3 py-3 text-base font-medium text-foreground outline-none",
-                  "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                  "nav-hover flex items-center rounded-full px-3 py-3 text-lg font-medium text-foreground outline-none",
+                  "hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                 )}
               >
                 {t(`items.${item.key}`)}
@@ -307,8 +307,8 @@ function MobileCartLink({ onNavigate }: { onNavigate: () => void }) {
         hydrated ? tCart("badgeLabel", { count: itemCount }) : tCart("headerLink")
       }
       className={cn(
-        "nav-hover flex items-center gap-2 rounded-md px-3 py-3 text-base font-medium text-foreground outline-none",
-        "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        "nav-hover flex items-center gap-2 rounded-full px-3 py-3 text-lg font-medium text-foreground outline-none",
+        "hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
       )}
     >
       <HugeiconsIcon icon={ShoppingCart01Icon} size={20} strokeWidth={2} aria-hidden />

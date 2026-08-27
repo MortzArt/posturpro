@@ -82,8 +82,8 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
               href={item.href}
               data-testid={`header-nav-${item.key}`}
               className={cn(
-                "nav-hover rounded-md px-3 py-2 text-sm font-medium text-muted-foreground outline-none",
-                "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                "nav-hover rounded-full px-3 py-2 text-base font-medium tracking-[-0.01em] text-foreground outline-none",
+                "hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
               )}
             >
               {t(`items.${item.key}`)}

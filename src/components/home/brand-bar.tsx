@@ -26,12 +26,14 @@ export function BrandBar({ label, brands }: BrandBarProps) {
     .filter(Boolean);
   return (
     <div className="flex flex-col items-center gap-4 text-center" data-testid="brand-bar">
-      <p className="max-w-2xl text-sm text-muted-foreground">{label}</p>
+      <p className="max-w-2xl text-xl font-bold tracking-[-0.02em] text-foreground sm:text-2xl">
+        {label}
+      </p>
       <ul className="flex flex-wrap justify-center gap-x-6 gap-y-2">
         {names.map((name) => (
           <li
             key={name}
-            className="font-heading text-base font-semibold tracking-wide text-muted-foreground"
+            className="font-heading text-base font-medium tracking-[-0.02em] text-muted-foreground"
           >
             {name}
           </li>

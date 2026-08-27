@@ -21,10 +21,10 @@ export function HeroStats({ stats }: HeroStatsProps) {
         // warning if two placeholder stats ever share a label (m-4).
         <div key={index} className="flex flex-col gap-1">
           <dt className="sr-only">{stat.label}</dt>
-          <dd className="font-heading text-2xl font-bold tabular-nums text-primary sm:text-3xl">
+          <dd className="font-heading text-4xl font-bold tabular-nums tracking-[-0.04em] text-foreground sm:text-5xl">
             {stat.figure}
           </dd>
-          <p aria-hidden className="text-xs text-muted-foreground">
+          <p aria-hidden className="text-sm tracking-[-0.02em] text-muted-foreground">
             {stat.label}
           </p>
         </div>

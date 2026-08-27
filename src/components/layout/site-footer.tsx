@@ -16,27 +16,29 @@ import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import { cn } from "@/lib/utils";
 
 /**
- * SiteFooter (T19 AC-16) — a deep-green block that closes every page (brand
- * identity payoff). Async server component. Structure follows the mockup: a wide
- * brand column (white text wordmark + blurb + 3 social links) then four columns:
+ * SiteFooter (T20 — Factorial white footer, content frozen from T19 AC-16).
+ * Async server component. Structure follows the Factorial pattern: a wide brand
+ * column (ink text wordmark + blurb + 3 social links) then four columns:
  * Catálogo / Empresas / Compañía / Contacto, plus a bottom bar (copyright +
- * payments line + legal links).
+ * payments line + legal links). Hairline-separated on a pure-white ground, no
+ * drop shadow (AC-15). Column titles 16/600 ink; links 500-weight muted with a
+ * hover underline. This flips the shell footer deep-green → WHITE, rippling to
+ * every storefront page (intended shell inheritance — approval-gate flag).
  *
- * On a green field the multi-color SVG logo's dark-green parts would vanish, so
- * the footer renders the store name as a WHITE TEXT WORDMARK (the header carries
- * the real SVG on its light bar). All copy comes from `home.footer.*`; the store
- * name falls back to `SEED_STORE_NAME`. WhatsApp is config-gated: when the phone
- * is unconfigured the contact line is plain text, never a broken `wa.me//`
- * (edge 5). Every text/link on green meets AA (white on deep green = 11.59:1).
+ * The store name renders as an ink TEXT WORDMARK (the header carries the real
+ * SVG). All copy comes from `home.footer.*`; the store name falls back to
+ * `SEED_STORE_NAME`. WhatsApp is config-gated: when the phone is unconfigured
+ * the contact line is plain text, never a broken `wa.me//` (edge 5). Every
+ * text/link on white meets AA (ink + muted on white, A.6).
  */
 
 const LINK_CLASS = cn(
-  "nav-hover inline-flex rounded-sm text-sm text-primary-foreground/80 outline-none",
-  "hover:text-primary-foreground focus-visible:ring-2 focus-visible:ring-primary-foreground/60",
+  "nav-hover inline-flex rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 outline-none",
+  "hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring",
 );
 
 const HEADING_CLASS =
-  "font-heading text-xs font-semibold uppercase tracking-wide text-primary-foreground";
+  "font-heading text-base font-semibold tracking-[-0.02em] text-foreground";
 
 /**
  * Resolve a social/legal link's href from the centralized config (n-3), falling
@@ -104,18 +106,21 @@ export async function SiteFooter() {
   const whatsappLine = t("contactWhatsapp", { phone: WHATSAPP_DISPLAY });
 
   return (
-    <footer className="mt-auto bg-primary text-primary-foreground" data-testid="site-footer">
+    <footer
+      className="mt-auto border-t border-border bg-background text-foreground"
+      data-testid="site-footer"
+    >
       <div className="mx-auto max-w-(--breakpoint-xl) px-4 py-12 md:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-5">
           {/* Brand column (wider). */}
           <div className="flex flex-col gap-4 lg:col-span-2">
             <p
               data-testid="footer-wordmark"
-              className="font-heading text-lg font-bold uppercase tracking-wide text-primary-foreground"
+              className="font-heading text-lg font-bold tracking-[-0.02em] text-foreground"
             >
               {SEED_STORE_NAME}
             </p>
-            <p className="max-w-prose text-sm text-primary-foreground/90">
+            <p className="max-w-prose text-sm text-muted-foreground">
               {t("blurb")}
             </p>
             <ul className="flex items-center gap-4">
@@ -186,19 +191,19 @@ export async function SiteFooter() {
                 {whatsappLine}
               </a>
             ) : (
-              <span className="text-sm text-primary-foreground/80" data-testid="footer-whatsapp-text">
+              <span className="text-sm text-muted-foreground" data-testid="footer-whatsapp-text">
                 {whatsappLine}
               </span>
             )}
             <a href={`mailto:${t("contactEmail")}`} className={LINK_CLASS} data-testid="footer-email">
               {t("contactEmail")}
             </a>
-            <p className="text-sm text-primary-foreground/80">{t("contactShowrooms")}</p>
-            <p className="text-sm text-primary-foreground/80">{t("contactHours")}</p>
+            <p className="text-sm text-muted-foreground">{t("contactShowrooms")}</p>
+            <p className="text-sm text-muted-foreground">{t("contactHours")}</p>
           </FooterColumn>
         </div>
 
-        <div className="mt-10 flex flex-col gap-2 border-t border-primary-foreground/15 pt-6 text-xs text-primary-foreground/70 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-10 flex flex-col gap-2 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p data-testid="footer-copyright">{t("copyright")}</p>
           <p className="max-w-md">{t("payments")}</p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -224,7 +229,7 @@ interface FooterColumnProps {
   children: React.ReactNode;
 }
 
-/** A titled column of footer links on the green field. */
+/** A titled column of footer links on the white field. */
 function FooterColumn({ heading, children }: FooterColumnProps) {
   return (
     <nav aria-label={heading} className="flex flex-col gap-3">

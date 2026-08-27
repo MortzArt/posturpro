@@ -1,156 +1,133 @@
-# Dev Summary: T19 — Homepage rebuild + product condition grades
+# Dev Summary: T20 — Factorial design grammar (Phase A: homepage + shared shell)
 
-Stage 4 (Dev) complete. Full-stack: DB migration + admin write path + storefront
-read path (backend) AND a 13-section homepage rebuild + shell restyle + brand
-palette/CTA tokens + interactive calculator (frontend). All 25 ACs implemented;
-all quality gates green.
+Feature type: **full-feature** (UI-heavy; token/font-layer logic + presentation).
+Translates the Factorial (factorialhr.com / factorial-it) design grammar onto the
+storefront in PosturPro's brand palette — for the homepage and the shared shell
+(header / topbar / footer / mobile-nav). Brand hex/oklch + logo are preserved
+verbatim (T19 palette contract). The `/admin` firewall is intact.
 
-## Verification Gate Results
+## Files Changed
 
-| Gate | Result |
-| --- | --- |
-| `npx tsc --noEmit` | **0 errors** |
-| `npm run lint` (T19-touched files) | **clean** — remaining repo warnings/errors are pre-existing in `.claude/skills/*` + `admin/products/dropdown.tsx`, untouched by T19 |
-| `npm run test` (`vitest run`) | **2155 passed / 0 failed** (130 files) |
-| `npm run build` | **exit 0** — compiled + 133 static pages, no errors |
-| Migration 0016 on local DB | applied clean + **idempotent re-run passes**; enum = `A+/A/B`, column nullable/no-default, all 30 existing rows NULL |
-| `products_public` columns + grants | `condition_grade` present, `cost_price_cents` absent; anon/authenticated = SELECT-only on the view; base `products` ungranted to anon |
-| Smoke: `/` (es-MX) + `/en` | both HTTP 200, verbatim copy present, no dev-log errors |
-| Smoke: PDP / `/empresas` / `/sillas` | all 200; PDP renders "Grado A+" end-to-end when a grade is set |
-
-## Files Created
-
-| Path | Purpose / key decisions |
-| --- | --- |
-| `supabase/migrations/0016_product_condition_grade.sql` | Enum `product_condition_grade` (guarded idempotent), nullable `condition_grade` (no default), `products_public` regen COPYING 0005's explicit column list + `condition_grade` (never `select *`), single intentional `grant select` + read-only revoke (0015 posture). LOCAL Docker only. |
-| `src/lib/catalog/grade.ts` | `ProductConditionGrade`, `PRODUCT_CONDITION_GRADES`, `isConditionGrade` — single source of truth (admin + read + badge). |
-| `src/lib/config/calculator.ts` | 6 reference chairs (MXN cents) + `CALCULATOR_MIN_BAR_FRACTION` (8% clamp). Prices in config → MXN in both locales. |
-| `src/lib/catalog/savings.ts` (+ `.test.ts`) | Pure `computeSavings` (floor 0, clamp 8–100%, no /0) — edge 9. |
-| `src/components/catalog/grade-badge.tsx` (+ `.test.tsx`) | Presentational chip; self-guards → nothing for null/unknown (edges 1/2); token-only. |
-| `src/components/layout/site-topbar.tsx` | Deep-green promo bar: 3 static messages (scroll-x @320px) + WA link (config-gated, hidden < sm). |
-| `src/components/home/home-hero.tsx`, `hero-stats.tsx`, `cert-tag.tsx` | Hero split under 400 lines: eyebrow + 2-line headline + dual CTAs + 3 stats + cert-tag + disclaimer. |
-| `src/components/home/brand-bar.tsx`, `values-impact.tsx`, `process-steps.tsx`, `b2b-section.tsx`, `social-proof.tsx`, `savings-calculator.tsx` (+ `.test.tsx`), `faq-accordion.tsx`, `trust-faq.tsx`, `cta-banner.tsx` | Homepage sections. B2B embeds reused T16 `QuoteForm`; calculator is a `"use client"` island (shadcn Select, scaleX bars, aria-live); FAQ = native `<details>/<summary>` (CSP-safe, no new dep). |
-
-## Files Modified
-
-| Path | Change |
-| --- | --- |
-| `src/app/globals.css` | `.theme-storefront` cobalt → greens + mint; NEW `--cta*` orange (dark-brown fg, 5.30:1) + `@theme inline` `--color-cta*`; 3 new motion classes (`.cta-press`, `.calc-bar-fill`, `.faq-chevron`), each reduced-motion gated. |
-| `src/components/ui/button.tsx` | NEW `cta` variant + `xl` size (h-11 ≥44px). |
-| `src/lib/config/catalog.ts` | NEW `EMPRESAS_PATH`. |
-| `src/lib/config/shared.ts` | NEW `WHATSAPP_DISPLAY`. |
-| `src/lib/config.ts` | Re-export `./config/calculator`. |
-| `src/lib/catalog/types.ts` | `CatalogProductCard.conditionGrade`. |
-| `src/lib/catalog/queries-internal.ts` | Project `condition_grade` (select/row/`toCard`, guarded). |
-| `src/lib/catalog/search.ts` | Batch `gradesFor` from `products_public` + wire into both read paths (AC-9). |
-| `src/lib/catalog/product-detail.ts` / `product-detail.types.ts` | Project + type `conditionGrade` on PDP read. |
-| `src/lib/recently-viewed.ts` | `conditionGrade` on stored entry + guard. |
-| `src/components/catalog/product-card.tsx` / `product-grid.tsx` | GradeBadge slot (top-left, opposite StockBadge); grid resolves `product.grade.badge`. |
-| `src/components/product/recently-viewed.tsx` | `gradeBadgeTemplate` label + mapper. |
-| `src/app/[locale]/producto/[slug]/page.tsx` | Inline GradeBadge; entry maps grade; RV label. |
-| `src/lib/admin/products/product-input.ts` | `condition_grade` field + `parseConditionGrade` + `ProductParsed`. |
-| `src/app/admin/(app)/products/products-form-state.ts` | `condition_grade: string` (empty default). |
-| `src/app/admin/(app)/products/actions.ts` | Read `condition_grade` from FormData. |
-| `src/lib/admin/products/product-read.ts` | Hydrate `condition_grade` on edit-load (round-trip). |
-| `src/components/admin/products/product-form.tsx` | Grade `<select>` (Sin grado + A+/A/B) in Organización; FIELD_ORDER. |
-| `src/components/admin/products/product-field-errors.ts` | `grade-invalid` es-MX message. |
-| `src/lib/supabase/types/{enums,tables-catalog,tables-products,database}.ts` | `ProductConditionGrade` type + column on products Row/Insert/Update + view Row + `Enums` registration. |
-| `src/app/[locale]/layout.tsx` | Insert `SiteTopbar`; favicon `icons` → `/brand/icon.svg`. |
-| `src/components/layout/site-header.tsx` | Real `logo.svg`, orange `header.cta`, nav aria. |
-| `src/components/layout/site-footer.tsx` | Deep-green 5-column + contact block, white text wordmark, social/legal links, WA config-gated. |
-| `src/components/layout/nav-items.ts` (+ `.test.ts`) | Nav = catalog/process/business/trust. |
-| `src/components/layout/mobile-nav.tsx` | Orange CTA in the drawer. |
-| `src/app/[locale]/empresas/quote-form.tsx` | Submit → `variant="cta"` (AC-13 site-wide). |
-| `src/app/[locale]/page.tsx` | Recomposed to the 13-section order; SEO/JSON-LD preserved verbatim. |
-| `src/messages/es-MX.json` + `en.json` | `home.*`, `topbar.*`, `header.*`, `product.grade.*`, `home.footer.*`, nav.items; removed orphaned `home.featured`/`home.editorial`/`home.hero.title`/`ctaBrands`. |
-| `src/messages/keys-used.test.ts` | Updated consumed-key coverage. |
-| `product-display.test.ts`, `recently-viewed.test.ts`, `admin-catalog-write-atomicity.integration.test.ts` | Added grade field to factories. |
-| `tasks/client-content-questionnaire.md` | Appended the T19 placeholder checklist (PART M). |
+| Path | Change | Summary |
+|------|--------|---------|
+| `src/app/fonts.ts` | modified | Added `DM_Sans` (next/font, weights 400/500/600/700, latin+latin-ext) exported as `dmSans` bound to a NEW CSS var `--font-dm-sans` (NOT `--font-sans` — admin firewall). `headingSerif` (Libre Caslon Text) kept for the shared Hero on /empresas (Phase B). |
+| `src/app/[locale]/layout.tsx` | modified | Inject `dmSans.variable` onto the storefront `<html>` alongside `sans`/`headingSerif`, so `--font-dm-sans` resolves only under the storefront tree. |
+| `src/app/globals.css` | modified | `.theme-storefront` re-grounded to the Factorial grammar: `--background` → pure white; softer neutral `--border`/`--muted`/`--muted-foreground`; `--radius` 0.375→1rem; `--shadow-color` → neutral-green low-alpha; `--font-heading-family` rebind serif → DM Sans (storefront scope only). New primitives: `--shadow-factorial` (layered triple soft shadow), `--tint-green`/`--tint-orange` (8–12% pastel canvases), `--gradient-factorial` (the single reusable 50%-opacity gradient). Imports `theme-storefront.css`. |
+| `src/app/theme-storefront.css` | created | Storefront-scoped presentation recipes: DM Sans body-face override (firewall), `.factorial-card` (radius-16 white floating card), `.stat-card` (flat gray/tint), `.pill-outline` (2px ink-outline secondary, 100ms color-swap hover, reduced-motion-safe), `.gradient-band` / `.gradient-banner`. |
+| `src/components/ui/button.tsx` | modified | Base hover `transition-all`→`transition-colors` (name exact props; no layout/transform on hover). `cta` variant → orange pill: `rounded-full` + 2px self-color border, no shadow. `xl` size → Factorial large pill (h-12, `rounded-full`, px-8, text-base/600). |
+| `src/app/[locale]/page.tsx` | modified | `Section` helper: dropped `bg` prop (no alternating backgrounds — AC-7); pure-white default + `surface="gradient-band"` for the calculator only; Factorial vertical rhythm (py-10/16/28, band py-8/10). All 13 call sites updated. Calculator header restyled (sentence-case eyebrow, tight ink h2). |
+| `src/components/layout/site-header.tsx` | modified | Nav links → pill hover (`rounded-full`, `hover:bg-muted`), 16/500 ink. |
+| `src/components/layout/site-topbar.tsx` | modified | Message list tightened tracking (`-0.02em`); deep-green bar retained. |
+| `src/components/layout/site-footer.tsx` | modified | Deep-green footer → WHITE Factorial footer: hairline top border, no shadow; ink wordmark; 16/600 column titles; 500-weight muted links w/ hover underline; muted bottom bar. All `primary-foreground` on-green classes removed; doc comments updated. |
+| `src/components/layout/mobile-nav.tsx` | modified | Drawer title sentence-case 18/600; nav items + cart link → 18px pill hover. |
+| `src/components/home/home-hero.tsx` | modified | Eyebrow no longer rendered (headline-first); big tight ink headline; 16 soft-ink subcopy; secondary CTA → `pill-outline`; media = white floating card on a whisper-green tint canvas. |
+| `src/components/home/hero-stats.tsx` | modified | Naked oversized numerals (text-4xl/5xl, 700, -0.04em, ink). |
+| `src/components/home/cert-tag.tsx` | modified | Borderless white label-pill (`rounded-2xl`, `--shadow-factorial`), sentence-case meta. |
+| `src/components/home/brand-bar.tsx` | modified | 24/700 tight claim line; 16/500 brand names. |
+| `src/components/home/values-impact.tsx` | modified | Sentence-case eyebrow; section-h2 recipe; `.factorial-card` cards w/ tint-green icon tile; impact figures → `.stat-card` naked numerals. |
+| `src/components/home/process-steps.tsx` | modified | Section-h2; larger ghost step numbers; 18/600 titles; 16 body. |
+| `src/components/home/b2b-section.tsx` | modified | Sentence-case eyebrow; section-h2; 16 body; brand-green (`--ring`) check icons; 3xl stats; `.factorial-card` form container. |
+| `src/components/home/social-proof.tsx` | modified | Section-h2; `.factorial-card` testimonials; big light 20/24 quote. |
+| `src/components/home/savings-calculator.tsx` | modified | `.factorial-card` container; larger result numeral (ink). |
+| `src/components/home/trust-faq.tsx` | modified | Sentence-case eyebrow; section-h2; brand-green guarantee checks; 16 guarantee body; 18/600 FAQ eyebrow. |
+| `src/components/home/faq-accordion.tsx` | modified | Bare hairline rows (top border on wrapper so first row is bounded); 18/600 summary; 16 answer. |
+| `src/components/home/cta-banner.tsx` | modified | Deep-green band → radius-32 gradient banner (2nd gradient moment); ink text; `pill-outline` secondary; removed white focus-ring overrides (green ring reads on pastel). |
+| `src/components/home/section-header.tsx` | modified | Section-h2 recipe; "see all" link → brand-green, 16. |
+| `DESIGN.md` | modified | Prepended T20 amendment (Factorial grammar supersedes the visual world for homepage+shell; palette/logo unchanged). Seed comment + T19 amendment preserved. |
 
 ## Data-Testids Added
-
-- `grade-badge` (grade-badge.tsx) · `site-topbar`, `topbar-whatsapp` · `header-cta`, `mobile-nav-cta` · `site-footer`, `footer-wordmark`, `footer-whatsapp`/`-text`, `footer-social-*`, `footer-link-*`, `footer-legal-*` · `hero-stats`, `hero-cert-tag`, `hero-cta-catalog`, `hero-cta-business`, `hero-image-fallback` · `brand-bar`, `values-impact`, `process-steps`, `b2b-section`, `social-proof`, `trust-faq`, `cta-banner`, `cta-banner-catalog`, `cta-banner-business` · `savings-calculator`, `calc-select`, `calc-results` · `faq-accordion`, `faq-item-<slug>` · `admin-product-condition_grade`.
-
-## Acceptance Criteria Map
-
-- **AC-1..4:** `0016_product_condition_grade.sql` (verified at DB).
-- **AC-5..8:** grade `<select>` (`product-form.tsx`); `parseConditionGrade` (`product-input.ts`); persisted via `ProductParsed` (`product-write.ts`, revalidates `CATALOG_CACHE_TAG`); hydrated (`product-read.ts`). Round-trip + tamper tested.
-- **AC-9..11:** `conditionGrade` on card + PDP types; projected in `queries-internal.ts`, `search.ts`, `product-detail.ts`; `GradeBadge` on card/PDP/homepage; null → nothing; token-only.
-- **AC-12..14:** greens + mint tokens; `--cta*` orange (AA); `cta` variant site-wide; real logo header + white wordmark footer + `icon.svg` favicon.
-- **AC-15..17:** `SiteTopbar`; header/footer restyle; WhatsApp FAB reused verbatim.
-- **AC-18..22:** 13-section `page.tsx`; real `listProducts` catalog (hidden on empty/fail); all copy via next-intl both locales; no media-notes; subtle disclaimers.
-- **AC-23:** calculator island (config prices, scaleX bars, no reload, no inline script, 8% clamp/0% floor).
-- **AC-24:** `generateMetadata` + Organization/WebSite JSON-LD + alternates unchanged.
-- **AC-25:** tsc 0, lint clean (touched), 2155 tests, build 0; new files ≤400 lines; no `any`/`!`/empty catch.
-
-## Edge Cases Handled
-
-1. No grade → no badge/gap. 2. Legacy/invalid grade → null (guard) + DB enum backstop (verified rejects `'X'`). 3. Tampered admin grade → `grade-invalid`, no write. 4. Catalog read fail → `[]` → section omitted. 5. WA unconfigured → topbar link omitted + footer plain text. 6. Reduced motion → 3 new classes gated. 7. 320px → topbar scroll-x, grids stack. 8. `/en` → EN copy, MXN unchanged. 9. Bad calc config → clamp/floor. 10/11. B2B rate-limit/honeypot → inherited from reused T16 form. 12. Two badges @320px → opposite corners + `max-w-[45%] truncate`. 13. Migration idempotent. 14. JSON-LD once.
+None added or removed. All existing testids preserved (`site-footer`,
+`footer-wordmark`, `footer-whatsapp-text`, `hero-cta-catalog`,
+`hero-cta-business`, `hero-image-fallback`, `hero-cert-tag`, `savings-calculator`,
+`faq-accordion`, `faq-item-*`, `cta-banner`, `cta-banner-catalog`,
+`cta-banner-business`, section-header link testids). No test churn.
 
 ## Key Decisions
-
-- **CTA foreground dark-brown `#2a1206`, not white** (white on orange 3.34:1 fails AA; brown 5.30:1). Dedicated `--cta*` token, never a repurposed `--primary`.
-- **Search grade via a `products_public` batch** (like cover images) instead of editing the T16 `search_products` RPC — honors AC-9 with no second migration, no cost leak.
-- **New `HomeHero`** instead of mutating the shared `Hero` (still used by `/empresas`).
-- **Native `<details>` FAQ** — no new dep, CSP-safe.
-- **Supabase types hand-edited** (repo convention: split hand-maintained modules) to add enum + column without a hosted round-trip.
+- **New `--font-dm-sans` var, not reusing `--font-sans`**: keeps admin on Inter.
+  The storefront body-face override is scoped under `.theme-storefront`; admin
+  `<html>` never receives `dmSans.variable`, so `var(--font-dm-sans)` is
+  undefined there and `.font-sans` falls back to the `:root` Inter default.
+- **`transition-colors` (not `transition-all`) on Button base**: Emil — name the
+  exact animated properties; never animate layout/transform on hover. Press
+  feedback stays via `active:translate-y-px` / `.cta-press`.
+- **Separation via rhythm + tinted objects, never section backgrounds** (AC-7):
+  page is uniformly white; the only non-white surfaces are the two gradient
+  moments (calculator band + CTA banner).
+- **Class-direct `.factorial-card`/`.stat-card` instead of a wrapper component**:
+  each section applies the recipe class directly (spec explicitly allows this
+  where the wrapper isn't reused). See Deviations.
+- **Brand green `--ring` for check/link accents**: the palette's identity green
+  (#0f7f3c) is the accent; orange stays reserved for primary CTAs only.
 
 ## Deviations from Ticket
+- **`factorial-card.tsx` component not created.** The spec listed it as a DRY
+  primitive but also stated a raw `<div className="factorial-card p-6">` is
+  acceptable where the wrapper isn't reused. Sections apply the class directly
+  (matching the per-section spec rows, which specify class strings). Adding an
+  unused export would violate the repo's no-dead-code rule. Impact: none — the
+  `.factorial-card` / `.stat-card` recipes live in `theme-storefront.css` as the
+  single source of truth, so DRY is preserved at the CSS layer.
+- **`eyebrow` prop retained on `HomeHero` but not rendered.** Factorial is
+  headline-first (AC-3). Keeping the prop avoids touching `page.tsx`'s call site
+  and the i18n key; it is intentionally unused in the body (documented in-code).
 
-- None material. The spec's `security_invoker` note was reconciled to 0005's ACTUAL posture (default definer-rights view with baked-in `where status='active'`); 0016 preserves it.
-- Removed orphaned `home.featured.*` / `home.editorial.*` / `home.hero.title` / `ctaBrands` keys (no dead code); locale parity maintained.
+## Edge Cases Handled
+- **DB unreachable at build/runtime (edge 4)**: homepage still builds and renders;
+  featured-products section self-omits (existing `readFeaturedProducts` → `[]`).
+  Confirmed in the offline production build (133/133 pages, exit 0) — the
+  `TypeError: fetch failed` catalog logs are the designed degradation, not a
+  regression.
+- **WhatsApp unconfigured (edge 5)**: footer contact line stays plain text
+  (`footer-whatsapp-text`), never a broken `wa.me//` — logic untouched by the
+  white-footer restyle.
+- **Reduced motion**: `.pill-outline` hover transition is disabled under
+  `prefers-reduced-motion: reduce`; existing `.enter-fade`/`.stagger`/`.fab-pop`/
+  `.drawer-*` reduced-motion handling retained. No new keyframes, no scroll
+  listeners.
+- **AA contrast**: ink on white, muted on white, and ink over the lightest
+  gradient stop all clear AA (per ui-design.md A.6). CTA keeps warm-brown fg
+  (5.30:1); white-on-orange (fails) is never used.
+- **First FAQ row bounding**: top hairline on the accordion wrapper so the first
+  row has a top border, not just a bottom one.
 
-## How to Test (manual)
+## How to Test
+1. `npm run build && PORT=3100 npm run start`, open `http://localhost:3100/`.
+2. Confirm a pure-white page with no alternating section bands; separation reads
+   from spacing + tinted cards. Only the calculator + closing CTA show a gradient.
+3. Confirm the headline is a big tight DM Sans sans-serif (no serif, no eyebrow);
+   stats are large naked numerals.
+4. Confirm every button/nav item is a pill; the orange CTA is orange-only,
+   secondary CTAs are 2px ink-outline pills that tint on hover (100ms).
+5. Confirm the footer is WHITE with hairline separation.
+6. Resize to 375px: single-column, full-width pills, no horizontal overflow.
+7. Firewall: open `http://localhost:3100/admin/login` — it stays Inter,
+   `rounded-md`, neutral tokens (verified: admin `<html>` has no `dm_sans`
+   variable and admin `<body>` has no `theme-storefront`).
 
-1. `supabase` running → `docker exec supabase_db_posturpro psql -U postgres -d postgres < supabase/migrations/0016_product_condition_grade.sql` (already applied locally).
-2. `npm run dev` → open `/` and `/en`: verify topbar, header logo + orange CTA, hero, brand bar, values+impact, real catalog, process, B2B (submit a quote), testimonials, calculator (change model → bars/%/amount update, no reload), trust + FAQ (toggle), green CTA banner + footer, WhatsApp FAB.
-3. Admin → Productos → edit a product → set Condición A+ → Guardar → reload edit (A+ selected) → view its PDP + `/sillas`: "Grado A+" badge shows. Set Sin grado → badge disappears, no gap.
-4. Resize to 320px: no horizontal scroll; grids stack; topbar messages scroll.
-5. Enable reduced motion: hero/stagger/calculator/FAQ are instant.
+## Verification Gates
+- **tsc --noEmit**: PASS (exit 0).
+- **eslint** (all touched files): PASS (0 warnings/errors).
+- **vitest run**: PASS — 132 files / 2175 tests (incl. css-line-count and
+  direction-contract suites).
+- **npm run build**: PASS — exit 0, 133/133 static pages, no prerender failures.
+  (Offline `fetch failed` catalog logs = designed DB-unreachable degradation.)
+- **File-size caps**: globals.css 321 lines, theme-storefront.css 75 lines — both
+  well under limits.
+- **Admin firewall evidence** (served HTML, `localhost:3100`):
+  - Homepage `<html>` classes: `inter…variable libre_caslon…variable dm_sans…variable`; `<body>`: `theme-storefront …`. Computed body+h1 `font-family` = `"DM Sans", …` (serif gone).
+  - Admin `<html>` classes: `inter…variable` ONLY; `<body>`: no `theme-storefront`. So `--font-dm-sans` is undefined in admin → `.font-sans` resolves Inter.
+- **Screenshots** (`scratchpad/t20-preview/`): `home-desktop-1440.png`,
+  `home-mobile-375.png`, `home-en-desktop-1440.png` — all render the Factorial
+  grammar correctly.
 
 ## Known Limitations
-
-- Social/legal footer hrefs `#` + contact/stat placeholders (owner checklist appended to `client-content-questionnaire.md`). Intentional per owner decision.
-- Calculator Radix Select test uses local jsdom pointer polyfills (jsdom limitation, not runtime).
-- Cached catalog LIST reflects a grade change after `revalidateTag` (admin save) — production flow.
+- **Admin route not screenshot via Playwright**: `/admin/login` hangs Playwright
+  navigation in the offline headless context (client/server auth path awaits the
+  unreachable DB); curl returns 200 with the correct classes. Firewall verified
+  by served-HTML class inspection + computed-font check instead of an admin PNG.
+- **Phase B (store-wide rollout of the Factorial grammar to catalog/product/
+  empresas pages) is out of scope** and gated on approval, per the ticket. The
+  shared `Hero` and Libre Caslon Text remain wired for /empresas.
 
 ## Dependencies Added
-
-- **None.** No new fonts, no UI/animation library.
-
----
-
-## Fixes Applied (Stage 6)
-
-### Issue Tracker
-| ID | Severity | Title | Status | File | Notes |
-|----|----------|-------|--------|------|-------|
-| M-1 | MAJOR | `globals.css` over the 1,000-line hard cap | FIXED | `src/app/globals.css` + new `motion-shell/catalog/cart.css` + `css-line-count.test.ts` | Motion layer extracted into 3 domain CSS files (`@import`ed at top of globals); globals now 290 lines, all motion files < 320. New guard test enforces the cap on every `*.css` (closes the "ESLint ignores CSS" gap). |
-| m-1 | MINOR | 400ms calc-bar over the 300ms bar | FIXED | `src/app/motion-cart.css` | Kept 400ms (mirrors shipped `.cart-progress-fill`); amended both comments to invoke the STANDARDS explanatory-motion exemption. |
-| m-2 | MINOR | Non-null `!` in two tests | FIXED | `savings.test.ts`, `savings-calculator.test.tsx` | Replaced `x!` with `if (!x) throw new Error(...)` narrowing. |
-| m-3 | MINOR | brand-bar splits a display string | FIXED | `brand-bar.tsx` + new `brand-bar.test.ts` | Exported `BRAND_SEPARATOR`; test pins the separator invariant across both locales. |
-| m-4 | MINOR | Positional icon↔card / label keys | FIXED | `values-impact.tsx`, `hero-stats.tsx`, `social-proof.tsx` | Icons paired to cards in a compiler-enforced 4-tuple; keys switched from translatable labels to stable indices (fixed tuples). |
-| n-1 | NIT | Co-located `Section` helper | SKIPPED | — | Reviewer's "extract if it grows"; page well under 400 — premature churn. |
-| n-2 | NIT | 4 `STAGGER_STEP_MS` constants | SKIPPED | — | Shared module for 4 one-line constants worsens readability; cosmetic. |
-| n-3 | NIT | Placeholder footer links | FIXED (structural) | new `src/lib/config/footer-links.ts`, `site-footer.tsx` | Centralized placeholder hrefs to config (one-line swap each). No real values invented — still owner go-live data. |
-| n-4 | NIT | json-ld no-op `.replace()` | SKIPPED | — | Pre-existing (T14), inert, outside T19 diff. |
-| n-5 | NIT | `.drawer-panel` `!important` asymmetry | SKIPPED | — | Pre-existing (T2), off-screen, byte-preserved through the split. |
-
-### Summary
-- Critical: 0/0 fixed
-- Major: 1/1 fixed, 0 skipped
-- Minor: 4/4 fixed, 0 skipped
-- Nit: 2/5 fixed (1 structural + WHATSAPP_DISPLAY already centralized), 3 skipped (all pre-existing/out-of-scope/cosmetic)
-
-### Files added in Stage 6
-- `src/app/motion-shell.css`, `src/app/motion-catalog.css`, `src/app/motion-cart.css` — motion layer split out of `globals.css`.
-- `src/app/css-line-count.test.ts` — enforces the 1,000-line hard cap on every `*.css` (M-1 guard).
-- `src/components/home/brand-bar.test.ts` — brand-separator invariant guard (m-3).
-- `src/lib/config/footer-links.ts` — centralized footer placeholder hrefs (n-3).
-
-### Test Results After Fixes
-- `npx tsc --noEmit`: **0 errors**
-- ESLint (touched files): **clean**
-- `vitest run`: **2160 passed / 0 failed** (132 files; +5 tests vs. Stage 5)
-- `npm run build`: **exit 0** — motion classes verified present in the production CSS bundle
-- CSS line counts: globals.css 290 · motion-shell.css 314 · motion-catalog.css 230 · motion-cart.css 227 (all under the 400 guidance and 1,000 hard cap)
+- None. `DM_Sans` ships with the already-installed `next/font/google`.

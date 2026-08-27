@@ -60,7 +60,7 @@ export function SavingsCalculator({ labels }: SavingsCalculatorProps) {
 
   return (
     <div
-      className="rounded-md border border-border bg-card p-6"
+      className="factorial-card p-6 sm:p-8"
       data-testid="savings-calculator"
     >
       <div className="flex flex-col gap-1.5">
@@ -111,7 +111,7 @@ export function SavingsCalculator({ labels }: SavingsCalculatorProps) {
       >
         <span
           key={`pct-${result.savingsPct}`}
-          className="price-value font-heading text-2xl font-bold tabular-nums text-primary"
+          className="price-value font-heading text-4xl font-bold tabular-nums tracking-[-0.04em] text-foreground"
         >
           {result.savingsPct}%
         </span>

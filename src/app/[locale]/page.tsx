@@ -115,7 +115,7 @@ export default async function HomePage({ params }: HomePageProps) {
     <>
       <JsonLd data={homeJsonLd} />
 
-      <Section bg="background">
+      <Section>
         <HomeHero
           eyebrow={t("hero.eyebrow")}
           headlineL1={t("hero.headlineL1")}
@@ -139,11 +139,11 @@ export default async function HomePage({ params }: HomePageProps) {
         />
       </Section>
 
-      <Section bg="muted" padding="band">
+      <Section padding="band">
         <BrandBar label={t("brandBar.label")} brands={t("brandBar.brands")} />
       </Section>
 
-      <Section bg="background">
+      <Section>
         <ValuesImpact
           eyebrow={t("values.eyebrow")}
           heading={t("values.heading")}
@@ -164,7 +164,7 @@ export default async function HomePage({ params }: HomePageProps) {
       </Section>
 
       {products.length > 0 ? (
-        <Section bg="muted" id="catalogo">
+        <Section id="catalogo">
           <FeaturedProducts
             products={products}
             heading={t("catalog.heading")}
@@ -174,7 +174,7 @@ export default async function HomePage({ params }: HomePageProps) {
         </Section>
       ) : null}
 
-      <Section bg="background">
+      <Section>
         <ProcessSteps
           eyebrow={t("process.eyebrow")}
           heading={t("process.heading")}
@@ -188,11 +188,11 @@ export default async function HomePage({ params }: HomePageProps) {
         />
       </Section>
 
-      <Section bg="muted">
+      <Section>
         <B2BSection />
       </Section>
 
-      <Section bg="background">
+      <Section>
         <SocialProof
           heading={t("social.heading")}
           testimonials={[
@@ -203,16 +203,16 @@ export default async function HomePage({ params }: HomePageProps) {
         />
       </Section>
 
-      <Section bg="muted" id="calculadora">
+      <Section id="calculadora" surface="gradient-band">
         <div className="flex flex-col gap-6">
           <div className="flex max-w-2xl flex-col gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+            <p className="text-sm font-medium tracking-[-0.02em] text-muted-foreground">
               {t("calculator.eyebrow")}
             </p>
-            <h2 className="font-heading text-2xl font-bold tracking-wide text-foreground sm:text-3xl">
+            <h2 className="font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:text-[2rem]">
               {t("calculator.heading")}
             </h2>
-            <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
+            <p className="text-base leading-relaxed text-muted-foreground">
               {t("calculator.subcopy")}
             </p>
           </div>
@@ -229,7 +229,7 @@ export default async function HomePage({ params }: HomePageProps) {
         </div>
       </Section>
 
-      <Section bg="background">
+      <Section>
         <TrustFaq
           eyebrow={t("trust.eyebrow")}
           heading={t("trust.heading")}
@@ -249,7 +249,7 @@ export default async function HomePage({ params }: HomePageProps) {
         />
       </Section>
 
-      <Section bg="background">
+      <Section>
         <CtaBanner
           heading={t("ctaBanner.heading")}
           cta1={t("ctaBanner.cta1")}
@@ -262,21 +262,32 @@ export default async function HomePage({ params }: HomePageProps) {
 
 interface SectionProps {
   children: React.ReactNode;
-  bg: "background" | "muted";
   id?: string;
-  /** "band" is a shorter vertical rhythm for the quiet brand bar. */
+  /** "band" is a shorter vertical rhythm for the quiet brand bar (~40px). */
   padding?: "default" | "band";
+  /** Surface: pure white (default) or the calculator gradient band (T20 AC-7). */
+  surface?: "white" | "gradient-band";
 }
 
-/** Full-bleed banded section wrapper with the shared container inside. */
-function Section({ children, bg, id, padding = "default" }: SectionProps) {
+/**
+ * Full-bleed section wrapper with the shared container inside. T20: the page is
+ * pure white — sections do NOT alternate backgrounds (AC-7); separation comes
+ * from the Factorial vertical rhythm (40/64/112) + tinted objects. The only
+ * non-white surface is the calculator's gradient band.
+ */
+function Section({
+  children,
+  id,
+  padding = "default",
+  surface = "white",
+}: SectionProps) {
   return (
     <section
       id={id}
       className={cn(
-        bg === "muted" ? "bg-muted" : "bg-background",
+        surface === "gradient-band" ? "gradient-band" : "bg-background",
         id ? "scroll-mt-28" : undefined,
-        padding === "band" ? "py-10" : "py-14 md:py-20",
+        padding === "band" ? "py-8 sm:py-10" : "py-10 sm:py-16 lg:py-28",
       )}
     >
       <div className={CONTAINER}>{children}</div>
