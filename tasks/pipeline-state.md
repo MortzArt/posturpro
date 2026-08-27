@@ -1,4 +1,12 @@
 # Pipeline State
+Task: T20 — Storefront restyle: Factorial design language, Phase A homepage (owner approval gate)
+Tier: standard
+Stage: 1
+Agent: ultraplanner-research
+Last Updated: 2026-08-27
+Notes: Phase A = homepage + shared shell ONLY; owner approval gates Phase B (rest of storefront). Brief: tasks/reference/T20-brief.md. Style source (measured live): tasks/reference/factorial-style-analysis.md + screenshots in scratchpad/factorial/. Keep brand palette (greens + #f95326 CTA w/ dark AA fg) + logo; pure white bg replaces mint tints; DM Sans (Google) replaces current fonts per analysis; admin firewall untouched; T19 content/copy/data unchanged. Color role map: Factorial red→our orange, teal links→#0f7f3c, ink→#094220 (identity) / neutral ink (text).
+
+=== T19 archive ===
 Task: T19 — Homepage rebuild from client content page + product condition grades
 Tier: full-cycle (high)
 Stage: COMPLETE
