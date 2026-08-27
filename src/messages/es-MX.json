@@ -10,11 +10,10 @@
     "menuTitle": "Navegación",
     "menuDescription": "Enlaces principales de la tienda",
     "items": {
-      "catalog": "Sillas",
-      "brands": "Marcas",
-      "styles": "Estilos",
-      "contact": "Contacto",
-      "offices": "Empresas"
+      "catalog": "Catálogo",
+      "process": "Proceso",
+      "business": "Empresas",
+      "trust": "Confianza"
     }
   },
   "toggle": {
@@ -51,22 +50,158 @@
   },
   "home": {
     "hero": {
-      "title": "Sillas ergonómicas para cuidar tu espalda",
-      "subtitle": "Encuentra la silla perfecta entre nuestras marcas y estilos.",
-      "ctaCatalog": "Ver sillas",
-      "ctaBrands": "Marcas",
-      "imageAlt": "Silla ergonómica PosturPro"
+      "subtitle": "Sillas pre-owned Herman Miller, Steelcase y Haworth, verificadas al 100% funcionales y en buenas condiciones. Mismo diseño, misma ergonomía — hasta 60% menos que comprarlas nuevas.",
+      "ctaCatalog": "Explorar catálogo →",
+      "imageAlt": "Silla ergonómica PosturPro certificada",
+      "eyebrow": "Mobiliario ergonómico certificado",
+      "headlineL1": "Eleva tu mobiliario.",
+      "headlineL2": "No tus costos.",
+      "ctaBusiness": "Soluciones para empresas",
+      "stats": {
+        "s1Figure": "+3,200",
+        "s1Label": "Sillas entregadas",
+        "s2Figure": "100%",
+        "s2Label": "Funcionalidad verificada",
+        "s3Figure": "60%",
+        "s3Label": "Ahorro promedio"
+      },
+      "cert": {
+        "grade": "Grado A+",
+        "code": "CERT. Nº PP-04821",
+        "meta": "INSPECCIONADA · 100% FUNCIONAL"
+      },
+      "disclaimer": "*Elemento y cifras ilustrativos — sustituir con datos reales."
     },
-    "featured": {
-      "productsHeading": "Sillas destacadas",
-      "brandsHeading": "Marcas",
-      "viewAllProducts": "Ver todas las sillas",
-      "viewAllBrands": "Ver todas las marcas"
+    "brandBar": {
+      "label": "Trabajamos únicamente con las marcas que definen la ergonomía moderna",
+      "brands": "Herman Miller · Steelcase · Haworth · Knoll · Humanscale"
     },
-    "editorial": {
-      "title": "Sillas elegidas por cómo cuidan tu cuerpo",
-      "body": "Cada silla en PosturPro se selecciona por su ergonomía y su valor, no por su etiqueta.",
-      "imageAlt": "Espacio de trabajo con una silla ergonómica"
+    "values": {
+      "eyebrow": "Por qué PosturPro",
+      "heading": "Curamos, no acumulamos",
+      "subcopy": "Nada de catálogos de mil productos mezclando lo genérico con lo premium. Solo mobiliario de las marcas que definen la ergonomía, seleccionado y verificado pieza por pieza.",
+      "card1Title": "Ahorra hasta 60%",
+      "card1Body": "El mismo diseño, la misma ergonomía premiada — a una fracción del precio de lista.",
+      "card2Title": "100% funcionalidad verificada",
+      "card2Body": "Probamos cada mecanismo antes de vender la silla. Si algo no funciona al 100%, no sale de nuestro almacén.",
+      "card3Title": "Buenas condiciones, siempre",
+      "card3Body": "Seleccionamos solo mobiliario en buen estado real — evaluado antes de llegar a tu inventario.",
+      "card4Title": "100% originales",
+      "card4Body": "Jamás vendemos réplicas. Cada pieza es auténtica y con procedencia documentada."
+    },
+    "impact": {
+      "f1Figure": "+3,200",
+      "f1Label": "Sillas con una segunda vida",
+      "f2Figure": "9,400 kg",
+      "f2Label": "De mobiliario rescatado",
+      "f3Figure": "60%",
+      "f3Label": "Menos huella vs. fabricar una silla nueva",
+      "disclaimer": "*Cifras estimadas de ejemplo — sustituir con datos reales de la operación."
+    },
+    "catalog": {
+      "eyebrow": "Catálogo",
+      "heading": "Piezas verificadas, listas para trabajar",
+      "viewAll": "Ver todo el catálogo →"
+    },
+    "process": {
+      "eyebrow": "Cómo trabajamos",
+      "heading": "El proceso de certificación PosturPro",
+      "subcopy": "Cada silla pasa por un proceso claro antes de llegar a tu puerta — así garantizamos que funcione al 100%.",
+      "step1Title": "Adquisición y evaluación",
+      "step1Body": "Compramos mobiliario proveniente de liquidaciones corporativas y oficinas certificadas. Solo aceptamos piezas que ya están en buen estado real — no cualquier cosa que llega al almacén.",
+      "step2Title": "Inspección funcional",
+      "step2Body": "Probamos cada mecanismo antes de aceptar la pieza: reclinado, ajuste de altura, tensión, apoyabrazos y ruedas.",
+      "step3Title": "Limpieza y ajuste",
+      "step3Body": "Cada silla se limpia a fondo y se ajusta — altura, tensión, mecanismos — antes de salir de nuestro almacén.",
+      "step4Title": "Verificación final y grado",
+      "step4Body": "Revisión de condición cosmética y funcional antes de asignar el grado y el número de certificado."
+    },
+    "b2b": {
+      "eyebrow": "Soluciones para empresas",
+      "heading": "Equipa tu oficina completa sin vaciar el presupuesto",
+      "subcopy": "Trabajamos con equipos de RRHH, Administración y Facilities en proyectos de 10 a 500+ estaciones de trabajo.",
+      "value1": "Precios preferenciales por volumen",
+      "value2": "Asesor de cuenta dedicado durante todo el proyecto",
+      "value3": "Instalación, logística y entrega en sitio incluidas",
+      "value4": "Programa de recompra: tomamos tu mobiliario actual como parte de pago",
+      "value5": "Facturación fiscal para tu empresa",
+      "segmentsHeading": "Tipo de organizaciones que atendemos",
+      "segments": "Startups tecnológicas · Despachos profesionales · Corporativos financieros · Instituciones educativas",
+      "stat1Figure": "+150",
+      "stat1Label": "Oficinas equipadas*",
+      "stat2Figure": "24h",
+      "stat2Label": "Respuesta a cotizaciones",
+      "disclaimer": "*Cifra ilustrativa de ejemplo para este layout — sustituir con datos reales de la empresa."
+    },
+    "social": {
+      "heading": "Lo que dicen nuestros clientes",
+      "t1Quote": "\"Quería una Aeron real, no una copia, para mi home office. Llegó impecable y funcionando perfecto desde el primer día.\"",
+      "t1Attribution": "Regina P. — Compra individual, CDMX",
+      "t2Quote": "\"Reequipamos 45 estaciones para nuestra oficina en Monterrey. Ahorramos más de la mitad del presupuesto.\"",
+      "t2Attribution": "Gerente de Administración — Empresa de manufactura",
+      "disclaimer": "*Testimonios ilustrativos para este layout — sustituir con reseñas reales."
+    },
+    "calculator": {
+      "eyebrow": "Herramienta",
+      "heading": "¿Cuánto puedes ahorrar?",
+      "subcopy": "Elige un modelo y compara el precio de lista contra el precio PosturPro.",
+      "selectLabel": "Modelo de silla",
+      "newPriceLabel": "Precio nuevo",
+      "posturLabel": "PosturPro",
+      "pctSuffix": "de ahorro",
+      "amountSuffix": "menos que comprar nueva",
+      "note": "*Precios de referencia. El precio final depende del modelo, configuración y grado de condición disponible en inventario."
+    },
+    "trust": {
+      "eyebrow": "Confianza",
+      "heading": "Compra con la certeza de una marca establecida",
+      "g1Lead": "Funciona al 100%, garantizado.",
+      "g1Body": "Cada silla se limpia, se ajusta y se verifica antes de salir de nuestro almacén, lista para trabajar desde el primer día.",
+      "g2Lead": "Autenticidad 100%.",
+      "g2Body": "Nunca vendemos réplicas ni piezas no originales — cada pieza es genuina.",
+      "g3Lead": "Buenas condiciones, siempre.",
+      "g3Body": "Seleccionamos solo mobiliario en buen estado real, evaluado antes de llegar a tu inventario.",
+      "g4Lead": "Pagos y facturación sin complicaciones.",
+      "g4Body": "Tarjeta, transferencia, PayPal y factura para personas físicas y morales.",
+      "faqEyebrow": "Preguntas frecuentes",
+      "q1": "¿Las sillas son 100% originales?",
+      "a1": "Sí. Nunca vendemos réplicas. Cada silla proviene de mobiliario corporativo auténtico y su procedencia queda documentada en el certificado que acompaña tu compra.",
+      "q2": "¿Qué significa cada Grado de condición?",
+      "a2": "Grado A+ es prácticamente como nueva, sin señales visibles de uso. Grado A tiene marcas cosméticas mínimas. Grado B presenta desgaste visible pero funciona igual de bien. Los tres grados pasan la misma verificación funcional antes de salir de nuestro almacén.",
+      "q3": "¿Qué pasa si mi silla llega con un problema?",
+      "a3": "Antes de enviarla, limpiamos, ajustamos y verificamos que cada silla funcione al 100%, así que la probabilidad de que llegue con un problema es mínima. Si algo no cuadra, escríbenos directamente y lo resolvemos caso por caso.",
+      "q4": "¿Hacen envíos a todo México?",
+      "a4": "Sí, enviamos a toda la República vía paquetería asegurada. En zona metropolitana de CDMX, Guadalajara y Monterrey ofrecemos entrega e instalación en sitio."
+    },
+    "ctaBanner": {
+      "heading": "¿Listo para elevar tu oficina?",
+      "cta1": "Explorar catálogo →",
+      "cta2": "Cotización empresarial →"
+    },
+    "footer": {
+      "blurb": "Eleva tu mobiliario, no tus costos. Sillas ergonómicas premium preowned, verificadas y en buenas condiciones, para personas y empresas en todo México.",
+      "colCatalogHeading": "Catálogo",
+      "linkAllChairs": "Todas las sillas",
+      "colBusinessHeading": "Empresas",
+      "linkBusinessQuote": "Cotización empresarial",
+      "linkBuyback": "Programa de recompra",
+      "linkFinancing": "Financiamiento",
+      "colCompanyHeading": "Compañía",
+      "linkCertProcess": "Proceso de certificación",
+      "linkTrust": "Confianza",
+      "linkSustainability": "Sustentabilidad",
+      "colContactHeading": "Contacto",
+      "contactWhatsapp": "WhatsApp: {phone}",
+      "contactEmail": "hola@posturpro.mx",
+      "contactShowrooms": "Showrooms con cita: CDMX · Guadalajara · Monterrey",
+      "contactHours": "Lunes a viernes, 9:00–18:00",
+      "copyright": "© 2026 PosturPro. Todos los derechos reservados.",
+      "payments": "Pagos con tarjeta, transferencia, PayPal y MSI. Facturación disponible.",
+      "legalPrivacy": "Aviso de privacidad",
+      "legalTerms": "Términos y condiciones",
+      "socialInstagram": "Instagram",
+      "socialLinkedin": "LinkedIn",
+      "socialFacebook": "Facebook"
     }
   },
   "notFound": {
@@ -274,6 +409,9 @@
         "unavailable": "Esta silla ya no está disponible.",
         "errorRetry": "No pudimos enviar tu pregunta. Inténtalo de nuevo."
       }
+    },
+    "grade": {
+      "badge": "Grado {grade}"
     }
   },
   "cart": {
@@ -728,5 +866,16 @@
         "needsTooLong": "El mensaje es demasiado largo."
       }
     }
+  },
+  "topbar": {
+    "msg1": "Envíos a toda la República",
+    "msg2": "Meses sin intereses",
+    "msg3": "Factura para tu empresa",
+    "contactPrefix": "Escríbenos:",
+    "contactAria": "Escríbenos por WhatsApp"
+  },
+  "header": {
+    "navAria": "Navegación principal",
+    "cta": "Cotización empresarial"
   }
 }

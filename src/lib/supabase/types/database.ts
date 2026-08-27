@@ -6,6 +6,7 @@
  */
 import type {
   ProductStatus,
+  ProductConditionGrade,
   OrderStatus,
   PaymentStatus,
   DiscountType,
@@ -42,6 +43,7 @@ export interface Database {
     Functions: DatabaseFunctions;
     Enums: {
       product_status: ProductStatus;
+      product_condition_grade: ProductConditionGrade;
       order_status: OrderStatus;
       payment_status: PaymentStatus;
       discount_type: DiscountType;

@@ -19,6 +19,10 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
+        // T19 CTA — owner-mandated orange, exclusively for primary CTAs. Dark
+        // warm-brown foreground (AA 5.30:1; white would FAIL at 3.34:1). Press
+        // feedback via `.cta-press` (globals.css M1).
+        cta: "cta-press bg-cta text-cta-foreground shadow-sm hover:bg-cta-hover active:bg-cta-active",
       },
       size: {
         default:
@@ -30,6 +34,8 @@ const buttonVariants = cva(
         "icon-xs": "size-5 rounded-sm [&_svg:not([class*='size-'])]:size-2.5",
         "icon-sm": "size-6 [&_svg:not([class*='size-'])]:size-3",
         "icon-lg": "size-8 [&_svg:not([class*='size-'])]:size-4",
+        // T19 hero / banner CTAs — ≥44px touch target.
+        xl: "h-11 min-w-11 gap-1.5 px-6 text-sm font-semibold [&_svg:not([class*='size-'])]:size-4",
       },
     },
     defaultVariants: {

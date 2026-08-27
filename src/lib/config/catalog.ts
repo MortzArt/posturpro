@@ -63,6 +63,8 @@ export const CATEGORIES_PATH = "/categorias" as const;
 export const BRANDS_PATH = "/marcas" as const;
 /** Style index. */
 export const STYLES_PATH = "/estilos" as const;
+/** B2B business page (T16 route; T19 promotes the literal to a shared constant). */
+export const EMPRESAS_PATH = "/empresas" as const;
 
 /** Build the canonical category detail path for a slug. */
 export function categoryPath(slug: string): string {

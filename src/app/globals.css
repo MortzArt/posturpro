@@ -54,6 +54,16 @@
   --color-gold-foreground: var(--gold-foreground);
   --color-whatsapp: var(--whatsapp);
   --color-whatsapp-foreground: var(--whatsapp-foreground);
+  /* Dedicated CTA tokens (T19). Orange is EXCLUSIVELY for primary calls-to-action
+   * — never a repurposed --primary — so brand green stays the identity color.
+   * The vars resolve only under `.theme-storefront` (storefront-scoped; admin
+   * never sees orange). Foreground is a dark warm-brown, NOT white: white on
+   * #f95326 is 3.34:1 and FAILS AA — the brown is 5.30:1 (T19 AC-13). */
+  --color-cta: var(--cta);
+  --color-cta-foreground: var(--cta-foreground);
+  --color-cta-hover: var(--cta-hover);
+  --color-cta-active: var(--cta-active);
+  --color-cta-text: var(--cta-text);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -170,42 +180,57 @@
  * border-border, rounded-md, bg-success, text-warning, bg-gold, bg-whatsapp).
  * ======================================================================== */
 .theme-storefront {
-  --background: oklch(0.985 0.006 250);
-  --foreground: oklch(0.28 0.09 258);
+  /* Brand palette (T19) — deep/brand green from the official logos replaces the
+   * T15 cobalt world. Milk-glaze ground carries a faint GREEN tint (not white).
+   * hex is sRGB reference; oklch is authoritative. All pairings WCAG AA verified
+   * (ui-design.md PART A.4). */
+  --background: oklch(0.985 0.008 158);
+  --foreground: oklch(0.28 0.055 158);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.28 0.09 258);
+  --card-foreground: oklch(0.28 0.055 158);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.28 0.09 258);
-  --primary: oklch(0.42 0.16 262);
-  --primary-foreground: oklch(0.985 0.006 250);
-  --secondary: oklch(0.93 0.03 250);
-  --secondary-foreground: oklch(0.35 0.12 260);
-  --muted: oklch(0.95 0.015 250);
-  --muted-foreground: oklch(0.47 0.07 258);
-  --accent: oklch(0.90 0.04 250);
-  --accent-foreground: oklch(0.35 0.12 260);
+  --popover-foreground: oklch(0.28 0.055 158);
+  --primary: oklch(0.3346 0.0816 151.8);
+  --primary-foreground: oklch(0.985 0.008 158);
+  --secondary: oklch(0.9615 0.0214 158.6);
+  --secondary-foreground: oklch(0.3346 0.0816 151.8);
+  --muted: oklch(0.955 0.012 158);
+  --muted-foreground: oklch(0.47 0.045 158);
+  --accent: oklch(0.92 0.03 158);
+  --accent-foreground: oklch(0.3346 0.0816 151.8);
   --destructive: oklch(0.55 0.20 27);
-  --border: oklch(0.86 0.03 250);
-  --input: oklch(0.86 0.03 250);
-  --ring: oklch(0.42 0.16 262);
+  --border: oklch(0.88 0.02 158);
+  --input: oklch(0.88 0.02 158);
+  --ring: oklch(0.5234 0.1380 150.3);
   --radius: 0.375rem;
+
+  /* CTA tokens (T19 AC-13) — owner-mandated orange #f95326, EXCLUSIVELY for
+   * primary CTAs. Foreground is dark warm-brown (#2a1206), NOT white: white on
+   * orange is 3.34:1 (FAILS AA); brown is 5.30:1 (PASSES). hover/active darken
+   * the fill on interaction; --cta-text is the darkened orange for the rare case
+   * of orange-as-TEXT on white. */
+  --cta: oklch(0.6654 0.2096 35.3);
+  --cta-foreground: oklch(0.2151 0.0452 46.7);
+  --cta-hover: oklch(0.6254 0.2034 35.0);
+  --cta-active: oklch(0.5948 0.1937 35.7);
+  --cta-text: oklch(0.5456 0.1796 36.2);
 
   /* Reserved accent + semantic status (promoted from hardcoded amber/emerald,
    * edge 9). Applied consistently across ~10 storefront files; status stays
    * glyph + text (color is never the only signal — colorblind-safe). */
   --gold: oklch(0.72 0.14 85);
-  --gold-foreground: oklch(0.28 0.09 258);
+  --gold-foreground: oklch(0.28 0.055 158);
   --success: oklch(0.52 0.13 155);
-  --success-foreground: oklch(0.985 0.006 250);
+  --success-foreground: oklch(0.985 0.008 158);
   --warning: oklch(0.55 0.13 70);
-  --warning-foreground: oklch(0.985 0.006 250);
+  --warning-foreground: oklch(0.985 0.008 158);
 
   /* WhatsApp affordance (brand green, FAB fill only — AC-7). */
   --whatsapp: oklch(0.63 0.16 155);
   --whatsapp-foreground: oklch(1 0 0);
 
-  /* Cobalt-tinted glaze shadow — depth reads as glaze, not gray. */
-  --shadow-color: oklch(0.42 0.16 262 / 0.12);
+  /* Green-tinted glaze shadow — depth reads as glaze, not gray. */
+  --shadow-color: oklch(0.3346 0.0816 151.8 / 0.12);
 
   /* Storefront display face (real binding — no longer aliasing --font-sans).
    * Overrides the `--font-heading-family` resolver ONLY under this scope, so the
@@ -922,6 +947,59 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .reorder-item {
+    transition: none;
+  }
+}
+
+/* ======================================================================== *
+ * T19 HOMEPAGE / CTA MOTION
+ * ------------------------------------------------------------------------
+ * Three new classes; all transform/opacity only, ease-out, interruptible (CSS
+ * transitions, no keyframes), reduced-motion gated. See ui-design.md PART H
+ * (M1 / M6 / M9).
+ * ======================================================================== */
+
+/* M1 — CTA button press feedback (mirrors .cart-press). scale(0.97) on :active
+ * gives instant tactile response. Reduced motion drops it. */
+.cta-press {
+  transition: transform 120ms var(--ease-out);
+}
+.cta-press:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cta-press:active {
+    transform: none;
+  }
+}
+
+/* M6 — Savings-calculator bar fill (mirrors .cart-progress-fill). transform:
+ * scaleX ONLY (never width → compositor-friendly, no layout thrash). The fill
+ * is width:100% and scaleX(fraction) reveals it; origin-left. 400ms ease-out.
+ * Reduced motion: snap (transition:none). */
+.calc-bar-fill {
+  transform-origin: left center;
+  transition: transform 400ms var(--ease-out);
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .calc-bar-fill {
+    transition: none;
+  }
+}
+
+/* M9 — FAQ chevron rotate on native <details> open. The ＋ glyph rotates 45° to
+ * read as ✕. transform only; the panel itself reveals instantly (native
+ * <details> can't animate height cross-browser without JS — honest + cheap).
+ * Reduced motion: instant swap (no transition). */
+.faq-chevron {
+  transition: transform 200ms var(--ease-out);
+}
+details[open] .faq-chevron {
+  transform: rotate(45deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .faq-chevron {
     transition: none;
   }
 }

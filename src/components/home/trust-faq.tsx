@@ -1,0 +1,72 @@
+import { HugeiconsIcon } from "@hugeicons/react";
+import { CheckmarkBadge01Icon } from "@hugeicons/core-free-icons";
+import { FaqAccordion, type FaqItem } from "@/components/home/faq-accordion";
+
+/**
+ * TrustFaq (T19 D.9) — 4 guarantee bullets + a 4-item FAQ accordion. `id="garantia"`
+ * with scroll-mt for the header/footer deep-links. Guarantees enter with
+ * `.stagger`; the accordion chevron rotates per FaqAccordion. All strings
+ * pre-resolved; FAQ items carry stable slug ids for deep-linking.
+ */
+
+export interface Guarantee {
+  lead: string;
+  body: string;
+}
+
+interface TrustFaqProps {
+  eyebrow: string;
+  heading: string;
+  guarantees: readonly [Guarantee, Guarantee, Guarantee, Guarantee];
+  faqEyebrow: string;
+  faqItems: readonly FaqItem[];
+}
+
+/** Stagger step; four items settle under the cap. */
+const STAGGER_STEP_MS = 50;
+
+export function TrustFaq(props: TrustFaqProps) {
+  return (
+    <div id="garantia" className="scroll-mt-28" data-testid="trust-faq">
+      <div className="flex max-w-2xl flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+          {props.eyebrow}
+        </p>
+        <h2 className="font-heading text-2xl font-bold tracking-wide text-foreground sm:text-3xl">
+          {props.heading}
+        </h2>
+      </div>
+
+      <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-2">
+        <ul className="flex flex-col gap-5">
+          {props.guarantees.map((guarantee, index) => (
+            <li
+              key={guarantee.lead}
+              className="stagger flex items-start gap-3"
+              style={{ transitionDelay: `${index * STAGGER_STEP_MS}ms` }}
+            >
+              <HugeiconsIcon
+                icon={CheckmarkBadge01Icon}
+                size={20}
+                strokeWidth={2}
+                aria-hidden
+                className="mt-0.5 shrink-0 text-primary"
+              />
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{guarantee.lead}</span>{" "}
+                {guarantee.body}
+              </p>
+            </li>
+          ))}
+        </ul>
+
+        <div>
+          <p className="mb-2 font-heading text-base font-semibold text-foreground">
+            {props.faqEyebrow}
+          </p>
+          <FaqAccordion items={props.faqItems} />
+        </div>
+      </div>
+    </div>
+  );
+}

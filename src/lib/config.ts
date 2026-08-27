@@ -36,3 +36,4 @@ export * from "./config/static-pages";
 export * from "./config/imagery";
 export * from "./config/contact";
 export * from "./config/quote";
+export * from "./config/calculator";

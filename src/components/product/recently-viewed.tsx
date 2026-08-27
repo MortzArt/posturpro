@@ -31,6 +31,8 @@ export interface RecentlyViewedCardLabels {
   imagePlaceholder: string;
   /** Template "{count} colores", interpolated client-side. */
   colorsCountTemplate: string;
+  /** Template "Grado {grade}", interpolated per-entry when a grade is stored. */
+  gradeBadgeTemplate: string;
 }
 
 /** Resolve a tile's stock label from ITS OWN state + stored count (M-1). */
@@ -104,6 +106,11 @@ export function RecentlyViewed({
                       })
                     : null,
                 imagePlaceholder: cardLabels.imagePlaceholder,
+                grade: entry.conditionGrade
+                  ? interpolate(cardLabels.gradeBadgeTemplate, {
+                      grade: entry.conditionGrade,
+                    })
+                  : null,
               }}
               staggerDelayMs={Math.min(index * 60, 300)}
             />
@@ -128,5 +135,6 @@ function toCard(entry: RecentlyViewedEntry): CatalogProductCard {
     colorCount: entry.colorCount,
     stockState: entry.stockState,
     lowStockN: entry.lowStockN,
+    conditionGrade: entry.conditionGrade,
   };
 }

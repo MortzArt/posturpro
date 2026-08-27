@@ -6,6 +6,7 @@ import { formatMXN } from "@/lib/money";
 import { productPath } from "@/lib/config";
 import { cn } from "@/lib/utils";
 import { StockBadge } from "@/components/catalog/stock-badge";
+import { GradeBadge } from "@/components/catalog/grade-badge";
 import type { CatalogProductCard } from "@/lib/catalog/types";
 
 /**
@@ -28,6 +29,8 @@ interface ProductCardProps {
     colors: string | null;
     /** Accessible label for the image placeholder tile (no cover). */
     imagePlaceholder: string;
+    /** Pre-resolved "Grado {grade}" label; null when the product has no grade. */
+    grade: string | null;
   };
   /** First-row cards → `next/image` priority (above the fold). */
   priority?: boolean;
@@ -88,6 +91,13 @@ export function ProductCard({
               />
             </span>
           )}
+          {product.conditionGrade && labels.grade ? (
+            <GradeBadge
+              grade={product.conditionGrade}
+              label={labels.grade}
+              className="absolute left-2 top-2"
+            />
+          ) : null}
           <StockBadge
             state={product.stockState}
             label={labels.stock}

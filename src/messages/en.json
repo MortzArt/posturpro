@@ -10,11 +10,10 @@
     "menuTitle": "Navigation",
     "menuDescription": "Main store links",
     "items": {
-      "catalog": "Chairs",
-      "brands": "Brands",
-      "styles": "Styles",
-      "contact": "Contact",
-      "offices": "For business"
+      "catalog": "Catalog",
+      "process": "Process",
+      "business": "Business",
+      "trust": "Trust"
     }
   },
   "toggle": {
@@ -51,22 +50,158 @@
   },
   "home": {
     "hero": {
-      "title": "Ergonomic chairs to care for your back",
-      "subtitle": "Find the perfect chair across our brands and styles.",
-      "ctaCatalog": "Shop chairs",
-      "ctaBrands": "Brands",
-      "imageAlt": "PosturPro ergonomic chair"
+      "subtitle": "Pre-owned Herman Miller, Steelcase and Haworth chairs, verified 100% functional and in good condition. Same design, same ergonomics — up to 60% less than buying new.",
+      "ctaCatalog": "Browse the catalog →",
+      "imageAlt": "Certified PosturPro ergonomic chair",
+      "eyebrow": "Certified ergonomic furniture",
+      "headlineL1": "Elevate your furniture.",
+      "headlineL2": "Not your costs.",
+      "ctaBusiness": "Business solutions",
+      "stats": {
+        "s1Figure": "+3,200",
+        "s1Label": "Chairs delivered",
+        "s2Figure": "100%",
+        "s2Label": "Function verified",
+        "s3Figure": "60%",
+        "s3Label": "Average savings"
+      },
+      "cert": {
+        "grade": "Grade A+",
+        "code": "CERT. NO. PP-04821",
+        "meta": "INSPECTED · 100% FUNCTIONAL"
+      },
+      "disclaimer": "*Illustrative element and figures — replace with real data."
     },
-    "featured": {
-      "productsHeading": "Featured chairs",
-      "brandsHeading": "Brands",
-      "viewAllProducts": "View all chairs",
-      "viewAllBrands": "View all brands"
+    "brandBar": {
+      "label": "We work exclusively with the brands that define modern ergonomics",
+      "brands": "Herman Miller · Steelcase · Haworth · Knoll · Humanscale"
     },
-    "editorial": {
-      "title": "Chairs chosen for how they care for your body",
-      "body": "Every chair at PosturPro is curated for ergonomics and value — not for its label.",
-      "imageAlt": "Workspace with an ergonomic chair"
+    "values": {
+      "eyebrow": "Why PosturPro",
+      "heading": "Curated, not crammed",
+      "subcopy": "No thousand-item catalogs mixing generic with premium. Just furniture from the brands that define ergonomics — selected and verified piece by piece.",
+      "card1Title": "Save up to 60%",
+      "card1Body": "The same design, the same award-winning ergonomics — for a fraction of list price.",
+      "card2Title": "100% verified function",
+      "card2Body": "We test every mechanism before selling the chair. If it isn't 100% functional, it doesn't leave our warehouse.",
+      "card3Title": "Good condition, always",
+      "card3Body": "We only select furniture in genuinely good condition — evaluated before it reaches your inventory.",
+      "card4Title": "100% original",
+      "card4Body": "We never sell replicas. Every piece is authentic, with documented provenance."
+    },
+    "impact": {
+      "f1Figure": "+3,200",
+      "f1Label": "Chairs given a second life",
+      "f2Figure": "9,400 kg",
+      "f2Label": "Of furniture rescued",
+      "f3Figure": "60%",
+      "f3Label": "Less footprint vs. manufacturing new",
+      "disclaimer": "*Estimated example figures — replace with real operational data."
+    },
+    "catalog": {
+      "eyebrow": "Catalog",
+      "heading": "Verified pieces, ready to work",
+      "viewAll": "View the full catalog →"
+    },
+    "process": {
+      "eyebrow": "How we work",
+      "heading": "The PosturPro certification process",
+      "subcopy": "Every chair goes through a clear process before it reaches your door — that's how we make sure it works 100%.",
+      "step1Title": "Sourcing and evaluation",
+      "step1Body": "We buy furniture from corporate liquidations and certified offices. We only accept pieces that are already in genuinely good condition — not just anything that shows up at the warehouse.",
+      "step2Title": "Functional inspection",
+      "step2Body": "We test every mechanism before accepting the piece: recline, height adjustment, tension, armrests and casters.",
+      "step3Title": "Cleaning and adjustment",
+      "step3Body": "Every chair is thoroughly cleaned and adjusted — height, tension, mechanisms — before it leaves our warehouse.",
+      "step4Title": "Final check and grading",
+      "step4Body": "A cosmetic and functional review before we assign the condition grade and certificate number."
+    },
+    "b2b": {
+      "eyebrow": "Business solutions",
+      "heading": "Furnish your whole office without draining the budget",
+      "subcopy": "We work with HR, Administration and Facilities teams on projects from 10 to 500+ workstations.",
+      "value1": "Preferential volume pricing",
+      "value2": "A dedicated account advisor throughout the project",
+      "value3": "On-site installation, logistics and delivery included",
+      "value4": "Buyback program: we'll take your current furniture as part of the payment",
+      "value5": "Tax invoicing for your business",
+      "segmentsHeading": "Types of organizations we work with",
+      "segments": "Tech startups · Professional firms · Financial corporates · Educational institutions",
+      "stat1Figure": "+150",
+      "stat1Label": "Offices furnished*",
+      "stat2Figure": "24h",
+      "stat2Label": "Quote response time",
+      "disclaimer": "*Illustrative example figure for this layout — replace with real company data."
+    },
+    "social": {
+      "heading": "What our customers say",
+      "t1Quote": "\"I wanted a real Aeron, not a knockoff, for my home office. It arrived flawless and working perfectly from day one.\"",
+      "t1Attribution": "Regina P. — Individual buyer, Mexico City",
+      "t2Quote": "\"We refurnished 45 workstations for our office in Monterrey. We saved more than half our budget.\"",
+      "t2Attribution": "Administration Manager — Manufacturing company",
+      "disclaimer": "*Illustrative testimonials for this layout — replace with real reviews."
+    },
+    "calculator": {
+      "eyebrow": "Tool",
+      "heading": "How much can you save?",
+      "subcopy": "Pick a model and compare list price against the PosturPro price.",
+      "selectLabel": "Chair model",
+      "newPriceLabel": "New price",
+      "posturLabel": "PosturPro",
+      "pctSuffix": "in savings",
+      "amountSuffix": "less than buying new",
+      "note": "*Reference prices. Final price depends on model, configuration and the condition grade available in inventory."
+    },
+    "trust": {
+      "eyebrow": "Trust",
+      "heading": "Buy with the confidence of an established brand",
+      "g1Lead": "Works 100%, guaranteed.",
+      "g1Body": "Every chair is cleaned, adjusted and verified before it leaves our warehouse — ready to work from day one.",
+      "g2Lead": "100% authentic.",
+      "g2Body": "We never sell replicas or non-original parts — every piece is genuine.",
+      "g3Lead": "Good condition, always.",
+      "g3Body": "We only select furniture in genuinely good condition, evaluated before it reaches your inventory.",
+      "g4Lead": "Hassle-free payments and invoicing.",
+      "g4Body": "Card, bank transfer, PayPal, and tax invoices for individuals and businesses.",
+      "faqEyebrow": "Frequently asked questions",
+      "q1": "Are the chairs 100% original?",
+      "a1": "Yes. We never sell replicas. Every chair comes from authentic corporate furniture, and its provenance is documented in the certificate that comes with your purchase.",
+      "q2": "What does each condition grade mean?",
+      "a2": "Grade A+ is practically like new, with no visible signs of use. Grade A has minimal cosmetic marks. Grade B shows visible wear but works just as well. All three grades pass the same functional check before leaving our warehouse.",
+      "q3": "What happens if my chair arrives with a problem?",
+      "a3": "Before shipping, we clean, adjust and verify that every chair works 100%, so the odds of a problem on arrival are minimal. If something's off, message us directly and we'll sort it out case by case.",
+      "q4": "Do you ship across all of Mexico?",
+      "a4": "Yes, we ship nationwide via insured courier. In the greater Mexico City, Guadalajara and Monterrey metro areas, we offer on-site delivery and installation."
+    },
+    "ctaBanner": {
+      "heading": "Ready to elevate your office?",
+      "cta1": "Browse the catalog →",
+      "cta2": "Get a business quote →"
+    },
+    "footer": {
+      "blurb": "Elevate your furniture, not your costs. Premium pre-owned ergonomic chairs, verified and in good condition, for individuals and businesses across Mexico.",
+      "colCatalogHeading": "Catalog",
+      "linkAllChairs": "All chairs",
+      "colBusinessHeading": "Business",
+      "linkBusinessQuote": "Business quote",
+      "linkBuyback": "Buyback program",
+      "linkFinancing": "Financing",
+      "colCompanyHeading": "Company",
+      "linkCertProcess": "Certification process",
+      "linkTrust": "Trust",
+      "linkSustainability": "Sustainability",
+      "colContactHeading": "Contact",
+      "contactWhatsapp": "WhatsApp: {phone}",
+      "contactEmail": "hola@posturpro.mx",
+      "contactShowrooms": "Showrooms by appointment: Mexico City · Guadalajara · Monterrey",
+      "contactHours": "Monday to Friday, 9:00 AM–6:00 PM",
+      "copyright": "© 2026 PosturPro. All rights reserved.",
+      "payments": "Card, bank transfer, PayPal and interest-free installments accepted. Invoicing available.",
+      "legalPrivacy": "Privacy notice",
+      "legalTerms": "Terms and conditions",
+      "socialInstagram": "Instagram",
+      "socialLinkedin": "LinkedIn",
+      "socialFacebook": "Facebook"
     }
   },
   "notFound": {
@@ -274,6 +409,9 @@
         "unavailable": "This chair is no longer available.",
         "errorRetry": "We couldn't send your question. Please try again."
       }
+    },
+    "grade": {
+      "badge": "Grade {grade}"
     }
   },
   "cart": {
@@ -728,5 +866,16 @@
         "needsTooLong": "That message is too long."
       }
     }
+  },
+  "topbar": {
+    "msg1": "Nationwide shipping across Mexico",
+    "msg2": "Interest-free installments",
+    "msg3": "Tax invoices for your business",
+    "contactPrefix": "Message us:",
+    "contactAria": "Message us on WhatsApp"
+  },
+  "header": {
+    "navAria": "Main navigation",
+    "cta": "Get a business quote"
   }
 }

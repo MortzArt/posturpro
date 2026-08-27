@@ -317,6 +317,7 @@ export function QuoteForm({ labels, maxLengths }: QuoteFormProps) {
 
         <Button
           type="submit"
+          variant="cta"
           size="lg"
           disabled={pending}
           data-testid="quote-submit"

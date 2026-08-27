@@ -8,6 +8,7 @@ import { SEED_STORE_NAME } from "@/lib/config";
 import { getSiteUrl } from "@/lib/seo/site-url";
 import { sans, headingSerif } from "@/app/fonts";
 import { DirectionContract } from "@/components/layout/direction-contract";
+import { SiteTopbar } from "@/components/layout/site-topbar";
 import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { WhatsAppButton } from "@/components/layout/whatsapp-button";
@@ -57,6 +58,13 @@ export async function generateMetadata({
     metadataBase: getSiteUrl(),
     title: t("title"),
     description: t("description"),
+    // Favicon from the official brand mark (T19 AC-14). SVG scales crisply on
+    // every DPR; served from /public.
+    icons: {
+      icon: [{ url: "/brand/icon.svg", type: "image/svg+xml" }],
+      shortcut: "/brand/icon.svg",
+      apple: "/brand/icon.svg",
+    },
     openGraph: {
       type: "website",
       siteName,
@@ -108,6 +116,7 @@ export default async function LocaleLayout({
               >
                 {t("skipToContent")}
               </a>
+              <SiteTopbar />
               <SiteHeader storeName={storeName} />
               <main id="main-content" className="flex-1">
                 {children}

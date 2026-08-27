@@ -13,13 +13,12 @@ import esMX from "@/messages/es-MX.json";
 import en from "@/messages/en.json";
 
 describe("NAV_ITEMS", () => {
-  it("declares the five primary nav items in order", () => {
+  it("declares the four primary nav items in order (T19 AC-16)", () => {
     expect(NAV_ITEMS.map((item) => item.key)).toEqual([
       "catalog",
-      "brands",
-      "styles",
-      "contact",
-      "offices",
+      "process",
+      "business",
+      "trust",
     ]);
   });
 
@@ -30,16 +29,15 @@ describe("NAV_ITEMS", () => {
     }
   });
 
-  it("points at the real Spanish catalog slugs", () => {
+  it("points at the mockup nav destinations (catalog, homepage anchors, empresas)", () => {
     const hrefByKey = Object.fromEntries(
       NAV_ITEMS.map((item) => [item.key, item.href]),
     );
     expect(hrefByKey).toEqual({
       catalog: "/sillas",
-      brands: "/marcas",
-      styles: "/estilos",
-      contact: "/contacto",
-      offices: "/empresas",
+      process: "/#proceso",
+      business: "/empresas",
+      trust: "/#garantia",
     });
   });
 

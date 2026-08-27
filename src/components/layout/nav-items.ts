@@ -10,15 +10,19 @@
  */
 export interface NavItem {
   /** Dictionary key under `nav.items`. */
-  readonly key: "catalog" | "brands" | "styles" | "contact" | "offices";
-  /** Locale-agnostic destination path. */
+  readonly key: "catalog" | "process" | "business" | "trust";
+  /** Locale-agnostic destination path (homepage anchors share Spanish slugs). */
   readonly href: string;
 }
 
+/**
+ * Primary nav (T19 AC-16) — the four mockup items. `process`/`trust` deep-link
+ * to homepage section anchors (shared Spanish slugs in both locales); the
+ * business CTA is rendered separately (orange) in the header + mobile drawer.
+ */
 export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { key: "catalog", href: "/sillas" },
-  { key: "brands", href: "/marcas" },
-  { key: "styles", href: "/estilos" },
-  { key: "contact", href: "/contacto" },
-  { key: "offices", href: "/empresas" },
+  { key: "process", href: "/#proceso" },
+  { key: "business", href: "/empresas" },
+  { key: "trust", href: "/#garantia" },
 ] as const;

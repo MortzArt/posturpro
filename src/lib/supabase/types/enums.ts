@@ -5,6 +5,8 @@
  */
 
 export type ProductStatus = "draft" | "active" | "archived";
+/** Optional product condition grade (T19, 0016_product_condition_grade.sql). */
+export type ProductConditionGrade = "A+" | "A" | "B";
 export type OrderStatus =
   | "pending_payment"
   | "paid"

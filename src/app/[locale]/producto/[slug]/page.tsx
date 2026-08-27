@@ -35,6 +35,7 @@ import type { Locale } from "@/i18n/routing";
 import { ProductPurchasePanel } from "@/components/product/product-purchase-panel";
 import { ProductSpecs } from "@/components/product/product-specs";
 import { ProductQa } from "@/components/product/product-qa";
+import { GradeBadge } from "@/components/catalog/grade-badge";
 import { RecentlyViewed } from "@/components/product/recently-viewed";
 import type { QaFormLabels } from "@/components/product/qa-form";
 
@@ -148,6 +149,15 @@ export default async function ProductPage({ params }: ProductPageProps) {
         items={crumbs}
       />
 
+      {product.conditionGrade ? (
+        <div className="mt-3">
+          <GradeBadge
+            grade={product.conditionGrade}
+            label={t("grade.badge", { grade: product.conditionGrade })}
+          />
+        </div>
+      ) : null}
+
       <section className="enter-fade mt-2">
         <ProductPurchasePanel
           productId={product.id}
@@ -190,6 +200,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
             lowStockTemplate: tCatalog.raw("stock.lowStock"),
             imagePlaceholder: tCatalog("card.imagePlaceholder"),
             colorsCountTemplate: tCatalog.raw("card.colorsCount"),
+            gradeBadgeTemplate: t.raw("grade.badge"),
           }}
         />
 
@@ -299,5 +310,6 @@ function toRecentlyViewedEntry(product: ProductDetail): RecentlyViewedEntry {
     colorCount: distinctColors,
     stockState: product.stockState,
     lowStockN,
+    conditionGrade: product.conditionGrade,
   };
 }

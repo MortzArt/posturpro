@@ -45,6 +45,10 @@ import {
 import type { CatalogPage, CatalogProductCard } from "@/lib/catalog/types";
 import type { CatalogFilters } from "@/lib/catalog/search.types";
 import { isCacheableFilters } from "@/lib/catalog/search-params";
+import {
+  isConditionGrade,
+  type ProductConditionGrade,
+} from "@/lib/catalog/grade";
 
 /** One row shape returned by the `search_products` RPC. */
 interface SearchRow {
@@ -153,8 +157,43 @@ async function coversFor(ids: string[]): Promise<Map<string, CoverRow>> {
   return covers;
 }
 
-/** Map one RPC row + its cover into a `CatalogProductCard`. */
-function toCard(row: SearchRow, cover: CoverRow | undefined): CatalogProductCard {
+/**
+ * Batch-fetch condition grades from `products_public` for the page's ids (AC-9).
+ * The `search_products` RPC does not return the grade, so — exactly like cover
+ * images — it is stitched from the cost-free public view. Values outside the
+ * enum resolve to `null` (edge 2).
+ */
+async function gradesFor(
+  ids: string[],
+): Promise<Map<string, ProductConditionGrade>> {
+  const grades = new Map<string, ProductConditionGrade>();
+  if (ids.length === 0) return grades;
+
+  const db = createPublicClient();
+  const { data, error } = await db
+    .from("products_public")
+    .select("id,condition_grade")
+    .in("id", ids);
+  if (error) {
+    fail("search condition grades", error.message);
+  }
+  for (const row of (data ?? []) as {
+    id: string;
+    condition_grade: string | null;
+  }[]) {
+    if (isConditionGrade(row.condition_grade)) {
+      grades.set(row.id, row.condition_grade);
+    }
+  }
+  return grades;
+}
+
+/** Map one RPC row + its cover + grade into a `CatalogProductCard`. */
+function toCard(
+  row: SearchRow,
+  cover: CoverRow | undefined,
+  grade: ProductConditionGrade | undefined,
+): CatalogProductCard {
   const compareAt = row.compare_at_price_cents;
   return {
     id: row.id,
@@ -172,6 +211,7 @@ function toCard(row: SearchRow, cover: CoverRow | undefined): CatalogProductCard
     stockState: stockState(row.effective_stock),
     lowStockN:
       stockState(row.effective_stock) === "low" ? row.effective_stock : null,
+    conditionGrade: grade ?? null,
   };
 }
 
@@ -198,8 +238,10 @@ async function readSearchPage(
   const result = from === 0 ? probe : await runSearch(buildArgs(filters, from, pageSize));
 
   const ids = result.rows.map((row) => row.id);
-  const covers = await coversFor(ids);
-  const items = result.rows.map((row) => toCard(row, covers.get(row.id)));
+  const [covers, grades] = await Promise.all([coversFor(ids), gradesFor(ids)]);
+  const items = result.rows.map((row) =>
+    toCard(row, covers.get(row.id), grades.get(row.id)),
+  );
 
   return { items, page, pageSize, total, lastPage };
 }
@@ -296,8 +338,14 @@ export function listPopularProducts(
         limit,
       );
       const { rows } = await runSearch(args);
-      const covers = await coversFor(rows.map((row) => row.id));
-      return rows.map((row) => toCard(row, covers.get(row.id)));
+      const ids = rows.map((row) => row.id);
+      const [covers, grades] = await Promise.all([
+        coversFor(ids),
+        gradesFor(ids),
+      ]);
+      return rows.map((row) =>
+        toCard(row, covers.get(row.id), grades.get(row.id)),
+      );
     },
   );
 }

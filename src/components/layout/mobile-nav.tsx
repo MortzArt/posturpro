@@ -13,8 +13,9 @@ import {
 import { Link } from "@/i18n/navigation";
 import { NAV_ITEMS } from "@/components/layout/nav-items";
 import { LanguageToggle } from "@/components/layout/language-toggle";
+import { Button } from "@/components/ui/button";
 import { useCart } from "@/components/cart/cart-provider";
-import { CART_PATH } from "@/lib/config";
+import { CART_PATH, EMPRESAS_PATH } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
 /**
@@ -209,6 +210,7 @@ interface MobileNavBodyProps {
  * keeping the render tree small and the focus-trap boundary explicit.
  */
 function MobileNavBody({ t, onNavigate }: MobileNavBodyProps) {
+  const tHeader = useTranslations("header");
   return (
     <>
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
@@ -257,6 +259,17 @@ function MobileNavBody({ t, onNavigate }: MobileNavBodyProps) {
               </Link>
             ))}
             <MobileCartLink onNavigate={onNavigate} />
+            <Button
+              asChild
+              variant="cta"
+              size="lg"
+              className="mt-4 w-full"
+              data-testid="mobile-nav-cta"
+            >
+              <Link href={EMPRESAS_PATH} onClick={onNavigate}>
+                {tHeader("cta")}
+              </Link>
+            </Button>
           </nav>
 
       <div className="shrink-0 border-t border-border p-4">

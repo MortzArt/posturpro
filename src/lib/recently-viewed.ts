@@ -13,6 +13,7 @@ import {
   RECENTLY_VIEWED_STORAGE_KEY,
 } from "@/lib/config";
 import type { StockState } from "@/lib/catalog/types";
+import { isConditionGrade, type ProductConditionGrade } from "@/lib/catalog/grade";
 
 /**
  * A stored recently-viewed entry — the minimal `CatalogProductCard` fields a
@@ -32,6 +33,8 @@ export interface RecentlyViewedEntry {
   stockState: StockState;
   /** The `{n}` for "Solo quedan {n}"; null unless `stockState === "low"`. */
   lowStockN: number | null;
+  /** Optional condition grade (A+/A/B); null → no grade badge. */
+  conditionGrade: ProductConditionGrade | null;
 }
 
 /** Whether a value is a plausible stored entry (defensive shape guard). */
@@ -54,6 +57,8 @@ function isEntry(value: unknown): value is RecentlyViewedEntry {
     (entry.coverImageUrl === null || typeof entry.coverImageUrl === "string") &&
     (entry.brandName === null || typeof entry.brandName === "string") &&
     (entry.lowStockN === null || typeof entry.lowStockN === "number") &&
+    (entry.conditionGrade === null ||
+      isConditionGrade(entry.conditionGrade)) &&
     (entry.stockState === "in" ||
       entry.stockState === "low" ||
       entry.stockState === "out")

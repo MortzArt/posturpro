@@ -32,6 +32,7 @@ function makeEntry(
     colorCount: 2,
     stockState: "in",
     lowStockN: null,
+    conditionGrade: null,
     ...overrides,
   };
 }

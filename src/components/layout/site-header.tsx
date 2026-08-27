@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { getLocale, getTranslations } from "next-intl/server";
 import { Link, getPathname } from "@/i18n/navigation";
 import { NAV_ITEMS } from "@/components/layout/nav-items";
@@ -5,7 +6,8 @@ import { LanguageToggle } from "@/components/layout/language-toggle";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { SearchBox } from "@/components/catalog/search-box";
 import { CartCountBadge } from "@/components/cart/cart-count-badge";
-import { CATALOG_PATH } from "@/lib/config";
+import { Button } from "@/components/ui/button";
+import { CATALOG_PATH, EMPRESAS_PATH } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
 /**
@@ -30,6 +32,7 @@ interface SiteHeaderProps {
 
 export async function SiteHeader({ storeName }: SiteHeaderProps) {
   const t = await getTranslations("nav");
+  const tHeader = await getTranslations("header");
   const tSearch = await getTranslations("catalog.search");
   const locale = await getLocale();
   // Locale-aware target so a native (JS-off) search submit on `/en` stays on
@@ -45,13 +48,20 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
           href="/"
           data-testid="header-wordmark"
           aria-label={storeName}
-          className="min-w-0 shrink truncate rounded-md font-heading text-base font-bold uppercase tracking-wide text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="shrink-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {storeName}
+          <Image
+            src="/brand/logo.svg"
+            alt={storeName}
+            width={132}
+            height={26}
+            priority
+            className="h-6 w-auto md:h-7"
+          />
         </Link>
 
         <nav
-          aria-label={t("menuTitle")}
+          aria-label={tHeader("navAria")}
           className="ml-6 hidden items-center gap-1 md:flex"
         >
           {NAV_ITEMS.map((item) => (
@@ -96,6 +106,15 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
           <CartCountBadge />
           <LanguageToggle variant="compact" className="md:hidden" />
           <LanguageToggle variant="segmented" className="hidden md:inline-flex" />
+          <Button
+            asChild
+            variant="cta"
+            size="sm"
+            className="ml-1 hidden md:inline-flex"
+            data-testid="header-cta"
+          >
+            <Link href={EMPRESAS_PATH}>{tHeader("cta")}</Link>
+          </Button>
         </div>
       </div>
     </header>

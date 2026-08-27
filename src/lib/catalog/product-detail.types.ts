@@ -9,6 +9,7 @@
  * which structurally omits it).
  */
 import type { StockState } from "@/lib/catalog/types";
+import type { ProductConditionGrade } from "@/lib/catalog/grade";
 
 /**
  * One product image, resolved for the gallery. `variantId === null` marks a
@@ -84,6 +85,8 @@ export interface ProductDetail {
   stock: number;
   /** Effective stock state at the product level (variants summed when present). */
   stockState: StockState;
+  /** Optional condition grade (A+/A/B); null → no grade badge on the PDP (AC-9). */
+  conditionGrade: ProductConditionGrade | null;
   variants: ProductVariantView[];
   images: ProductImageView[];
   questions: ProductQuestionView[];

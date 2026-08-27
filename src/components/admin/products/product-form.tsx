@@ -55,8 +55,9 @@ interface ProductFormProps {
 /** The order the error summary + focus-first-invalid walk fields. */
 const FIELD_ORDER: ProductField[] = [
   "name", "slug", "description", "sku", "price", "compare_at_price", "cost_price",
-  "stock", "status", "width_cm", "depth_cm", "height_cm", "seat_height_cm",
-  "weight_kg", "material_frame", "material_upholstery", "material_finish",
+  "stock", "status", "condition_grade", "width_cm", "depth_cm", "height_cm",
+  "seat_height_cm", "weight_kg", "material_frame", "material_upholstery",
+  "material_finish",
 ];
 
 export function ProductForm(props: ProductFormProps) {
@@ -260,6 +261,21 @@ export function ProductForm(props: ProductFormProps) {
           <SelectField name="brand_id" label="Marca" defaultValue={values.brand_id} disabled={pending} testid="admin-product-brand" options={[{ value: "", label: "Sin marca" }, ...props.brands]} />
           <SelectField name="style_id" label="Estilo" defaultValue={values.style_id} disabled={pending} testid="admin-product-style" options={[{ value: "", label: "Sin estilo" }, ...props.styles]} />
         </div>
+        <SelectField
+          name="condition_grade"
+          label="Condición"
+          defaultValue={values.condition_grade}
+          error={err("condition_grade")}
+          disabled={pending}
+          testid="admin-product-condition_grade"
+          helper="Grado de condición mostrado en la tienda (opcional)."
+          options={[
+            { value: "", label: "Sin grado" },
+            { value: "A+", label: "A+" },
+            { value: "A", label: "A" },
+            { value: "B", label: "B" },
+          ]}
+        />
         <CategoryMultiSelect options={props.categories} defaultSelected={values.category_ids} disabled={pending} />
         <TagInput defaultTags={values.tag_names} suggestions={props.tagSuggestions} disabled={pending} />
       </Section>

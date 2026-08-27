@@ -78,6 +78,13 @@ export const WHATSAPP_PREFILL_MESSAGE_ES =
   "Hola, tengo una pregunta sobre las sillas de PosturPro." as const;
 
 /**
+ * Human-formatted WhatsApp number shown next to the topbar/footer contact link
+ * (T19). Non-secret display string; the deep link uses `WHATSAPP_PHONE_E164`.
+ * PLACEHOLDER — owner swaps with the real number before launch.
+ */
+export const WHATSAPP_DISPLAY = "+52 55 1234 5678" as const;
+
+/**
  * Seed default for flat-rate shipping, in integer cents (MXN centavos).
  * 50000 cents = MX$500.00. Runtime source of truth is `store_settings`.
  */

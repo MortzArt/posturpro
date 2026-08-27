@@ -39,6 +39,7 @@ import type {
   CatalogPage,
   CatalogProductCard,
 } from "@/lib/catalog/types";
+import { isConditionGrade } from "@/lib/catalog/grade";
 
 /**
  * Columns selected from `products_public` for a card (never cost data).
@@ -51,7 +52,7 @@ import type {
  * over-fetch on every product query (m-1, m-4).
  */
 const PRODUCT_CARD_SELECT =
-  "id,slug,name,price_cents,compare_at_price_cents,is_best_seller,sales_count,stock,brands(name,slug,logo_url)" as const;
+  "id,slug,name,price_cents,compare_at_price_cents,is_best_seller,sales_count,stock,condition_grade,brands(name,slug,logo_url)" as const;
 
 /* ------------------------------------------------------------------------- *
  * Raw row shapes returned by the product-card select (embedded relations).
@@ -71,6 +72,7 @@ interface ProductCardRow {
   is_best_seller: boolean | null;
   sales_count: number | null;
   stock: number | null;
+  condition_grade: string | null;
   // PostgREST returns an object for a to-one embed, but the generated types can
   // surface it as an array; normalize defensively when stitching.
   brands: EmbeddedBrand | EmbeddedBrand[] | null;
@@ -208,6 +210,11 @@ function toCard(
     colorCount: distinctColors,
     stockState: state,
     lowStockN: state === "low" ? effective : null,
+    // Defend the read layer against a legacy/unexpected DB value (edge 2): the
+    // enum guard yields null for anything not exactly A+/A/B.
+    conditionGrade: isConditionGrade(row.condition_grade)
+      ? row.condition_grade
+      : null,
   };
 }
 

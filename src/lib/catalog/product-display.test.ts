@@ -36,6 +36,7 @@ function makeProduct(overrides: Partial<ProductDetail> = {}): ProductDetail {
     compareAtPriceCents: 1_079_880,
     stock: 10,
     stockState: "in",
+    conditionGrade: null,
     variants: [],
     images: [],
     questions: [],

@@ -26,4 +26,5 @@ export const PRODUCT_FIELD_ERROR_MESSAGES: Record<ProductFieldErrorKey, string> 
   "unit-too-many-decimals": "Usa máximo 2 decimales.",
   "unit-overflow": "El valor es demasiado grande.",
   "status-invalid": "Estado inválido.",
+  "grade-invalid": "Selecciona una condición válida.",
 };

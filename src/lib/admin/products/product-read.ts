@@ -89,6 +89,7 @@ export async function readProductForEdit(productId: string): Promise<ProductForE
     material_finish: product.material_finish ?? "",
     is_featured: product.is_featured,
     is_best_seller: product.is_best_seller,
+    condition_grade: product.condition_grade ?? "",
     category_ids: categoryIds,
     tag_names: tagNames,
   };

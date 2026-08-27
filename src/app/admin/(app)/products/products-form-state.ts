@@ -29,6 +29,8 @@ export interface ProductFormValues {
   material_finish: string;
   is_featured: boolean;
   is_best_seller: boolean;
+  /** "" (no grade) | "A+" | "A" | "B" — the storefront condition grade (T19). */
+  condition_grade: string;
   category_ids: string[];
   tag_names: string[];
 }
@@ -73,6 +75,7 @@ export const emptyProductFormValues: ProductFormValues = {
   material_finish: "",
   is_featured: false,
   is_best_seller: false,
+  condition_grade: "",
   category_ids: [],
   tag_names: [],
 };

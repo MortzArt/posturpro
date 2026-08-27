@@ -8,6 +8,8 @@
  * implementation detail and no `cost_price_cents`-bearing shape ever escapes.
  */
 
+import type { ProductConditionGrade } from "@/lib/catalog/grade";
+
 /** The three stock badge states, computed from effective stock (`stock.ts`). */
 export type StockState = "in" | "low" | "out";
 
@@ -33,6 +35,8 @@ export interface CatalogProductCard {
   stockState: StockState;
   /** The `{n}` for "Solo quedan {n}"; `null` unless `stockState === "low"`. */
   lowStockN: number | null;
+  /** Optional condition grade (A+/A/B); `null` → no grade badge (T19 AC-9). */
+  conditionGrade: ProductConditionGrade | null;
 }
 
 /** A single page of catalog items with the totals pagination needs. */

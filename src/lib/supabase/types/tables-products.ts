@@ -4,7 +4,7 @@
  * out of `tables-catalog.ts` (A1) to keep each module under the ~400-line
  * target; merged back with the taxonomy tables + view by `./database.ts`.
  */
-import type { ProductStatus } from "./enums";
+import type { ProductStatus, ProductConditionGrade } from "./enums";
 
 export type ProductTables = {
   products: {
@@ -32,6 +32,7 @@ export type ProductTables = {
       is_featured: boolean;
       is_best_seller: boolean;
       sales_count: number;
+      condition_grade: ProductConditionGrade | null;
       created_at: string;
       updated_at: string;
     };
@@ -59,6 +60,7 @@ export type ProductTables = {
       is_featured?: boolean;
       is_best_seller?: boolean;
       sales_count?: number;
+      condition_grade?: ProductConditionGrade | null;
       created_at?: string;
       updated_at?: string;
     };
@@ -86,6 +88,7 @@ export type ProductTables = {
       is_featured?: boolean;
       is_best_seller?: boolean;
       sales_count?: number;
+      condition_grade?: ProductConditionGrade | null;
       created_at?: string;
       updated_at?: string;
     };

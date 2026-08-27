@@ -98,4 +98,30 @@ describe("parseProductInput", () => {
     expect(result.values.width_mm).toBeNull();
     expect(result.values.weight_g).toBeNull();
   });
+
+  // T19 AC-6 / AC-8 / edge 3 — condition grade.
+  it("treats an empty condition_grade as null (AC-8: grade is optional)", () => {
+    const result = parseProductInput(values({ ...valid, condition_grade: "" }));
+    // ok === true proves no field error was raised for the grade (AC-8).
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.values.condition_grade).toBeNull();
+  });
+
+  it.each(["A+", "A", "B"] as const)(
+    "accepts the valid condition grade %s and round-trips it (AC-6/AC-7)",
+    (grade) => {
+      const result = parseProductInput(values({ ...valid, condition_grade: grade }));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.values.condition_grade).toBe(grade);
+    },
+  );
+
+  it("rejects a tampered condition_grade with a field error and writes nothing (edge 3)", () => {
+    const result = parseProductInput(values({ ...valid, condition_grade: "X" }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.fieldErrors.condition_grade).toBe("grade-invalid");
+  });
 });

@@ -82,6 +82,7 @@ function parsed(overrides: Partial<ProductParsed>): ProductParsed {
     material_finish: null,
     is_featured: false,
     is_best_seller: false,
+    condition_grade: null,
     ...overrides,
   };
 }

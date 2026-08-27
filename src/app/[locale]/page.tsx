@@ -4,35 +4,39 @@ import { hasLocale } from "next-intl";
 import { routing } from "@/i18n/routing";
 import {
   CATALOG_PATH,
-  BRANDS_PATH,
   HOME_FEATURED_PRODUCTS,
-  HOME_FEATURED_BRANDS,
   HERO_IMAGE,
-  EDITORIAL_BAND_IMAGE,
   SEED_STORE_NAME,
 } from "@/lib/config";
-import { listProducts, listBrands } from "@/lib/catalog/queries";
+import { listProducts } from "@/lib/catalog/queries";
 import { getStoreSettingsStatic } from "@/lib/store-settings";
-import type { CatalogBrand, CatalogProductCard } from "@/lib/catalog/types";
+import type { CatalogProductCard } from "@/lib/catalog/types";
 import { JsonLd } from "@/components/seo/json-ld";
 import { buildAlternates, buildOpenGraph } from "@/lib/seo/metadata";
 import { buildOrganizationLd, buildWebSiteLd } from "@/lib/seo/json-ld";
 import { getSiteUrl, absoluteUrl } from "@/lib/seo/site-url";
 import type { Locale } from "@/i18n/routing";
-import { Hero } from "@/components/home/hero";
-import { EditorialBand } from "@/components/home/editorial-band";
+import { cn } from "@/lib/utils";
+import { HomeHero } from "@/components/home/home-hero";
+import { BrandBar } from "@/components/home/brand-bar";
+import { ValuesImpact } from "@/components/home/values-impact";
 import { FeaturedProducts } from "@/components/home/featured-products";
-import { FeaturedBrands } from "@/components/home/featured-brands";
+import { ProcessSteps } from "@/components/home/process-steps";
+import { B2BSection } from "@/components/home/b2b-section";
+import { SocialProof } from "@/components/home/social-proof";
+import { SavingsCalculator } from "@/components/home/savings-calculator";
+import { TrustFaq } from "@/components/home/trust-faq";
+import { CtaBanner } from "@/components/home/cta-banner";
 
 /**
- * Homepage (T13 AC-7, AC-8, AC-9) — the launch-grade front door. Replaces the T2
- * placeholder with a hero (ALWAYS rendered) + Featured chairs (bounded slice of
- * `listProducts`) + Featured brands (`listBrands` sliced to M). Each featured
- * section is OMITTED when its list is empty (edge 8); featured selection is a
- * bounded slice of existing active-content queries — no "featured" DB flag.
+ * Homepage (T19 rebuild). Client-approved 13-section structure + copy expressed
+ * in the site's own design language (brand greens + orange CTAs, shadcn/ui,
+ * Libre Caslon Text). Stays a thin server-component composition shell: it reads
+ * featured products (degrading to `[]` on failure — the catalog section is then
+ * omitted, edge 4) and passes pre-resolved strings to each section component.
  *
- * Featured reads degrade to empty on failure so the hero always survives (edge
- * 9); a hard content miss must never blank the front door.
+ * SEO is PRESERVED verbatim from T13/T14 (AC-24): `generateMetadata`,
+ * Organization + WebSite JSON-LD, canonical/alternates all unchanged.
  */
 
 interface HomePageProps {
@@ -83,7 +87,7 @@ async function buildHomeJsonLd() {
   ];
 }
 
-/** Read the featured chairs, degrading to `[]` on any read failure (edge 9). */
+/** Read the featured chairs, degrading to `[]` on any read failure (edge 4). */
 async function readFeaturedProducts(): Promise<CatalogProductCard[]> {
   try {
     const page = await listProducts({ pageSize: HOME_FEATURED_PRODUCTS });
@@ -95,75 +99,187 @@ async function readFeaturedProducts(): Promise<CatalogProductCard[]> {
   }
 }
 
-/** Read the featured brands (sliced to M), degrading to `[]` on failure (edge 9). */
-async function readFeaturedBrands(): Promise<CatalogBrand[]> {
-  try {
-    const brands = await listBrands();
-    return brands.slice(0, HOME_FEATURED_BRANDS);
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    console.warn(`[home] featured brands read failed: ${message}. Omitting section.`);
-    return [];
-  }
-}
+const CONTAINER = "mx-auto max-w-(--breakpoint-xl) px-4 md:px-6 lg:px-8";
 
 export default async function HomePage({ params }: HomePageProps) {
   const { locale } = await params;
   setRequestLocale(locale);
 
-  const [t, products, brands, homeJsonLd] = await Promise.all([
+  const [t, products, homeJsonLd] = await Promise.all([
     getTranslations("home"),
     readFeaturedProducts(),
-    readFeaturedBrands(),
     buildHomeJsonLd(),
   ]);
 
   return (
     <>
       <JsonLd data={homeJsonLd} />
-      <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-16 md:px-6 md:py-24 lg:px-8">
-        <Hero
-          headline={t("hero.title")}
-          subcopy={t("hero.subtitle")}
-          ctaLabel={t("hero.ctaCatalog")}
-          ctaHref={CATALOG_PATH}
-          secondaryLabel={t("hero.ctaBrands")}
-          secondaryHref={BRANDS_PATH}
+
+      <Section bg="background">
+        <HomeHero
+          eyebrow={t("hero.eyebrow")}
+          headlineL1={t("hero.headlineL1")}
+          headlineL2={t("hero.headlineL2")}
+          subtitle={t("hero.subtitle")}
+          ctaCatalog={t("hero.ctaCatalog")}
+          ctaBusiness={t("hero.ctaBusiness")}
           imageUrl={HERO_IMAGE}
           imageAlt={t("hero.imageAlt")}
+          stats={[
+            { figure: t("hero.stats.s1Figure"), label: t("hero.stats.s1Label") },
+            { figure: t("hero.stats.s2Figure"), label: t("hero.stats.s2Label") },
+            { figure: t("hero.stats.s3Figure"), label: t("hero.stats.s3Label") },
+          ]}
+          cert={{
+            grade: t("hero.cert.grade"),
+            code: t("hero.cert.code"),
+            meta: t("hero.cert.meta"),
+          }}
+          disclaimer={t("hero.disclaimer")}
         />
-      </section>
+      </Section>
+
+      <Section bg="muted" padding="band">
+        <BrandBar label={t("brandBar.label")} brands={t("brandBar.brands")} />
+      </Section>
+
+      <Section bg="background">
+        <ValuesImpact
+          eyebrow={t("values.eyebrow")}
+          heading={t("values.heading")}
+          subcopy={t("values.subcopy")}
+          cards={[
+            { title: t("values.card1Title"), body: t("values.card1Body") },
+            { title: t("values.card2Title"), body: t("values.card2Body") },
+            { title: t("values.card3Title"), body: t("values.card3Body") },
+            { title: t("values.card4Title"), body: t("values.card4Body") },
+          ]}
+          figures={[
+            { figure: t("impact.f1Figure"), label: t("impact.f1Label") },
+            { figure: t("impact.f2Figure"), label: t("impact.f2Label") },
+            { figure: t("impact.f3Figure"), label: t("impact.f3Label") },
+          ]}
+          disclaimer={t("impact.disclaimer")}
+        />
+      </Section>
 
       {products.length > 0 ? (
-        <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
+        <Section bg="muted" id="catalogo">
           <FeaturedProducts
             products={products}
-            heading={t("featured.productsHeading")}
-            viewAllLabel={t("featured.viewAllProducts")}
+            heading={t("catalog.heading")}
+            viewAllLabel={t("catalog.viewAll")}
             viewAllHref={CATALOG_PATH}
           />
-        </section>
+        </Section>
       ) : null}
 
-      <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
-        <EditorialBand
-          title={t("editorial.title")}
-          body={t("editorial.body")}
-          imageUrl={EDITORIAL_BAND_IMAGE}
-          imageAlt={t("editorial.imageAlt")}
+      <Section bg="background">
+        <ProcessSteps
+          eyebrow={t("process.eyebrow")}
+          heading={t("process.heading")}
+          subcopy={t("process.subcopy")}
+          steps={[
+            { number: "01", title: t("process.step1Title"), body: t("process.step1Body") },
+            { number: "02", title: t("process.step2Title"), body: t("process.step2Body") },
+            { number: "03", title: t("process.step3Title"), body: t("process.step3Body") },
+            { number: "04", title: t("process.step4Title"), body: t("process.step4Body") },
+          ]}
         />
-      </section>
+      </Section>
 
-      {brands.length > 0 ? (
-        <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
-          <FeaturedBrands
-            brands={brands}
-            heading={t("featured.brandsHeading")}
-            viewAllLabel={t("featured.viewAllBrands")}
-            viewAllHref={BRANDS_PATH}
+      <Section bg="muted">
+        <B2BSection />
+      </Section>
+
+      <Section bg="background">
+        <SocialProof
+          heading={t("social.heading")}
+          testimonials={[
+            { quote: t("social.t1Quote"), attribution: t("social.t1Attribution") },
+            { quote: t("social.t2Quote"), attribution: t("social.t2Attribution") },
+          ]}
+          disclaimer={t("social.disclaimer")}
+        />
+      </Section>
+
+      <Section bg="muted" id="calculadora">
+        <div className="flex flex-col gap-6">
+          <div className="flex max-w-2xl flex-col gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+              {t("calculator.eyebrow")}
+            </p>
+            <h2 className="font-heading text-2xl font-bold tracking-wide text-foreground sm:text-3xl">
+              {t("calculator.heading")}
+            </h2>
+            <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
+              {t("calculator.subcopy")}
+            </p>
+          </div>
+          <SavingsCalculator
+            labels={{
+              selectLabel: t("calculator.selectLabel"),
+              newPriceLabel: t("calculator.newPriceLabel"),
+              posturLabel: t("calculator.posturLabel"),
+              pctSuffix: t("calculator.pctSuffix"),
+              amountSuffix: t("calculator.amountSuffix"),
+              note: t("calculator.note"),
+            }}
           />
-        </section>
-      ) : null}
+        </div>
+      </Section>
+
+      <Section bg="background">
+        <TrustFaq
+          eyebrow={t("trust.eyebrow")}
+          heading={t("trust.heading")}
+          guarantees={[
+            { lead: t("trust.g1Lead"), body: t("trust.g1Body") },
+            { lead: t("trust.g2Lead"), body: t("trust.g2Body") },
+            { lead: t("trust.g3Lead"), body: t("trust.g3Body") },
+            { lead: t("trust.g4Lead"), body: t("trust.g4Body") },
+          ]}
+          faqEyebrow={t("trust.faqEyebrow")}
+          faqItems={[
+            { id: "faq-originales", question: t("trust.q1"), answer: t("trust.a1") },
+            { id: "faq-grados", question: t("trust.q2"), answer: t("trust.a2") },
+            { id: "faq-problema", question: t("trust.q3"), answer: t("trust.a3") },
+            { id: "faq-envios", question: t("trust.q4"), answer: t("trust.a4") },
+          ]}
+        />
+      </Section>
+
+      <Section bg="background">
+        <CtaBanner
+          heading={t("ctaBanner.heading")}
+          cta1={t("ctaBanner.cta1")}
+          cta2={t("ctaBanner.cta2")}
+        />
+      </Section>
     </>
+  );
+}
+
+interface SectionProps {
+  children: React.ReactNode;
+  bg: "background" | "muted";
+  id?: string;
+  /** "band" is a shorter vertical rhythm for the quiet brand bar. */
+  padding?: "default" | "band";
+}
+
+/** Full-bleed banded section wrapper with the shared container inside. */
+function Section({ children, bg, id, padding = "default" }: SectionProps) {
+  return (
+    <section
+      id={id}
+      className={cn(
+        bg === "muted" ? "bg-muted" : "bg-background",
+        id ? "scroll-mt-28" : undefined,
+        padding === "band" ? "py-10" : "py-14 md:py-20",
+      )}
+    >
+      <div className={CONTAINER}>{children}</div>
+    </section>
   );
 }

@@ -15,6 +15,10 @@ import {
   MATERIAL_MAX_LENGTH,
   INT4_MAX,
 } from "@/lib/config";
+import {
+  isConditionGrade,
+  type ProductConditionGrade,
+} from "@/lib/catalog/grade";
 import type { ProductFormValues } from "@/app/admin/(app)/products/products-form-state";
 
 /** Every product-form field that can carry an error. */
@@ -35,7 +39,8 @@ export type ProductField =
   | "weight_kg"
   | "material_frame"
   | "material_upholstery"
-  | "material_finish";
+  | "material_finish"
+  | "condition_grade";
 
 /** Field-error keys (localized in the form). */
 export type ProductFieldErrorKey =
@@ -55,7 +60,8 @@ export type ProductFieldErrorKey =
   | "unit-negative"
   | "unit-too-many-decimals"
   | "unit-overflow"
-  | "status-invalid";
+  | "status-invalid"
+  | "grade-invalid";
 
 /** A single field error (used by the map type in the form state). */
 export interface ProductFieldError {
@@ -86,6 +92,7 @@ export interface ProductParsed {
   material_finish: string | null;
   is_featured: boolean;
   is_best_seller: boolean;
+  condition_grade: ProductConditionGrade | null;
 }
 
 /** Parse result: DB-ready values (+ M2M ids/names), or per-field errors. */
@@ -212,6 +219,9 @@ export function parseProductInput(raw: ProductFormValues): ProductParseResult {
   const status = parseStatus(raw.status);
   if (!status.ok) errors.status = status.error;
 
+  const grade = parseConditionGrade(raw.condition_grade);
+  if (!grade.ok) errors.condition_grade = grade.error;
+
   const dims = parseDimensions(raw, errors);
   const materials = parseMaterials(raw, errors);
 
@@ -225,6 +235,7 @@ export function parseProductInput(raw: ProductFormValues): ProductParseResult {
     !cost.ok ||
     !stock.ok ||
     !status.ok ||
+    !grade.ok ||
     !dims.ok ||
     !materials.ok
   ) {
@@ -255,6 +266,7 @@ export function parseProductInput(raw: ProductFormValues): ProductParseResult {
       material_finish: materials.value.finish,
       is_featured: raw.is_featured,
       is_best_seller: raw.is_best_seller,
+      condition_grade: grade.value,
     },
     categoryIds: raw.category_ids.filter((id) => id.trim() !== ""),
     tagNames: normalizeTagNames(raw.tag_names),
@@ -269,6 +281,22 @@ function parseSlug(
   if (trimmed.length === 0) return { ok: false, error: "required" };
   if (!isValidSlug(trimmed)) return { ok: false, error: "slug-format" };
   return { ok: true, value: trimmed };
+}
+
+/**
+ * Parse the OPTIONAL condition grade (T19 AC-6, edge 3). Empty string (the
+ * "Sin grado" option) → null; exactly A+/A/B → that value; anything else (a
+ * tampered POST) → a `grade-invalid` field error so nothing is written.
+ */
+function parseConditionGrade(
+  raw: string,
+):
+  | { ok: true; value: ProductConditionGrade | null }
+  | { ok: false; error: ProductFieldErrorKey } {
+  const trimmed = raw.trim();
+  if (trimmed === "") return { ok: true, value: null };
+  if (isConditionGrade(trimmed)) return { ok: true, value: trimmed };
+  return { ok: false, error: "grade-invalid" };
 }
 
 /** Parse the status enum. */

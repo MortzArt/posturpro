@@ -24,6 +24,7 @@ import { CATALOG_REVALIDATE_SECONDS } from "@/lib/config";
 import { CATALOG_CACHE_TAG } from "@/lib/catalog/queries";
 import { fail, firstOrSelf } from "@/lib/catalog/read-primitives";
 import { effectiveStock, stockState } from "@/lib/catalog/stock";
+import { isConditionGrade } from "@/lib/catalog/grade";
 import type {
   ProductDetail,
   ProductImageView,
@@ -62,7 +63,7 @@ interface EmbeddedBrand {
 
 /** The exact `products_public` columns the PDP reads (never cost data). */
 const PRODUCT_DETAIL_SELECT =
-  "id,slug,name,description,price_cents,compare_at_price_cents,stock," +
+  "id,slug,name,description,price_cents,compare_at_price_cents,stock,condition_grade," +
   "width_mm,depth_mm,height_mm,seat_height_mm,weight_g," +
   "material_frame,material_upholstery,material_finish,brands(name)";
 
@@ -74,6 +75,7 @@ interface ProductDetailRow {
   price_cents: number | null;
   compare_at_price_cents: number | null;
   stock: number | null;
+  condition_grade: string | null;
   width_mm: number | null;
   depth_mm: number | null;
   height_mm: number | null;
@@ -253,6 +255,9 @@ function stitchDetail(
       typeof compareAt === "number" && compareAt > priceCents ? compareAt : null,
     stock,
     stockState: stockState(effective),
+    conditionGrade: isConditionGrade(row.condition_grade)
+      ? row.condition_grade
+      : null,
     variants,
     images,
     questions,

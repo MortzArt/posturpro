@@ -1,158 +1,188 @@
 import { getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
-import { getStoreSettingsStatic } from "@/lib/store-settings";
-import { formatMXN } from "@/lib/money";
-import { SEED_STORE_NAME } from "@/lib/config";
+import {
+  BRANDS_PATH,
+  CATALOG_PATH,
+  EMPRESAS_PATH,
+  SEED_STORE_NAME,
+  WHATSAPP_DISPLAY,
+  WHATSAPP_PHONE_E164,
+  WHATSAPP_PREFILL_MESSAGE_ES,
+} from "@/lib/config";
+import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import { cn } from "@/lib/utils";
 
 /**
- * SiteFooter (T2 AC-7, AC-15, edge case 2). Async server component rendered on
- * every page: store name, links to the seeded Spanish static pages, a
- * free-shipping line derived from `store_settings` via `formatMXN`, and a
- * copyright line with the current year.
+ * SiteFooter (T19 AC-16) — a deep-green block that closes every page (brand
+ * identity payoff). Async server component. Structure follows the mockup: a wide
+ * brand column (white text wordmark + blurb + 3 social links) then four columns:
+ * Catálogo / Empresas / Compañía / Contacto, plus a bottom bar (copyright +
+ * payments line + legal links).
  *
- * Data resolves server-side (no client spinner, no CLS) via the COOKIE-FREE,
- * tag-cached `getStoreSettingsStatic` so the footer no longer forces every
- * route dynamic (T3 AC-11). If it returns `null` (row absent / RLS / network
- * error — already logged in the
- * wrapper), the free-shipping line is omitted and the store name falls back to
- * `SEED_STORE_NAME`; the rest of the footer still renders (graceful degrade).
- * The free-shipping slot reserves height (`min-h-[1lh]`) so its presence or
- * absence never shifts layout.
- *
- * Static-page hrefs are the REAL seeded Spanish slugs; the locale-aware `Link`
- * adds the `/en` prefix in English. Links may be dead until T13 — a dead link
- * renders the localized 404 inside the shell (AC-10), never a broken page.
+ * On a green field the multi-color SVG logo's dark-green parts would vanish, so
+ * the footer renders the store name as a WHITE TEXT WORDMARK (the header carries
+ * the real SVG on its light bar). All copy comes from `home.footer.*`; the store
+ * name falls back to `SEED_STORE_NAME`. WhatsApp is config-gated: when the phone
+ * is unconfigured the contact line is plain text, never a broken `wa.me//`
+ * (edge 5). Every text/link on green meets AA (white on deep green = 11.59:1).
  */
 
-/**
- * Footer link groups keyed to the `footer.links` dictionary + REAL seeded slugs
- * (T13 AC-10 reconciliation). Split into 3 real link columns now that all 9
- * static pages exist. Every href resolves to a live static page — ZERO dead
- * links. The combined T2 `/envios-y-devoluciones` was split into `/envios` +
- * `/devoluciones` (matching the seeded page set). Showroom hangs off the
- * store-info block as a contextual link, not a policy column.
- */
-const STORE_LINKS = [
-  { key: "offices", href: "/empresas" },
-  { key: "about", href: "/sobre-nosotros" },
-] as const;
-
-const HELP_LINKS = [
-  { key: "faq", href: "/preguntas-frecuentes" },
-  { key: "shipping", href: "/envios" },
-  { key: "returns", href: "/devoluciones" },
-  { key: "contact", href: "/contacto" },
-] as const;
-
-const LEGAL_LINKS = [
-  { key: "warranty", href: "/garantia" },
-  { key: "privacy", href: "/aviso-de-privacidad" },
-  { key: "terms", href: "/terminos" },
-] as const;
-
-const FOOTER_LINK_CLASS = cn(
-  "nav-hover inline-flex rounded-sm text-sm text-muted-foreground outline-none",
-  "hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+const LINK_CLASS = cn(
+  "nav-hover inline-flex rounded-sm text-sm text-primary-foreground/80 outline-none",
+  "hover:text-primary-foreground focus-visible:ring-2 focus-visible:ring-primary-foreground/60",
 );
 
-export async function SiteFooter() {
-  const t = await getTranslations("footer");
-  const settings = await getStoreSettingsStatic();
+const HEADING_CLASS =
+  "font-heading text-xs font-semibold uppercase tracking-wide text-primary-foreground";
 
-  const storeName = settings?.store_name ?? SEED_STORE_NAME;
-  const freeShippingLine =
-    settings != null
-      ? t("freeShipping", {
-          threshold: formatMXN(settings.free_shipping_threshold_cents),
-        })
-      : null;
-  const currentYear = new Date().getFullYear();
+export async function SiteFooter() {
+  const t = await getTranslations("home.footer");
+  const waUrl = buildWhatsAppUrl(WHATSAPP_PHONE_E164, WHATSAPP_PREFILL_MESSAGE_ES);
+  const whatsappLine = t("contactWhatsapp", { phone: WHATSAPP_DISPLAY });
 
   return (
-    <footer className="mt-auto border-t border-border bg-background">
-      <div className="mx-auto max-w-(--breakpoint-xl) px-4 py-10 md:px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="flex flex-col gap-2">
+    <footer className="mt-auto bg-primary text-primary-foreground" data-testid="site-footer">
+      <div className="mx-auto max-w-(--breakpoint-xl) px-4 py-12 md:px-6 lg:px-8">
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-5">
+          {/* Brand column (wider). */}
+          <div className="flex flex-col gap-4 lg:col-span-2">
             <p
-              data-testid="footer-store-name"
-              className="font-heading text-base font-semibold tracking-tight text-foreground"
+              data-testid="footer-wordmark"
+              className="font-heading text-lg font-bold uppercase tracking-wide text-primary-foreground"
             >
-              {storeName}
+              {SEED_STORE_NAME}
             </p>
-            {/* Reserve height so presence/absence of the line causes no CLS. */}
-            <p
-              data-testid="footer-free-shipping"
-              className="min-h-[1lh] text-sm text-muted-foreground"
-            >
-              {freeShippingLine}
+            <p className="max-w-prose text-sm text-primary-foreground/90">
+              {t("blurb")}
             </p>
-            {/* Showroom is location content, not a policy — contextual here. */}
-            <Link
-              href="/showroom"
-              data-testid="footer-link-showroom"
-              className={cn(FOOTER_LINK_CLASS, "mt-1")}
-            >
-              {t("links.showroom")}
-            </Link>
+            <ul className="flex items-center gap-4">
+              {[
+                { key: "instagram", label: t("socialInstagram") },
+                { key: "linkedin", label: t("socialLinkedin") },
+                { key: "facebook", label: t("socialFacebook") },
+              ].map((social) => (
+                <li key={social.key}>
+                  <a
+                    href="#"
+                    aria-label={social.label}
+                    data-testid={`footer-social-${social.key}`}
+                    className={LINK_CLASS}
+                  >
+                    {social.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
           </div>
 
-          <FooterLinkGroup
-            heading={t("sections.store")}
-            links={STORE_LINKS}
-            labelFor={(key) => t(`links.${key}`)}
-          />
-          <FooterLinkGroup
-            heading={t("sections.help")}
-            links={HELP_LINKS}
-            labelFor={(key) => t(`links.${key}`)}
-          />
-          <FooterLinkGroup
-            heading={t("sections.legal")}
-            links={LEGAL_LINKS}
-            labelFor={(key) => t(`links.${key}`)}
-          />
+          <FooterColumn heading={t("colCatalogHeading")}>
+            <FooterLink href={CATALOG_PATH} testid="footer-link-all-chairs">
+              {t("linkAllChairs")}
+            </FooterLink>
+            <FooterLink href={BRANDS_PATH} testid="footer-link-hm">
+              Herman Miller
+            </FooterLink>
+            <FooterLink href={BRANDS_PATH} testid="footer-link-steelcase">
+              Steelcase
+            </FooterLink>
+            <FooterLink href={BRANDS_PATH} testid="footer-link-haworth">
+              Haworth
+            </FooterLink>
+          </FooterColumn>
+
+          <FooterColumn heading={t("colBusinessHeading")}>
+            <FooterLink href={EMPRESAS_PATH} testid="footer-link-quote">
+              {t("linkBusinessQuote")}
+            </FooterLink>
+            <FooterLink href="/#empresas" testid="footer-link-buyback">
+              {t("linkBuyback")}
+            </FooterLink>
+            <FooterLink href="/#empresas" testid="footer-link-financing">
+              {t("linkFinancing")}
+            </FooterLink>
+          </FooterColumn>
+
+          <FooterColumn heading={t("colCompanyHeading")}>
+            <FooterLink href="/#proceso" testid="footer-link-process">
+              {t("linkCertProcess")}
+            </FooterLink>
+            <FooterLink href="/#garantia" testid="footer-link-trust">
+              {t("linkTrust")}
+            </FooterLink>
+            <FooterLink href="/#impacto" testid="footer-link-sustainability">
+              {t("linkSustainability")}
+            </FooterLink>
+          </FooterColumn>
+
+          <FooterColumn heading={t("colContactHeading")}>
+            {waUrl ? (
+              <a
+                href={waUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="footer-whatsapp"
+                className={LINK_CLASS}
+              >
+                {whatsappLine}
+              </a>
+            ) : (
+              <span className="text-sm text-primary-foreground/80" data-testid="footer-whatsapp-text">
+                {whatsappLine}
+              </span>
+            )}
+            <a href={`mailto:${t("contactEmail")}`} className={LINK_CLASS} data-testid="footer-email">
+              {t("contactEmail")}
+            </a>
+            <p className="text-sm text-primary-foreground/80">{t("contactShowrooms")}</p>
+            <p className="text-sm text-primary-foreground/80">{t("contactHours")}</p>
+          </FooterColumn>
         </div>
 
-        <div className="mt-8 border-t border-border pt-6">
-          <p
-            data-testid="footer-copyright"
-            className="text-sm text-muted-foreground"
-          >
-            {t("rights", { year: currentYear, storeName })}
-          </p>
+        <div className="mt-10 flex flex-col gap-2 border-t border-primary-foreground/15 pt-6 text-xs text-primary-foreground/70 sm:flex-row sm:items-center sm:justify-between">
+          <p data-testid="footer-copyright">{t("copyright")}</p>
+          <p className="max-w-md">{t("payments")}</p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <a href="#" className={LINK_CLASS} data-testid="footer-legal-privacy">
+              {t("legalPrivacy")}
+            </a>
+            <a href="#" className={LINK_CLASS} data-testid="footer-legal-terms">
+              {t("legalTerms")}
+            </a>
+          </div>
         </div>
       </div>
     </footer>
   );
 }
 
-interface FooterLinkGroupProps {
+interface FooterColumnProps {
   heading: string;
-  links: ReadonlyArray<{ key: string; href: string }>;
-  labelFor: (key: string) => string;
+  children: React.ReactNode;
 }
 
-/** A titled column of footer links (SRP: header owns layout, this owns a group). */
-function FooterLinkGroup({ heading, links, labelFor }: FooterLinkGroupProps) {
+/** A titled column of footer links on the green field. */
+function FooterColumn({ heading, children }: FooterColumnProps) {
   return (
     <nav aria-label={heading} className="flex flex-col gap-3">
-      <p className="font-heading text-xs font-semibold uppercase tracking-wide text-foreground">
-        {heading}
-      </p>
-      <ul className="flex flex-col gap-2">
-        {links.map((link) => (
-          <li key={link.key}>
-            <Link
-              href={link.href}
-              data-testid={`footer-link-${link.key}`}
-              className={FOOTER_LINK_CLASS}
-            >
-              {labelFor(link.key)}
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <p className={HEADING_CLASS}>{heading}</p>
+      <ul className="flex flex-col gap-2">{children}</ul>
     </nav>
+  );
+}
+
+interface FooterLinkProps {
+  href: string;
+  testid: string;
+  children: React.ReactNode;
+}
+
+/** A single footer link wrapped in an `<li>` (locale-aware). */
+function FooterLink({ href, testid, children }: FooterLinkProps) {
+  return (
+    <li>
+      <Link href={href} data-testid={testid} className={LINK_CLASS}>
+        {children}
+      </Link>
+    </li>
   );
 }

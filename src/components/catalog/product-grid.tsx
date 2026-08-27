@@ -28,6 +28,7 @@ export async function ProductGrid({
   priorityCount = 4,
 }: ProductGridProps) {
   const t = await getTranslations("catalog");
+  const tProduct = await getTranslations("product");
 
   const stockLabel = (product: CatalogProductCard): string => {
     switch (product.stockState) {
@@ -45,6 +46,11 @@ export async function ProductGrid({
 
   const placeholder = t("card.imagePlaceholder");
 
+  const gradeLabel = (product: CatalogProductCard): string | null =>
+    product.conditionGrade
+      ? tProduct("grade.badge", { grade: product.conditionGrade })
+      : null;
+
   return (
     <ul
       className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 lg:gap-6"
@@ -60,6 +66,7 @@ export async function ProductGrid({
               stock: stockLabel(product),
               colors: colorsLabel(product.colorCount),
               imagePlaceholder: placeholder,
+              grade: gradeLabel(product),
             }}
           />
         </li>

@@ -51,6 +51,7 @@ function readProductValues(formData: FormData): ProductFormValues {
     material_finish: str("material_finish"),
     is_featured: formData.get("is_featured") === "true",
     is_best_seller: formData.get("is_best_seller") === "true",
+    condition_grade: str("condition_grade"),
     category_ids: formData.getAll("category_ids").map(String),
     tag_names: formData.getAll("tag_names").map(String),
   };

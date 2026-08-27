@@ -93,3 +93,30 @@ Current text is a generic template ("manufacturer's warranty covers defects…")
 ---
 
 *Prepared 2026-08-21. Pages audited: Home, Empresas, Contacto, Showroom, Sobre nosotros, Envíos, Devoluciones, Garantía, FAQ, Aviso de Privacidad, Términos.*
+
+---
+
+## T19 — Homepage rebuild placeholder figures (added 2026-08-27)
+
+Every illustrative/example value shipped in the new homepage + shell that needs
+owner → client confirmation before launch. All live in the translation files
+(`src/messages/es-MX.json` + `en.json`) or config so they are trivial to swap.
+
+- **Hero stats:** +3,200 chairs delivered · 100% function verified · 60% average savings. (`home.hero.stats.*`)
+- **Cert-tag (illustrative element):** grade A+, cert no. PP-04821. (`home.hero.cert.*`)
+- **Impact strip:** +3,200 second-life chairs · 9,400 kg rescued · 60% less footprint. (`home.impact.*`)
+- **B2B panel stats:** +150 offices furnished · 24h quote response. (`home.b2b.stat*`)
+- **Testimonials (illustrative, placeholder names):** Regina P. (individual, CDMX); Administration Manager (manufacturing). (`home.social.*`)
+- **Calculator reference prices** (`src/lib/config/calculator.ts`, MXN new → PosturPro):
+  Aeron 38,500 → 21,900 · Leap V2 32,000 → 15,900 · Zody 24,000 → 11,500 ·
+  Embody 42,500 → 26,500 · Gesture 29,500 → 14,900 · Sayl 19,500 → 9,800.
+- **Contact:** WhatsApp/phone +52 55 1234 5678 (`WHATSAPP_DISPLAY` / `WHATSAPP_PHONE_E164`) ·
+  email hola@posturpro.mx (`home.footer.contactEmail`) · showroom cities CDMX/Guadalajara/Monterrey ·
+  hours Mon–Fri 9:00–18:00.
+- **Social links:** Instagram / LinkedIn / Facebook hrefs — currently `#` (footer).
+- **Legal links:** Aviso de privacidad / Términos hrefs — currently `#` (footer bottom bar).
+- **Copyright year:** 2026 (`home.footer.copyright`).
+- **Brand palette source:** logo greens confirmed from `public/brand/logo.svg`
+  (#094220 deep / #0f7f3c brand / #e7f7ed mint); CTA orange #f95326.
+- **Condition grades (A+/A/B):** proposal adopted; assign per product in Admin →
+  Productos → Condición. Products with no grade show no badge.

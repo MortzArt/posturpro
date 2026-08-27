@@ -6,7 +6,7 @@
  * assembled back into the root `Database` type by `./database.ts`. Structurally
  * identical to the pre-split definitions — tsc is the proof.
  */
-import type { ProductStatus } from "./enums";
+import type { ProductStatus, ProductConditionGrade } from "./enums";
 
 export type CatalogTables = {
   brands: {
@@ -166,6 +166,7 @@ export type CatalogViews = {
       is_featured: boolean | null;
       is_best_seller: boolean | null;
       sales_count: number | null;
+      condition_grade: ProductConditionGrade | null;
       created_at: string | null;
       updated_at: string | null;
     };
