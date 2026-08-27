@@ -1,9 +1,10 @@
 # Pipeline State
 Task: T20 — Storefront restyle: Factorial design language, Phase A homepage (owner approval gate)
 Tier: standard
-Stage: 1
-Agent: ultraplanner-research
+Stage: 2 (UI Design)
+Agent: ultradesign
 Last Updated: 2026-08-27
+S1 COMPLETE: complexity=medium, feature-type=ui-only. Risks: (1) font leak — DM Sans via storefront-scoped var (reuse --font-heading-family seam in .theme-storefront), NEVER --font-sans (shared w/ admin Inter); verify /admin stays Inter. (2) shared-component leaks — do NOT restyle catalog/product-card.tsx (used by /sillas,/marcas), only section wrappers; careful w/ section-header.tsx, b2b QuoteForm (shared /empresas); home/hero.tsx+featured-brands.tsx of /empresas are NOT homepage — leave alone. (3) css-line-count cap — extract imported file if needed. (4) footer green→white flips on all pages (intended inheritance, flag at approval). (5) -0.04em headings + long es-MX at 320px. Icons are @hugeicons (not lucide); no shadcn card/accordion — hand-rolled + native details. Only style-pinning test is /empresas hero aspect-[4/3] (out of scope).
 Notes: Phase A = homepage + shared shell ONLY; owner approval gates Phase B (rest of storefront). Brief: tasks/reference/T20-brief.md. Style source (measured live): tasks/reference/factorial-style-analysis.md + screenshots in scratchpad/factorial/. Keep brand palette (greens + #f95326 CTA w/ dark AA fg) + logo; pure white bg replaces mint tints; DM Sans (Google) replaces current fonts per analysis; admin firewall untouched; T19 content/copy/data unchanged. Color role map: Factorial red→our orange, teal links→#0f7f3c, ink→#094220 (identity) / neutral ink (text).
 
 === T19 archive ===
