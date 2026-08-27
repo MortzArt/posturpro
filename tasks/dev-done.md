@@ -143,3 +143,26 @@ Screenshots (desktop 1280×900 + mobile 375×812) for sillas, categorias, marcas
 
 ## Dependencies Added
 - **None.** `Libre_Caslon_Text` was *removed* from the `next/font` bundle (D-1) — a small net win. No package added/upgraded.
+
+## Review + Fix Pass (ReviewFix Stage)
+
+### Issues Found & Fixed
+
+| ID  | Severity | Title | Status | File | Fix Applied |
+| --- | -------- | ----- | ------ | ---- | ----------- |
+| C-1 | CRITICAL | Payment-panel semantic borders suppressed by `.factorial-card{border:0}` (unlayered beats Tailwind `border` utility) | FIXED | `checkout/payment-panel.tsx:188,260,290,311,349` | Added a `semantic` flag to `Card`: neutral cards keep `.factorial-card`, semantic (failed/unavailable/stale/processing) render `rounded-[var(--radius)]` so their tint+`border` render. Verified 0px→1px against compiled CSS in headless Chromium. Dev summary's "re-asserted border" did NOT work — cascade defeated it. |
+| M-1 | MAJOR | Stale-reload primary button not restyled (stayed green `variant="default"`) | FIXED | `checkout/payment-panel.tsx:326` | `buttonVariants({ variant: "cta", size: "xl" })`; dropped redundant `h-11 px-6 text-sm`. Matches Pay/Retry (AC-CHK-3). |
+| m-1 | MINOR | 4 `cta xl` CTAs kept `px-4` that twMerge strips from Factorial `px-8` (inconsistent pill width) | FIXED | `[locale]/not-found.tsx:28`, `[locale]/error.tsx:56`, `product/qa-form.tsx:235`, `contacto/contact-form.tsx:254` | Removed redundant `px-4` + `min-h-11` so all adopt `xl`'s `px-8`/`h-12`. |
+| m-2 | MINOR | Bare `min-h-11` on `cta xl` in empty-state/no-results | SKIPPED | — | Harmless no-op (`min-h-11` < `h-12`; px-8 already correct). Removing is pure churn. |
+
+### Summary
+
+- Critical: 1/1 fixed
+- Major: 1/1 fixed
+- Minor: 1/1 fixed, 1 skipped (justified no-op)
+
+### Gates re-run after fixes
+tsc 0 · eslint 0 (5 touched files) · vitest 2187/2187 (134 files) · build 133/133 pages · payment semantic border verified 1px in compiled CSS.
+
+### Files touched by ReviewFix (5)
+`checkout/payment-panel.tsx`, `[locale]/not-found.tsx`, `[locale]/error.tsx`, `product/qa-form.tsx`, `[locale]/contacto/contact-form.tsx`. No admin/testid/content/honeypot change.

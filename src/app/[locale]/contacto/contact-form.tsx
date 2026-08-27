@@ -251,7 +251,7 @@ export function ContactForm({ labels, maxLengths }: ContactFormProps) {
           size="xl"
           disabled={pending}
           data-testid="contact-submit"
-          className="min-h-11 px-4 sm:w-auto sm:self-start"
+          className="sm:w-auto sm:self-start"
         >
           {pending
             ? labels.submitting

@@ -184,12 +184,36 @@ function handleResult(result: PayActionResult, setOverlay: (o: ClientOverlay) =>
   }
 }
 
-/** Shared card shell (rounded-lg house card + enter-fade). */
-function Card({ children, testId, extra }: { children: React.ReactNode; testId: string; extra?: string }) {
+/**
+ * Shared card shell + `.enter-fade`.
+ *
+ * - Neutral (chrome) cards → `.factorial-card` (floating white, borderless).
+ * - Semantic (signal) cards → pass `semantic` so the shell keeps only the
+ *   Factorial radius and lets the caller's tint + `border` render. This is
+ *   REQUIRED because `.theme-storefront .factorial-card { border: 0 }` is an
+ *   unlayered rule that would otherwise suppress a Tailwind `border` utility
+ *   (which sits in the `utilities` @layer) regardless of specificity — the
+ *   status border+tint (AC-5 / edge 6, signal-vs-chrome) must survive.
+ */
+function Card({
+  children,
+  testId,
+  extra,
+  semantic = false,
+}: {
+  children: React.ReactNode;
+  testId: string;
+  extra?: string;
+  semantic?: boolean;
+}) {
   return (
     <div
       data-testid={testId}
-      className={cn("factorial-card enter-fade mt-6 p-4 md:p-5", extra)}
+      className={cn(
+        "enter-fade mt-6 p-4 md:p-5",
+        semantic ? "rounded-[var(--radius)]" : "factorial-card",
+        extra,
+      )}
     >
       {children}
     </div>
@@ -257,7 +281,7 @@ function FailedCard({
   const title = reason === "expired" ? labels.expiredTitle : labels.failedTitle;
   const body = reason === "expired" ? labels.expiredBody : labels.failedBody;
   return (
-    <Card testId="payment-panel-failed" extra="border border-destructive/30 bg-destructive/5">
+    <Card testId="payment-panel-failed" semantic extra="border border-destructive/30 bg-destructive/5">
       <div className="flex flex-col gap-4" aria-busy={pending} role="alert" data-failure-reason={reason}>
         <div className="flex items-start gap-2 text-sm text-destructive">
           <HugeiconsIcon icon={Alert02Icon} size={18} strokeWidth={2} aria-hidden className="mt-0.5 shrink-0" />
@@ -287,7 +311,7 @@ function UnavailableCard({
   retryLabel: string;
 }) {
   return (
-    <Card testId="payment-panel-unavailable" extra="border border-warning/30 bg-warning/10">
+    <Card testId="payment-panel-unavailable" semantic extra="border border-warning/30 bg-warning/10">
       <div className="flex flex-col gap-4" aria-busy={pending} role="alert">
         <div className="flex items-start gap-2 text-sm text-foreground">
           <span className="mt-0.5 shrink-0 text-warning" aria-hidden>
@@ -308,7 +332,7 @@ function UnavailableCard({
  */
 function StaleCard({ labels }: { labels: PaymentPanelLabels }) {
   return (
-    <Card testId="payment-panel-stale" extra="border border-warning/30 bg-warning/10">
+    <Card testId="payment-panel-stale" semantic extra="border border-warning/30 bg-warning/10">
       <div className="flex flex-col gap-4" role="status">
         <div className="flex items-start gap-2 text-sm text-foreground">
           <span className="mt-0.5 shrink-0 text-warning" aria-hidden>
@@ -324,8 +348,8 @@ function StaleCard({ labels }: { labels: PaymentPanelLabels }) {
           onClick={() => window.location.reload()}
           data-testid="payment-stale-reload"
           className={cn(
-            buttonVariants({ variant: "default" }),
-            "cart-press h-11 w-full gap-1.5 px-6 text-sm sm:w-auto sm:min-w-56 sm:self-start",
+            buttonVariants({ variant: "cta", size: "xl" }),
+            "cart-press w-full gap-1.5 sm:w-auto sm:min-w-56 sm:self-start",
           )}
         >
           <HugeiconsIcon icon={Refresh01Icon} size={16} strokeWidth={2} aria-hidden />
@@ -346,7 +370,7 @@ function ProcessingCard({
   onRetry: () => void;
 }) {
   return (
-    <Card testId="payment-panel-processing" extra="border border-warning/30 bg-warning/10">
+    <Card testId="payment-panel-processing" semantic extra="border border-warning/30 bg-warning/10">
       <div className="flex flex-col gap-3" role="status">
         <div className="flex items-start gap-2 text-sm text-foreground">
           <span className="mt-0.5 shrink-0 text-warning" aria-hidden>

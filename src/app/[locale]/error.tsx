@@ -53,7 +53,7 @@ export default function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
           type="button"
           variant="cta"
           size="xl"
-          className="mt-2 min-h-11 px-4"
+          className="mt-2"
           data-testid="error-retry"
           onClick={reset}
         >

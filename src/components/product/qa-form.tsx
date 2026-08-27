@@ -232,7 +232,7 @@ export function QaForm({ productId, slug, maxName, maxQuestion, labels }: QaForm
           size="xl"
           disabled={pending}
           data-testid="qa-submit"
-          className="min-h-11 px-4 sm:w-auto sm:self-end"
+          className="sm:w-auto sm:self-end"
         >
           {pending ? labels.submitting : labels.submit}
         </Button>
