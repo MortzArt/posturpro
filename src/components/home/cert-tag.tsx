@@ -20,7 +20,7 @@ export function CertTag({ grade, code, meta }: CertTagProps) {
   return (
     <div
       data-testid="hero-cert-tag"
-      className="enter-fade absolute bottom-3 left-3 max-w-[190px] rounded-2xl bg-card/95 p-3 shadow-[var(--shadow-factorial)] backdrop-blur-sm"
+      className="enter-fade absolute bottom-3 left-3 max-w-[190px] rounded-md bg-card/95 p-3 shadow-[var(--shadow-factorial)] backdrop-blur-sm"
     >
       <p className="flex items-center gap-1.5 font-heading text-sm font-semibold text-primary">
         <HugeiconsIcon

@@ -1,140 +1,141 @@
-# Code Review: T19 — Homepage rebuild + product condition grades
+# Code Review + Fix: T20 — Storefront restyle in the Factorial design language (Phase A)
 
 ## Summary
-Strong, defensively-written full-stack implementation. All 25 acceptance criteria are met (verified against actual code + the live local DB, not the dev summary). Backend migration is faithful to the 0005/0015 posture and idempotent; admin write/read round-trips the grade; all three storefront read paths project + guard it; i18n is at perfect parity (623/623 keys) with verbatim copy; SEO/JSON-LD preserved; calculator math is edge-safe. No Critical or Major correctness/security defects. The only Major is a process/rules issue: `globals.css` crossed the documented 1,000-line hard cap (1005) — not caught by tooling because ESLint does not lint CSS.
 
-## Critical Issues (MUST FIX)
+High-quality, disciplined presentation-only restyle. The admin font/theme firewall
+is airtight, content/i18n/logic/SEO are byte-frozen, and token discipline holds
+across all 18 component files. Two issues were found and fixed inline: a dead
+`--tint-orange` token (clean-code) and a cert-tag card radius that deviated from the
+binding ui-design radius map (spec fidelity). All gates green after fixes.
+
+## Issues Found & Resolved
+
+### Critical Issues
+
 None.
 
-## Major Issues (SHOULD FIX)
+### Major Issues
 
-### M-1: `globals.css` exceeds the CLAUDE.md 1,000-line hard cap
-- **ID**: M-1
-- **Severity**: MAJOR
-- **File**: `src/app/globals.css:1-1005` (was 927 pre-T19; T19 added the 3 motion classes at 954-1005)
-- **Problem**: CLAUDE.md Clean Code rules state "Hard cap: no file over 1,000 lines — enforced by ESLint `max-lines` (error); split before you reach it." The file is now **1005 lines**. The ESLint `max-lines` rule (`eslint.config.mjs:26`) has no `files` restriction, but eslint-config-next never applies a config to `.css` — I verified `npx eslint src/app/globals.css` returns "File ignored because no matching configuration was supplied." So the tooling silently does NOT enforce the cap on this file, and lint passes despite the violation. The written rule is nonetheless breached.
-- **Impact**: The single largest file in the repo, over the stated hard cap, growing with every feature's motion layer, with no CI guard to stop further growth. Future PRs will keep adding to it undetected.
-- **Suggested Fix**: Extract the motion layer (all `@keyframes` + the `.enter-*`, `.stagger`, `.*-fill`, `.faq-chevron`, `.cta-press` classes and their reduced-motion blocks) into `src/app/motion.css` and `@import` it from `globals.css`, bringing both under 400. Log the split in `tasks/clean-code-backlog.md`. Optionally add a CSS line-count check to CI so the cap is actually enforced.
-- **Status**: **FIXED** — Motion layer split out of `globals.css` (now 290 lines) into THREE domain files, each well under 400: `src/app/motion-shell.css` (314 — drawer/FAB/toggle/enter-fade/nav/card-lift/stagger), `src/app/motion-catalog.css` (230 — PDP + search/filters), `src/app/motion-cart.css` (227 — cart/admin/home CTA). All three `@import`ed at the TOP of `globals.css` (CSS `@import` must precede rules; they consume the `--ease-*` `:root` tokens). Verified the motion classes (`drawer-panel`, `calc-bar-fill`, …) are present in the production CSS bundle. Enforcement guard added: `src/app/css-line-count.test.ts` walks every `*.css` under `src/` and fails if any exceeds the 1,000-line hard cap (plus a ~600-line guidance ceiling) — closes the "ESLint ignores CSS" gap for good.
+#### M-1: cert-tag "small info card" radius off-spec (rendered ~29px)
 
-## Minor Issues (NICE TO FIX)
+- **Severity**: MAJOR (spec fidelity — visible)
+- **File**: `src/components/home/cert-tag.tsx:23`
+- **Problem**: The cert-tag chip used `rounded-2xl`. With the T20 storefront
+  `--radius:1rem`, the `@theme inline` radius map computes `--radius-2xl` =
+  `calc(1rem * 1.8)` = **~28.8px**. The binding ui-design spec (A.5, line 145 +
+  line 254) mandates **radius-12 (`rounded-md` ≈ 12.8px) for small info cards**;
+  floating cards are radius-16. A ~29px chip radius reads visibly wrong against the
+  Factorial grammar and violates the radius map the whole re-skin is driven from.
+- **Impact**: Off-brand overly-round overlay chip on the hero image on every
+  homepage load, in both locales — the exact "single homepage" the owner is being
+  asked to approve.
+- **Fix Applied**: Changed `rounded-2xl` → `rounded-md` (0.8 × 16 = ~12.8px ≈
+  radius-12), keeping the `--shadow-factorial` layered shadow and `bg-card/95`.
+  Now matches ui-design A.5 line 145/254 exactly.
+- **Status**: FIXED
 
-### m-1: `.calc-bar-fill` / `.cart-progress-fill` transition is 400ms, over the 300ms UI-motion bar
-- **File**: `src/app/globals.css:897, 982`
-- **Problem**: `.claude/skills/review-animations/STANDARDS.md` sets "UI animations stay under 300ms," with an exception only for marketing/explanatory motion. The calculator savings bar is arguably explanatory (it demonstrates the value prop) and deliberately mirrors the already-shipped `.cart-progress-fill`, so it is defensible — but the comment at 893/978 only says "400ms ease-out" without invoking the exemption.
-- **Suggestion**: Either drop to ~300ms, or amend the comment to explicitly justify it as explanatory motion so a future reviewer doesn't re-flag it. A progress-style reveal is also a candidate for `linear` per the STANDARDS easing table; `ease-out` on a one-shot mount reveal is acceptable.
-- **Status**: **FIXED** — kept 400ms (mirrors the shipped `.cart-progress-fill`) and amended BOTH class comments (`.calc-bar-fill` and `.cart-progress-fill` in `motion-cart.css`) to explicitly invoke the STANDARDS.md explanatory-motion exemption and note ease-out is acceptable on a one-shot mount reveal — so a future reviewer won't re-flag it.
+### Minor Issues
 
-### m-2: Non-null `!` used in two test files to silence `.find()`
-- **File**: `src/lib/catalog/savings.test.ts:12` (`computeSavings(aeron!)`), `src/components/home/savings-calculator.test.tsx:41` (`...find(...)!`)
-- **Problem**: CLAUDE.md: "the frontend never uses `any` or `!` to silence the compiler." These are in tests (lower stakes) and the arrays are statically non-empty, but the rule is worded absolutely.
-- **Suggestion**: Replace with an explicit assertion (`const aeron = CALCULATOR_MODELS.find(...); expect(aeron).toBeDefined(); if (!aeron) throw ...`) or a small `assertDefined` test helper.
-- **Status**: **FIXED** — both `!` removed. `savings.test.ts` and `savings-calculator.test.tsx` now narrow with `if (!x) throw new Error(...)` before use (proper narrowing, no compiler-silencing `!`). No `!` remains in either file.
+#### m-1: Dead `--tint-orange` token
 
-### m-3: `brand-bar` parses a display string on a hardcoded separator
-- **File**: `src/components/home/brand-bar.tsx:14`
-- **Problem**: `brands.split("·")` silently collapses to one "brand" if a translator ever changes the separator. `.filter(Boolean)` avoids empty `<li>`s but not a mistranslation.
-- **Suggestion**: Add a `keys-used`-style assertion that the `brandBar` string contains `·`, or move the brand list to a config array rather than parsing a display string.
-- **Status**: **FIXED** — exported `BRAND_SEPARATOR` from `brand-bar.tsx` (single source of truth for the split) and added `brand-bar.test.ts`: asserts both locales' `home.brandBar.brands` contain the shared separator and yield >1 brand + the same count across locales. A future mistranslation of the separator now fails CI instead of silently collapsing to one brand. `.filter(Boolean)` retained as the runtime backstop.
+- **File**: `src/app/globals.css:271` (removed)
+- **Problem**: `--tint-orange` was defined in the `.theme-storefront` token block
+  but never consumed anywhere (grep across `src` returned only its own definition
+  line). Violates CLAUDE.md no-dead-code. The warm tint is expressed only inside
+  the `--gradient-factorial` stops; no standalone orange canvas exists in Phase A.
+- **Fix Applied**: Removed the token and its trailing comment; rewrote the tint
+  comment to document that the warm counterpart lives only in the gradient stops
+  (no standalone orange canvas in Phase A). `--tint-green` retained (used by
+  home-hero + values-impact).
+- **Status**: FIXED
 
-### m-4: Positional icon-to-card coupling
-- **File**: `src/components/home/values-impact.tsx:35-40,72`, `src/components/home/social-proof.tsx`, `src/components/home/hero-stats.tsx:19`
-- **Problem**: `CARD_ICONS[index]` and label-based keys (`stat.label`) rely on positional alignment / unique labels. If a 5th card is added to the tuple, `CARD_ICONS[4]` is `undefined` and renders nothing; if two placeholder stats ever share a label, React warns on duplicate keys (plausible during content iteration).
-- **Suggestion**: Pair the icon with the card in one structure; key stats on a stable id/figure rather than the translatable label.
-- **Status**: **FIXED** — (a) `values-impact.tsx`: `CARD_ICONS` is now a fixed 4-tuple type matching the `cards` 4-tuple, and the render zips them into `cardsWithIcons` (`{card, icon}`) so the JSX never indexes a parallel array; adding a 5th card is now a compile error at the call site rather than an `undefined` icon. (b) Positional keys: `hero-stats`, `social-proof`, and the `values-impact` figures now key on the array index (fixed tuples that never reorder/filter) instead of the translatable label — eliminating the duplicate-key React warning risk during content iteration. ESLint (incl. `react/no-array-index-key` posture) clean on all four files.
+#### m-2: `.gradient-band` and `.gradient-banner` are identical rule bodies
 
-## Nits
-- **n-1**: `page.tsx` co-locates a `Section` helper with the page shell — fine now (well under 400), extract to `src/components/home/section.tsx` if the page grows (SRP).
-  - **Status**: **SKIPPED** — the reviewer's own guidance is "fine now… extract IF the page grows." `page.tsx` is well under 400 lines; extracting now is churn without benefit. Deferred (no action needed until it grows).
-- **n-2**: Four separate `STAGGER_STEP_MS` constants (50/50/60/50) across section components — mild DRY smell; a shared motion-constants module with per-component overrides would centralize the "settles ≤ ~200ms" contract.
-  - **Status**: **SKIPPED** — a shared module holding four per-component overrides adds an indirection layer for four one-line local constants (all already documented with the "≤ ~200ms" contract inline). Net readability is worse, not better; a cosmetic DRY smell not worth the churn. Left as-is.
-- **n-3**: Footer social/legal links are `href="#"` placeholders (`site-footer.tsx`), and `WHATSAPP_DISPLAY = "+52 55 1234 5678"` (`src/lib/config/shared.ts:85`) is a placeholder number rendered to users. Intentional per owner decision (tracked in the placeholder checklist) — must be resolved before go-live.
-  - **Status**: **FIXED (structural, no invented values)** — did NOT invent real URLs/numbers (they remain go-live owner data in the placeholder checklist). Applied the review's structural suggestion: centralized the footer placeholder hrefs into `src/lib/config/footer-links.ts` (`FOOTER_SOCIAL_LINKS`, `FOOTER_LEGAL_LINKS`, `FOOTER_LINK_PLACEHOLDER` sentinel), exported via the config barrel, and rewired `site-footer.tsx` to source hrefs from there (i18n labels kept as STATIC `t()` calls). Swapping in real URLs is now a one-line config edit each instead of five scattered JSX attributes. `WHATSAPP_DISPLAY` was already centralized in config — left in place per owner decision.
-- **n-4**: `src/components/seo/json-ld.tsx:29-30` — the U+2028/U+2029 `.replace()` targets equal their replacements (no-ops); the `<` → escaped form is the one doing real work. Pre-existing (T14), not T19; the "XSS-safe single JSON-LD" claim still holds via the `<` escape.
-  - **Status**: **SKIPPED (out of scope)** — pre-existing (T14), not touched by T19, and harmless (the `<` escape carries the XSS-safety; the U+2028/U+2029 no-ops are inert, not a defect). Fixing pre-existing code outside the T19 diff would be scope creep for a nit. Tracked for a future dedicated pass.
-- **n-5**: `.drawer-panel[data-state="closed"]` uses `pointer-events: none` without `!important` while the sibling scrim uses `!important` (`globals.css:309 vs 330`). Pre-existing (T2) asymmetry; near-zero impact (panel is translated off-screen).
-  - **Status**: **SKIPPED (out of scope)** — pre-existing (T2) asymmetry, near-zero impact (panel translated off-screen), and not part of the T19 diff. Now lives in `motion-shell.css` after the split; left byte-identical to avoid behavior drift during a structural move. Not worth changing for a nit.
+- **File**: `src/app/theme-storefront.css:71-75`
+- **Suggestion**: Both selectors set `background: var(--gradient-factorial)` with
+  no other difference. Could be a single grouped selector.
+- **Status**: SKIPPED — both are used, semantically distinct (calculator *band* vs
+  closing CTA *banner*), and keeping them separate leaves room for per-surface
+  divergence in Phase B. No correctness or size impact.
+
+#### m-3: `key={index}` on the social-proof testimonials list
+
+- **File**: `src/components/home/social-proof.tsx:39`
+- **Suggestion**: Array-index key on a mapped list.
+- **Status**: SKIPPED — pre-existing (untouched by this diff), carries an existing
+  code comment, and the testimonials array is a fixed tuple that never reorders or
+  filters. Not a T20 regression; out of scope for a presentation ticket.
 
 ## Acceptance Criteria Verification
-| # | Criterion | Status | Evidence |
-|---|-----------|--------|----------|
-| AC-1 | Enum `A+/A/B` + nullable `condition_grade`, no default | PASS | Migration 27-37; live DB: enum labels = `A+,A,B`; column `is_nullable=YES default=NONE` |
-| AC-2 | `products_public` regen includes grade, omits `cost_price_cents`, keeps grant | PASS | View SQL 43-72 byte-identical to 0005 + `condition_grade`; live DB: view has `condition_grade`, no `cost_price_cents`; anon/authenticated = SELECT |
-| AC-3 | 0015 grant posture, idempotent | PASS | Only `grant select on products_public` (76) + read-only revoke (79-80); applied twice cleanly on live DB |
-| AC-4 | Existing rows NULL, no other data loss | PASS | `add column` no default/backfill; view additive; dev-verified 30 rows NULL |
-| AC-5 | Admin select: none + A+/A/B, default none, hydrated on edit | PASS | `product-form.tsx:264-278`; hydrated `product-read.ts:92` |
-| AC-6 | `parseProductInput` validates grade; `ProductParsed` gains field | PASS | `product-input.ts:95,222-223,291-300` |
-| AC-7 | create/update persist grade + revalidate; round-trips | PASS | `product-write.ts:45,93` `.insert/.update(values)`; bust `CATALOG_CACHE_TAG`; read hydrates `?? ""` |
-| AC-8 | Grade optional, no error when absent | PASS | `parseConditionGrade` ""→null; empty default |
-| AC-9 | `conditionGrade` on card; projected in list, search, PDP | PASS | `queries-internal.ts:55,215`; `search.ts:166-189`; `product-detail.ts:66,258` |
-| AC-10 | `<GradeBadge>` on card/PDP/home; null → nothing | PASS | `grade-badge.tsx:31`; card `:94-100`, PDP `:152-156` |
-| AC-11 | Token-driven, distinct from stock badge, no overlap 320px | PASS | tokens only; `max-w-[45%] truncate`; opposite corners |
-| AC-12 | `.theme-storefront` greens+mint, no cobalt, no hardcoded hex | PASS | green oklch tokens; no cobalt in active values; admin firewalled |
-| AC-13 | `--cta` orange w/ AA fg, every CTA | PASS | #f95326/#2a1206 = 5.30:1 AA; cta variant everywhere; zero `text-white` on cta |
-| AC-14 | Real logo header+footer, icon.svg favicon | PASS | SVGs exist; header `next/image` w/ alt; favicon metadata; footer white wordmark |
-| AC-15 | Topbar msgs + WA link, i18n, 320px-safe | PASS | 3 i18n msgs; config-gated WA (never `wa.me//`); `overflow-x-auto` |
-| AC-16 | Nav catalog/process/business/trust + orange CTA; 4+col footer | PASS | `nav-items.ts:23-28`; cta variant; 5-col footer + contact |
-| AC-17 | FAB reused, config-gated, not duplicated | PASS | `WhatsAppButton` once (`layout.tsx:126`); others are text links |
-| AC-18 | 13-section homepage in order + restyled cert-tag | PASS | `page.tsx` full composition + shell footer/FAB |
-| AC-19 | Real featured via listProducts, badges, PDP links, degrades | PASS | `page.tsx:93`; catch→`[]`→omit; cards link `/producto/[slug]` |
-| AC-20 | Every string next-intl both locales; MXN both | PASS | 623/623 parity; no hardcoded strings; `formatMXN` |
-| AC-21 | No media-notes; nullable image fallbacks | PASS | no dashed boxes; `hero-image-fallback` glyph tile |
-| AC-22 | Subtle asterisk disclaimers | PASS | small/muted beneath sections |
-| AC-23 | Client calculator edge-safe, no reload, no inline script, 8%/0% | PASS | island; div-by-zero + floor + clamp guarded; config `as const`; no `<script>` |
-| AC-24 | generateMetadata + Org/WebSite JSON-LD + alternates, once | PASS | `page.tsx:46-88`; `buildHomeJsonLd` = exactly 2 nodes, one render |
-| AC-25 | lint/test/build pass; size caps; no any/!/empty-catch | PARTIAL | tsc 0, vitest 2155/2155, TS/TSX lint clean (all re-run by me). BUT globals.css 1005 > 1000 (M-1); two `!` in tests (m-2). No `any`, no empty catch |
+
+| #     | Criterion | Status | Evidence |
+| ----- | --------- | ------ | -------- |
+| AC-1  | DM Sans loaded + rendered for all home/shell text | PASS | `fonts.ts:42` `DM_Sans` weights 400/500/600/700 latin+latin-ext; `theme-storefront.css:22-24` scoped body-face override; `layout.tsx:110` injects `dmSans.variable` on storefront `<html>` only |
+| AC-2  | Heading 700 / −0.04em / ~1.1 leading; body 400/1.5/0 secondary ink; small −0.02em | PASS | `home-hero.tsx:47` `tracking-[-0.04em] leading-[1.08]`; body `text-base leading-relaxed text-muted-foreground`; small utilities `tracking-[-0.02em]` (hero-stats, cert-tag, footer) |
+| AC-3  | No uppercase on home/shell headings/eyebrows/labels/footer/nav | PASS | grep `uppercase` across `src/components/home` + `src/components/layout` + `page.tsx` = zero hits |
+| AC-4  | Libre Caslon no longer renders on home/shell | PASS | `globals.css:257` rebinds `--font-heading-family` → DM Sans under `.theme-storefront`; no serif class in any home/shell file |
+| AC-5  | /admin renders Inter, no DM Sans | PASS (code) | `admin/layout.tsx:28` `<html>` has `sans.variable` only; `<body>` has no `theme-storefront`; `--font-dm-sans` referenced only inside `.theme-storefront` rules |
+| AC-6  | /admin colors/radius/layout unchanged | PASS | no diff under `src/app/admin/**`; `:root`/`.dark` blocks untouched (only `.theme-storefront` edited); admin `--radius:0.625rem` intact (`globals.css:115`) |
+| AC-7  | Pure-white page; no alternating bands; ≤2 gradient moments | PASS | `page.tsx` `Section` dropped `bg` prop; only calculator `gradient-band` + CTA `gradient-banner` non-white |
+| AC-8  | Brand palette + logo preserved | PASS | `.theme-storefront` `--primary`/`--cta`/hues unchanged; no logo files in diff |
+| AC-9  | Orange only on primary CTAs; green carries links/checks | PASS | `cta` orange; checks/links `text-[var(--ring)]` (brand green) — b2b-section, trust-faq, section-header |
+| AC-10 | Pills everywhere; primary orange +2px border; secondary ink-outline; ~.1s color hover no scale | PASS | `button.tsx` `cta rounded-full border-2`; `xl rounded-full`; `.pill-outline` 100ms color-only; base `transition-colors` |
+| AC-11 | Floating cards radius-16 + triple shadow no border; small info radius-12; flat stat cards gray no shadow | PASS (after M-1) | `.factorial-card`/`.stat-card` radius 16; cert-tag now `rounded-md` (~12px); `--shadow-factorial` matches `0 -8px 16px / 0 16px 24px / 0 4px 8px` |
+| AC-12 | Oversized naked stat numerals in flat gray cards | PASS | hero-stats `text-4xl/5xl 700 -0.04em`; values-impact figures in `.stat-card`; b2b `text-3xl` |
+| AC-13 | FAQ bare hairline rows; native details; slug IDs + a11y preserved | PASS | `faq-accordion.tsx` `border-t` wrapper + per-row `border-b`; `<details>/<summary>` + focus ring intact; `faq-item-*` testids preserved |
+| AC-14 | Factorial section rhythm via `Section` helper | PASS | `page.tsx:288-289` `py-10 sm:py-16 lg:py-28` default, `py-8 sm:py-10` band |
+| AC-15 | White sticky hairline header + orange pill CTA; white hairline footer content unchanged; topbar + WhatsApp retained | PASS | site-header pill nav; site-footer `border-t bg-background text-foreground`, on-green classes removed, testids/copy frozen; topbar `bg-primary` retained |
+| AC-16 | Mobile nav behavior/a11y unchanged, visual only | PASS | mobile-nav diff className-only; focus-trap/scroll-lock/ESC/auto-close-at-lg intact (full-read verified) |
+| AC-17 | T19 copy/i18n/wiring/quote embed/calculator/SEO frozen | PASS | no message-file diff; product-card/grid untouched; savings-calculator diff = 2 style lines, `aria-live`/math intact; JsonLd untouched |
+| AC-18 | Shared catalog product-card/grid not restyled | PASS | `git diff --stat` shows zero changes to catalog card/grid |
+| AC-19 | Deep-link anchor IDs preserved w/ scroll-mt | PASS | `#catalogo`/`#calculadora` on Sections; `#impacto`/`#garantia`/`#cotizacion` on components; `scroll-mt-28` retained |
+| AC-20 | AA contrast on all text/pills/tints | PASS | ink `oklch 0.28` + `muted-foreground oklch 0.44` on white ≥4.5; CTA warm-brown fg; tints background-only |
+| AC-21 | reduced-motion respected; no new scroll reveals; hover ≤.15s ease-out interruptible | PASS | `.pill-outline` 100ms + reduced-motion guard; no new keyframes/scroll listeners |
+| AC-22 | Usable at 320px, both locales | PASS (build/code) | responsive scale steps down; full-width stacked pills; latin-ext subset for accents |
+| AC-23 | tests pass; css caps; strict TS; lint clean; file caps | PASS | 2175/2175; globals.css 320, theme-storefront.css 75; tsc exit 0; no new lint on touched files; largest touched 323 |
+| AC-24 | No layout-shift from font swap | PASS | `display:"swap"` + fallback stack `DM Sans, Helvetica Neue, Helvetica, Arial, sans-serif` |
+| AC-25 | build succeeds, runs locally | PASS | `npm run build` exit 0, 133/133 pages |
 
 ## Edge Case Verification
+
 | # | Edge Case | Status | Evidence |
-|---|-----------|--------|----------|
-| 1 | No grade → no badge/gap; admin "none" | HANDLED | conditional render; `defaultValue=""` |
-| 2 | Invalid grade at read → nothing, no throw | HANDLED | `isConditionGrade` in all read paths + badge; DB enum rejects `'X'` (verified) |
-| 3 | Tampered POST grade → field error, no write | HANDLED | `parseConditionGrade`→`grade-invalid`; aggregate check blocks |
-| 4 | Catalog read fails → section hidden, page renders | HANDLED | `readFeaturedProducts` catch→warn→`[]`→omit |
-| 5 | WA unconfigured → no `wa.me//`, links hide | HANDLED | `buildWhatsAppUrl` null → omitted; footer plain text; FAB null |
-| 6 | Reduced motion → instant | HANDLED | every motion class has reduce block; `.stagger` neutralizes inline delay |
-| 7 | 320px → stacks, no h-scroll | HANDLED | topbar `overflow-x-auto`; grids stack; badges `max-w-[45%]` |
-| 8 | `/en` → EN copy, MXN unchanged | HANDLED | EN keys present; `formatMXN` locale-independent |
-| 9 | Calc PosturPrice ≥ new price → clamp/floor | HANDLED | `Math.max(0,…)` + `Math.max(CALCULATOR_MIN_BAR_FRACTION,…)`; test passes |
-| 10 | B2B double-submit → rate-limited | HANDLED | reuses T16 `checkQuoteRateLimit` unchanged |
-| 11 | Honeypot → fake success, no email | HANDLED | reused T16; form only restyled |
-| 12 | Grade + long name + low-stock @320px → no overlap | HANDLED | opposite corners; `max-w-[45%] truncate`; `line-clamp-2` |
-| 13 | Migration re-run hosted → idempotent | HANDLED | applied twice on live DB cleanly; guarded enum + `if not exists` + drop/create |
-| 14 | JSON-LD after rebuild → Org/WebSite once | HANDLED | `buildHomeJsonLd` = 2 nodes, one `<JsonLd>` |
+| - | --------- | ------ | -------- |
+| 1 | Font leak into admin | HANDLED | `--font-dm-sans` on storefront `<html>` only; `.theme-storefront` on storefront `<body>` only; admin/not-found/global-error carry neither |
+| 2 | Featured-products card shared with catalog | HANDLED | product-card/grid untouched; homepage styles at Section level |
+| 3 | Other shared components leak to non-home | HANDLED | section-header keeps behavior; no page-level restyle of hero/featured-brands; shell/token inheritance acceptable per ticket |
+| 4 | Featured-products omitted when zero products | HANDLED | `page.tsx` `products.length > 0 ?` guard intact; offline build 133/133 |
+| 5 | es-MX longer strings + accents | HANDLED | latin-ext subset; responsive scale; `text-balance` headlines |
+| 6 | CSS line-count cap | HANDLED | recipes split into `theme-storefront.css` (75); globals.css 320 (< 600) |
+| 7 | reduced-motion + no new scroll reveals | HANDLED | `.pill-outline` reduced-motion guard; no new keyframes |
+| 8 | Footer color ripples to every page | HANDLED | intended shell inheritance; white footer AA on white body (approval-gate flag) |
+
+## Fix Summary
+
+- Critical: 0/0
+- Major: 1/1 fixed (M-1 cert-tag radius)
+- Minor: 1/1 fixed (m-1 dead token), 2 skipped with justification (m-2, m-3)
+
+## Gates (post-fix)
+
+- `tsc --noEmit`: PASS (exit 0)
+- `eslint` (touched files): PASS — 0 errors/warnings on T20 files. The repo's
+  11 errors / 151 warnings are all in `.claude/skills/**` vendored tooling +
+  `src/components/admin/products/dropdown.tsx`, all pre-existing and untouched by T20.
+- `vitest run`: PASS — 132 files / 2175 tests (incl. css-line-count)
+- `npm run build`: PASS — exit 0, 133/133 pages (offline `fetch failed` catalog
+  logs = designed DB-unreachable degradation)
+- CSS caps: globals.css 320, theme-storefront.css 75 (both < 600 guidance)
+- File caps: largest touched mobile-nav 323 (< 400 target)
 
 ## Quality Score: 9/10
 
-## Recommendation: FIX-REQUIRED (Major: 1) — then APPROVE
-Every acceptance criterion and edge case is met, verified against the live database and a full test/typecheck/lint re-run (not just the dev's claims). The single blocking item is M-1: `globals.css` (1005 lines) breaches the documented 1,000-line hard cap, and the breach is invisible to CI because ESLint does not lint CSS. Split the motion layer out of `globals.css` (and ideally add a CSS line-count guard). The Minor items are non-blocking cleanups. Once M-1 is resolved this is ship-ready.
+## Recommendation: APPROVE
 
-### Severity Counts
-- Critical: 0
-- Major: 1 (M-1)
-- Minor: 4 (m-1..m-4)
-- Nit: 5 (n-1..n-5)
-
----
-
-## Stage 6 (Fix) — Resolution Summary
-
-**Verdict now: APPROVE.** The blocking Major (M-1) is FIXED and enforced by a new CI guard; all four Minors are FIXED (properly, not papered over); nits handled (1 structural fix, 4 justified skips — all out-of-scope/pre-existing/cosmetic).
-
-| ID | Sev | Status | Resolution |
-|----|-----|--------|-----------|
-| M-1 | MAJOR | **FIXED** | Motion layer split from `globals.css` (290) into `motion-shell.css` (314) / `motion-catalog.css` (230) / `motion-cart.css` (227), all `@import`ed at top of globals; guard test `css-line-count.test.ts` enforces the 1,000-line cap on every `*.css`. |
-| m-1 | MINOR | **FIXED** | 400ms calc-bar duration justified in-comment via the STANDARDS explanatory-motion exemption (both `.calc-bar-fill` + sibling `.cart-progress-fill`). |
-| m-2 | MINOR | **FIXED** | Both test-file `!` assertions replaced with `if (!x) throw` narrowing. |
-| m-3 | MINOR | **FIXED** | `BRAND_SEPARATOR` exported + `brand-bar.test.ts` pins the separator invariant across both locales. |
-| m-4 | MINOR | **FIXED** | Icon↔card paired into a compiler-enforced 4-tuple; positional keys switched off translatable labels to stable indices. |
-| n-1 | NIT | SKIPPED | Reviewer's own "extract IF it grows" — page well under 400; premature. |
-| n-2 | NIT | SKIPPED | Shared module for 4 one-line constants is worse readability; cosmetic. |
-| n-3 | NIT | **FIXED** | Placeholder footer hrefs centralized in `config/footer-links.ts` (one-line swap each). No real values invented — still owner go-live data. |
-| n-4 | NIT | SKIPPED | Pre-existing (T14), inert no-op, outside T19 diff. |
-| n-5 | NIT | SKIPPED | Pre-existing (T2) asymmetry, off-screen, byte-preserved through the split. |
-
-### Gates re-run after fixes
-- `npx tsc --noEmit` — **0 errors**
-- ESLint on all touched files — **clean** (incl. `react/no-array-index-key` posture)
-- `vitest run` — **2160 passed / 0 failed** (132 files; +5 tests: 3 CSS-guard, 2 brand-bar)
-- `npm run build` — **exit 0**; motion classes verified present in the production CSS bundle post-split
-- CSS sizes: globals 290 / motion-shell 314 / motion-catalog 230 / motion-cart 227 — all well under the 400 guidance and 1,000 hard cap
+All 25 acceptance criteria PASS and all 8 edge cases HANDLED. The firewall — the
+one security-relevant surface in this ui-only ticket — is airtight and verified
+three ways (theme-class scope, font-var scope, admin-html inspection). Content
+freeze is diff-verified. The two issues found (an off-spec ~29px cert-tag radius
+and a dead token) were fixed inline and re-verified; both were craft/hygiene, not
+correctness or firewall failures. One point withheld only because the cert-tag
+radius slipped past dev self-review, indicating the radius map wasn't fully
+cross-checked against the binding ui-design spec.

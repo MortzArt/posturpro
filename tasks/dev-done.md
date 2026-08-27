@@ -131,3 +131,32 @@ None added or removed. All existing testids preserved (`site-footer`,
 
 ## Dependencies Added
 - None. `DM_Sans` ships with the already-installed `next/font/google`.
+
+## Review + Fix Pass (ReviewFix Stage)
+
+### Issues Found & Fixed
+
+| ID  | Severity | Title | Status | File | Fix Applied |
+| --- | -------- | ----- | ------ | ---- | ----------- |
+| M-1 | MAJOR | cert-tag radius off binding radius map (rendered ~29px) | FIXED | `src/components/home/cert-tag.tsx:23` | `rounded-2xl` (`--radius-2xl` = 1.8×16 ≈ 28.8px) → `rounded-md` (~12.8px = radius-12 for small info cards, per ui-design A.5 line 145/254); kept `--shadow-factorial` + `bg-card/95` |
+| m-1 | MINOR | Dead `--tint-orange` token (defined, never consumed) | FIXED | `src/app/globals.css:271` | Removed the token; rewrote the tint comment to note the warm counterpart lives only in the `--gradient-factorial` stops (no standalone orange canvas in Phase A). `--tint-green` retained |
+| m-2 | MINOR | `.gradient-band` / `.gradient-banner` identical bodies | SKIPPED | `src/app/theme-storefront.css:71-75` | Both used, semantically distinct (band vs banner); left separate for Phase-B divergence room. No correctness/size impact |
+| m-3 | MINOR | `key={index}` on testimonials list | SKIPPED | `src/components/home/social-proof.tsx:39` | Pre-existing, untouched by T20; fixed 3-tuple never reorders. Not a regression; out of scope for a presentation ticket |
+
+### Summary
+
+- Critical: 0/0 fixed
+- Major: 1/1 fixed
+- Minor: 1/1 fixed, 2 skipped (justified)
+
+### Gates re-verified after fixes
+
+- `tsc --noEmit`: PASS (exit 0)
+- `eslint` (T20-touched files): PASS (0 errors/warnings; repo's other lint errors are
+  pre-existing in `.claude/skills/**` + `admin/products/dropdown.tsx`, untouched by T20)
+- `vitest run`: PASS — 2175/2175 (incl. `css-line-count.test.ts`)
+- `npm run build`: PASS — exit 0, 133/133 pages
+- CSS caps: globals.css 320, theme-storefront.css 75
+
+### Verdict: APPROVE — quality 9/10. Firewall airtight, content freeze diff-verified,
+all 25 ACs PASS / 8 edge cases HANDLED after inline fixes.

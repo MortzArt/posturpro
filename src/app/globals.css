@@ -265,10 +265,11 @@
     0 -8px 16px var(--shadow-color), 0 16px 24px var(--shadow-color),
     0 4px 8px var(--shadow-color);
 
-  /* Pastel tints (~8–12% of brand hues on white) for card canvases / icon
-   * tiles. AA-safe as BACKGROUNDS ONLY (text over them is ink/green). */
+  /* Pastel tint (~8–12% of brand hue on white) for card canvases / icon tiles.
+   * AA-safe as a BACKGROUND ONLY (text over it is ink/green). The warm counterpart
+   * is expressed only in the gradient stops below (no standalone orange canvas in
+   * Phase A), so no --tint-orange token is defined. */
   --tint-green: oklch(0.965 0.028 155); /* mint canvas */
-  --tint-orange: oklch(0.965 0.030 45); /* warm canvas */
 
   /* The two-and-only-two gradient moments (soft-green → warm-tint @50%),
    * left→right. Used by .gradient-band (calculator) + .gradient-banner
