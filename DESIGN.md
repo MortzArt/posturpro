@@ -3,6 +3,20 @@
 
 # DESIGN — PosturPro
 
+> **T19 AMENDMENT (2026-08-27) — palette supersedes this document's color story.**
+> The client delivered official brand logos; the owner mandated their palette
+> site-wide. The cobalt color system described below is **decommissioned** and
+> replaced by the shipped `.theme-storefront` tokens: deep green `#094220`
+> (`--primary`, chrome/footer), brand green `#0f7f3c` (`--ring`, identity
+> accents), mint `#e7f7ed` (`--secondary`/tints), and a dedicated CTA set —
+> orange `#f95326` with **dark warm-brown foreground `#2a1206`** (white fails
+> AA at 3.34:1), hover `#e8481d`, active `#d94316`, orange-as-text `#c23a0c`.
+> Orange is reserved exclusively for primary CTAs. Everything structural in
+> this document — the frame grammar, cartouche image slots, grout seams,
+> typography, the admin firewall, light-only rule — **still holds**; read
+> every "cobalt" below as `--primary` deep green. Canonical spec:
+> `tasks/ui-design.md` (T19). Source logos: `public/brand/logo.svg`, `icon.svg`.
+
 > The committed visual world for the **PosturPro storefront**. This document is written from the design decision that S3 (Dev) builds; the finish reviewer and documenter re-confirm it against the built world at ship. The `/admin` dashboard is explicitly **out of this world** — it keeps the neutral token/font system (see [The Admin Firewall](#the-admin-firewall)).
 
 ---
