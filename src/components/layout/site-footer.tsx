@@ -57,6 +57,47 @@ function legalHref(key: string): string {
   );
 }
 
+interface ExternalFooterLinkProps {
+  href: string;
+  label: string;
+  testid: string;
+}
+
+/**
+ * A social/legal footer link whose destination is owner-gated (n-3). Until a real
+ * URL is configured the href is the placeholder sentinel (`"#"`); rendering that as
+ * an `<a href="#">` gives a DEAD ACTION — clicking scroll-jumps to the top of the
+ * page with no destination. So a still-unconfigured link renders as a
+ * non-navigating `<span>` (styled identically, `aria-disabled`, no scroll-jump);
+ * the instant a real URL is set in `footer-links.ts` it upgrades to a live `<a>`.
+ */
+function ExternalFooterLink({ href, label, testid }: ExternalFooterLinkProps) {
+  if (href === FOOTER_LINK_PLACEHOLDER) {
+    return (
+      <span
+        aria-label={label}
+        aria-disabled="true"
+        data-testid={testid}
+        className={cn(LINK_CLASS, "cursor-default opacity-80")}
+      >
+        {label}
+      </span>
+    );
+  }
+  return (
+    <a
+      href={href}
+      aria-label={label}
+      data-testid={testid}
+      className={LINK_CLASS}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {label}
+    </a>
+  );
+}
+
 export async function SiteFooter() {
   const t = await getTranslations("home.footer");
   const waUrl = buildWhatsAppUrl(WHATSAPP_PHONE_E164, WHATSAPP_PREFILL_MESSAGE_ES);
@@ -84,14 +125,11 @@ export async function SiteFooter() {
                 { key: "facebook", label: t("socialFacebook") },
               ].map((social) => (
                 <li key={social.key}>
-                  <a
+                  <ExternalFooterLink
                     href={socialHref(social.key)}
-                    aria-label={social.label}
-                    data-testid={`footer-social-${social.key}`}
-                    className={LINK_CLASS}
-                  >
-                    {social.label}
-                  </a>
+                    label={social.label}
+                    testid={`footer-social-${social.key}`}
+                  />
                 </li>
               ))}
             </ul>
@@ -164,20 +202,16 @@ export async function SiteFooter() {
           <p data-testid="footer-copyright">{t("copyright")}</p>
           <p className="max-w-md">{t("payments")}</p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <a
+            <ExternalFooterLink
               href={legalHref("privacy")}
-              className={LINK_CLASS}
-              data-testid="footer-legal-privacy"
-            >
-              {t("legalPrivacy")}
-            </a>
-            <a
+              label={t("legalPrivacy")}
+              testid="footer-legal-privacy"
+            />
+            <ExternalFooterLink
               href={legalHref("terms")}
-              className={LINK_CLASS}
-              data-testid="footer-legal-terms"
-            >
-              {t("legalTerms")}
-            </a>
+              label={t("legalTerms")}
+              testid="footer-legal-terms"
+            />
           </div>
         </div>
       </div>
