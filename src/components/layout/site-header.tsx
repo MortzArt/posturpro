@@ -23,6 +23,15 @@ import { cn } from "@/lib/utils";
  * On mobile the wordmark is `truncate min-w-0` and the hamburger/toggle are
  * `shrink-0`, so a very long store name wraps/truncates without pushing the
  * controls off-screen or causing horizontal scroll (edge case 6, AC-14).
+ *
+ * TABLET DECISION (T19 BUG-1): the full desktop chrome (4-item nav + inline
+ * search + segmented locale toggle + orange CTA) only fits at `lg`. Activating
+ * it at `md` overflowed ~238px at 768px. Fix: keep the compact mobile pattern
+ * (hamburger drawer carries nav + CTA) through the entire tablet range and
+ * switch to desktop chrome at `lg`. The hamburger and compact controls are
+ * gated to `< lg`; the drawer's matchMedia auto-close in {@link MobileNav} uses
+ * the same `lg` boundary so the two never disagree. Result: no horizontal
+ * scroll at 320 / 375 / 768; full chrome at 1024+.
  */
 
 interface SiteHeaderProps {
@@ -65,7 +74,7 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
 
         <nav
           aria-label={tHeader("navAria")}
-          className="ml-6 hidden items-center gap-1 md:flex"
+          className="ml-6 hidden items-center gap-1 lg:flex"
         >
           {NAV_ITEMS.map((item) => (
             <Link
@@ -82,9 +91,10 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
           ))}
         </nav>
 
-        {/* Search box: inline-expanded at md+ (flex-1 so it fills the middle),
-            collapses to an icon below md (AC-12). */}
-        <div className="ml-auto hidden max-w-sm flex-1 md:ml-6 md:flex">
+        {/* Search box: inline-expanded at lg+ (flex-1 so it fills the middle),
+            collapses to an icon below lg where the compact toolbar takes over
+            (BUG-1: inline search does not fit alongside the tablet chrome). */}
+        <div className="ml-auto hidden max-w-sm flex-1 lg:ml-6 lg:flex">
           <SearchBox
             variant="toolbar"
             action={catalogAction}
@@ -96,7 +106,7 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
           />
         </div>
 
-        <div className="ml-auto flex shrink-0 items-center gap-1 md:ml-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1 lg:ml-2">
           <SearchBox
             variant="header"
             action={catalogAction}
@@ -107,13 +117,15 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
             openLabel={tSearch("open")}
           />
           <CartCountBadge />
-          <LanguageToggle variant="compact" className="md:hidden" />
-          <LanguageToggle variant="segmented" className="hidden md:inline-flex" />
+          {/* Compact controls run through the tablet range; the segmented toggle
+              + orange CTA only appear at `lg` alongside the inline nav (BUG-1). */}
+          <LanguageToggle variant="compact" className="lg:hidden" />
+          <LanguageToggle variant="segmented" className="hidden lg:inline-flex" />
           <Button
             asChild
             variant="cta"
             size="sm"
-            className="ml-1 hidden md:inline-flex"
+            className="ml-1 hidden lg:inline-flex"
             data-testid="header-cta"
           >
             <Link href={EMPRESAS_PATH}>{tHeader("cta")}</Link>

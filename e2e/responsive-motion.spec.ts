@@ -19,20 +19,11 @@ const WIDTHS = [
 test.describe("no horizontal scroll across breakpoints (AC-14)", () => {
   for (const { name, width, height } of WIDTHS) {
     test(`no overflow at ${name}`, async ({ page }) => {
-      // KNOWN BUG (T19 QA finding BUG-1): at exactly the `md` breakpoint (768px)
-      // the restyled header activates its full desktop chrome — 4-item nav +
-      // inline search + segmented language toggle + the NEW orange "Business
-      // quote" CTA button — which does not fit, producing ~238px of horizontal
-      // page scroll. Root cause: the desktop layout switches on at `md` but only
-      // fits at `lg`. Fix requires deferring the nav/CTA/inline-search to `lg`
-      // (keeping the hamburger to `lg`), a coordinated header+mobile-nav change
-      // with tablet-layout design impact — reported to Verify, not auto-applied
-      // during QA. 375px and 1280px pass. Remove this fixme once the header
-      // reflows correctly at 768px.
-      test.fixme(
-        width === 768,
-        "BUG-1: header overflows ~238px at the md (768px) breakpoint",
-      )
+      // T19 BUG-1 FIXED (Stage 8 UX): the header's full desktop chrome (4-item
+      // nav + inline search + segmented toggle + orange CTA) now activates at
+      // `lg`, not `md`. The tablet range keeps the compact mobile pattern (the
+      // hamburger drawer carries nav + CTA), so 768px no longer overflows. This
+      // 768px case is now a real assertion — the fixme guard has been removed.
       await page.setViewportSize({ width, height })
       await page.goto("/")
       const overflow = await page.evaluate(

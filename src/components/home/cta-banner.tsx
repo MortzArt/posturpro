@@ -30,7 +30,10 @@ export function CtaBanner({ heading, cta1, cta2 }: CtaBannerProps) {
           asChild
           variant="cta"
           size="xl"
-          className="w-full sm:w-auto"
+          // Light focus ring so it reads on the deep-green band — matches the
+          // secondary CTA beside it; the default `--ring` (a green) would be
+          // near-invisible on this background (UX Stage 8 focus-ring parity).
+          className="w-full focus-visible:ring-primary-foreground/60 sm:w-auto"
           data-testid="cta-banner-catalog"
         >
           <Link href={CATALOG_PATH}>{cta1}</Link>

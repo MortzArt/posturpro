@@ -102,7 +102,11 @@ export function SearchBox({
         aria-label={openLabel}
         onClick={openSearch}
         className={cn(
-          "nav-hover inline-flex size-11 shrink-0 items-center justify-center rounded-md text-foreground outline-none md:hidden",
+          // Collapse icon shows below `lg`: the site-header (the only
+          // `variant="header"` consumer) keeps the compact mobile toolbar through
+          // the tablet range and only expands to the inline search at `lg`
+          // (T19 BUG-1 — full desktop chrome does not fit at `md`).
+          "nav-hover inline-flex size-11 shrink-0 items-center justify-center rounded-md text-foreground outline-none lg:hidden",
           "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
         )}
       >

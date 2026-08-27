@@ -53,7 +53,10 @@ export function Hero({
           {subcopy}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-4">
-          <Button asChild size="lg" className="min-h-11 px-4">
+          {/* Primary CTA is orange (T19 AC-13: every primary CTA across the
+              storefront — incl. the B2B page, this Hero's sole consumer — uses
+              the --cta orange token, not the green default). */}
+          <Button asChild variant="cta" size="lg" className="min-h-11 px-4">
             <Link href={ctaHref} data-testid="hero-cta-catalog">
               {ctaLabel}
             </Link>

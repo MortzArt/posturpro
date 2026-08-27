@@ -1,229 +1,185 @@
-# UX Audit: T14 — SEO, Analytics & Launch Hardening (LIGHTWEIGHT pass)
+# UX Audit: T19 — Homepage rebuild + product condition grades
 
-**Stage 8 (UX) — full-cycle pipeline.** Scope per orchestrator: T14 mandates
-ZERO visual change on everything it touched except ONE intended fix (the contact
-character counter). No cookie banner shipped (cookieless-analytics decision →
-AC-B2 N/A). This pass verifies that (a) the one visible fix is correct, and
-(b) T14 changed nothing else visible on the pages it touched. It does NOT run a
-full polish; it does NOT gold-plate invisible SEO surfaces.
-
-## Verdict: **CLEAN — no regressions found, no fixes required.**
-
-Every touched storefront surface was checked live against a **prod build +
-`next start`** (`NEXT_PUBLIC_SITE_URL=https://posturpro.mx`, seeded local DB) in
-both locales at 375px and 1024px. The single intended visible delta (contact
-counter) is correct and live-updating; all other touched pages are visually
-unchanged; the invisible SEO layer (JSON-LD/canonical/hreflang) renders nothing
-visible and is not focusable/announced.
+Stage 8 (UX). Stripe/Apple/Linear-caliber audit of the T19 surfaces: the rebuilt
+13-section homepage (both locales, 320–1440px), the restyled shell (topbar /
+header / footer / FAB) as it now wraps every other storefront page, the
+GradeBadge + product card, the savings calculator, and the admin grade control.
+Skills loaded: `impeccable` (context.mjs + SKILL.md), `emil-design-eng`,
+`apple-design`, `improve-animations`/review-animations STANDARDS for the motion pass.
 
 ## Summary
-- Surfaces audited: 12 (home, sillas, PDP, 3 taxonomy `[slug]`, contacto,
-  empresas, showroom, `[pageSlug]`/sobre-nosotros, 404 ×2 locales)
-- Regressions found: **0**
-- Fixes required / made: **0**
-- Pre-existing backlog items flagged (NOT fixed — firewall): **1** (PDP
-  unknown-slug returns 200 not 404; pre-existing, out of T14 scope)
 
----
+- Components audited: 18 (page.tsx, hero/home-hero/hero-stats/cert-tag, brand-bar,
+  values-impact, process-steps, b2b-section, social-proof, savings-calculator,
+  trust-faq, cta-banner, site-topbar/header/footer, mobile-nav, grade-badge,
+  product-card, admin product-form)
+- Issues found: 4 real (🔴 1, 🟡 1, 🟢 2) + BUG-1 (blocking, from QA)
+- Issues fixed: 4 + BUG-1 (all fixed)
+- Deferred: 1 (cross-cutting shadcn base `transition-all` — pre-existing, out of T19 scope)
+- Audit-agent findings triaged: 20 raised → 4 real, 16 false-positives/by-design (dismissed with reasons below)
 
-## Check 1 — Contact counter (the ONE intended visible delta) — PASS
+## BUG-1 resolution (MUST-FIX from QA — RESOLVED)
 
-`src/app/[locale]/contacto/page.tsx:72` already carries the fix:
-`charCount: t.raw("charCount")` (hands the raw ICU template `"{count}/{max}"`
-to the client `<CharacterCounter>`, which interpolates client-side). Verified
-LIVE with Playwright (both locales × 375px & 1024px):
+**Symptom:** header overflowed ~238px of horizontal page scroll at exactly the
+`md` breakpoint (768px). Root cause: the restyled header switched on its FULL
+desktop chrome at `md` — 4-item nav + inline search + segmented locale toggle +
+the new orange "Business quote" CTA — but that cluster only fits at `lg`.
 
-| Check | es-MX | en | Result |
-|-------|-------|----|--------|
-| Initial render | `0/2000` | `0/2000` | PASS (formatted N/M, not the `charCount` key, not `{count}/{max}`) |
-| Live-update on type ("Hola mundo", 10 chars) | `10/2000` | `10/2000` | PASS — updates per keystroke |
-| Near-limit (1995 chars) | `1995/2000` | `1995/2000` | PASS |
-| Warning color at near-limit | amber (`text-warning`) | amber | PASS |
-| `aria-live` near-limit | `polite` | `polite` | PASS (announces near cap, not per-keystroke) |
-| `aria-describedby` textarea→counter | associated | associated | PASS |
-| Horizontal overflow @375/1024 | none | none | PASS |
+**Fix (coordinated tablet-layout decision): keep the compact mobile pattern through
+the entire tablet range; promote desktop chrome to `lg`.** The mobile-nav drawer
+already carries the full nav + the orange CTA, so tablet users get every
+destination via the hamburger — no capability lost, no scroll.
 
-**Raw-key leak audit:** the only visible node is `>0/2000</span>`. The strings
-`charCount` / `{count}/{max}` appear ONLY inside the `self.__next_f.push(...)`
-RSC flight payload (as the serialized `t.raw` prop value), NEVER in a visible
-`>text<` DOM node. Confirmed by DOM inspection + `body.innerText` scan (no
-`{count}` in rendered text on any page).
+Changes:
+- `src/components/layout/site-header.tsx:66` nav `md:flex` → `lg:flex`
+- `src/components/layout/site-header.tsx:87` inline search `md:ml-6 md:flex` → `lg:ml-6 lg:flex`
+- `src/components/layout/site-header.tsx:99-120` right cluster: `md:ml-2`→`lg:ml-2`, compact toggle `md:hidden`→`lg:hidden`, segmented toggle `hidden md:inline-flex`→`hidden lg:inline-flex`, CTA `hidden md:inline-flex`→`hidden lg:inline-flex`
+- `src/components/catalog/search-box.tsx:105` header-variant collapse icon `md:hidden` → `lg:hidden` (site-header is its only `variant="header"` consumer; catalog toolbar uses `variant="toolbar"` and is unaffected)
+- `src/components/layout/mobile-nav.tsx:44` `MD_BREAKPOINT_PX = 768` → `DESKTOP_BREAKPOINT_PX = 1024`; trigger `md:hidden` → `lg:hidden`; matchMedia auto-close now uses the `lg` boundary so header + drawer never disagree
+- `e2e/responsive-motion.spec.ts:22-35` removed the `test.fixme(width === 768)` guard; the 768px no-overflow case is now a real assertion
 
-**Counter a11y pattern matches empresas (no invented pattern):** the contact
-`CharacterCounter` (`contact-form.tsx:442`) and the empresas one
-(`quote-form.tsx:583`) are byte-for-byte identical in behavior —
-`aria-live={warn ? "polite" : "off"}`, `tabular-nums`, muted → `text-warning`
-→ `text-destructive`, tied to the textarea via `aria-describedby`. The shipped
-pattern is consistent; nothing to change.
+**Verified:** the previously-skipped `no overflow at tablet 768px` now PASSES on
+both chromium and mobile projects; 320 / 375 / 1280 still clean.
 
-**Empresas counter unaffected:** live render `0/2000` with `data-testid="quote-counter"`,
-identical styling — the contact fix did not touch it. PASS.
+## Findings
 
-> Note: AC-A3's ticket text says "0/1200"; the real `CONTACT_MESSAGE_MAX` is
-> **2000** (`src/lib/config/contact.ts:28`), so `0/2000` is the CORRECT render.
-> The "1200" in the ticket is a stale number, not a defect. QA reported the same.
+### 🔴 Critical UX Issues
 
----
+1. **`src/components/home/hero.tsx:56` — B2B page primary CTA rendered GREEN, not orange (AC-13 violation).**
+   The shared `Hero` (sole consumer: `/empresas`, T19 in-scope for the site-wide
+   CTA-orange mandate) used the default green `bg-primary` for its primary CTA
+   ("Cotización" → `#cotizacion`). AC-13 requires *every* primary CTA across the
+   storefront — homepage, catalog, PDP, cart/checkout, **B2B** — to use the orange
+   `--cta` token. A green primary CTA on the business page breaks the site-wide
+   "orange = primary action" affordance the whole rebuild establishes.
+   **Fixed:** added `variant="cta"` to the Hero primary button (`hero.tsx:56`).
+   The homepage `HomeHero` already used `variant="cta"` correctly, so this closes
+   the last gap. (User impact: consistent, learnable primary-action color everywhere.)
 
-## Check 2 — Zero-visual-change on the other touched pages — PASS
+### 🟡 Major UX Issues
 
-T14's additions to these pages are metadata-only (`buildAlternates` →
-canonical/hreflang in `<head>`), `buildOpenGraph` (`<head>`), and `<JsonLd>`
-(a `<script type="application/ld+json">` that renders NO layout). The visible
-`<Breadcrumbs>` on PDP/taxonomy/sillas/showroom/`[pageSlug]` are PRE-EXISTING
-(T3), not added by T14.
+2. **`src/components/home/cta-banner.tsx:29` — primary CTA focus ring near-invisible on the green banner.**
+   The closing CTA banner is a deep-green band. Its secondary (mint) button carried
+   `focus-visible:ring-primary-foreground/60` so its focus ring reads on green, but
+   the primary orange button did NOT — it fell back to the default `--ring` (a green),
+   which is near-invisible against the deep-green background. A keyboard user tabbing
+   to the primary CTA had no visible focus indicator (WCAG 2.4.7 concern).
+   **Fixed:** added `focus-visible:ring-primary-foreground/60` to the primary CTA so
+   both buttons on the band share a light, visible focus ring (`cta-banner.tsx:33`).
 
-| Page | @375 status/overflow | @1024 status/overflow | Stray JSON-LD text? | Verdict |
-|------|----------------------|-----------------------|---------------------|---------|
-| home | 200 / none | 200 / none | none | unchanged |
-| sillas | 200 / none | 200 / none | none | unchanged |
-| PDP (`silla-ejecutiva-milano`) | 200 / none | 200 / none | none | unchanged |
-| categorias/oficina | 200 / none | 200 / none | none | unchanged |
-| marcas/ergovita | 200 / none | 200 / none | none | unchanged |
-| estilos/ejecutiva | 200 / none | 200 / none | none | unchanged |
-| empresas | 200 / none | 200 / none | none | unchanged |
-| showroom | 200 / none | 200 / none | none | unchanged |
-| sobre-nosotros (`[pageSlug]`) | 200 / none | 200 / none | none | unchanged |
+### 🟢 Polish Items
 
-- **No JSON-LD text node leaks:** `body.innerText` on every page contains no
-  `@context`, `BreadcrumbList`, `ld+json`, or `{count}` — the structured data
-  is script-only, invisible.
-- **No layout shift / duplicate breadcrumbs:** taxonomy pages render exactly
-  ONE visible breadcrumb nav (`data-testid="breadcrumbs"` count = 1) plus one
-  invisible `BreadcrumbList` script. The JSON-LD did NOT spawn a second visible
-  trail.
-- **No horizontal overflow** at any breakpoint on any page.
+3. **Header/drawer breakpoint cohesion (part of BUG-1 fix).** Beyond fixing the
+   overflow, promoting the whole chrome switch to a single `lg` boundary — header
+   controls AND the mobile-nav matchMedia auto-close — removes a latent class of
+   "drawer open while desktop nav also showing" glitches in the 768–1023 band.
+   **Fixed** as described in BUG-1.
 
----
+4. **Search collapse-icon breakpoint documented.** The `variant="header"` collapse
+   button's breakpoint is now explained inline (why `lg`, not `md`) so a future
+   editor doesn't "helpfully" revert it and reintroduce BUG-1. **Fixed** (comment
+   at `search-box.tsx:100-104`).
 
-## Check 3 — Taxonomy pages under `force-dynamic` — PASS
+## Triage of automated audit-agent findings (16 dismissed)
 
-All 3 `[slug]/page.tsx` (categorias/marcas/estilos) have
-`export const dynamic = "force-dynamic";` and the route table confirms
-`ƒ (Dynamic)`. The loading + empty states are preserved verbatim:
+The delegated read-only audit (haiku) raised 20 items; 4 were real (above). The
+rest were verified against source and dismissed:
 
-- **Loading state:** `<Suspense fallback={<ProductGridSkeleton/>}>` boundary
-  retained on all 3 (grep-confirmed lines 140/115/106); the streamed HTML for
-  `/categorias/oficina` contains `data-testid="product-grid-skeleton"` — the
-  skeleton is intact.
-- **Product grid renders:** `data-testid="product-grid"` + `product-card` in
-  the server HTML at 200.
-- **Responsive:** 200 with no overflow at 375px & 1024px, both locales.
-- **Pagination:** `?page=2` → 200 (page-2 items); `?page=99` (out of range) →
-  **200 clamped** to last page (edge case 1) — never 500.
-- **Empty state:** the seed has no zero-product taxonomy to exercise live, but
-  the `<EmptyState>` branch (`empty.category/brand/style`) is untouched in the
-  source and returns 200 by construction (QA confirmed the branch is intact).
+| # | Claim | Verdict |
+|---|-------|---------|
+| 1 | `button.tsx` uses `transition-all` | TRUE but **DEFERRED** — it's the shared shadcn base component (site-wide, pre-T19). Rule 3 (never replace shadcn) + out of T19 scope. Noted for a future perf ticket. |
+| 2 | admin form hardcodes "Cancelar"/"Guardar"/"Guardando…" | Admin is es-MX-only by product decision (PRODUCT.md); admin i18n is explicitly out of scope. Not a T19 defect. |
+| 3 | hero image fallback loses alt context | FALSE — the fallback glyph is intentionally `aria-hidden` (placeholder tile, AC-21 "tasteful non-photo fallback"); announcing a non-existent image would be noise. Correct by design. |
+| 4 | calculator Select trigger has no accessible name | FALSE — `<label htmlFor="calc-model">` is associated to `SelectTrigger id="calc-model"`; the trigger has an accessible name. `aria-live="polite"` on results is present. |
+| 5 | live region fires per keystroke | Not observable — Select commits one value per selection, not per keystroke; no throttle needed. |
+| 6 | section-header link has no hover | FALSE — `hover:text-foreground` + `.link-arrow` nudge present (`section-header.tsx:32`). |
+| 8 | cta-banner primary ring | REAL → **fixed** (finding 2). |
+| 9 | impact-strip `<dl>` dt/dd order "wrong" | FALSE — `<dt>`=figure, `<dd>`=label is a valid, common stat pattern; ARIA does not mandate label-first. |
+| 10 | calculator section has no id/anchor → `#calculadora` broken | FALSE — `page.tsx:206` `<Section id="calculadora">` applies `scroll-mt-28`. Anchor works. |
+| 11 | FAQ accordion unlabeled | Accordion sits inside a `<section>` with its own heading; landmark + heading give context. Acceptable. |
+| 12 | product name `line-clamp-2` truncates | By design (grid density); full name is on the PDP. Standard e-commerce pattern. |
+| 7,13,14,15,16,17,18,19,20 | misc (topbar list role, process-step numerals `aria-hidden`, grade-badge max-w, dark-mode guard, key-by-value, cert-tag role) | All by-design or non-defects; storefront is light-only by identity, decorative numerals correctly `aria-hidden`, grade-badge truncation is corner-safe at 320px (opposite corner from stock badge, each `max-w-[45%]`). |
 
----
+## States Audit
 
-## Check 4 — 404 experience — PASS (rendered, not just status code)
+| Component | Loading | Empty | Error | Success | Mobile | A11y |
+|-----------|---------|-------|-------|---------|--------|------|
+| Homepage (server) | ✅ resolved server-side | ✅ catalog hides on no products / read fail | ✅ silent degrade | ✅ | ✅ | ✅ h1×1, 16×h2 |
+| SiteHeader | n/a | n/a | n/a | n/a | ✅ (BUG-1 fixed) | ✅ focus rings, nav aria |
+| SiteTopbar | n/a | n/a | ✅ WA-guarded | n/a | ✅ scroll-x 320 | ✅ focus ring on green |
+| SiteFooter | n/a | ✅ WA→plain text fallback | ✅ | n/a | ✅ 1→2→5 col | ✅ 11.59:1, per-col nav aria |
+| SavingsCalculator | n/a | ✅ edge-9 clamp/floor | ✅ /0 guard | ✅ instant recompute | ✅ rows stack | ✅ aria-live, labeled select |
+| GradeBadge | n/a | ✅ null→nothing (no gap) | ✅ unknown→nothing | n/a | ✅ max-w-45% | ✅ colorblind-safe (letter carries meaning) |
+| ProductCard (grade+stock) | ✅ next/image | ✅ | ✅ glyph fallback | n/a | ✅ opposite corners @320 | ✅ focus ring+offset |
+| B2B quote form (reused T16) | ✅ pending btn | n/a | ✅ inline+banner+retry | ✅ banner+focus | ✅ | ✅ |
+| Admin grade select | n/a | ✅ "none" default | ✅ inline field error | ✅ round-trips | ✅ | ✅ labeled |
 
-Against the prod server (dev streams `notFound()` as a 200 doc; prod is real):
-
-| Route | Status | Rendered experience (Playwright `body.innerText`) |
-|-------|--------|---------------------------------------------------|
-| `/no-existe-xyz` (es-MX) | **404** | "404 · Página no encontrada · La página que buscas no existe o fue movida. · Volver al inicio" — full header/footer chrome, styled |
-| `/en/no-existe-xyz` | **404** | "404 · Page not found · The page you are looking for does not exist or has been moved. · Back to home" — correct en copy only |
-| `/categorias/no-existe-slug` | **404** | styled 404 (taxonomy `force-dynamic` → real 404) |
-
-Both locales serve the styled 404 page (NOT a blank error), with a clear
-recovery CTA ("Volver al inicio" / "Back to home"). No es-MX↔en copy leak in
-visible nodes (the es-MX strings seen in the `en` raw HTML live only in the
-shared-layout `__next_f` payload, confirmed). No horizontal overflow.
-
----
-
-## Check 5 — A11y spot-check on touched surfaces — PASS
+## Accessibility Audit
 
 | Check | Status | Details |
 |-------|--------|---------|
-| JSON-LD `<script>` not focusable | ✅ | `scriptFocusable = false` — no `tabindex`/`role` on any `application/ld+json` node; not in tab order, not announced. |
-| JSON-LD not announced as content | ✅ | `<script>` content is never in the accessibility tree; `escapeForScriptSafe` keeps it a pure script. |
-| Contact counter association | ✅ | `aria-describedby` links the textarea to the counter (`counterId`); `aria-live="polite"` near-limit, `off` otherwise — matches the empresas shipped pattern (not a new invention). |
-| Counter color not sole signal | ✅ | The number itself (`N/M`) conveys state; color is a redundant cue. |
-| 404 keyboard recovery | ✅ | "Volver al inicio"/"Back to home" is a real focusable `<Link>`. |
-| No horizontal scroll @375 | ✅ | All 12 surfaces overflow-free. |
+| Focus rings | ✅ | Visible everywhere; **fixed** the one gap (cta-banner primary on green). Topbar/footer use light ring on green fields. |
+| Aria labels | ✅ | Icon-only controls (hamburger, close, search-open, WA links) all labeled; decorative glyphs `aria-hidden`. |
+| Color contrast | ✅ | CTA orange fg = dark-brown 5.30:1 (white would be 3.34:1, rejected); white-on-green 11.59:1; mint-on-green 10.45:1. All AA. |
+| Keyboard nav | ✅ | Tab path topbar→header→sections→footer; drawer focus-trap + Esc + restore; FAQ native `<details>`; calculator select keyboard-operable. |
+| Live regions | ✅ | Calculator results `aria-live="polite"`. |
+| Heading hierarchy | ✅ | Exactly one `<h1>` (hero); sections use `<h2>`; no skipped levels. |
+| Color-only signaling | ✅ | Grade badge carries the letter (A+/A/B) not just color; stock badge has text; status glyph+text. |
+| Reduced motion | ✅ | `.enter-fade`/`.stagger`/`.calc-bar-fill`/`.faq-chevron` all gated to instant under `prefers-reduced-motion: reduce`. |
+| Touch targets ≥44px | ✅ | Hamburger size-11, compact toggle h-11, drawer CTA size-lg, drawer toggle h-11. |
 
----
+## Motion pass (review-animations STANDARDS)
 
-## States Audit (touched surfaces)
-
-| Component / Page | Loading | Empty | Error/404 | Success | Mobile 375 | A11y |
-|------------------|---------|-------|-----------|---------|------------|------|
-| Taxonomy `[slug]` (×3) | ✅ Suspense skeleton | ✅ EmptyState (untouched) | ✅ real 404 | ✅ grid 200 | ✅ no overflow | ✅ |
-| Contact form counter | n/a | n/a | n/a (client) | ✅ `N/M` live | ✅ no overflow | ✅ describedby+polite |
-| Empresas counter | n/a | n/a | n/a | ✅ `0/2000` unaffected | ✅ | ✅ |
-| 404 (es-MX / en) | n/a | n/a | ✅ styled + CTA | n/a | ✅ | ✅ |
-| home / sillas / PDP / showroom / `[pageSlug]` | ✅ (pre-existing) | ✅ (pre-existing) | ✅ | ✅ 200 | ✅ | ✅ (JSON-LD invisible) |
-
----
+All clean: enters use `ease-out`; only `transform`/`opacity` animated; CSS
+transitions (interruptible), no keyframes on rapid UI; no `scale(0)` entrances;
+no animation on keyboard-initiated actions; `.calc-bar-fill` 400ms is a documented
+EXPLANATORY exception (the bar IS the value-prop demonstration), `transform-origin:
+left center` so bars grow from the left; every motion class has a reduced-motion
+guard. No changes required.
 
 ## Copy Review
 
-No copy was changed by this stage. The one copy-relevant surface — the contact
-counter — now renders the correct `N/M` value instead of the leaked key; that
-fix was already implemented (Dev/Fix). No E2E text assertions were touched
-(`static-pages-contact.spec.ts` asserts on `data-testid`s, not the counter
-literal, so no test update was needed).
+No copy changes were required. All user-visible strings route through next-intl
+(`home.*`, `topbar.*`, `header.*`, footer, `product.grade.*`, calculator labels)
+in both es-MX and en, per the mockups (verified: full parity, no hardcoded UI
+copy in the audited T19 components; brand names like "Herman Miller" are proper
+nouns, correctly literal). Placeholder-figure asterisk disclaimers render subtly
+(small, `text-muted-foreground/80`) under the impact strip, social proof,
+calculator, and cert-tag. No media-note boxes leak into the DOM (verified in
+rendered HTML). MXN prices shown in both locales via `formatMXN`.
 
-| Location | Before (pre-T14) | After | Reason |
-|----------|------------------|-------|--------|
-| contacto counter | leaked `charCount` key (FORMATTING_ERROR) | `0/2000` live | `t.raw` template interpolated client-side (already shipped) |
+## Per-breakpoint verdicts
 
----
+| Width | Verdict |
+|-------|---------|
+| 320px | PASS — no horizontal scroll; topbar scrolls-x, grids stack, badges corner-safe, footer 1-col |
+| 375px | PASS — mobile pattern, drawer nav, full-width CTAs |
+| 768px | **PASS (BUG-1 FIXED)** — compact chrome retained through tablet; hamburger drawer carries nav+CTA; zero overflow (was 238px) |
+| 1024px | PASS — desktop chrome activates (nav + inline search + segmented toggle + orange CTA) with room |
+| 1440px | PASS — max-w container centered, comfortable rhythm |
 
-## Motion / Animation
+Both locales (es-MX longer copy) verified: es-MX homepage renders 1×h1, 16×h2,
+1×Organization + 1×WebSite JSON-LD (AC-24 preserved), no media-note leak.
 
-No motion was added or changed by T14 on any audited surface (the cookie banner
-— the only motion-bearing spec — was NOT shipped; cookieless analytics → AC-B2
-N/A). The taxonomy Suspense skeleton and contact counter use existing,
-Emil-consistent patterns. Nothing to review or fix.
+## Gate results
 
----
+| Gate | Result |
+|------|--------|
+| `npx tsc --noEmit` | **0 errors** |
+| ESLint (all touched files) | **clean** |
+| `vitest run` (unit) | **2182 passed / 0 failed** (133 files) |
+| `next build` (e2e prod bundle, with CTA changes) | **success** |
+| E2E touched set (responsive, home, empresas-quote, product-grade, theme-firewall, mobile-nav, i18n-toggle, whatsapp-and-footer) — chromium + mobile | **66 passed / 0 failed / 0 skipped** — incl. the un-fixme'd 768px BUG-1 assertion |
 
-## Pre-existing backlog (NOT fixed — out of T14 scope / firewall)
+## UX Score: 9/10
 
-1. **PDP unknown-slug returns HTTP 200 (not 404).**
-   `GET /producto/<unknown-slug>` renders the in-page not-found UI with a 200
-   status (Next SSG `notFound()`-under-`generateStaticParams` behavior). This is
-   PRE-EXISTING — T14 did not change the PDP render mode (it only added JSON-LD
-   /canonical/hreflang). Taxonomy pages, which T14 DID make `force-dynamic`,
-   correctly return real 404. Not a T14 regression; flagged by QA for
-   consideration. A fix (e.g. `dynamic`/on-demand 404 on PDP) belongs to a
-   separate catalog-scoped ticket, not this launch-hardening pass. **Backlog,
-   not fixed.**
+The T19 build is genuinely high-craft: token-driven palette, colorblind-safe
+grade system, CSP-safe reduced-motion-aware calculator, config-gated WhatsApp,
+graceful degradation on every read path, and a motion layer that meets the
+STANDARDS bar with documented exceptions. The one blocking responsive defect
+(BUG-1) is resolved with a coordinated, capability-preserving tablet decision.
+Held back from 10 only by the pre-existing shared-button `transition-all` (out of
+T19 scope, flagged for a future perf ticket) and the fact that the CTA-color and
+focus-ring gaps existed at all — both now fixed.
 
-No other issues. No pre-existing UX problems worth a backlog entry surfaced on
-the touched surfaces.
-
----
-
-## Verification method & tooling
-
-- Prod build (`NEXT_PUBLIC_SITE_URL=https://posturpro.mx`,
-  `NEXT_QA_DIST_DIR=.next-ux`) → `next start -p 3210` with the seeded local DB
-  (REST reachable; 6 cat / 5 brand / 6 style / 30 products).
-- Status matrix via `curl -L` (es-MX is the unprefixed default → `/es-MX/*`
-  307-redirects to unprefixed, expected; followed with `-L`).
-- Live render/interaction via Playwright (chromium) at 375px & 1024px, both
-  locales: counter live-update, overflow, `aria-describedby`, JSON-LD focusability,
-  404 `body.innerText`.
-- Throwaway `.next-ux` dist dir removed; the Next-auto `tsconfig.json` include
-  reverted. Tree left clean.
-
-## Files changed by this stage: **NONE**
-
-No regressions were found, so no fixes were made. `tsc --noEmit`, eslint, and
-the unit suite remain at the QA-verified baseline (2041/2041, tsc 0, eslint
-clean) — untouched. Did NOT git commit; did NOT touch BUILD_PLAN.md or
-pipeline-state.md.
-
-## UX Score: 9.5/10
-
-The one intended visible fix is correct, bilingual, live-updating, accessible,
-and consistent with the sibling pattern; the entire invisible SEO layer renders
-nothing visible and is a11y-inert; every touched page is unchanged and
-overflow-free at both breakpoints; 404s are styled in both locales. The half
-point withheld is the pre-existing PDP-404-as-200 quirk (not a T14 defect, but a
-real crawl/UX rough edge worth a follow-up ticket).
+## Verdict: PASS

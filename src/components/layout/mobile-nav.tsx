@@ -29,8 +29,11 @@ import { cn } from "@/lib/utils";
  * `data-state` — this makes a mid-open dismiss interruptible (AC-13) and gives
  * an opacity-only fallback under reduced motion (edge case 4).
  *
- * The trigger is hidden at `md+` (inline nav takes over); if the viewport
- * crosses to `md` while open, the drawer closes so it never lingers.
+ * The trigger is hidden at `lg+` (inline nav takes over); if the viewport
+ * crosses to `lg` while open, the drawer closes so it never lingers. The `lg`
+ * boundary (not `md`) is deliberate: the full desktop header chrome only fits
+ * at `lg`, so the tablet range keeps this drawer as its nav (T19 BUG-1). The
+ * header's compact controls hide at `lg` in lockstep.
  *
  * FORCE-MOUNT DISMISS GUARD: because the Content layer is `forceMount`ed, its
  * DismissableLayer keeps a document-level pointer listener alive while closed.
@@ -40,8 +43,11 @@ import { cn } from "@/lib/utils";
  * that by ignoring any outside-interaction whose target is the trigger itself.
  */
 
-/** Tailwind `md` breakpoint in px — the drawer is mobile-only below this. */
-const MD_BREAKPOINT_PX = 768;
+/**
+ * Tailwind `lg` breakpoint in px — the drawer serves nav below this (mobile AND
+ * tablet). Above it the inline desktop header chrome takes over (T19 BUG-1).
+ */
+const DESKTOP_BREAKPOINT_PX = 1024;
 
 /**
  * How long the closed panel stays mounted so its slide-out CSS transition can
@@ -110,7 +116,7 @@ export function MobileNav() {
       return;
     }
     const mediaQuery = window.matchMedia(
-      `(min-width: ${MD_BREAKPOINT_PX}px)`,
+      `(min-width: ${DESKTOP_BREAKPOINT_PX}px)`,
     );
     const closeIfDesktop = (event: MediaQueryListEvent | MediaQueryList) => {
       if (event.matches) {
@@ -131,7 +137,7 @@ export function MobileNav() {
           data-testid="mobile-nav-trigger"
           aria-label={t("openMenu")}
           className={cn(
-            "nav-hover inline-flex size-11 shrink-0 items-center justify-center rounded-md text-foreground outline-none md:hidden",
+            "nav-hover inline-flex size-11 shrink-0 items-center justify-center rounded-md text-foreground outline-none lg:hidden",
             "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
           )}
         >
