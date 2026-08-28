@@ -221,12 +221,13 @@
   --radius: 1rem; /* Factorial card radius base; drives the radius map (A.5) */
 
   /* CTA tokens (T19 AC-13) — owner-mandated orange #f95326, EXCLUSIVELY for
-   * primary CTAs. Foreground is dark warm-brown (#2a1206), NOT white: white on
-   * orange is 3.34:1 (FAILS AA); brown is 5.30:1 (PASSES). hover/active darken
-   * the fill on interaction; --cta-text is the darkened orange for the rare case
-   * of orange-as-TEXT on white. */
+   * primary CTAs. Foreground is WHITE by owner mandate (2026-08-28). Known
+   * tradeoff: white on this orange is 3.34:1, below the AA 4.5:1 threshold for
+   * 16px text (the previous warm-brown passed at 5.30:1) — accepted for brand
+   * reasons. hover/active darken the fill on interaction; --cta-text is the
+   * darkened orange for the rare case of orange-as-TEXT on white. */
   --cta: oklch(0.6654 0.2096 35.3);
-  --cta-foreground: oklch(0.2151 0.0452 46.7);
+  --cta-foreground: oklch(1 0 0);
   --cta-hover: oklch(0.6254 0.2034 35.0);
   --cta-active: oklch(0.5948 0.1937 35.7);
   --cta-text: oklch(0.5456 0.1796 36.2);
