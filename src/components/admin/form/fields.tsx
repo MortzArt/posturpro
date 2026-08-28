@@ -12,7 +12,7 @@
  */
 import { useId } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
-import { Alert02Icon } from "@hugeicons/core-free-icons";
+import { Alert02Icon, ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 
 /** The canonical field input classes (audited from the T10 settings form). */
@@ -304,25 +304,34 @@ export function SelectField({
       <label htmlFor={id} className="text-sm font-medium">
         {label}
       </label>
-      <select
-        ref={ref}
-        id={id}
-        name={name}
-        defaultValue={value === undefined ? defaultValue : undefined}
-        value={value}
-        onChange={onChange}
-        disabled={disabled}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={cn(helper ? helperId : undefined, error ? errorId : undefined)}
-        data-testid={testid}
-        className={cn(fieldClasses, "appearance-none pr-8")}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      <div className="relative">
+        <select
+          ref={ref}
+          id={id}
+          name={name}
+          defaultValue={value === undefined ? defaultValue : undefined}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={cn(helper ? helperId : undefined, error ? errorId : undefined)}
+          data-testid={testid}
+          className={cn(fieldClasses, "appearance-none pr-8")}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <HugeiconsIcon
+          icon={ArrowDown01Icon}
+          size={16}
+          strokeWidth={2}
+          aria-hidden
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+        />
+      </div>
       {helper ? (
         <p id={helperId} className="text-xs text-muted-foreground">
           {helper}
