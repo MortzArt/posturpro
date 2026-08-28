@@ -33,7 +33,6 @@ interface HomeHeroProps {
   imageAlt: string;
   stats: readonly [HeroStat, HeroStat, HeroStat];
   cert: { grade: string; code: string; meta: string };
-  disclaimer: string;
 }
 
 export function HomeHero(props: HomeHeroProps) {
@@ -73,7 +72,7 @@ export function HomeHero(props: HomeHeroProps) {
         </div>
       </div>
 
-      <div className="order-2 flex flex-col gap-2">
+      <div className="order-2">
         {/* Whisper-green tint canvas holding a white floating media card
             (Factorial grammar). The inner card keeps `aspect-[4/3]`. */}
         <div className="rounded-lg bg-[var(--tint-green)] p-4 sm:p-6">
@@ -104,7 +103,6 @@ export function HomeHero(props: HomeHeroProps) {
             <CertTag grade={props.cert.grade} code={props.cert.code} meta={props.cert.meta} />
           </div>
         </div>
-        <p className="text-xs text-muted-foreground/80">{props.disclaimer}</p>
       </div>
     </div>
   );

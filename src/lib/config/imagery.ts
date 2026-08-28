@@ -16,6 +16,15 @@
  * live in `./static-pages` (their original home); these are the NEW T15 slots.
  */
 
+/**
+ * Homepage hero SECTION BACKGROUND (owner request 2026-08-28) — a full-bleed
+ * photo behind the hero copy + media card, washed by a `bg-background` gradient
+ * scrim in `page.tsx` so ink text keeps its contrast. `null` degrades to the
+ * plain white hero section (pre-photo rendering).
+ */
+export const HERO_BACKGROUND_IMAGE: string | null =
+  "/images/hero/hero-room.jpg";
+
 /** Homepage ergonomics editorial band (16/9 mobile → 21/9 lg). */
 export const EDITORIAL_BAND_IMAGE: string | null =
   "/images/editorial/workspace.jpg";

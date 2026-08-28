@@ -13,6 +13,7 @@ one decisive chair or furnished workspace; no faces, no text, no thumbs-up clich
 | File | Slot | Unsplash photo | Photographer | Profile | Aspect / size |
 | --- | --- | --- | --- | --- | --- |
 | `hero/ergonomic-chair.jpg` | Homepage hero (`HERO_IMAGE`) | `photo-1688578735352-9a6f2ac3b70a` ([TIOGOV5ZQzA-set](https://unsplash.com/@effydesk)) | EFFYDESK | <https://unsplash.com/@effydesk> | 4/3 · 1400×1050 · 154 KB |
+| `hero/hero-room.jpg` | Homepage hero section background (`HERO_BACKGROUND_IMAGE`) | `photo-1681312128094-ce78edf65119` ([GpHn9BJBmOg](https://unsplash.com/photos/a-room-with-a-white-table-and-a-black-chair-GpHn9BJBmOg)) | PerOla Hammar | <https://unsplash.com/@perolahammar> | 4/3 · 1920×1440 · 244 KB |
 | `editorial/workspace.jpg` | Homepage editorial band (`EDITORIAL_BAND_IMAGE`) | `photo-1688578735427-994ecdea3ea4` | EFFYDESK | <https://unsplash.com/@effydesk> | 16/9 · 1800×1013 · 295 KB |
 | `catalog/workspace-banner.jpg` | Catalog index banner (`CATALOG_BANNER_IMAGE`) | `photo-1681418659069-eef28d44aeab` | EFFYDESK | <https://unsplash.com/@effydesk> | 21/9 · 1680×720 · 294 KB |
 | `b2b/office-workspace.jpg` | B2B `/empresas` hero (`B2B_HERO_IMAGE`) | `photo-1688578735997-32626d2babd4` ([ElELSfycRvw](https://unsplash.com/photos/a-woman-sitting-in-an-office-chair-with-a-computer-on-her-desk-ElELSfycRvw)) | EFFYDESK | <https://unsplash.com/@effydesk> | 4/3 · 1400×1050 · 261 KB |

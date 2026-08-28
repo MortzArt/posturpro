@@ -15,9 +15,12 @@ import {
   B2B_HERO_IMAGE,
   CATALOG_BANNER_IMAGE,
   EDITORIAL_BAND_IMAGE,
+  HERO_BACKGROUND_IMAGE,
 } from "./imagery";
 
 const SLOTS: ReadonlyArray<[string, string | null]> = [
+  // Homepage hero full-bleed background — degrades to the plain white section.
+  ["HERO_BACKGROUND_IMAGE", HERO_BACKGROUND_IMAGE],
   ["EDITORIAL_BAND_IMAGE", EDITORIAL_BAND_IMAGE],
   ["CATALOG_BANNER_IMAGE", CATALOG_BANNER_IMAGE],
   // T16: the B2B hero slot — same asset-swap seam, same guarantees. When null it

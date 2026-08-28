@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { hasLocale } from "next-intl";
 import { routing } from "@/i18n/routing";
@@ -8,6 +9,7 @@ import {
   HERO_IMAGE,
   SEED_STORE_NAME,
 } from "@/lib/config";
+import { HERO_BACKGROUND_IMAGE } from "@/lib/config/imagery";
 import { listProducts } from "@/lib/catalog/queries";
 import { getStoreSettingsStatic } from "@/lib/store-settings";
 import type { CatalogProductCard } from "@/lib/catalog/types";
@@ -115,7 +117,7 @@ export default async function HomePage({ params }: HomePageProps) {
     <>
       <JsonLd data={homeJsonLd} />
 
-      <Section>
+      <HeroSection>
         <HomeHero
           eyebrow={t("hero.eyebrow")}
           headlineL1={t("hero.headlineL1")}
@@ -135,9 +137,8 @@ export default async function HomePage({ params }: HomePageProps) {
             code: t("hero.cert.code"),
             meta: t("hero.cert.meta"),
           }}
-          disclaimer={t("hero.disclaimer")}
         />
-      </Section>
+      </HeroSection>
 
       <Section padding="band">
         <BrandBar label={t("brandBar.label")} brands={t("brandBar.brands")} />
@@ -275,6 +276,35 @@ interface SectionProps {
  * from the Factorial vertical rhythm (40/64/112) + tinted objects. The only
  * non-white surface is the calculator's gradient band.
  */
+/**
+ * Hero wrapper (owner request 2026-08-28) — the one section allowed a non-white
+ * surface: a full-bleed lifestyle photo (`HERO_BACKGROUND_IMAGE`) washed by a
+ * left-heavy `bg-background` gradient scrim so the ink copy keeps its contrast
+ * (the photo is light, the scrim guarantees it), plus a bottom fade into the
+ * pure-white page. `null` slot degrades to the plain white `Section`.
+ */
+function HeroSection({ children }: { children: React.ReactNode }) {
+  if (!HERO_BACKGROUND_IMAGE) {
+    return <Section>{children}</Section>;
+  }
+  return (
+    <section className="relative overflow-hidden">
+      <Image
+        src={HERO_BACKGROUND_IMAGE}
+        alt=""
+        aria-hidden
+        fill
+        priority
+        sizes="100vw"
+        className="object-cover"
+      />
+      <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/80 to-background/55" />
+      <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent" />
+      <div className={cn(CONTAINER, "relative py-10 sm:py-16 lg:py-28")}>{children}</div>
+    </section>
+  );
+}
+
 function Section({
   children,
   id,
