@@ -43,6 +43,46 @@ function localeNameKey(locale: string): "esName" | "enName" {
   return locale === "en" ? "enName" : "esName";
 }
 
+/**
+ * Inline SVG flag chips (owner request 2026-08-28: flags instead of ES/EN
+ * text). Decorative (`aria-hidden`) — each button keeps its `switchTo`
+ * aria-label plus an `sr-only` locale code, so nothing changes for screen
+ * readers. Simplified geometry (no MX eagle / US stars): at 20px those details
+ * are noise. `slice` crops the 3:2 flag to fill the round chip.
+ */
+function FlagChip({ locale }: { locale: string }) {
+  return (
+    <span
+      aria-hidden
+      className="flex size-5 shrink-0 overflow-hidden rounded-full ring-1 ring-black/10"
+    >
+      {locale === "en" ? (
+        <svg
+          viewBox="0 0 39 26"
+          preserveAspectRatio="xMidYMid slice"
+          className="size-full"
+        >
+          <rect width="39" height="26" fill="#ffffff" />
+          {[0, 2, 4, 6, 8, 10, 12].map((row) => (
+            <rect key={row} y={row * 2} width="39" height="2" fill="#b22234" />
+          ))}
+          <rect width="16" height="14" fill="#3c3b6e" />
+        </svg>
+      ) : (
+        <svg
+          viewBox="0 0 3 2"
+          preserveAspectRatio="xMidYMid slice"
+          className="size-full"
+        >
+          <rect width="1" height="2" fill="#006341" />
+          <rect x="1" width="1" height="2" fill="#ffffff" />
+          <rect x="2" width="1" height="2" fill="#c8102e" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
 export function LanguageToggle({
   variant = "segmented",
   className,
@@ -77,8 +117,9 @@ export function LanguageToggle({
           className,
         )}
       >
-        <span key={target} className="toggle-label">
-          {t(target)}
+        <span key={target} className="toggle-label inline-flex items-center">
+          <FlagChip locale={target} />
+          <span className="sr-only">{t(target)}</span>
         </span>
       </button>
     );
@@ -113,7 +154,10 @@ export function LanguageToggle({
                 : "font-normal text-muted-foreground hover:text-foreground",
             )}
           >
-            <span className="toggle-label">{t(locale)}</span>
+            <span className="toggle-label inline-flex items-center">
+              <FlagChip locale={locale} />
+              <span className="sr-only">{t(locale)}</span>
+            </span>
           </button>
         );
       })}

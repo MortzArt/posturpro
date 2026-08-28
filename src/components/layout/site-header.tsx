@@ -121,11 +121,13 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
               + orange CTA only appear at `lg` alongside the inline nav (BUG-1). */}
           <LanguageToggle variant="compact" className="lg:hidden" />
           <LanguageToggle variant="segmented" className="hidden lg:inline-flex" />
+          {/* h-9 matches the segmented language toggle so the header controls
+              share one optical height. */}
           <Button
             asChild
             variant="cta"
             size="sm"
-            className="ml-1 hidden lg:inline-flex"
+            className="ml-1 hidden h-9 px-4 text-sm lg:inline-flex"
             data-testid="header-cta"
           >
             <Link href={EMPRESAS_PATH}>{tHeader("cta")}</Link>
