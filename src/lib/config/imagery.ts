@@ -32,13 +32,13 @@ export const EDITORIAL_BAND_IMAGE: string | null =
 /**
  * Catalog index banner — the owner's "Eleva tu mobiliario. No tus costos."
  * poster (three chairs + slogan on a flat mint ground; supplied 2026-09-12).
- * The frame keeps its 42/9 shape; the ~2.48:1 artwork is CONTAINED (never
+ * The frame keeps its 42/9 shape; the ~3:1 artwork is CONTAINED (never
  * cropped — the slogan is baked in) and the frame is painted with the poster's
  * own ground colour (`CATALOG_BANNER_BACKDROP`) so the letterbox is invisible
  * and it reads as one wide banner. `null` → blank tile.
  */
 export const CATALOG_BANNER_IMAGE: string | null =
-  "/images/catalog/poster-banner.jpg";
+  "/images/catalog/eleva-banner.jpg";
 
 /** The poster's flat ground colour, sampled from its edges (all four corners). */
 export const CATALOG_BANNER_BACKDROP = "#e8f5eb" as const;
