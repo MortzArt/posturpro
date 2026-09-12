@@ -152,7 +152,7 @@ export function FilterSheet({ activeCount, labels, children }: FilterSheetProps)
                     </Dialog.Close>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-4">{children}</div>
+                  <div className="scrollbar-quiet flex-1 overflow-y-auto p-4">{children}</div>
 
                   <div className="shrink-0 border-t border-border bg-card/80 p-4 backdrop-blur">
                     <Button

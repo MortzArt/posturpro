@@ -294,6 +294,22 @@
   }
 }
 
+/* Quiet scrollbar for secondary scroll panes (filter sidebar, filter sheet).
+ * Classic (non-overlay) scrollbars — macOS with a mouse attached, Windows —
+ * draw a full-height track with hairlines on both edges and never auto-hide.
+ * A thin, track-less thumb that only appears while the pane is hovered or
+ * focused restores overlay-like behaviour everywhere. Standard properties
+ * only; the custom scrollbar always reserves its own space, so no gutter
+ * rule is needed on the element. */
+@utility scrollbar-quiet {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  &:hover,
+  &:focus-within {
+    scrollbar-color: var(--border) transparent;
+  }
+}
+
 /* ======================================================================== *
  * TWO TOKEN WORLDS — the firewall (T2 AC-9 → refined by T15 AC-11/12)
  * ------------------------------------------------------------------------
