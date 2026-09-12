@@ -59,23 +59,15 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
           aria-label={storeName}
           className="shrink-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {/* Phones show the square brand mark only (the wordmark lives in the
-              drawer header); the full wordmark returns at sm+ where it fits. */}
-          <Image
-            src="/brand/icon.svg"
-            alt={storeName}
-            width={32}
-            height={32}
-            priority
-            className="size-8 sm:hidden"
-          />
+          {/* Full wordmark at every width (owner request 2026-09-13). With the
+              language toggle moved into the drawer the phone bar has room for it. */}
           <Image
             src="/brand/logo.svg"
             alt={storeName}
             width={132}
             height={26}
             priority
-            className="hidden h-6 w-auto sm:block md:h-7"
+            className="h-6 w-auto md:h-7"
           />
         </Link>
 
