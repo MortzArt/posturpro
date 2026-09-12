@@ -145,8 +145,7 @@
       "newPriceLabel": "New price",
       "posturLabel": "PosturPro",
       "pctSuffix": "in savings",
-      "amountSuffix": "less than buying new",
-      "note": "*Reference prices. Final price depends on model, configuration and the condition grade available in inventory."
+      "amountSuffix": "less than buying new"
     },
     "trust": {
       "eyebrow": "Trust",
@@ -170,6 +169,7 @@
       "a4": "Yes, we ship nationwide via insured courier. In the greater Mexico City, Guadalajara and Monterrey metro areas, we offer on-site delivery and installation."
     },
     "ctaBanner": {
+      "imageAlt": "Three ergonomic task chairs in black, grey and light grey",
       "heading": "Ready to elevate your office?",
       "cta1": "Browse the catalog →",
       "cta2": "Get a business quote →"

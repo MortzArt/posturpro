@@ -35,7 +35,6 @@ export interface SavingsCalculatorLabels {
   posturLabel: string;
   pctSuffix: string;
   amountSuffix: string;
-  note: string;
 }
 
 interface SavingsCalculatorProps {
@@ -139,10 +138,6 @@ export function SavingsCalculator({
               valueClassName="text-sm font-semibold tabular-nums text-foreground"
             />
           </div>
-
-          <p className="mt-8 text-xs leading-relaxed text-muted-foreground/80">
-            {labels.note}
-          </p>
         </div>
 
         {/* Result tile — whisper-green tint canvas (flat, no border/shadow) with

@@ -108,7 +108,7 @@ const CONSUMED_KEYS: readonly string[] = [
   "home.social.t1Quote",
   "home.calculator.heading",
   "home.calculator.imageAlt",
-  "home.calculator.note",
+  "home.ctaBanner.imageAlt",
   "home.trust.heading",
   "home.trust.g1Lead",
   "home.trust.q1",

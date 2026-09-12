@@ -7,6 +7,7 @@ import {
   HOME_FEATURED_PRODUCTS,
   HERO_IMAGE,
   CALCULATOR_IMAGE,
+  CTA_BANNER_IMAGE,
   SEED_STORE_NAME,
   BUSINESS_ADDRESS,
 } from "@/lib/config";
@@ -262,7 +263,6 @@ export default async function HomePage({ params }: HomePageProps) {
               posturLabel: t("calculator.posturLabel"),
               pctSuffix: t("calculator.pctSuffix"),
               amountSuffix: t("calculator.amountSuffix"),
-              note: t("calculator.note"),
             }}
           />
         </div>
@@ -306,6 +306,8 @@ export default async function HomePage({ params }: HomePageProps) {
 
       <Section>
         <CtaBanner
+          imageUrl={CTA_BANNER_IMAGE}
+          imageAlt={t("ctaBanner.imageAlt")}
           heading={t("ctaBanner.heading")}
           cta1={t("ctaBanner.cta1")}
           cta2={t("ctaBanner.cta2")}

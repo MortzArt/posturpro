@@ -10,7 +10,8 @@ beforeAll(() => {
   const proto = window.HTMLElement.prototype;
   proto.hasPointerCapture = proto.hasPointerCapture ?? (() => false);
   proto.setPointerCapture = proto.setPointerCapture ?? (() => undefined);
-  proto.releasePointerCapture = proto.releasePointerCapture ?? (() => undefined);
+  proto.releasePointerCapture =
+    proto.releasePointerCapture ?? (() => undefined);
   proto.scrollIntoView = proto.scrollIntoView ?? (() => undefined);
 });
 
@@ -20,7 +21,6 @@ const LABELS = {
   posturLabel: "PosturPro",
   pctSuffix: "de ahorro",
   amountSuffix: "menos que comprar nueva",
-  note: "*Precios de referencia.",
 };
 
 describe("SavingsCalculator (T19 AC-23, edge 9)", () => {
@@ -48,13 +48,11 @@ describe("SavingsCalculator (T19 AC-23, edge 9)", () => {
     expect(screen.getByTestId("calc-results")).toHaveTextContent("50%");
   });
 
-  it("renders the reference-price disclaimer note", () => {
-    render(<SavingsCalculator labels={LABELS} />);
-    expect(screen.getByText(LABELS.note)).toBeInTheDocument();
-  });
-
   it("wraps the results in an aria-live region for screen readers", () => {
     render(<SavingsCalculator labels={LABELS} />);
-    expect(screen.getByTestId("calc-results")).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByTestId("calc-results")).toHaveAttribute(
+      "aria-live",
+      "polite",
+    );
   });
 });

@@ -145,8 +145,7 @@
       "newPriceLabel": "Precio nuevo",
       "posturLabel": "PosturPro",
       "pctSuffix": "de ahorro",
-      "amountSuffix": "menos que comprar nueva",
-      "note": "*Precios de referencia. El precio final depende del modelo, configuración y grado de condición disponible en inventario."
+      "amountSuffix": "menos que comprar nueva"
     },
     "trust": {
       "eyebrow": "Confianza",
@@ -170,6 +169,7 @@
       "a4": "Sí, enviamos a toda la República vía paquetería asegurada. En zona metropolitana de CDMX, Guadalajara y Monterrey ofrecemos entrega e instalación en sitio."
     },
     "ctaBanner": {
+      "imageAlt": "Tres sillas ergonómicas de trabajo en negro, gris y gris claro",
       "heading": "¿Listo para elevar tu oficina?",
       "cta1": "Explorar catálogo →",
       "cta2": "Cotización empresarial →"
