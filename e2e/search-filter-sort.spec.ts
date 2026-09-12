@@ -7,7 +7,7 @@ import { expect, test, type Page } from "@playwright/test";
  * Selector policy: data-testid first (stable across copy changes), getByRole for
  * semantic controls; never getByText for interactive elements (AC selector rules).
  * The seed has 30 in-stock products → 3 pages at 12/page; 6 ergonómica matches;
- * 5 ErgoVita products; colors negro/#111111 (26), café/#6b4423, etc.
+ * the Herman Miller products; colors negro/#111111 (26), café/#6b4423, etc.
  *
  * VIEWPORT: this spec exercises the DESKTOP toolbar + sidebar path (the header
  * search is collapsed to an icon below `md`, and the filter facets live in the
@@ -236,7 +236,7 @@ test.describe("sorting (es-MX, desktop)", () => {
 
 test.describe("pagination preserves filters (AC-15)", () => {
   test("page links carry the active filter query", async ({ page }) => {
-    // ErgoVita has 6 products → still one page; use a broader filter that spans
+    // A single brand's products fit on one page; use a broader filter that spans
     // pages: default in-stock (30) filtered by a common color (negro = 26 → 3 pgs).
     await gotoReady(page, "/sillas?color=%23111111");
     const next = page.getByTestId("pagination-next");

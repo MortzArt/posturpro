@@ -28,7 +28,7 @@ async function count(
 
 describe("seeded catalog counts (AC-13)", () => {
   it("has the expected row counts", async () => {
-    expect(await count("brands")).toBe(5);
+    expect(await count("brands")).toBe(4);
     expect(await count("categories")).toBe(6);
     // Seed-scoped (slug prefix) so transient rows from other files don't skew it.
     const seededProducts = await db

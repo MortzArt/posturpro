@@ -31,7 +31,7 @@ const ADMIN_PASSWORD = "posturpro-dev-2026";
 // questions. Real brand/category/product used by the read/filter tests.
 const SEED_PRODUCT_SLUG = "silla-ejecutiva-milano";
 const SEED_PRODUCT_SKU = "PP-0001";
-const SEED_BRAND_SLUG = "ergovita";
+const SEED_BRAND_SLUG = "herman-miller";
 
 // Local Supabase public demo keys (localhost only — not secrets).
 const LOCAL_URL = "http://127.0.0.1:54321";

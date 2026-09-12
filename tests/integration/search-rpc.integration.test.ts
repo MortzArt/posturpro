@@ -46,8 +46,8 @@ interface SearchRow {
 
 /** Resolved facet ids from the live seed (no hardcoded UUIDs — resilient). */
 interface Facets {
-  ergovitaBrandId: string;
-  nordikaBrandId: string;
+  hermanMillerBrandId: string;
+  millerKnollBrandId: string;
   ergonomicaStyleId: string;
   oficinaCatId: string;
   gamerCatId: string;
@@ -69,8 +69,8 @@ beforeAll(async () => {
   const catBy = (slug: string) =>
     (categories.data ?? []).find((c) => c.slug === slug)!.id;
   facets = {
-    ergovitaBrandId: brandBy("ergovita"),
-    nordikaBrandId: brandBy("nordika"),
+    hermanMillerBrandId: brandBy("herman-miller"),
+    millerKnollBrandId: brandBy("millerknoll"),
     ergonomicaStyleId: styleBy("ergonomica"),
     oficinaCatId: catBy("oficina"),
     gamerCatId: catBy("gamer"),
@@ -144,7 +144,7 @@ describe("search_products — keyword search (AC-3, edge 7)", () => {
 describe("search_products — facets individually + combined (AC-4)", () => {
   it("brand facet filters to that brand only", async () => {
     const { rows, total } = await search({
-      p_brand_ids: [facets.ergovitaBrandId],
+      p_brand_ids: [facets.hermanMillerBrandId],
       p_limit: 100,
     });
     expect(total).toBeGreaterThan(0);
@@ -153,10 +153,10 @@ describe("search_products — facets individually + combined (AC-4)", () => {
   });
 
   it("multiple values within a facet OR together (brand A OR brand B ≥ each alone)", async () => {
-    const a = await search({ p_brand_ids: [facets.ergovitaBrandId], p_limit: 100 });
-    const b = await search({ p_brand_ids: [facets.nordikaBrandId], p_limit: 100 });
+    const a = await search({ p_brand_ids: [facets.hermanMillerBrandId], p_limit: 100 });
+    const b = await search({ p_brand_ids: [facets.millerKnollBrandId], p_limit: 100 });
     const both = await search({
-      p_brand_ids: [facets.ergovitaBrandId, facets.nordikaBrandId],
+      p_brand_ids: [facets.hermanMillerBrandId, facets.millerKnollBrandId],
       p_limit: 100,
     });
     expect(both.total).toBe(a.total + b.total);
@@ -207,36 +207,36 @@ describe("search_products — facets individually + combined (AC-4)", () => {
   });
 
   it("distinct facets AND together (brand ∩ color ≤ either alone)", async () => {
-    const brand = await search({ p_brand_ids: [facets.ergovitaBrandId], p_limit: 100 });
+    const brand = await search({ p_brand_ids: [facets.hermanMillerBrandId], p_limit: 100 });
     const combo = await search({
-      p_brand_ids: [facets.ergovitaBrandId],
+      p_brand_ids: [facets.hermanMillerBrandId],
       p_colors: ["#111111"],
       p_limit: 100,
     });
     expect(combo.total).toBeLessThanOrEqual(brand.total);
-    // The seeded ergovita+negro combo is non-empty (a real filter path).
+    // The seeded herman-miller+negro combo is non-empty (a real filter path).
     expect(combo.total).toBeGreaterThan(0);
   });
 
   it("contradictory filters yield exactly zero rows, not an error (edge 1)", async () => {
     // A brand + a color that brand does not stock → empty, valid, shareable.
-    const solo = await search({ p_brand_ids: [facets.ergovitaBrandId], p_limit: 100 });
-    // Find a color NOT present in the ergovita set by probing each catalog color.
+    const solo = await search({ p_brand_ids: [facets.hermanMillerBrandId], p_limit: 100 });
+    // Find a color NOT present in the herman-miller set by probing each catalog color.
     const catalogColors = ["#111111", "#1d4ed8", "#6b4423", "#6b7280", "#b91c1c", "#f3f4f6"];
-    const presentInErgovita = new Set<string>();
+    const presentInHermanMiller = new Set<string>();
     for (const color of catalogColors) {
       const r = await search({
-        p_brand_ids: [facets.ergovitaBrandId],
+        p_brand_ids: [facets.hermanMillerBrandId],
         p_colors: [color],
         p_limit: 100,
       });
-      if (r.total > 0) presentInErgovita.add(color);
+      if (r.total > 0) presentInHermanMiller.add(color);
     }
-    const missing = catalogColors.find((c) => !presentInErgovita.has(c));
+    const missing = catalogColors.find((c) => !presentInHermanMiller.has(c));
     expect(solo.total).toBeGreaterThan(0);
     if (missing) {
       const contradiction = await search({
-        p_brand_ids: [facets.ergovitaBrandId],
+        p_brand_ids: [facets.hermanMillerBrandId],
         p_colors: [missing],
         p_limit: 100,
       });
@@ -385,7 +385,7 @@ describe("search_products — synthetic edge cases (edges 5, 6) [creates + clean
         price_cents: 199900,
         stock: 7,
         status: "active",
-        brand_id: facets.ergovitaBrandId,
+        brand_id: facets.hermanMillerBrandId,
         sku: `${MARKER}-vl`,
       })
       .select("id")
@@ -403,7 +403,7 @@ describe("search_products — synthetic edge cases (edges 5, 6) [creates + clean
         price_cents: 199900,
         stock: 50, // product-level stock is high...
         status: "active",
-        brand_id: facets.ergovitaBrandId,
+        brand_id: facets.hermanMillerBrandId,
         sku: `${MARKER}-oos`,
       })
       .select("id")

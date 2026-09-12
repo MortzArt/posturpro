@@ -256,12 +256,12 @@ test.describe("catalog browse + paginate (es-MX)", () => {
   test("brand detail page renders monogram fallback + description + grid (AC-4, edge case 5)", async ({
     page,
   }) => {
-    // All 5 seeded brands have logo_url=null → monogram fallback is the path.
-    const response = await page.goto("/marcas/ergovita");
+    // All 4 seeded brands have logo_url=null → monogram fallback is the path.
+    const response = await page.goto("/marcas/herman-miller");
     expect(response?.status()).toBe(200);
     // Brand name as a real level-1 heading (never only inside the decorative,
     // aria-hidden monogram tile).
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/ErgoVita/i);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/Herman Miller/i);
     // No broken <img> for the (null) logo — the monogram tile has no <img>.
     await expect(page.locator("main img[alt*='logo' i]")).toHaveCount(0);
     // Products render for this brand.

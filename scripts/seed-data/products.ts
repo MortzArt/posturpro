@@ -99,7 +99,7 @@ function variant(
   };
 }
 
-const BRAND_CYCLE = ["ergovita", "posturtec", "confortmax", "nordika", "aeroflex"];
+const BRAND_CYCLE = ["herman-miller", "steelcase", "haworth", "millerknoll"];
 const STYLE_BY_CATEGORY: Record<string, string> = {
   ejecutivas: "ejecutiva",
   gamer: "gamer",

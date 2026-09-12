@@ -60,12 +60,12 @@ describe("slug hygiene", () => {
   });
 
   it("rejects an uppercase slug (case near-duplicate)", async () => {
-    const { error } = await db.from("brands").insert({ slug: "ErgoVita", name: "Case Dup" } as never);
+    const { error } = await db.from("brands").insert({ slug: "Herman-Miller", name: "Case Dup" } as never);
     expect(error).not.toBeNull();
   });
 
   it("rejects a trailing-whitespace slug (whitespace near-duplicate)", async () => {
-    const { error } = await db.from("brands").insert({ slug: "ergovita ", name: "Trail Dup" } as never);
+    const { error } = await db.from("brands").insert({ slug: "herman-miller ", name: "Trail Dup" } as never);
     expect(error).not.toBeNull();
   });
 

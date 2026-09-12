@@ -31,29 +31,24 @@ export interface TagSeed {
 
 export const BRANDS: BrandSeed[] = [
   {
-    slug: "ergovita",
-    name: "ErgoVita",
-    description: "Sillas ergonómicas premium con soporte lumbar avanzado.",
+    slug: "herman-miller",
+    name: "Herman Miller",
+    description: "Íconos de la ergonomía: Aeron, Embody, Sayl y Mirra.",
   },
   {
-    slug: "posturtec",
-    name: "PosturTec",
-    description: "Tecnología de postura para oficinas modernas.",
+    slug: "steelcase",
+    name: "Steelcase",
+    description: "Sillas de trabajo de alto rendimiento: Leap, Gesture y Think.",
   },
   {
-    slug: "confortmax",
-    name: "ConfortMax",
-    description: "Máximo confort para largas jornadas de trabajo.",
+    slug: "haworth",
+    name: "Haworth",
+    description: "Ergonomía adaptable y diseño responsable: Fern y Zody.",
   },
   {
-    slug: "nordika",
-    name: "Nórdika",
-    description: "Diseño escandinavo minimalista para el hogar y la oficina.",
-  },
-  {
-    slug: "aeroflex",
-    name: "AeroFlex",
-    description: "Sillas de malla transpirable y estructura flexible.",
+    slug: "millerknoll",
+    name: "MillerKnoll",
+    description: "Diseño de autor para oficina y hogar: Generation y ReGeneration.",
   },
 ];
 
