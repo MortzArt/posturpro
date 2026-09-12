@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Tick02Icon } from "@hugeicons/core-free-icons";
 import { Input } from "@/components/ui/input";
@@ -69,7 +69,7 @@ export function FilterChip({
       />
       <span
         className={cn(
-          "inline-flex min-h-10 max-w-full items-center gap-1.5 rounded-full border px-4 text-sm font-medium select-none",
+          "inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium select-none",
           "border-border bg-card text-foreground",
           "transition-[background-color,border-color,color,transform] duration-150 ease-out motion-reduce:transition-none",
           "peer-hover:border-foreground/30 peer-hover:bg-muted",
@@ -81,10 +81,10 @@ export function FilterChip({
       >
         <HugeiconsIcon
           icon={Tick02Icon}
-          size={14}
+          size={13}
           strokeWidth={2.5}
           aria-hidden
-          className="shrink-0"
+          className="-ml-0.5 shrink-0"
         />
         <span className="truncate">{label}</span>
       </span>
@@ -92,7 +92,12 @@ export function FilterChip({
   );
 }
 
-/** A group heading (fieldset legend) used by every facet group. */
+/**
+ * A labelled facet group. A `<div role="group" aria-labelledby>` rather than
+ * `<fieldset>/<legend>`: a legend is rendered OUTSIDE its parent's flex flow, so
+ * `gap` never applied between the title and the first control and the rhythm
+ * drifted group to group. As a plain flex item the title spacing is exact.
+ */
 export function FacetGroup({
   title,
   children,
@@ -102,13 +107,22 @@ export function FacetGroup({
   children: React.ReactNode;
   testId?: string;
 }) {
+  const headingId = useId();
   return (
-    <fieldset className="flex flex-col gap-3" data-testid={testId}>
-      <legend className="font-heading text-sm font-semibold tracking-[-0.02em]">
+    <div
+      role="group"
+      aria-labelledby={headingId}
+      className="flex flex-col gap-2.5"
+      data-testid={testId}
+    >
+      <p
+        id={headingId}
+        className="font-heading text-sm font-semibold leading-none tracking-[-0.02em] text-foreground"
+      >
         {title}
-      </legend>
+      </p>
       {children}
-    </fieldset>
+    </div>
   );
 }
 
@@ -139,7 +153,7 @@ export function FacetCheckboxGroup({
       : options;
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2.5">
       {/* JS-off: mirror EVERY selected value (even ones collapsed under "Ver más")
           as a hidden input so a native submit posts the full facet selection.
           The chips below are `name`-less, so they contribute nothing to a native

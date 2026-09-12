@@ -1,6 +1,11 @@
 "use client";
 
-import { CATALOG_PATH, SEARCH_PARAM_KEYS, SORT_KEYS, AVAILABILITY_ALL } from "@/lib/config";
+import {
+  CATALOG_PATH,
+  SEARCH_PARAM_KEYS,
+  SORT_KEYS,
+  AVAILABILITY_ALL,
+} from "@/lib/config";
 import { Button } from "@/components/ui/button";
 import {
   FacetGroup,
@@ -10,7 +15,11 @@ import {
   ClearFiltersButton,
 } from "@/components/catalog/filter-controls";
 import { ColorSwatchGroup } from "@/components/catalog/color-swatch";
-import type { CatalogFilters, FacetOptions, SortKey } from "@/lib/catalog/search.types";
+import type {
+  CatalogFilters,
+  FacetOptions,
+  SortKey,
+} from "@/lib/catalog/search.types";
 
 /**
  * FilterPanel (T5 AC-13). ONE component rendered twice — desktop sidebar body
@@ -21,10 +30,11 @@ import type { CatalogFilters, FacetOptions, SortKey } from "@/lib/catalog/search
  * SSR-FIRST: the whole panel is a `<form method="get" action="/sillas">` with
  * native checkbox/number/select fields whose names match the URL params, plus a
  * submit button — so it applies with JS DISABLED (edge 11). With JS, each
- * control also pushes the URL live through the shared filter navigation
- * (page → 1); the submit button is then largely redundant but harmless. Sort
- * rides this form as a native `<select name="orden">` (the JS-off sort path;
- * the toolbar `SortSelect` is the JS-on enhancement — Open Question 1).
+ * control pushes the URL live through the shared filter navigation (page → 1),
+ * so the submit button and the native sort `<select name="orden">` are
+ * redundant on-screen: both live inside `<noscript>` (owner request
+ * 2026-09-12) and only render for the JS-off shopper. The toolbar `SortSelect`
+ * is the single visible sort control.
  */
 
 export interface FilterPanelLabels {
@@ -179,33 +189,45 @@ export function FilterPanel({
         />
       </FacetGroup>
 
-      {/* JS-off sort control: a native <select> inside the filter form. The
-          client toolbar SortSelect is the JS-on enhancement (Open Question 1). */}
-      <label className="flex flex-col gap-2">
-        <span className="font-heading text-sm font-semibold tracking-[-0.02em]">{labels.sortLabel}</span>
-        <select
-          name={keys.orden}
-          defaultValue={selected.sort}
-          data-testid="filter-sort-native"
-          className="h-11 rounded-md border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {SORT_KEYS.map((key) => (
-            <option key={key} value={key}>
-              {labels.sortOptions[key]}
-            </option>
-          ))}
-        </select>
-      </label>
+      {/* JS-OFF ONLY: native sort <select> + submit. Inert once JS runs — the
+          chips apply live and the toolbar SortSelect owns sorting. */}
+      <noscript>
+        <label className="flex flex-col gap-2">
+          <span className="font-heading text-sm font-semibold tracking-[-0.02em]">
+            {labels.sortLabel}
+          </span>
+          <select
+            name={keys.orden}
+            defaultValue={selected.sort}
+            data-testid="filter-sort-native"
+            className="h-11 rounded-md border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {SORT_KEYS.map((key) => (
+              <option key={key} value={key}>
+                {labels.sortOptions[key]}
+              </option>
+            ))}
+          </select>
+        </label>
 
-      <div className="flex flex-col gap-2">
-        {/* Submit is the JS-off apply path; harmless when JS enhances live. */}
-        <Button type="submit" variant="cta" size="xl" className="min-h-11" data-testid="filter-apply">
+        <Button
+          type="submit"
+          variant="cta"
+          size="xl"
+          className="min-h-11 w-full"
+          data-testid="filter-apply"
+        >
           {labels.apply}
         </Button>
-        {hasActiveFilters ? (
-          <ClearFiltersButton label={labels.clear} href={action} />
-        ) : null}
-      </div>
+      </noscript>
+
+      {hasActiveFilters ? (
+        <ClearFiltersButton
+          label={labels.clear}
+          href={action}
+          className="self-start"
+        />
+      ) : null}
     </form>
   );
 }
