@@ -110,10 +110,10 @@ owner → client confirmation before launch. All live in the translation files
 - **Calculator reference prices** (`src/lib/config/calculator.ts`, MXN new → PosturPro):
   Aeron 38,500 → 21,900 · Leap V2 32,000 → 15,900 · Zody 24,000 → 11,500 ·
   Embody 42,500 → 26,500 · Gesture 29,500 → 14,900 · Sayl 19,500 → 9,800.
-- **Contact:** WhatsApp/phone +52 55 1234 5678 (`WHATSAPP_DISPLAY` / `WHATSAPP_PHONE_E164`) ·
+- **Contact:** WhatsApp/phone +52 55 1363 7449 ✅ real (owner 2026-09-12; `WHATSAPP_DISPLAY` / `WHATSAPP_PHONE_E164`) ·
   email hola@posturpro.mx (`home.footer.contactEmail`) · showroom cities CDMX/Guadalajara/Monterrey ·
   hours Mon–Fri 9:00–18:00.
-- **Social links:** Instagram ✅ https://www.instagram.com/posturpro · Facebook ✅ https://www.facebook.com/people/PosturPro/ (footer + Organization `sameAs`, 2026-09-12) · LinkedIn — still `#` (hidden in footer until configured).
+- **Social links:** Instagram ✅ https://www.instagram.com/posturpro · Facebook ✅ https://www.facebook.com/people/PosturPro/61575246580283/ (footer + Organization `sameAs`, 2026-09-12) · LinkedIn — still `#` (hidden in footer until configured).
 - **Legal links:** Aviso de privacidad / Términos hrefs — currently `#` (footer bottom bar).
 - **Copyright year:** 2026 (`home.footer.copyright`).
 - **Brand palette source:** logo greens confirmed from `public/brand/logo.svg`

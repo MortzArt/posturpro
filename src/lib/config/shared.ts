@@ -54,7 +54,7 @@ export const DEFAULT_LOCALE = "es-MX" as const;
 
 /**
  * WhatsApp contact number in E.164 format, DIGITS ONLY, no `+`, spaces, or
- * dashes (e.g. Mexico City mobile → `5215512345678`). This is NON-SECRET
+ * dashes (e.g. Mexico City mobile → `5215513637449`). This is NON-SECRET
  * config, not an env var — safe to ship in the client bundle.
  *
  * HOW TO SWAP THE REAL VALUE
@@ -64,9 +64,8 @@ export const DEFAULT_LOCALE = "es-MX" as const;
  * the intentional guard that prevents a broken `wa.me/` link with no number
  * (T2 edge case 7). Do not prefix with `+`; `wa.me` wants bare digits.
  */
-// PLACEHOLDER number (owner, 2026-08-03): enables the button for testing; the
-// owner will swap in the store's real WhatsApp number before launch.
-export const WHATSAPP_PHONE_E164 = "5215512345678" as const;
+// REAL store number (owner-supplied 2026-09-12).
+export const WHATSAPP_PHONE_E164 = "5215513637449" as const;
 
 /**
  * Prefilled Spanish message inserted into the `wa.me` deep link (URL-encoded at
@@ -80,9 +79,9 @@ export const WHATSAPP_PREFILL_MESSAGE_ES =
 /**
  * Human-formatted WhatsApp number shown next to the topbar/footer contact link
  * (T19). Non-secret display string; the deep link uses `WHATSAPP_PHONE_E164`.
- * PLACEHOLDER — owner swaps with the real number before launch.
+ * Real store number (owner-supplied 2026-09-12).
  */
-export const WHATSAPP_DISPLAY = "+52 55 1234 5678" as const;
+export const WHATSAPP_DISPLAY = "+52 55 1363 7449" as const;
 
 /**
  * Seed default for flat-rate shipping, in integer cents (MXN centavos).

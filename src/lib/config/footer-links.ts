@@ -19,9 +19,12 @@ export const FOOTER_LINK_PLACEHOLDER = "#" as const;
 /** The business's public Instagram profile (owner-supplied 2026-09-12). */
 export const INSTAGRAM_URL = "https://www.instagram.com/posturpro" as const;
 
-/** The business's public Facebook page (owner-supplied 2026-09-12). */
+/**
+ * The business's public Facebook page (owner-supplied 2026-09-12). Canonical
+ * `people/<name>/<id>/` form — share/tracking query params deliberately stripped.
+ */
 export const FACEBOOK_URL =
-  "https://www.facebook.com/people/PosturPro/" as const;
+  "https://www.facebook.com/people/PosturPro/61575246580283/" as const;
 
 /**
  * Every CONFIGURED social profile URL (placeholders excluded) — feeds the
