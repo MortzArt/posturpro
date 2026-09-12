@@ -114,6 +114,7 @@ export function CatalogToolbar({
         <div className="lg:hidden">
           <FilterPanel
             context="sheet"
+            nativeControls="inline"
             facets={facets}
             selected={filters}
             labels={labels.filterPanel}

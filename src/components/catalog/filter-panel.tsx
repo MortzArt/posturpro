@@ -1,4 +1,5 @@
 "use client";
+import { Fragment } from "react";
 
 import {
   CATALOG_PATH,
@@ -67,6 +68,13 @@ interface FilterPanelProps {
   hasActiveFilters: boolean;
   context: "sidebar" | "sheet";
   /**
+   * How the JS-off native controls (sort `<select>` + submit) render:
+   * `"noscript"` (default) hides them once JS runs; `"inline"` renders them
+   * directly — REQUIRED when the caller already wraps this panel in a
+   * `<noscript>` (nested `<noscript>` is invalid HTML and desyncs hydration).
+   */
+  nativeControls?: "noscript" | "inline";
+  /**
    * Locale-aware `/sillas` target for the native (JS-off) form GET and the
    * JS-off "Clear all" link, so submitting on `/en` stays on `/en/sillas` and
    * never silently switches the shopper's locale (M-3). Defaults to the
@@ -81,9 +89,12 @@ export function FilterPanel({
   labels,
   hasActiveFilters,
   context,
+  nativeControls = "noscript",
   action = CATALOG_PATH,
 }: FilterPanelProps) {
   const keys = SEARCH_PARAM_KEYS;
+  const NativeControlsWrapper =
+    nativeControls === "noscript" ? "noscript" : Fragment;
 
   return (
     <form
@@ -191,7 +202,7 @@ export function FilterPanel({
 
       {/* JS-OFF ONLY: native sort <select> + submit. Inert once JS runs — the
           chips apply live and the toolbar SortSelect owns sorting. */}
-      <noscript>
+      <NativeControlsWrapper>
         <label className="flex flex-col gap-2">
           <span className="font-heading text-sm font-semibold tracking-[-0.02em]">
             {labels.sortLabel}
@@ -219,7 +230,7 @@ export function FilterPanel({
         >
           {labels.apply}
         </Button>
-      </noscript>
+      </NativeControlsWrapper>
 
       {hasActiveFilters ? (
         <ClearFiltersButton
