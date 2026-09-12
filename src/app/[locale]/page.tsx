@@ -49,10 +49,13 @@ export async function generateMetadata({
   params,
 }: HomePageProps): Promise<Metadata> {
   const { locale } = await params;
-  const activeLocale = (hasLocale(routing.locales, locale)
-    ? locale
-    : routing.defaultLocale) as Locale;
-  const t = await getTranslations({ locale: activeLocale, namespace: "metadata" });
+  const activeLocale = (
+    hasLocale(routing.locales, locale) ? locale : routing.defaultLocale
+  ) as Locale;
+  const t = await getTranslations({
+    locale: activeLocale,
+    namespace: "metadata",
+  });
   const title = t("title");
   const description = t("description");
   return {
@@ -96,7 +99,9 @@ async function readFeaturedProducts(): Promise<CatalogProductCard[]> {
     return page.items;
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    console.warn(`[home] featured products read failed: ${message}. Omitting section.`);
+    console.warn(
+      `[home] featured products read failed: ${message}. Omitting section.`,
+    );
     return [];
   }
 }
@@ -128,9 +133,18 @@ export default async function HomePage({ params }: HomePageProps) {
           imageUrl={HERO_IMAGE}
           imageAlt={t("hero.imageAlt")}
           stats={[
-            { figure: t("hero.stats.s1Figure"), label: t("hero.stats.s1Label") },
-            { figure: t("hero.stats.s2Figure"), label: t("hero.stats.s2Label") },
-            { figure: t("hero.stats.s3Figure"), label: t("hero.stats.s3Label") },
+            {
+              figure: t("hero.stats.s1Figure"),
+              label: t("hero.stats.s1Label"),
+            },
+            {
+              figure: t("hero.stats.s2Figure"),
+              label: t("hero.stats.s2Label"),
+            },
+            {
+              figure: t("hero.stats.s3Figure"),
+              label: t("hero.stats.s3Label"),
+            },
           ]}
           cert={{
             grade: t("hero.cert.grade"),
@@ -160,7 +174,6 @@ export default async function HomePage({ params }: HomePageProps) {
             { figure: t("impact.f2Figure"), label: t("impact.f2Label") },
             { figure: t("impact.f3Figure"), label: t("impact.f3Label") },
           ]}
-          disclaimer={t("impact.disclaimer")}
         />
       </Section>
 
@@ -181,10 +194,26 @@ export default async function HomePage({ params }: HomePageProps) {
           heading={t("process.heading")}
           subcopy={t("process.subcopy")}
           steps={[
-            { number: "01", title: t("process.step1Title"), body: t("process.step1Body") },
-            { number: "02", title: t("process.step2Title"), body: t("process.step2Body") },
-            { number: "03", title: t("process.step3Title"), body: t("process.step3Body") },
-            { number: "04", title: t("process.step4Title"), body: t("process.step4Body") },
+            {
+              number: "01",
+              title: t("process.step1Title"),
+              body: t("process.step1Body"),
+            },
+            {
+              number: "02",
+              title: t("process.step2Title"),
+              body: t("process.step2Body"),
+            },
+            {
+              number: "03",
+              title: t("process.step3Title"),
+              body: t("process.step3Body"),
+            },
+            {
+              number: "04",
+              title: t("process.step4Title"),
+              body: t("process.step4Body"),
+            },
           ]}
         />
       </Section>
@@ -197,8 +226,14 @@ export default async function HomePage({ params }: HomePageProps) {
         <SocialProof
           heading={t("social.heading")}
           testimonials={[
-            { quote: t("social.t1Quote"), attribution: t("social.t1Attribution") },
-            { quote: t("social.t2Quote"), attribution: t("social.t2Attribution") },
+            {
+              quote: t("social.t1Quote"),
+              attribution: t("social.t1Attribution"),
+            },
+            {
+              quote: t("social.t2Quote"),
+              attribution: t("social.t2Attribution"),
+            },
           ]}
           disclaimer={t("social.disclaimer")}
         />
@@ -242,10 +277,26 @@ export default async function HomePage({ params }: HomePageProps) {
           ]}
           faqEyebrow={t("trust.faqEyebrow")}
           faqItems={[
-            { id: "faq-originales", question: t("trust.q1"), answer: t("trust.a1") },
-            { id: "faq-grados", question: t("trust.q2"), answer: t("trust.a2") },
-            { id: "faq-problema", question: t("trust.q3"), answer: t("trust.a3") },
-            { id: "faq-envios", question: t("trust.q4"), answer: t("trust.a4") },
+            {
+              id: "faq-originales",
+              question: t("trust.q1"),
+              answer: t("trust.a1"),
+            },
+            {
+              id: "faq-grados",
+              question: t("trust.q2"),
+              answer: t("trust.a2"),
+            },
+            {
+              id: "faq-problema",
+              question: t("trust.q3"),
+              answer: t("trust.a3"),
+            },
+            {
+              id: "faq-envios",
+              question: t("trust.q4"),
+              answer: t("trust.a4"),
+            },
           ]}
         />
       </Section>
@@ -300,7 +351,9 @@ function HeroSection({ children }: { children: React.ReactNode }) {
       />
       <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/80 to-background/55" />
       <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent" />
-      <div className={cn(CONTAINER, "relative py-10 sm:py-16 lg:py-28")}>{children}</div>
+      <div className={cn(CONTAINER, "relative py-10 sm:py-16 lg:py-28")}>
+        {children}
+      </div>
     </section>
   );
 }

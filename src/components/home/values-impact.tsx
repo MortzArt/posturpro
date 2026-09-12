@@ -7,7 +7,7 @@ import {
 } from "@hugeicons/core-free-icons";
 
 /**
- * ValuesImpact (T19 D.3) — 4 value cards + a 3-figure impact strip + disclaimer.
+ * ValuesImpact (T19 D.3) — 4 value cards + a 3-figure impact strip.
  * Cards enter with the shipped `.stagger` (capped); the impact strip uses
  * `.enter-fade`. Icons are one set (@hugeicons/core-free-icons). All strings
  * pre-resolved (repo contract). `id="impacto"` lives on the impact strip so the
@@ -29,7 +29,6 @@ interface ValuesImpactProps {
   subcopy: string;
   cards: readonly [ValueCard, ValueCard, ValueCard, ValueCard];
   figures: readonly [ImpactFigure, ImpactFigure, ImpactFigure];
-  disclaimer: string;
 }
 
 /**
@@ -77,7 +76,12 @@ export function ValuesImpact(props: ValuesImpactProps) {
             style={{ transitionDelay: `${index * STAGGER_STEP_MS}ms` }}
           >
             <span className="flex size-11 items-center justify-center rounded-md bg-[var(--tint-green)] text-primary">
-              <HugeiconsIcon icon={icon} size={20} strokeWidth={2} aria-hidden />
+              <HugeiconsIcon
+                icon={icon}
+                size={20}
+                strokeWidth={2}
+                aria-hidden
+              />
             </span>
             <h3 className="font-heading text-lg font-semibold tracking-[-0.02em] text-foreground">
               {card.title}
@@ -93,7 +97,10 @@ export function ValuesImpact(props: ValuesImpactProps) {
             // Keyed on position: `figures` is a fixed 3-tuple that never reorders
             // or filters, so the index is stable — avoids a duplicate-key warning
             // if two placeholder figures ever share a label (m-4).
-            <div key={index} className="stat-card flex flex-col gap-2 p-6 text-center">
+            <div
+              key={index}
+              className="stat-card flex flex-col gap-2 p-6 text-center"
+            >
               <dt className="font-heading text-4xl font-bold tabular-nums tracking-[-0.04em] text-foreground sm:text-5xl">
                 {figure.figure}
               </dt>
@@ -103,7 +110,6 @@ export function ValuesImpact(props: ValuesImpactProps) {
             </div>
           ))}
         </dl>
-        <p className="mt-3 text-xs text-muted-foreground/80">{props.disclaimer}</p>
       </div>
     </div>
   );

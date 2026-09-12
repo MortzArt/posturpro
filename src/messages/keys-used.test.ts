@@ -99,7 +99,6 @@ const CONSUMED_KEYS: readonly string[] = [
   "home.values.heading",
   "home.values.card1Title",
   "home.impact.f1Figure",
-  "home.impact.disclaimer",
   "home.catalog.heading",
   "home.catalog.viewAll",
   "home.process.heading",
