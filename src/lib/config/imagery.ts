@@ -29,9 +29,17 @@ export const HERO_BACKGROUND_IMAGE: string | null =
 export const EDITORIAL_BAND_IMAGE: string | null =
   "/images/editorial/workspace.jpg";
 
-/** Catalog index banner art (21/9) — optional art slot on the `/sillas` index. */
+/**
+ * Catalog index banner — the owner's "Eleva tu mobiliario. No tus costos."
+ * poster (three chairs + slogan, mint ground; supplied 2026-09-12). Rendered at
+ * its NATIVE ~2.48:1 ratio (`CATALOG_BANNER_ASPECT`) so nothing is cropped:
+ * the slogan is baked into the artwork. `null` → blank tile.
+ */
 export const CATALOG_BANNER_IMAGE: string | null =
-  "/images/catalog/workspace-banner.jpg";
+  "/images/catalog/poster-banner.jpg";
+
+/** Tailwind aspect class matching the banner artwork's pixel ratio (2400×967). */
+export const CATALOG_BANNER_ASPECT = "aspect-[2400/967]" as const;
 
 /**
  * B2B `/empresas` hero image (4/3, matches `HeroMedia`). A bright cool-neutral
