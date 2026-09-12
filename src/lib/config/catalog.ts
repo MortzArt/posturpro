@@ -119,16 +119,25 @@ export type SearchParamKeys = typeof SEARCH_PARAM_KEYS;
  * default is used, so an attacker cannot inject a sort expression (edge 3).
  */
 export const SORT_KEYS = [
-  "mas-vendidas", // best-selling (default): sales_count DESC + tiebreak
+  "mas-vendidas", // best-selling: sales_count DESC + tiebreak
   "precio-asc",
   "precio-desc",
-  "novedades", // created_at DESC
+  "novedades", // newest (default): created_at DESC
   "nombre-asc",
   "nombre-desc",
 ] as const;
 
-/** Default sort when `?orden` is absent or unknown — matches the T3 default. */
-export const DEFAULT_SORT = "mas-vendidas" as const;
+/**
+ * Default sort when `?orden` is absent or unknown — NEWEST first (owner
+ * decision 2026-09-12; was best-selling). The default never appears in the URL.
+ */
+export const DEFAULT_SORT = "novedades" as const;
+
+/**
+ * Sort used for the "popular" strips (no-results fallback) — best-selling by
+ * definition, independent of whatever the catalog's default sort is.
+ */
+export const POPULAR_SORT = "mas-vendidas" as const;
 
 /** The value of `?disponibilidad` that opts into out-of-stock products. */
 export const AVAILABILITY_ALL = "todos" as const;

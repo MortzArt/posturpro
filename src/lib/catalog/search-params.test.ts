@@ -29,7 +29,7 @@ describe("parseCatalogFilters", () => {
     expect(f.query).toBeNull();
     expect(f.brandIds).toEqual([]);
     expect(f.inStockOnly).toBe(true);
-    expect(f.sort).toBe("mas-vendidas");
+    expect(f.sort).toBe("novedades");
     expect(hasNoFilters(f)).toBe(true);
   });
 
@@ -65,7 +65,9 @@ describe("parseCatalogFilters", () => {
   });
 
   it("drops non-numeric / negative price bounds (edge 3)", () => {
-    expect(parseCatalogFilters({ precioMax: "abc" }, known).priceMax).toBeNull();
+    expect(
+      parseCatalogFilters({ precioMax: "abc" }, known).priceMax,
+    ).toBeNull();
     expect(parseCatalogFilters({ precioMin: "-5" }, known).priceMin).toBeNull();
     // URL price is PESOS; parser stores internal CENTS (× 100) — M-1.
     expect(parseCatalogFilters({ precioMin: "4000" }, known).priceMin).toBe(
@@ -106,7 +108,7 @@ describe("parseCatalogFilters", () => {
 
   it("falls back to default sort on an unknown/hostile orden (edge 3)", () => {
     expect(parseCatalogFilters({ orden: "DROP TABLE" }, known).sort).toBe(
-      "mas-vendidas",
+      "novedades",
     );
     expect(parseCatalogFilters({ orden: "precio-asc" }, known).sort).toBe(
       "precio-asc",
@@ -124,7 +126,11 @@ describe("parseCatalogFilters", () => {
 describe("serializeFilters", () => {
   it("omits defaults and produces a deterministic string (AC-9)", () => {
     const f = parseCatalogFilters(
-      { q: "malla", marca: "brand-nordika,brand-ergovita", orden: "precio-asc" },
+      {
+        q: "malla",
+        marca: "brand-nordika,brand-ergovita",
+        orden: "precio-asc",
+      },
       known,
     );
     // brands sorted → ergovita before nordika; params in canonical order
@@ -137,7 +143,11 @@ describe("serializeFilters", () => {
     // Input color order is not canonical; serialize sorts it. Re-serializing the
     // reparsed result must be a fixed point (stable canonical form).
     const original = parseCatalogFilters(
-      { color: "#6b7280,#111111", precioMin: "200000", disponibilidad: "todos" },
+      {
+        color: "#6b7280,#111111",
+        precioMin: "200000",
+        disponibilidad: "todos",
+      },
       known,
     );
     const serialized = serializeFilters(original);
@@ -171,16 +181,23 @@ describe("removeFacet / serializeWithout", () => {
   });
 
   it("serializeWithout drops the removed facet from the string", () => {
-    const f = parseCatalogFilters({ q: "malla", marca: "brand-nordika" }, known);
+    const f = parseCatalogFilters(
+      { q: "malla", marca: "brand-nordika" },
+      known,
+    );
     expect(serializeWithout(f, "query")).toBe("marca=brand-nordika");
   });
 });
 
 describe("isCacheableFilters (Constraint 3)", () => {
   it("is false when q present, true otherwise", () => {
-    expect(isCacheableFilters(parseCatalogFilters({ q: "x" }, known))).toBe(false);
+    expect(isCacheableFilters(parseCatalogFilters({ q: "x" }, known))).toBe(
+      false,
+    );
     expect(
-      isCacheableFilters(parseCatalogFilters({ marca: "brand-nordika" }, known)),
+      isCacheableFilters(
+        parseCatalogFilters({ marca: "brand-nordika" }, known),
+      ),
     ).toBe(true);
   });
 });
@@ -194,7 +211,10 @@ describe("normalizeColor", () => {
 
 describe("hostile / adversarial inputs (edge 3) — never 500, never empty the catalog", () => {
   it("drops a <script> color token (unknown → not sent to the RPC)", () => {
-    const f = parseCatalogFilters({ color: "<script>alert(1)</script>" }, known);
+    const f = parseCatalogFilters(
+      { color: "<script>alert(1)</script>" },
+      known,
+    );
     expect(f.colors).toEqual([]);
   });
 
@@ -203,7 +223,7 @@ describe("hostile / adversarial inputs (edge 3) — never 500, never empty the c
       { orden: "DROP TABLE products;--", marca: "brand-ergovita" },
       known,
     );
-    expect(f.sort).toBe("mas-vendidas"); // unknown → default
+    expect(f.sort).toBe("novedades"); // unknown → default
     expect(f.brandIds).toEqual(["brand-ergovita"]); // valid filter survives
   });
 
@@ -215,18 +235,22 @@ describe("hostile / adversarial inputs (edge 3) — never 500, never empty the c
 
   it("strips NUL / control bytes from q (Postgres rejects NUL \u2192 would 500; edge 3)", () => {
     // A raw NUL in text is fatal to the RPC's `text` param \u2014 must never reach it.
-    expect(parseCatalogFilters({ q: "ma\u0000lla" }, known).query).toBe("malla");
-    // NUL + surrounding control bytes stripped, then re-trimmed.
-    expect(parseCatalogFilters({ q: "\u0000\u001f malla \u007f" }, known).query).toBe(
+    expect(parseCatalogFilters({ q: "ma\u0000lla" }, known).query).toBe(
       "malla",
     );
+    // NUL + surrounding control bytes stripped, then re-trimmed.
+    expect(
+      parseCatalogFilters({ q: "\u0000\u001f malla \u007f" }, known).query,
+    ).toBe("malla");
     // A NUL early in a long query is stripped in place (not merely truncated away).
     const withNul = "a".repeat(10) + "\u0000" + "b".repeat(10);
     expect(parseCatalogFilters({ q: withNul }, known).query).toBe(
       "a".repeat(10) + "b".repeat(10),
     );
     // A control-only query collapses to the filter-only view, not a 500.
-    expect(parseCatalogFilters({ q: "\u0000\u0001\u0002" }, known).query).toBeNull();
+    expect(
+      parseCatalogFilters({ q: "\u0000\u0001\u0002" }, known).query,
+    ).toBeNull();
   });
 
   it("uses only the FIRST value of a repeated scalar param (?orden=a&orden=b)", () => {
@@ -269,7 +293,10 @@ describe("hostile / adversarial inputs (edge 3) — never 500, never empty the c
   });
 
   it("drops a non-numeric price bound but keeps a valid opposite bound", () => {
-    const f = parseCatalogFilters({ precioMin: "abc", precioMax: "5000" }, known);
+    const f = parseCatalogFilters(
+      { precioMin: "abc", precioMax: "5000" },
+      known,
+    );
     expect(f.priceMin).toBeNull();
     expect(f.priceMax).toBe(500_000); // 5000 pesos → 500000 cents
   });
@@ -281,8 +308,12 @@ describe("hostile / adversarial inputs (edge 3) — never 500, never empty the c
   });
 
   it("drops a float / decimal price string (only whole-peso integers accepted)", () => {
-    expect(parseCatalogFilters({ precioMin: "40.5" }, known).priceMin).toBeNull();
-    expect(parseCatalogFilters({ precioMin: "4e3" }, known).priceMin).toBeNull();
+    expect(
+      parseCatalogFilters({ precioMin: "40.5" }, known).priceMin,
+    ).toBeNull();
+    expect(
+      parseCatalogFilters({ precioMin: "4e3" }, known).priceMin,
+    ).toBeNull();
   });
 
   it("does not treat priceMin === priceMax as inverted (exact-match band is valid)", () => {
@@ -296,9 +327,15 @@ describe("hostile / adversarial inputs (edge 3) — never 500, never empty the c
   });
 
   it("only opts into out-of-stock for the exact 'todos' value (anything else = in-stock)", () => {
-    expect(parseCatalogFilters({ disponibilidad: "all" }, known).inStockOnly).toBe(true);
-    expect(parseCatalogFilters({ disponibilidad: "TODOS" }, known).inStockOnly).toBe(true);
-    expect(parseCatalogFilters({ disponibilidad: "todos" }, known).inStockOnly).toBe(false);
+    expect(
+      parseCatalogFilters({ disponibilidad: "all" }, known).inStockOnly,
+    ).toBe(true);
+    expect(
+      parseCatalogFilters({ disponibilidad: "TODOS" }, known).inStockOnly,
+    ).toBe(true);
+    expect(
+      parseCatalogFilters({ disponibilidad: "todos" }, known).inStockOnly,
+    ).toBe(false);
   });
 
   it("serialize is byte-stable across a parse→serialize→parse→serialize cycle for a hostile mix", () => {

@@ -27,7 +27,7 @@
  */
 import "server-only";
 import {
-  DEFAULT_SORT,
+  POPULAR_SORT,
   POPULAR_PRODUCTS_MAX,
   PRICE_BUCKET_CENTS,
   PRODUCTS_PER_PAGE,
@@ -235,7 +235,8 @@ async function readSearchPage(
 
   const { from } = rangeFor(page, pageSize);
   // Page 1 rows are already in `probe`; deeper pages need the offset read.
-  const result = from === 0 ? probe : await runSearch(buildArgs(filters, from, pageSize));
+  const result =
+    from === 0 ? probe : await runSearch(buildArgs(filters, from, pageSize));
 
   const ids = result.rows.map((row) => row.id);
   const [covers, grades] = await Promise.all([coversFor(ids), gradesFor(ids)]);
@@ -331,7 +332,7 @@ export function listPopularProducts(
           priceMin: null,
           priceMax: null,
           inStockOnly: true,
-          sort: DEFAULT_SORT,
+          sort: POPULAR_SORT,
           priceRangeIgnored: false,
         },
         0,
