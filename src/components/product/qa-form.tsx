@@ -61,7 +61,7 @@ interface QaFormProps {
 const COUNTER_WARN_FRACTION = 0.9;
 
 const fieldClasses =
-  "w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20";
+  "w-full rounded-md border border-border bg-background px-3 py-2 text-base text-foreground outline-none md:text-sm placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20";
 
 export function QaForm({ productId, slug, maxName, maxQuestion, labels }: QaFormProps) {
   const action = submitQuestion.bind(null, slug);

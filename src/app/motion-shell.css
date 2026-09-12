@@ -173,9 +173,14 @@
  * ENTER FADE for low-frequency pages (404 / error). transform/opacity only;
  * @starting-style entrance; reduced motion drops the translate. (T2 AC-13)
  * ======================================================================== */
+/* Resting state is `transform: none`, NOT `translateY(0)`: a non-none transform
+ * on an ancestor makes iOS Safari mis-scroll a focused input when the keyboard
+ * opens (the page "jumps" to the wrong place) — the quote form sits inside an
+ * .enter-fade wrapper. `none` interpolates from the @starting-style translate
+ * exactly like translateY(0) did, so the entrance is unchanged. */
 .enter-fade {
   opacity: 1;
-  transform: translateY(0);
+  transform: none;
   transition:
     opacity 200ms var(--ease-out),
     transform 200ms var(--ease-out);
@@ -291,7 +296,7 @@
  * ======================================================================== */
 .stagger {
   opacity: 1;
-  transform: translateY(0);
+  transform: none; /* see .enter-fade — iOS Safari focus-scroll */
   transition:
     opacity 200ms var(--ease-out),
     transform 200ms var(--ease-out);
