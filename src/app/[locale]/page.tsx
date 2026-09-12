@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { hasLocale } from "next-intl";
 import { routing } from "@/i18n/routing";
@@ -11,7 +10,6 @@ import {
   SEED_STORE_NAME,
   BUSINESS_ADDRESS,
 } from "@/lib/config";
-import { HERO_BACKGROUND_IMAGE } from "@/lib/config/imagery";
 import { listProducts } from "@/lib/catalog/queries";
 import { getStoreSettingsStatic } from "@/lib/store-settings";
 import type { CatalogProductCard } from "@/lib/catalog/types";
@@ -333,28 +331,20 @@ interface SectionProps {
  * non-white surface is the calculator's gradient band.
  */
 /**
- * Hero wrapper (owner request 2026-08-28) — the one section allowed a non-white
- * surface: a full-bleed lifestyle photo (`HERO_BACKGROUND_IMAGE`) washed by a
- * left-heavy `bg-background` gradient scrim so the ink copy keeps its contrast
- * (the photo is light, the scrim guarantees it), plus a bottom fade into the
- * pure-white page. `null` slot degrades to the plain white `Section`.
+ * Hero wrapper — the one section allowed a non-white surface. Owner request
+ * 2026-09-12: a MUTED green gradient that drifts almost imperceptibly (see
+ * `.hero-aurora` in theme-storefront.css) replaces the earlier lifestyle
+ * photo + scrim. Purely decorative (`aria-hidden`), transform-only motion,
+ * static under reduced motion; a bottom fade blends into the white page.
  */
 function HeroSection({ children }: { children: React.ReactNode }) {
-  if (!HERO_BACKGROUND_IMAGE) {
-    return <Section>{children}</Section>;
-  }
   return (
     <section className="relative overflow-hidden">
-      <Image
-        src={HERO_BACKGROUND_IMAGE}
-        alt=""
-        aria-hidden
-        fill
-        priority
-        sizes="100vw"
-        className="object-cover"
-      />
-      <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/80 to-background/55" />
+      <div className="hero-aurora" aria-hidden data-testid="hero-aurora">
+        <span className="hero-aurora__wash hero-aurora__wash--a" />
+        <span className="hero-aurora__wash hero-aurora__wash--b" />
+        <span className="hero-aurora__wash hero-aurora__wash--c" />
+      </div>
       <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent" />
       <div className={cn(CONTAINER, "relative py-10 sm:py-16 lg:py-28")}>
         {children}
