@@ -23,7 +23,7 @@ const MILANO = "/producto/silla-ejecutiva-milano";
 const MINI = "/producto/silla-oficina-compacta-mini";
 
 test.describe("PDP renders (es-MX)", () => {
-  test("renders a valid product with breadcrumb, gallery, price, specs, Q&A", async ({
+  test("renders a valid product with gallery, price, specs, Q&A", async ({
     page,
   }) => {
     const response = await page.goto(MILANO);
@@ -32,25 +32,14 @@ test.describe("PDP renders (es-MX)", () => {
 
     // Product name as the level-1 heading.
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(/Milano/i);
-    // Core PDP regions present.
-    await expect(page.getByTestId("breadcrumbs")).toBeVisible();
+    // Core PDP regions present (the visible breadcrumb trail was removed
+    // 2026-09-13; only the BreadcrumbList JSON-LD remains).
+    await expect(page.getByTestId("breadcrumbs")).toHaveCount(0);
     await expect(page.getByTestId("product-gallery")).toBeVisible();
     await expect(page.getByTestId("product-price")).toBeVisible();
     await expect(page.getByTestId("product-specs")).toBeVisible();
     await expect(page.getByTestId("product-qa")).toBeVisible();
     await expect(page.getByTestId("stock-badge")).toBeVisible();
-  });
-
-  test("breadcrumb ends on the current product (not a link) — AC-4", async ({
-    page,
-  }) => {
-    await page.goto(MILANO);
-    const crumb = page.getByTestId("breadcrumbs");
-    await expect(crumb.getByText("Inicio", { exact: true })).toHaveCount(1);
-    // The last crumb is the current page: aria-current, not a link.
-    const current = crumb.locator('[aria-current="page"]');
-    await expect(current).toHaveText(/Milano/i);
-    await expect(crumb.getByRole("link", { name: /Milano/i })).toHaveCount(0);
   });
 
   test("shows the sale price and a struck compare-at (AC-9)", async ({

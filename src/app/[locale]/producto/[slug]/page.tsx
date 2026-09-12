@@ -27,7 +27,7 @@ import type { StockState } from "@/lib/catalog/types";
 import type { ProductDetail } from "@/lib/catalog/product-detail.types";
 import type { RecentlyViewedEntry } from "@/lib/recently-viewed";
 import type { ProductColorSwatch } from "@/lib/catalog/types";
-import { Breadcrumbs, type Crumb } from "@/components/catalog/breadcrumbs";
+import type { Crumb } from "@/components/catalog/breadcrumbs";
 import { JsonLd } from "@/components/seo/json-ld";
 import { buildAlternates, buildOpenGraph, localeUrl } from "@/lib/seo/metadata";
 import { buildProductLd } from "@/lib/seo/json-ld";
@@ -146,14 +146,11 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   return (
     <div className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
+      {/* The visible breadcrumb trail was removed (owner request 2026-09-13);
+          the BreadcrumbList JSON-LD stays so search engines keep the hierarchy. */}
       <JsonLd data={[productLd, crumbsToBreadcrumbLd(crumbs, activeLocale)]} />
-      <Breadcrumbs
-        ariaLabel={t("breadcrumb.ariaLabel")}
-        moreLabel={tCatalog("pagination.morePages")}
-        items={crumbs}
-      />
 
-      <section className="enter-fade mt-6">
+      <section className="enter-fade">
         <ProductPurchasePanel
           gradeBadge={
             product.conditionGrade ? (
