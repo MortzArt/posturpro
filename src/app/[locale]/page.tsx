@@ -221,7 +221,7 @@ export default async function HomePage({ params }: HomePageProps) {
         />
       </Section>
 
-      <Section>
+      <Section surface="tint">
         <B2BSection />
       </Section>
 
@@ -323,7 +323,9 @@ interface SectionProps {
   /** "band" is a shorter vertical rhythm for the quiet brand bar (~40px). */
   padding?: "default" | "band";
   /** Surface: pure white (default) or the calculator gradient band (T20 AC-7). */
-  surface?: "white" | "gradient-band";
+  /** `tint` = the flat mint canvas (`--tint-green`) — a quiet band that breaks up
+   *  the white-on-white scroll (owner request 2026-09-13 for the B2B block). */
+  surface?: "white" | "gradient-band" | "tint";
 }
 
 /**
@@ -364,7 +366,11 @@ function Section({
     <section
       id={id}
       className={cn(
-        surface === "gradient-band" ? "gradient-band" : "bg-background",
+        surface === "gradient-band"
+          ? "gradient-band"
+          : surface === "tint"
+            ? "bg-[var(--tint-green)]"
+            : "bg-background",
         id ? "scroll-mt-28" : undefined,
         padding === "band" ? "py-8 sm:py-10" : "py-10 sm:py-16 lg:py-28",
       )}
