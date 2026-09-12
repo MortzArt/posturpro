@@ -138,7 +138,7 @@ export function ProductGallery({
 
       {images.length > 1 ? (
         <ul
-          className="mt-3 flex gap-2 overflow-x-auto pb-1"
+          className="scrollbar-quiet -mx-1 -mb-1 mt-2 flex gap-2 overflow-x-auto p-1"
           data-testid="gallery-thumbnails"
         >
           {images.map((image, index) => {
