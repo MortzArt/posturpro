@@ -11,9 +11,9 @@ import { CertTag } from "@/components/home/cert-tag";
  * HomeHero (T20 Factorial grammar) — the homepage front door: no eyebrow, a big
  * tight 2-line headline in ink, soft-ink subcopy, two CTAs (catalog = orange
  * pill primary; business = 2px ink-outline pill secondary), a 3-figure naked
- * stat row, and a white floating media card on a whisper-green tint canvas with
- * the cert-tag overlay. Distinct from the shared `Hero` (still used by
- * /empresas) because this variant has the stats + cert-tag + dual-CTA hierarchy.
+ * stat row, and a white floating media card with the cert-tag overlay.
+ * Distinct from the shared `Hero` (still used by /empresas) because this
+ * variant has the stats + cert-tag + dual-CTA hierarchy.
  *
  * The `eyebrow` prop is retained (so page.tsx is untouched) but intentionally
  * not rendered — Factorial is headline-first (AC-3). Headline emphasis comes
@@ -73,35 +73,37 @@ export function HomeHero(props: HomeHeroProps) {
       </div>
 
       <div className="order-2">
-        {/* Whisper-green tint canvas holding a white floating media card
-            (Factorial grammar). The inner card keeps `aspect-[4/3]`. */}
-        <div className="rounded-lg bg-[var(--tint-green)] p-4 sm:p-6">
-          <div className="factorial-card relative aspect-[4/3] w-full overflow-hidden rounded-md">
-            {props.imageUrl ? (
-              <Image
-                src={props.imageUrl}
-                alt={props.imageAlt}
-                fill
-                priority
-                sizes="(min-width: 1024px) 50vw, 100vw"
-                className="object-cover"
+        {/* White floating media card sits directly on the hero photo — no tint
+            canvas frame (owner request 2026-09-12). Keeps `aspect-[4/3]`. */}
+        <div className="factorial-card relative aspect-[4/3] w-full overflow-hidden rounded-md">
+          {props.imageUrl ? (
+            <Image
+              src={props.imageUrl}
+              alt={props.imageAlt}
+              fill
+              priority
+              sizes="(min-width: 1024px) 50vw, 100vw"
+              className="object-cover"
+            />
+          ) : (
+            <span
+              aria-hidden
+              data-testid="hero-image-fallback"
+              className="flex size-full items-center justify-center"
+            >
+              <HugeiconsIcon
+                icon={Chair01Icon}
+                size={72}
+                strokeWidth={1.5}
+                className="text-muted-foreground/40"
               />
-            ) : (
-              <span
-                aria-hidden
-                data-testid="hero-image-fallback"
-                className="flex size-full items-center justify-center"
-              >
-                <HugeiconsIcon
-                  icon={Chair01Icon}
-                  size={72}
-                  strokeWidth={1.5}
-                  className="text-muted-foreground/40"
-                />
-              </span>
-            )}
-            <CertTag grade={props.cert.grade} code={props.cert.code} meta={props.cert.meta} />
-          </div>
+            </span>
+          )}
+          <CertTag
+            grade={props.cert.grade}
+            code={props.cert.code}
+            meta={props.cert.meta}
+          />
         </div>
       </div>
     </div>
