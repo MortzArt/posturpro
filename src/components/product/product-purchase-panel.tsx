@@ -187,63 +187,71 @@ export function ProductPurchasePanel({
         <div className="order-3 min-w-0 lg:order-2">{details}</div>
       ) : null}
 
-      <div className="factorial-card order-2 flex flex-col gap-4 p-5 md:p-6 lg:order-3 lg:sticky lg:top-20 lg:self-start">
-        {gradeBadge ? <div className="flex">{gradeBadge}</div> : null}
-        {brandName ? (
-          <p className="text-xs text-muted-foreground">{brandName}</p>
-        ) : null}
-        <h1 className="font-heading text-2xl tracking-[-0.04em] text-foreground md:text-3xl">
-          {productName}
-        </h1>
+      {/* On lg the card matches the main gallery image: same column width, same
+          4/5 aspect (aspect-ratio is a preferred size, so taller content still
+          grows it). Identity + price sit at the top; stock, colour and the CTA
+          are pushed to the bottom edge. */}
+      <div className="factorial-card order-2 flex flex-col gap-4 p-5 md:p-6 lg:order-3 lg:sticky lg:top-20 lg:aspect-[4/5] lg:self-start">
+        <div className="flex flex-col gap-4">
+          {gradeBadge ? <div className="flex">{gradeBadge}</div> : null}
+          {brandName ? (
+            <p className="text-xs text-muted-foreground">{brandName}</p>
+          ) : null}
+          <h1 className="font-heading text-2xl tracking-[-0.04em] text-foreground md:text-3xl">
+            {productName}
+          </h1>
 
-        <PriceRow
-          effectivePriceLabel={display.effectivePriceLabel}
-          compareAtLabel={display.compareAtLabel}
-          compareLabel={labels.priceCompareLabel}
-        />
+          <PriceRow
+            effectivePriceLabel={display.effectivePriceLabel}
+            compareAtLabel={display.compareAtLabel}
+            compareLabel={labels.priceCompareLabel}
+          />
+        </div>
 
-        <StockBadge
-          state={display.stockState}
-          label={display.stockLabel}
-          className="self-start"
-        />
+        <div className="flex flex-col gap-4 lg:mt-auto">
+          <StockBadge
+            state={display.stockState}
+            label={display.stockLabel}
+            className="self-start"
+          />
 
-        {hasVariants && selectedVariant ? (
-          <div className="flex flex-col gap-2">
-            <p
-              key={selectedVariant.id}
-              className="price-value text-sm font-medium text-foreground"
-              data-testid="variant-color-label"
-            >
-              {variantDisplay[selectedVariant.id]?.colorLabel ??
-                selectedVariant.colorName}
-            </p>
-            <VariantSelector
-              variants={variants}
-              selectedVariantId={selectedVariant.id}
-              onSelect={setSelectedVariantId}
-              groupLabel={labels.variantGroupLabel}
-              swatchNames={swatchNames}
-              outOfStock={outOfStock}
-            />
-          </div>
-        ) : null}
+          {hasVariants && selectedVariant ? (
+            <div className="flex flex-col gap-2">
+              <p
+                key={selectedVariant.id}
+                className="price-value text-sm font-medium text-foreground"
+                data-testid="variant-color-label"
+              >
+                {variantDisplay[selectedVariant.id]?.colorLabel ??
+                  selectedVariant.colorName}
+              </p>
+              <VariantSelector
+                variants={variants}
+                selectedVariantId={selectedVariant.id}
+                onSelect={setSelectedVariantId}
+                groupLabel={labels.variantGroupLabel}
+                swatchNames={swatchNames}
+                outOfStock={outOfStock}
+              />
+            </div>
+          ) : null}
 
-        <p
-          aria-live="polite"
-          aria-atomic="true"
-          className="sr-only"
-          data-testid="variant-live-status"
-        >
-          {liveStatus}
-        </p>
+          <p
+            aria-live="polite"
+            aria-atomic="true"
+            className="sr-only"
+            data-testid="variant-live-status"
+          >
+            {liveStatus}
+          </p>
 
-        <AddToCartButton
-          line={cartLine}
-          outOfStock={cartOutOfStock}
-          labels={addToCartLabels}
-          className="mt-2"
-        />
+          <AddToCartButton
+            line={cartLine}
+            outOfStock={cartOutOfStock}
+            labels={addToCartLabels}
+            className="mt-2"
+          />
+        </div>
       </div>
     </div>
   );
