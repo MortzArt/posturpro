@@ -3,13 +3,12 @@
 import { useId, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Tick02Icon } from "@hugeicons/core-free-icons";
-import { Input } from "@/components/ui/input";
 import { FilterSwitch } from "@/components/catalog/filter-switch";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { formatMXN } from "@/lib/money";
 import { FILTER_FACET_COLLAPSE_AFTER } from "@/lib/config";
 import {
+  useDeferredFilters,
   useFilterNavigation,
   type MultiFacet,
 } from "@/components/catalog/filter-navigation";
@@ -223,109 +222,6 @@ export function AvailabilityToggle({
   );
 }
 
-/** Two numeric price inputs (cents in URL, pesos in the field). */
-export function PriceRange({
-  minParam,
-  maxParam,
-  priceMin,
-  priceMax,
-  floorCents,
-  ceilCents,
-  minLabel,
-  maxLabel,
-  ignoredNote,
-  showIgnored,
-}: {
-  minParam: string;
-  maxParam: string;
-  priceMin: number | null;
-  priceMax: number | null;
-  floorCents: number;
-  ceilCents: number;
-  minLabel: string;
-  maxLabel: string;
-  ignoredNote: string;
-  showIgnored: boolean;
-}) {
-  const { patch } = useFilterNavigation();
-  const [minPesos, setMinPesos] = useState(centsToField(priceMin));
-  const [maxPesos, setMaxPesos] = useState(centsToField(priceMax));
-
-  // Re-sync the controlled fields when the URL-derived props change out from
-  // under us (chip removal / Clear-all re-renders the panel with new props but
-  // `useState` initializers do not re-run) — M-4. React's "adjust state during
-  // render" pattern (no effect): a single synced-key holds the last props we
-  // synced, and we correct both fields in the render where they change.
-  const syncKey = `${priceMin ?? ""}:${priceMax ?? ""}`;
-  const [syncedKey, setSyncedKey] = useState(syncKey);
-  if (syncedKey !== syncKey) {
-    setSyncedKey(syncKey);
-    setMinPesos(centsToField(priceMin));
-    setMaxPesos(centsToField(priceMax));
-  }
-
-  const commit = (): void => {
-    patch({
-      priceMin: fieldToCents(minPesos),
-      priceMax: fieldToCents(maxPesos),
-      priceRangeIgnored: false,
-    });
-  };
-
-  // URL contract for price is PESOS (the unit the shopper sees + types), which
-  // the parser converts to internal cents. So the visible field IS the native
-  // (JS-off) submitter under the canonical param name — a JS-off shopper can
-  // type a bound and submit it correctly (no 100x cents/pesos mismatch, M-1).
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="text-xs text-muted-foreground">
-        {formatMXN(floorCents)} – {formatMXN(ceilCents)}
-      </p>
-      <div className="flex items-center gap-2">
-        <Input
-          type="number"
-          inputMode="numeric"
-          name={minParam}
-          data-testid="filter-price-min"
-          aria-label={minLabel}
-          placeholder={minLabel}
-          min={0}
-          value={minPesos}
-          onChange={(event) => setMinPesos(event.target.value)}
-          onBlur={commit}
-          className="h-11"
-        />
-        <span aria-hidden className="text-muted-foreground">
-          –
-        </span>
-        <Input
-          type="number"
-          inputMode="numeric"
-          name={maxParam}
-          data-testid="filter-price-max"
-          aria-label={maxLabel}
-          placeholder={maxLabel}
-          min={0}
-          value={maxPesos}
-          onChange={(event) => setMaxPesos(event.target.value)}
-          onBlur={commit}
-          className="h-11"
-        />
-      </div>
-      {showIgnored ? (
-        <p
-          className="text-xs text-muted-foreground"
-          data-testid="price-ignored-note"
-          role="note"
-        >
-          {ignoredNote}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/** Ghost "Clear all" button that navigates to the clean catalog. */
 export function ClearFiltersButton({
   label,
   href,
@@ -335,6 +231,24 @@ export function ClearFiltersButton({
   href: string;
   className?: string;
 }) {
+  // Inside the mobile sheet (deferred mode) clearing edits the draft — the
+  // shopper still taps Apply to navigate. Elsewhere it is a plain link so it
+  // also works JS-off.
+  const deferred = useDeferredFilters();
+  if (deferred) {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="lg"
+        className={cn("min-h-11", className)}
+        data-testid="clear-filters"
+        onClick={deferred.reset}
+      >
+        {label}
+      </Button>
+    );
+  }
   return (
     <Button
       asChild
@@ -350,15 +264,3 @@ export function ClearFiltersButton({
 }
 
 /** Cents → the pesos string shown in a price field (empty when null). */
-function centsToField(cents: number | null): string {
-  return cents === null ? "" : String(Math.round(cents / 100));
-}
-
-/** A pesos field string → integer cents, or null when empty/invalid. */
-function fieldToCents(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed === "") return null;
-  const pesos = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(pesos) || pesos < 0) return null;
-  return pesos * 100;
-}

@@ -31,7 +31,6 @@ interface CatalogShellProps {
   filters: CatalogFilters;
   facets: FacetOptions;
   labels: CatalogLabels;
-  hasActiveFilters: boolean;
   chips: ActiveFilterChip[];
   clearAllLabel: string;
   /** Locale-aware `/sillas` target for native (JS-off) form GETs (M-3). */
@@ -50,7 +49,6 @@ export function CatalogShell({
   filters,
   facets,
   labels,
-  hasActiveFilters,
   chips,
   clearAllLabel,
   catalogAction,
@@ -62,10 +60,8 @@ export function CatalogShell({
     <FilterNavigationProvider filters={filters}>
       <ResultAnnouncerProvider>
         <CatalogNoScriptFilters
-          filters={filters}
           facets={facets}
           labels={labels}
-          hasActiveFilters={hasActiveFilters}
           catalogAction={catalogAction}
         />
 
@@ -84,9 +80,7 @@ export function CatalogShell({
               <FilterPanel
                 context="sidebar"
                 facets={facets}
-                selected={filters}
                 labels={labels.filterPanel}
-                hasActiveFilters={hasActiveFilters}
                 action={catalogAction}
               />
             </div>

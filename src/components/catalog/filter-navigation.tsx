@@ -6,10 +6,11 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   useTransition,
 } from "react";
 import { useRouter } from "@/i18n/navigation";
-import { CATALOG_PATH } from "@/lib/config";
+import { CATALOG_PATH, DEFAULT_SORT } from "@/lib/config";
 import {
   removeFacet,
   serializeFilters,
@@ -56,9 +57,12 @@ interface FilterNavigationValue {
 }
 
 /** Multi-select facet dimensions a control can toggle a single value in. */
-export type MultiFacet = "categoryIds" | "brandIds" | "styleIds" | "colors" | "materials";
+export type MultiFacet =
+  "categoryIds" | "brandIds" | "styleIds" | "colors" | "materials";
 
-const FilterNavigationContext = createContext<FilterNavigationValue | null>(null);
+const FilterNavigationContext = createContext<FilterNavigationValue | null>(
+  null,
+);
 
 export function FilterNavigationProvider({
   filters,
@@ -98,7 +102,11 @@ export function FilterNavigationProvider({
       apply({ ...pendingRef.current, ...partial });
     };
 
-    const toggleValue = (facet: MultiFacet, value: string, on: boolean): void => {
+    const toggleValue = (
+      facet: MultiFacet,
+      value: string,
+      on: boolean,
+    ): void => {
       const base = pendingRef.current;
       const current = base[facet];
       const nextValues = on
@@ -117,11 +125,123 @@ export function FilterNavigationProvider({
   );
 }
 
+/* ------------------------------------------------------------------------ *
+ * DEFERRED MODE (mobile filter sheet, owner request 2026-09-13)
+ * ------------------------------------------------------------------------ */
+
+interface DeferredFilterValue {
+  /** Push the draft to the URL (one navigation for the whole batch). */
+  commit: () => void;
+  /** Reset the draft to "no filters" (the sheet's Clear action). */
+  reset: () => void;
+  /** Whether the draft differs from the applied URL state. */
+  dirty: boolean;
+}
+
+const DeferredFilterContext = createContext<DeferredFilterValue | null>(null);
+
+/**
+ * Wraps a subtree (the mobile FilterSheet body) so every control change edits a
+ * local DRAFT instead of navigating. Nothing hits the URL — and so nothing
+ * re-runs the search RPC — until `commit()` (the sheet's Apply button). On a
+ * phone each live navigation cost a visible round-trip per tap, which made
+ * multi-facet filtering feel slow; batching them is one navigation total.
+ *
+ * Shadows the outer `FilterNavigationContext` with the same shape, so the
+ * controls inside are unchanged: `filters` is the draft, `apply`/`patch`/
+ * `toggleValue` edit it (functional updates — no stale-closure races), and
+ * `isPending` is false (nothing is in flight until commit). The draft re-bases
+ * to the URL state whenever that changes underneath (adjust-state-during-render).
+ */
+export function DeferredFilterNavigationProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const outer = useFilterNavigation();
+  const [draft, setDraft] = useState<CatalogFilters>(outer.filters);
+  const [syncedFrom, setSyncedFrom] = useState(outer.filters);
+  if (syncedFrom !== outer.filters) {
+    setSyncedFrom(outer.filters);
+    setDraft(outer.filters);
+  }
+
+  const navigation = useMemo<FilterNavigationValue>(() => {
+    const patch = (partial: Partial<CatalogFilters>): void => {
+      setDraft((prev) => ({ ...prev, ...partial }));
+    };
+    const toggleValue = (
+      facet: MultiFacet,
+      value: string,
+      on: boolean,
+    ): void => {
+      setDraft((prev) => {
+        const current = prev[facet];
+        const nextValues = on
+          ? [...new Set([...current, value])]
+          : current.filter((existing) => existing !== value);
+        return { ...prev, [facet]: nextValues };
+      });
+    };
+    return {
+      filters: draft,
+      isPending: false,
+      apply: setDraft,
+      patch,
+      toggleValue,
+    };
+  }, [draft]);
+
+  const deferred = useMemo<DeferredFilterValue>(() => {
+    const commit = (): void => {
+      outer.apply(draft);
+    };
+    const reset = (): void => {
+      setDraft((prev) => clearedFilters(prev));
+    };
+    const dirty = serializeFilters(draft) !== serializeFilters(outer.filters);
+    return { commit, reset, dirty };
+  }, [draft, outer]);
+
+  return (
+    <FilterNavigationContext.Provider value={navigation}>
+      <DeferredFilterContext.Provider value={deferred}>
+        {children}
+      </DeferredFilterContext.Provider>
+    </FilterNavigationContext.Provider>
+  );
+}
+
+/** Mirrors the "Clear all" link target (`/sillas` bare): every filter off. */
+function clearedFilters(current: CatalogFilters): CatalogFilters {
+  return {
+    ...current,
+    query: null,
+    categoryIds: [],
+    brandIds: [],
+    styleIds: [],
+    colors: [],
+    materials: [],
+    priceMin: null,
+    priceMax: null,
+    priceRangeIgnored: false,
+    inStockOnly: true,
+    sort: DEFAULT_SORT,
+  };
+}
+
+/** The deferred-mode controls, or `null` when filters apply live (desktop sidebar). */
+export function useDeferredFilters(): DeferredFilterValue | null {
+  return useContext(DeferredFilterContext);
+}
+
 /** Access the filter navigation context (must be inside the provider). */
 export function useFilterNavigation(): FilterNavigationValue {
   const ctx = useContext(FilterNavigationContext);
   if (ctx === null) {
-    throw new Error("useFilterNavigation must be used within FilterNavigationProvider");
+    throw new Error(
+      "useFilterNavigation must be used within FilterNavigationProvider",
+    );
   }
   return ctx;
 }

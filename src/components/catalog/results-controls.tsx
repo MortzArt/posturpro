@@ -19,7 +19,6 @@ interface CatalogResultsControlsProps {
   facets: FacetOptions;
   labels: CatalogLabels;
   activeFilterCount: number;
-  hasActiveFilters: boolean;
   /** Locale-aware `/sillas` target for the sheet panel's native form (M-3). */
   catalogAction: string;
 }
@@ -29,7 +28,6 @@ export function CatalogResultsControls({
   facets,
   labels,
   activeFilterCount,
-  hasActiveFilters,
   catalogAction,
 }: CatalogResultsControlsProps) {
   return (
@@ -41,9 +39,7 @@ export function CatalogResultsControls({
         <FilterPanel
           context="sheet"
           facets={facets}
-          selected={filters}
           labels={labels.filterPanel}
-          hasActiveFilters={hasActiveFilters}
           action={catalogAction}
         />
       </FilterSheet>

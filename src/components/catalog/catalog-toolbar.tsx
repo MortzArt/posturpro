@@ -5,7 +5,6 @@ import {
   type FilterPanelLabels,
 } from "@/components/catalog/filter-panel";
 import type {
-  CatalogFilters,
   FacetOptions,
   SortKey,
 } from "@/lib/catalog/search.types";
@@ -30,10 +29,8 @@ export interface CatalogLabels {
 }
 
 interface CatalogNoScriptFiltersProps {
-  filters: CatalogFilters;
   facets: FacetOptions;
   labels: CatalogLabels;
-  hasActiveFilters: boolean;
   /** Locale-aware `/sillas` target for native (JS-off) form GETs (M-3). */
   catalogAction: string;
 }
@@ -48,10 +45,8 @@ interface CatalogNoScriptFiltersProps {
  * Renders nothing visible for a JS-on shopper.
  */
 export function CatalogNoScriptFilters({
-  filters,
   facets,
   labels,
-  hasActiveFilters,
   catalogAction,
 }: CatalogNoScriptFiltersProps) {
   return (
@@ -61,9 +56,7 @@ export function CatalogNoScriptFilters({
           context="sheet"
           nativeControls="inline"
           facets={facets}
-          selected={filters}
           labels={labels.filterPanel}
-          hasActiveFilters={hasActiveFilters}
           action={catalogAction}
         />
       </div>

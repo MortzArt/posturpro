@@ -7,7 +7,10 @@ import { FocusScope } from "@radix-ui/react-focus-scope";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { FilterHorizontalIcon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
-import { useResultCount } from "@/components/catalog/result-announcer";
+import {
+  DeferredFilterNavigationProvider,
+  useDeferredFilters,
+} from "@/components/catalog/filter-navigation";
 import { cn } from "@/lib/utils";
 
 /**
@@ -38,20 +41,22 @@ interface FilterSheetProps {
   children: React.ReactNode;
 }
 
-export function FilterSheet({ activeCount, labels, children }: FilterSheetProps) {
+export function FilterSheet({
+  activeCount,
+  labels,
+  children,
+}: FilterSheetProps) {
   const t = useTranslations("catalog.filters");
   const [open, setOpen] = useState(false);
-  // The apply button labels itself with the LIVE filtered total, which is only
-  // known after the RPC and is published by ResultAnnouncerProvider. Until the
-  // first results subtree reports (or if the provider is absent), fall back to
-  // the static "apply filters" label instead of lying with a "0" count.
-  const liveCount = useResultCount();
-  // The trigger badge reflects the real active-filter count (known client-side);
-  // the apply button reflects the live result total (post-RPC).
+  // The trigger badge reflects the real active-filter count (known client-side).
   const triggerLabel =
-    activeCount > 0 ? t("triggerCount", { count: activeCount }) : labels.trigger;
-  const applyLabel =
-    liveCount === null ? t("applyButton") : t("apply", { count: liveCount });
+    activeCount > 0
+      ? t("triggerCount", { count: activeCount })
+      : labels.trigger;
+  // Filters inside the sheet are DEFERRED (owner request 2026-09-13): taps edit
+  // a draft and nothing navigates until Apply, so the button carries the static
+  // label — the result count is unknown until the batch is committed.
+  const applyLabel = t("applyButton");
   const [closing, setClosing] = useState(false);
   const mounted = open || closing;
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -84,7 +89,9 @@ export function FilterSheet({ activeCount, labels, children }: FilterSheetProps)
   useEffect(() => {
     if (!open) return;
     const mediaQuery = window.matchMedia(`(min-width: ${LG_BREAKPOINT_PX}px)`);
-    const closeIfDesktop = (event: MediaQueryListEvent | MediaQueryList): void => {
+    const closeIfDesktop = (
+      event: MediaQueryListEvent | MediaQueryList,
+    ): void => {
       if (event.matches) setOpen(false);
     };
     closeIfDesktop(mediaQuery);
@@ -103,7 +110,12 @@ export function FilterSheet({ activeCount, labels, children }: FilterSheetProps)
           className="min-h-11 lg:hidden"
           data-testid="filter-sheet-trigger"
         >
-          <HugeiconsIcon icon={FilterHorizontalIcon} size={18} strokeWidth={2} aria-hidden />
+          <HugeiconsIcon
+            icon={FilterHorizontalIcon}
+            size={18}
+            strokeWidth={2}
+            aria-hidden
+          />
           {triggerLabel}
         </Button>
       </Dialog.Trigger>
@@ -133,39 +145,42 @@ export function FilterSheet({ activeCount, labels, children }: FilterSheetProps)
             {open ? (
               <FocusScope asChild loop trapped>
                 <div className="flex h-full flex-col">
-                  <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-                    <Dialog.Title className="font-heading text-base font-semibold tracking-[-0.02em]">
-                      {labels.title}
-                    </Dialog.Title>
-                    <Dialog.Close asChild>
-                      <button
-                        type="button"
-                        data-testid="filter-sheet-close"
-                        aria-label={labels.close}
-                        className={cn(
-                          "nav-hover inline-flex size-11 shrink-0 items-center justify-center rounded-md text-foreground outline-none",
-                          "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                        )}
-                      >
-                        <HugeiconsIcon icon={Cancel01Icon} size={20} strokeWidth={2} aria-hidden />
-                      </button>
-                    </Dialog.Close>
-                  </div>
+                  <DeferredFilterNavigationProvider>
+                    <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
+                      <Dialog.Title className="font-heading text-base font-semibold tracking-[-0.02em]">
+                        {labels.title}
+                      </Dialog.Title>
+                      <Dialog.Close asChild>
+                        <button
+                          type="button"
+                          data-testid="filter-sheet-close"
+                          aria-label={labels.close}
+                          className={cn(
+                            "nav-hover inline-flex size-11 shrink-0 items-center justify-center rounded-md text-foreground outline-none",
+                            "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                          )}
+                        >
+                          <HugeiconsIcon
+                            icon={Cancel01Icon}
+                            size={20}
+                            strokeWidth={2}
+                            aria-hidden
+                          />
+                        </button>
+                      </Dialog.Close>
+                    </div>
 
-                  <div className="scrollbar-quiet flex-1 overflow-y-auto p-4">{children}</div>
+                    <div className="scrollbar-quiet flex-1 overflow-y-auto p-4">
+                      {children}
+                    </div>
 
-                  <div className="shrink-0 border-t border-border bg-card/80 p-4 backdrop-blur">
-                    <Button
-                      type="button"
-                      variant="cta"
-                      size="xl"
-                      className="min-h-11 w-full"
-                      data-testid="filter-sheet-apply"
-                      onClick={() => setOpen(false)}
-                    >
-                      {applyLabel}
-                    </Button>
-                  </div>
+                    <div className="shrink-0 border-t border-border bg-card/80 p-4 backdrop-blur">
+                      <ApplyDraftButton
+                        label={applyLabel}
+                        onApplied={() => setOpen(false)}
+                      />
+                    </div>
+                  </DeferredFilterNavigationProvider>
                 </div>
               </FocusScope>
             ) : null}
@@ -173,5 +188,31 @@ export function FilterSheet({ activeCount, labels, children }: FilterSheetProps)
         </Dialog.Portal>
       ) : null}
     </Dialog.Root>
+  );
+}
+
+/** Commits the sheet's draft filters (one navigation) and closes the sheet. */
+function ApplyDraftButton({
+  label,
+  onApplied,
+}: {
+  label: string;
+  onApplied: () => void;
+}) {
+  const deferred = useDeferredFilters();
+  return (
+    <Button
+      type="button"
+      variant="cta"
+      size="xl"
+      className="min-h-11 w-full"
+      data-testid="filter-sheet-apply"
+      onClick={() => {
+        deferred?.commit();
+        onApplied();
+      }}
+    >
+      {label}
+    </Button>
   );
 }

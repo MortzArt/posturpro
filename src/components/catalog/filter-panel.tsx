@@ -12,15 +12,13 @@ import {
   FacetGroup,
   FacetCheckboxGroup,
   AvailabilityToggle,
-  PriceRange,
   ClearFiltersButton,
 } from "@/components/catalog/filter-controls";
+import { PriceRange } from "@/components/catalog/price-range";
+import { useFilterNavigation } from "@/components/catalog/filter-navigation";
+import { hasNoFilters } from "@/lib/catalog/search-params";
 import { ColorSwatchGroup } from "@/components/catalog/color-swatch";
-import type {
-  CatalogFilters,
-  FacetOptions,
-  SortKey,
-} from "@/lib/catalog/search.types";
+import type { FacetOptions, SortKey } from "@/lib/catalog/search.types";
 
 /**
  * FilterPanel (T5 AC-13). ONE component rendered twice — desktop sidebar body
@@ -62,10 +60,7 @@ export interface FilterPanelLabels {
 
 interface FilterPanelProps {
   facets: FacetOptions;
-  selected: CatalogFilters;
   labels: FilterPanelLabels;
-  /** True when ≥1 user filter is active (shows Clear). */
-  hasActiveFilters: boolean;
   context: "sidebar" | "sheet";
   /**
    * How the JS-off native controls (sort `<select>` + submit) render:
@@ -85,13 +80,17 @@ interface FilterPanelProps {
 
 export function FilterPanel({
   facets,
-  selected,
   labels,
-  hasActiveFilters,
   context,
   nativeControls = "noscript",
   action = CATALOG_PATH,
 }: FilterPanelProps) {
+  // The selected state comes from the navigation context, not a prop: under
+  // the plain provider that is the URL state; inside the mobile sheet's
+  // DeferredFilterNavigationProvider it is the un-applied DRAFT, so the
+  // controls reflect taps before Apply navigates.
+  const { filters: selected } = useFilterNavigation();
+  const hasActiveFilters = !hasNoFilters(selected);
   const keys = SEARCH_PARAM_KEYS;
   const NativeControlsWrapper =
     nativeControls === "noscript" ? "noscript" : Fragment;

@@ -14,7 +14,6 @@ import {
 import { loadFacetOptions } from "@/lib/catalog/facets";
 import { buildActiveFilterChips } from "@/lib/catalog/active-filter-chips";
 import { CATALOG_BANNER_IMAGE } from "@/lib/config/imagery";
-import { Breadcrumbs } from "@/components/catalog/breadcrumbs";
 import { CatalogBanner } from "@/components/catalog/catalog-banner";
 import { CatalogShell } from "@/components/catalog/catalog-shell";
 import { SearchResults } from "@/components/catalog/search-results";
@@ -138,14 +137,6 @@ export default async function CatalogListPage({
 
   return (
     <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
-      <Breadcrumbs
-        ariaLabel={t("breadcrumb.ariaLabel")}
-        moreLabel={t("pagination.morePages")}
-        items={[
-          { label: t("breadcrumb.home"), href: "/" },
-          { label: t("breadcrumb.catalog") },
-        ]}
-      />
       {/* Heading + index banner render INSIDE the shell, below its toolbar
        * (search + sort lead the page — owner request 2026-09-12). The banner
        * (Casa de Azulejo art slot, AC-8) shows only on the unfiltered index, not
@@ -173,7 +164,6 @@ export default async function CatalogListPage({
         }
         filters={filters}
         facets={options}
-        hasActiveFilters={active}
         chips={chips}
         clearAllLabel={t("filters.clearAll")}
         labels={labels}
@@ -188,7 +178,6 @@ export default async function CatalogListPage({
               facets={options}
               labels={labels}
               activeFilterCount={activeFilterCount}
-              hasActiveFilters={active}
               catalogAction={catalogAction}
             />
           }

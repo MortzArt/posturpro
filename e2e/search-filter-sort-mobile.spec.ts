@@ -59,19 +59,33 @@ test.describe("mobile filter Sheet (375px, JS-on)", () => {
     await expect(page.getByTestId("filter-sheet-panel")).toBeHidden();
   });
 
-  test("applying a filter in the Sheet updates the URL and closes it", async ({
+  test("Sheet filters are deferred: a toggle edits the draft, Apply navigates once and closes", async ({
     page,
   }) => {
     await gotoCatalogReady(page);
     await page.getByTestId("filter-sheet-trigger").click();
     const panel = page.getByTestId("filter-sheet-panel");
     await expect(panel).toBeVisible();
-    // Toggle the include-out-of-stock control (present in the panel).
+    // Toggle the include-out-of-stock control: the URL must NOT change yet.
     await panel.getByTestId("filter-in-stock").click();
-    await expect(page).toHaveURL(/[?&]disponibilidad=todos/, { timeout: 15_000 });
-    // The footer Apply button closes the sheet.
+    await page.waitForTimeout(800);
+    await expect(page).not.toHaveURL(/disponibilidad=todos/);
+    // Apply commits the batch in one navigation and closes the sheet.
     await page.getByTestId("filter-sheet-apply").click();
+    await expect(page).toHaveURL(/[?&]disponibilidad=todos/, { timeout: 15_000 });
     await expect(panel).toBeHidden();
+  });
+
+  test("Sheet price bounds are dropdowns on phones", async ({ page }) => {
+    await gotoCatalogReady(page);
+    await page.getByTestId("filter-sheet-trigger").click();
+    const panel = page.getByTestId("filter-sheet-panel");
+    const minSelect = panel.getByTestId("filter-price-min-select");
+    await expect(minSelect).toBeVisible();
+    await expect(panel.getByTestId("filter-price-min")).toBeHidden();
+    await minSelect.selectOption({ index: 1 });
+    await page.getByTestId("filter-sheet-apply").click();
+    await expect(page).toHaveURL(/[?&]precioMin=\d+/, { timeout: 15_000 });
   });
 
   test("the mobile chip row scrolls horizontally without overflowing the page (edge 12)", async ({
