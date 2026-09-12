@@ -47,13 +47,6 @@ test.describe("tap targets ≥ 44px on mobile (AC-14)", () => {
     expect(box!.width).toBeGreaterThanOrEqual(44)
   })
 
-  test("compact language toggle is at least 44px tall", async ({ page }) => {
-    await page.goto("/")
-    const box = await page.getByTestId("language-toggle-compact").boundingBox()
-    expect(box).not.toBeNull()
-    expect(box!.height).toBeGreaterThanOrEqual(44)
-  })
-
   test("drawer segmented toggle group is at least 44px tall", async ({
     page,
   }) => {
@@ -102,7 +95,12 @@ test.describe("prefers-reduced-motion still functional (AC-13, edge case 4)", ()
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" })
     await page.goto("/")
-    await page.getByTestId("language-toggle-compact").click()
+    // The toggle lives in the drawer below lg (this suite runs a phone viewport).
+    await page.getByTestId("mobile-nav-trigger").click()
+    await page
+      .getByTestId("mobile-nav-panel")
+      .getByTestId("language-toggle-option-en")
+      .click()
     await expect(page).toHaveURL(/\/en$/)
     await expect(page.locator("html")).toHaveAttribute("lang", "en")
   })

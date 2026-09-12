@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Dialog } from "radix-ui";
 import { FocusScope } from "@radix-ui/react-focus-scope";
 import { useTranslations } from "next-intl";
@@ -15,7 +16,7 @@ import { NAV_ITEMS } from "@/components/layout/nav-items";
 import { LanguageToggle } from "@/components/layout/language-toggle";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/components/cart/cart-provider";
-import { CART_PATH, EMPRESAS_PATH } from "@/lib/config";
+import { CART_PATH, EMPRESAS_PATH, SEED_STORE_NAME } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
 /**
@@ -211,7 +212,7 @@ interface MobileNavBodyProps {
 }
 
 /**
- * The drawer's inner content (header row, nav list, language toggle). Extracted
+ * The drawer's inner content (wordmark row, nav list, language toggle). Extracted
  * so it can be wrapped in a {@link FocusScope} that mounts only while open —
  * keeping the render tree small and the focus-trap boundary explicit.
  */
@@ -220,9 +221,23 @@ function MobileNavBody({ t, onNavigate }: MobileNavBodyProps) {
   return (
     <>
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-            <Dialog.Title className="truncate font-heading text-lg font-semibold tracking-[-0.02em] text-foreground">
-              {t("menuTitle")}
-            </Dialog.Title>
+            {/* The visible header is the full wordmark (the bar shows only the
+                brand mark on phones); the dialog keeps a textual title for AT. */}
+            <Dialog.Title className="sr-only">{t("menuTitle")}</Dialog.Title>
+            <Link
+              href="/"
+              onClick={onNavigate}
+              data-testid="mobile-nav-wordmark"
+              className="shrink-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Image
+                src="/brand/logo.svg"
+                alt={SEED_STORE_NAME}
+                width={132}
+                height={26}
+                className="h-6 w-auto"
+              />
+            </Link>
             <Dialog.Description className="sr-only">
               {t("menuDescription")}
             </Dialog.Description>

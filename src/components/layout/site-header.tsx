@@ -59,16 +59,23 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
           aria-label={storeName}
           className="shrink-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
+          {/* Phones show the square brand mark only (the wordmark lives in the
+              drawer header); the full wordmark returns at sm+ where it fits. */}
+          <Image
+            src="/brand/icon.svg"
+            alt={storeName}
+            width={32}
+            height={32}
+            priority
+            className="size-8 sm:hidden"
+          />
           <Image
             src="/brand/logo.svg"
             alt={storeName}
             width={132}
             height={26}
             priority
-            // Cap the width on the narrowest phones (≤320px) so the logo can
-            // never push the right-side controls off-screen (edge 7 / AC-11);
-            // full size returns at sm+ where there is room.
-            className="h-5 w-auto max-w-[88px] sm:h-6 sm:max-w-none md:h-7"
+            className="hidden h-6 w-auto sm:block md:h-7"
           />
         </Link>
 
@@ -118,9 +125,9 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
             closeLabel={tSearch("close")}
           />
           <CartCountBadge />
-          {/* Compact controls run through the tablet range; the segmented toggle
-              + orange CTA only appear at `lg` alongside the inline nav (BUG-1). */}
-          <LanguageToggle variant="compact" className="lg:hidden" />
+          {/* Below `lg` the language toggle lives in the drawer (owner request
+              2026-09-13); the segmented toggle + orange CTA only appear at `lg`
+              alongside the inline nav (BUG-1). */}
           <LanguageToggle variant="segmented" className="hidden lg:inline-flex" />
           {/* h-9 matches the segmented language toggle so the header controls
               share one optical height. */}

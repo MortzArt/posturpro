@@ -19,10 +19,12 @@ import { expect, test, type Page } from "@playwright/test"
  */
 async function switchTo(page: Page, target: "es-MX" | "en"): Promise<void> {
   const header = page.locator("header")
-  const compact = header.getByTestId("language-toggle-compact")
-  if (await compact.isVisible()) {
-    // Compact button shows the OTHER locale and flips on tap.
-    await compact.click()
+  const trigger = header.getByTestId("mobile-nav-trigger")
+  if (await trigger.isVisible()) {
+    // Below lg the segmented toggle lives inside the drawer.
+    await trigger.click()
+    const panel = page.getByTestId("mobile-nav-panel")
+    await panel.getByTestId(`language-toggle-option-${target}`).click()
     return
   }
   await header.getByTestId(`language-toggle-option-${target}`).click()
@@ -98,15 +100,17 @@ test.describe("language toggle (AC-6, AC-17)", () => {
   }) => {
     await page.goto("/en")
     await expect(page.locator("html")).toHaveAttribute("lang", "en")
-    // Segmented (desktop) exposes aria-pressed; compact (mobile) shows the ES target.
+    // The segmented toggle exposes aria-pressed — inline in the header at lg,
+    // inside the drawer below it.
     const header = page.locator("header")
     const enOption = header.getByTestId("language-toggle-option-en")
     if (await enOption.isVisible()) {
       await expect(enOption).toHaveAttribute("aria-pressed", "true")
     } else {
-      await expect(header.getByTestId("language-toggle-compact")).toHaveText(
-        /ES/i,
-      )
+      await header.getByTestId("mobile-nav-trigger").click()
+      await expect(
+        page.getByTestId("mobile-nav-panel").getByTestId("language-toggle-option-en"),
+      ).toHaveAttribute("aria-pressed", "true")
     }
   })
 
