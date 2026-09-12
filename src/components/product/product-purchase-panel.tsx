@@ -164,7 +164,7 @@ export function ProductPurchasePanel({
   );
 
   return (
-    <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(19rem,0.85fr)] lg:items-start lg:gap-10">
+    <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:items-start lg:gap-10">
       <div className="order-1 lg:sticky lg:top-20 lg:self-start">
         <ProductGallery
           key={selectedVariant?.id ?? "product"}
