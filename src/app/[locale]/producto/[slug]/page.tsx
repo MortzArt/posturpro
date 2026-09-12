@@ -74,7 +74,10 @@ export async function generateMetadata({
     : routing.defaultLocale;
   const product = await getProduct(slug);
   if (!product) return {};
-  const t = await getTranslations({ locale: activeLocale, namespace: "product" });
+  const t = await getTranslations({
+    locale: activeLocale,
+    namespace: "product",
+  });
   const settings = await getStoreSettingsStatic();
   const store = settings?.store_name ?? SEED_STORE_NAME;
   const description = product.description?.trim()
@@ -83,7 +86,9 @@ export async function generateMetadata({
   const title = t("metadata.titlePattern", { name: product.name, store });
   const href = productPath(product.slug);
   const primaryImage =
-    product.images.find((image) => image.isPrimary) ?? product.images[0] ?? null;
+    product.images.find((image) => image.isPrimary) ??
+    product.images[0] ??
+    null;
   return {
     title,
     description,
@@ -140,9 +145,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   return (
     <div className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
-      <JsonLd
-        data={[productLd, crumbsToBreadcrumbLd(crumbs, activeLocale)]}
-      />
+      <JsonLd data={[productLd, crumbsToBreadcrumbLd(crumbs, activeLocale)]} />
       <Breadcrumbs
         ariaLabel={t("breadcrumb.ariaLabel")}
         moreLabel={tCatalog("pagination.morePages")}
@@ -160,6 +163,23 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
       <section className="enter-fade mt-2">
         <ProductPurchasePanel
+          details={
+            product.description?.trim() || specRows.length > 0 ? (
+              <div className="flex flex-col gap-8">
+                {product.description?.trim() ? (
+                  <p
+                    className="text-base leading-relaxed text-muted-foreground"
+                    data-testid="product-description"
+                  >
+                    {product.description.trim()}
+                  </p>
+                ) : null}
+                {specRows.length > 0 ? (
+                  <ProductSpecs rows={specRows} heading={t("specs.heading")} />
+                ) : null}
+              </div>
+            ) : null
+          }
           productId={product.id}
           slug={product.slug}
           productName={product.name}
@@ -186,10 +206,6 @@ export default async function ProductPage({ params }: ProductPageProps) {
             announceAdded: tCart("announce.added"),
           }}
         />
-
-        {specRows.length > 0 ? (
-          <ProductSpecs rows={specRows} heading={t("specs.heading")} />
-        ) : null}
 
         <RecentlyViewed
           current={toRecentlyViewedEntry(product)}
@@ -291,7 +307,9 @@ function buildQaFormLabels(t: Translator): QaFormLabels {
 /** Build the recently-viewed entry recorded on view (AC-12). */
 function toRecentlyViewedEntry(product: ProductDetail): RecentlyViewedEntry {
   const primary =
-    product.images.find((image) => image.isPrimary) ?? product.images[0] ?? null;
+    product.images.find((image) => image.isPrimary) ??
+    product.images[0] ??
+    null;
   const distinctColors = new Set(
     product.variants.map((variant) => variant.colorHex),
   ).size;

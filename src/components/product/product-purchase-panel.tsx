@@ -28,11 +28,12 @@ import type {
  * on every selection. The panel does ZERO client-side i18n — every string is
  * resolved on the server and passed in (SRP, mirrors the T3 grid discipline).
  *
- * The gallery renders both here (mobile: stacked below) and as the left column
- * on `lg`; this component composes the gallery + info so a variant change
- * retargets the gallery images from one place. Layout ordering is handled by the
- * page's grid — this island renders gallery then info in source order, and the
- * page places it to span the two-column split.
+ * LAYOUT (owner request 2026-09-12): THREE columns on `lg` — gallery (left,
+ * sticky) · `details` slot (middle: description + specs, a server node passed
+ * through) · buy card (right, sticky). Below `lg` it stacks gallery → buy card →
+ * details (CSS `order`), so the price/CTA stay above the fold on phones. This
+ * island composes gallery + info so a variant change retargets the gallery
+ * images from one place.
  */
 
 /** Per-variant display strings, pre-resolved on the server. */
@@ -66,6 +67,8 @@ export interface PurchasePanelLabels {
 }
 
 interface ProductPurchasePanelProps {
+  /** Middle-column content on `lg` (description, specs); stacks last on mobile. */
+  details?: React.ReactNode;
   productId: string;
   slug: string;
   productName: string;
@@ -85,6 +88,7 @@ interface ProductPurchasePanelProps {
 }
 
 export function ProductPurchasePanel({
+  details,
   productId,
   slug,
   productName,
@@ -160,8 +164,8 @@ export function ProductPurchasePanel({
   );
 
   return (
-    <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-10">
-      <div className="lg:sticky lg:top-20 lg:self-start">
+    <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(19rem,0.85fr)] lg:items-start lg:gap-10">
+      <div className="order-1 lg:sticky lg:top-20 lg:self-start">
         <ProductGallery
           key={selectedVariant?.id ?? "product"}
           images={images}
@@ -176,7 +180,11 @@ export function ProductPurchasePanel({
         />
       </div>
 
-      <div className="factorial-card flex flex-col gap-4 p-5 md:p-6">
+      {details ? (
+        <div className="order-3 min-w-0 lg:order-2">{details}</div>
+      ) : null}
+
+      <div className="factorial-card order-2 flex flex-col gap-4 p-5 md:p-6 lg:order-3 lg:sticky lg:top-20 lg:self-start">
         {brandName ? (
           <p className="text-xs text-muted-foreground">{brandName}</p>
         ) : null}
