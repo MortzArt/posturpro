@@ -61,16 +61,16 @@ afterEach(cleanup);
 
 describe("Hero — filled slot (image-rich path)", () => {
   it("renders the image with the passed alt text and no fallback tile", () => {
-    render(<Hero {...COPY} imageUrl="/images/b2b/meeting-room-chairs-portrait.jpg" />);
+    render(<Hero {...COPY} imageUrl="/images/b2b/meeting-room-chairs-4x3.webp" />);
 
     const img = screen.getByRole("img", { name: COPY.imageAlt });
-    expect(img.getAttribute("src")).toBe("/images/b2b/meeting-room-chairs-portrait.jpg");
+    expect(img.getAttribute("src")).toBe("/images/b2b/meeting-room-chairs-4x3.webp");
     expect(screen.queryByTestId("hero-image-fallback")).toBeNull();
   });
 
   it("reserves the 4/3 aspect box on the filled media wrapper (no CLS)", () => {
     const { container } = render(
-      <Hero {...COPY} imageUrl="/images/b2b/meeting-room-chairs-portrait.jpg" />,
+      <Hero {...COPY} imageUrl="/images/b2b/meeting-room-chairs-4x3.webp" />,
     );
     expect(container.querySelector('[class*="aspect-[4/3]"]')).not.toBeNull();
   });
