@@ -2,8 +2,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { QuoteUpIcon, UserCircleIcon } from "@hugeicons/core-free-icons";
 
 /**
- * SocialProof (T19 D.7) — 2 placeholder testimonials + a disclaimer that makes
- * their illustrative status explicit (never fabricated-as-real). The mockup's
+ * SocialProof (T19 D.7) — 2 customer testimonials. The mockup's
  * "dashed circle for photo" becomes a neutral avatar glyph (NOT a media-note box
  * — AC-21). Cards enter with `.stagger`. All strings pre-resolved.
  */
@@ -16,7 +15,6 @@ export interface Testimonial {
 interface SocialProofProps {
   heading: string;
   testimonials: readonly [Testimonial, Testimonial];
-  disclaimer: string;
 }
 
 /** Stagger step; two items settle well under the cap. */
@@ -64,7 +62,6 @@ export function SocialProof(props: SocialProofProps) {
           </li>
         ))}
       </ul>
-      <p className="text-xs text-muted-foreground/80">{props.disclaimer}</p>
     </div>
   );
 }

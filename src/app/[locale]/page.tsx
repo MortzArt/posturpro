@@ -235,7 +235,6 @@ export default async function HomePage({ params }: HomePageProps) {
               attribution: t("social.t2Attribution"),
             },
           ]}
-          disclaimer={t("social.disclaimer")}
         />
       </Section>
 

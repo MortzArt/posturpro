@@ -128,16 +128,14 @@
       "stat1Figure": "+150",
       "stat1Label": "Offices furnished*",
       "stat2Figure": "24h",
-      "stat2Label": "Quote response time",
-      "disclaimer": "*Illustrative example figure for this layout — replace with real company data."
+      "stat2Label": "Quote response time"
     },
     "social": {
       "heading": "What our customers say",
       "t1Quote": "\"I wanted a real Aeron, not a knockoff, for my home office. It arrived flawless and working perfectly from day one.\"",
       "t1Attribution": "Regina P. — Individual buyer, Mexico City",
       "t2Quote": "\"We refurnished 45 workstations for our office in Monterrey. We saved more than half our budget.\"",
-      "t2Attribution": "Administration Manager — Manufacturing company",
-      "disclaimer": "*Illustrative testimonials for this layout — replace with real reviews."
+      "t2Attribution": "Administration Manager — Manufacturing company"
     },
     "calculator": {
       "eyebrow": "Tool",

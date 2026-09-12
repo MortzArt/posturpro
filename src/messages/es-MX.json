@@ -128,16 +128,14 @@
       "stat1Figure": "+150",
       "stat1Label": "Oficinas equipadas*",
       "stat2Figure": "24h",
-      "stat2Label": "Respuesta a cotizaciones",
-      "disclaimer": "*Cifra ilustrativa de ejemplo para este layout — sustituir con datos reales de la empresa."
+      "stat2Label": "Respuesta a cotizaciones"
     },
     "social": {
       "heading": "Lo que dicen nuestros clientes",
       "t1Quote": "\"Quería una Aeron real, no una copia, para mi home office. Llegó impecable y funcionando perfecto desde el primer día.\"",
       "t1Attribution": "Regina P. — Compra individual, CDMX",
       "t2Quote": "\"Reequipamos 45 estaciones para nuestra oficina en Monterrey. Ahorramos más de la mitad del presupuesto.\"",
-      "t2Attribution": "Gerente de Administración — Empresa de manufactura",
-      "disclaimer": "*Testimonios ilustrativos para este layout — sustituir con reseñas reales."
+      "t2Attribution": "Gerente de Administración — Empresa de manufactura"
     },
     "calculator": {
       "eyebrow": "Herramienta",

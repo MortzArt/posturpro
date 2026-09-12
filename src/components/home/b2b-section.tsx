@@ -8,11 +8,14 @@ import {
   QUOTE_PHONE_MAX,
   QUOTE_MESSAGE_MAX,
 } from "@/lib/config";
-import { QuoteForm, type QuoteFormLabels } from "@/app/[locale]/empresas/quote-form";
+import {
+  QuoteForm,
+  type QuoteFormLabels,
+} from "@/app/[locale]/empresas/quote-form";
 
 /**
  * B2BSection (T19 D.6) — the homepage business block: a pitch column (heading,
- * value list, segments, placeholder stats + disclaimer) beside the REUSED T16
+ * value list, segments, stats) beside the REUSED T16
  * `QuoteForm` (edge 10/11 inherited — no parallel pipeline). The form's labels
  * come from the existing `empresas.*` namespace (NOT duplicated); this section's
  * chrome comes from `home.b2b.*`.
@@ -24,7 +27,13 @@ export async function B2BSection() {
   const t = await getTranslations("home.b2b");
   const tForm = await getTranslations("empresas");
 
-  const values = [t("value1"), t("value2"), t("value3"), t("value4"), t("value5")];
+  const values = [
+    t("value1"),
+    t("value2"),
+    t("value3"),
+    t("value4"),
+    t("value5"),
+  ];
 
   return (
     <div
@@ -44,7 +53,10 @@ export async function B2BSection() {
         </p>
         <ul className="mt-2 flex flex-col gap-2">
           {values.map((value) => (
-            <li key={value} className="flex items-start gap-2 text-base text-foreground">
+            <li
+              key={value}
+              className="flex items-start gap-2 text-base text-foreground"
+            >
               <HugeiconsIcon
                 icon={CheckmarkCircle02Icon}
                 size={18}
@@ -57,8 +69,12 @@ export async function B2BSection() {
           ))}
         </ul>
         <div className="mt-2">
-          <p className="text-base font-medium text-foreground">{t("segmentsHeading")}</p>
-          <p className="mt-1 text-base text-muted-foreground">{t("segments")}</p>
+          <p className="text-base font-medium text-foreground">
+            {t("segmentsHeading")}
+          </p>
+          <p className="mt-1 text-base text-muted-foreground">
+            {t("segments")}
+          </p>
         </div>
         <dl className="mt-2 flex gap-8">
           <div className="flex flex-col gap-1">
@@ -74,13 +90,9 @@ export async function B2BSection() {
             <dd className="text-sm text-muted-foreground">{t("stat2Label")}</dd>
           </div>
         </dl>
-        <p className="text-xs text-muted-foreground/80">{t("disclaimer")}</p>
       </div>
 
-      <div
-        id="cotizacion"
-        className="factorial-card scroll-mt-28 p-6 sm:p-8"
-      >
+      <div id="cotizacion" className="factorial-card scroll-mt-28 p-6 sm:p-8">
         <QuoteForm
           labels={buildFormLabels(tForm)}
           maxLengths={{
@@ -96,7 +108,9 @@ export async function B2BSection() {
   );
 }
 
-type EmpresasTranslator = Awaited<ReturnType<typeof getTranslations<"empresas">>>;
+type EmpresasTranslator = Awaited<
+  ReturnType<typeof getTranslations<"empresas">>
+>;
 
 /**
  * Assemble the flat, serializable label bag the client `QuoteForm` consumes,
