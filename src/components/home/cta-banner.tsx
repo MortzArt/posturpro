@@ -51,7 +51,7 @@ export function CtaBanner({
             alt={imageAlt}
             fill
             sizes="(min-width: 1024px) 340px, 280px"
-            className="object-contain"
+            className="scale-[1.25] object-contain"
           />
         </div>
       ) : null}
