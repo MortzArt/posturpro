@@ -120,7 +120,7 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
           {/* Below `lg` the language toggle lives in the drawer (owner request
               2026-09-13); the segmented toggle + orange CTA only appear at `lg`
               alongside the inline nav (BUG-1). */}
-          <LanguageToggle variant="segmented" className="hidden lg:inline-flex" />
+          <LanguageToggle className="hidden lg:inline-flex" />
           {/* h-9 matches the segmented language toggle so the header controls
               share one optical height. */}
           <Button

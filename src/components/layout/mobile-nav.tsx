@@ -296,7 +296,7 @@ function MobileNavBody({ t, onNavigate }: MobileNavBodyProps) {
       <div className="shrink-0 border-t border-border p-4">
         {/* Raise the group to a ≥44px touch target inside the drawer (AC-14);
             options fill the height via `h-full`. Header keeps compact `h-9`. */}
-        <LanguageToggle variant="segmented" className="h-11" />
+        <LanguageToggle className="h-11" />
       </div>
     </>
   );
