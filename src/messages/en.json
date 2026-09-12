@@ -807,6 +807,7 @@
     },
     "form": {
       "heading": "Request your quote",
+      "imageAlt": "A daylit office with a shared desk and white chairs by the window",
       "intro": "We reply by email. The more you tell us, the better the quote.",
       "company": {
         "label": "Company",

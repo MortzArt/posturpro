@@ -807,6 +807,7 @@
     },
     "form": {
       "heading": "Solicita tu cotización",
+      "imageAlt": "Oficina luminosa con mesa compartida y sillas blancas junto a la ventana",
       "intro": "Respondemos por correo. Entre más nos cuentes, mejor será la cotización.",
       "company": {
         "label": "Empresa",

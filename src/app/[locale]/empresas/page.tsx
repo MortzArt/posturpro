@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { hasLocale } from "next-intl";
 import {
@@ -12,6 +13,7 @@ import {
   BRANDS_PATH,
   HOME_FEATURED_BRANDS,
   B2B_HERO_IMAGE,
+  B2B_QUOTE_IMAGE,
   QUOTE_COMPANY_MAX,
   QUOTE_NAME_MAX,
   QUOTE_EMAIL_MAX,
@@ -81,12 +83,16 @@ async function readB2BBrands(): Promise<CatalogBrand[]> {
     return brands.slice(0, HOME_FEATURED_BRANDS);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    console.warn(`[empresas] brands read failed: ${message}. Omitting section.`);
+    console.warn(
+      `[empresas] brands read failed: ${message}. Omitting section.`,
+    );
     return [];
   }
 }
 
-type EmpresasTranslator = Awaited<ReturnType<typeof getTranslations<"empresas">>>;
+type EmpresasTranslator = Awaited<
+  ReturnType<typeof getTranslations<"empresas">>
+>;
 
 /** The three honest positioning pillars (PRODUCT.md, verbatim intent). */
 function buildPillars(
@@ -234,22 +240,45 @@ export default async function B2BPage({ params }: B2BPageProps) {
         id="cotizacion"
         className="mx-auto max-w-(--breakpoint-xl) scroll-mt-24 px-4 py-8 md:px-6 md:py-10 lg:px-8"
       >
-        <h2 className="font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:text-[2rem]">
-          {t("form.heading")}
-        </h2>
-        <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground sm:text-base">
-          {t("form.intro")}
-        </p>
-        <QuoteForm
-          labels={buildFormLabels(t)}
-          maxLengths={{
-            company: QUOTE_COMPANY_MAX,
-            name: QUOTE_NAME_MAX,
-            email: QUOTE_EMAIL_MAX,
-            phone: QUOTE_PHONE_MAX,
-            needs: QUOTE_MESSAGE_MAX,
-          }}
-        />
+        <div
+          className={
+            B2B_QUOTE_IMAGE
+              ? "grid items-start gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:gap-12"
+              : undefined
+          }
+        >
+          {B2B_QUOTE_IMAGE ? (
+            <div className="order-2 lg:sticky lg:top-28 lg:order-1">
+              <span className="factorial-card relative block aspect-[4/3] w-full overflow-hidden rounded-md lg:aspect-[4/5]">
+                <Image
+                  src={B2B_QUOTE_IMAGE}
+                  alt={t("form.imageAlt")}
+                  fill
+                  sizes="(min-width: 1024px) 40vw, 100vw"
+                  className="object-cover"
+                />
+              </span>
+            </div>
+          ) : null}
+          <div className="order-1 lg:order-2">
+            <h2 className="font-heading text-2xl font-bold leading-[1.15] tracking-[-0.04em] text-foreground sm:text-[2rem]">
+              {t("form.heading")}
+            </h2>
+            <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground sm:text-base">
+              {t("form.intro")}
+            </p>
+            <QuoteForm
+              labels={buildFormLabels(t)}
+              maxLengths={{
+                company: QUOTE_COMPANY_MAX,
+                name: QUOTE_NAME_MAX,
+                email: QUOTE_EMAIL_MAX,
+                phone: QUOTE_PHONE_MAX,
+                needs: QUOTE_MESSAGE_MAX,
+              }}
+            />
+          </div>
+        </div>
       </section>
     </>
   );

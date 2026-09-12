@@ -17,6 +17,7 @@ one decisive chair or furnished workspace; no faces, no text, no thumbs-up clich
 | `editorial/workspace.jpg` | Homepage editorial band (`EDITORIAL_BAND_IMAGE`) | `photo-1688578735427-994ecdea3ea4` | EFFYDESK | <https://unsplash.com/@effydesk> | 16/9 · 1800×1013 · 295 KB |
 | `catalog/workspace-banner.jpg` | Catalog index banner (`CATALOG_BANNER_IMAGE`) | `photo-1681418659069-eef28d44aeab` | EFFYDESK | <https://unsplash.com/@effydesk> | 21/9 · 1680×720 · 294 KB |
 | `b2b/office-workspace.jpg` | B2B `/empresas` hero (`B2B_HERO_IMAGE`) | `photo-1688578735997-32626d2babd4` ([ElELSfycRvw](https://unsplash.com/photos/a-woman-sitting-in-an-office-chair-with-a-computer-on-her-desk-ElELSfycRvw)) | EFFYDESK | <https://unsplash.com/@effydesk> | 4/3 · 1400×1050 · 261 KB |
+| `b2b/quote-office.jpg` | B2B `/empresas` quote-form companion (`B2B_QUOTE_IMAGE`) | `photo-1497215728101-856f4ea42174` | Alesia Kazantceva | <https://unsplash.com/@saltnstreets> | 4/5 · 1200×1500 · 232 KB |
 
 ## Notes
 

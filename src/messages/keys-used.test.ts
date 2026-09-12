@@ -182,6 +182,7 @@ const CONSUMED_KEYS: readonly string[] = [
   "empresas.brands.heading",
   "empresas.brands.viewAll",
   "empresas.form.heading",
+  "empresas.form.imageAlt",
   "empresas.form.intro",
   "empresas.form.company.label",
   "empresas.form.company.placeholder",
