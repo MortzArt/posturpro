@@ -18,8 +18,8 @@ import type { EditImage, EditVariant } from "@/lib/admin/products/product-read";
  * every mutation is a callback into the manager, which owns optimistic state.
  *
  * The colour picker binds the image to one variant (`variantId`) or to every
- * colour (`null`, "Todos"). The storefront gallery leads with the
- * selected colour's images and follows with the shared ones.
+ * colour (`null`, "Todos"). The storefront gallery keeps this grid's order
+ * and shows the shared images plus the selected colour's own.
  */
 
 /** Sentinel `<option>` value for "shared across all colours" (variantId null). */
@@ -30,7 +30,10 @@ interface ImageCardProps {
   index: number;
   total: number;
   isDragging: boolean;
-  offsetY: number;
+  /** Another card is being dragged and would land on this slot. */
+  isDropTarget: boolean;
+  /** Pointer-relative lift of THIS card while it is dragged. */
+  offset: { x: number; y: number };
   variants: EditVariant[];
   onPointerDownHandle: (event: React.PointerEvent) => void;
   onMoveUp: () => void;
@@ -41,7 +44,7 @@ interface ImageCardProps {
 }
 
 export function ImageCard({
-  image, index, total, isDragging, offsetY, variants,
+  image, index, total, isDragging, isDropTarget, offset, variants,
   onPointerDownHandle, onMoveUp, onMoveDown, onChooseCover, onChangeColor, onDelete,
 }: ImageCardProps) {
   return (
@@ -50,8 +53,14 @@ export function ImageCard({
         "reorder-item relative flex w-28 flex-col gap-1 rounded-md border border-border p-1.5 sm:w-32",
         image.isPrimary && "ring-2 ring-ring",
         isDragging && "z-10 opacity-95 shadow-lg",
+        isDropTarget && "bg-muted",
       )}
-      style={isDragging ? { transform: `translateY(${offsetY}px) scale(1.03)`, transition: "none" } : undefined}
+      style={
+        isDragging
+          ? { transform: `translate(${offset.x}px, ${offset.y}px) scale(1.03)`, transition: "none" }
+          : undefined
+      }
+      data-reorder-id={image.id}
       data-testid={`admin-image-card-${image.id}`}
     >
       <div className="flex items-center justify-between">

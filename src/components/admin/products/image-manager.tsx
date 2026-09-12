@@ -32,14 +32,13 @@ import type { EditImage, EditVariant } from "@/lib/admin/products/product-read";
 
 /**
  * ImageManager (T11 Slice 3, AC-14..17) — dropzone + drag-order grid + cover
- * radiogroup + delete. Native Pointer Events drag with a keyboard ↑/↓ fallback
+ * radiogroup + delete. Native Pointer Events drag (any direction, hit-tested
+ * against the live card positions) with a keyboard ↑/↓ fallback
  * (the guaranteed a11y path). Optimistic order/cover/colour reconciled on the
  * server response. Server re-validates every upload. Section within the edit
  * form. The card itself lives in `image-card.tsx`.
  */
-const CARD_HEIGHT_PX = 160;
-/** Extra card height when the per-image colour picker row is present. */
-const COLOR_ROW_HEIGHT_PX = 32;
+const NO_DRAG_OFFSET = { x: 0, y: 0 } as const;
 
 export function ImageManager({
   productId,
@@ -84,8 +83,8 @@ export function ImageManager({
   };
 
   const ids = images.map((image) => image.id);
-  const cardHeightPx = CARD_HEIGHT_PX + (variants.length > 0 ? COLOR_ROW_HEIGHT_PX : 0);
-  const reorder = usePointerReorder(ids, cardHeightPx, persistOrder);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const reorder = usePointerReorder(ids, gridRef, persistOrder);
 
   const move = (index: number, direction: -1 | 1): void => {
     const target = index + direction;
@@ -197,7 +196,12 @@ export function ImageManager({
       {error ? <Banner role="alert" tone="error" icon={Alert02Icon} message={error} testid="admin-image-error" /> : null}
 
       {images.length > 0 ? (
-        <div role="radiogroup" aria-label="Imagen de portada" className="flex flex-wrap gap-3">
+        <div
+          ref={gridRef}
+          role="radiogroup"
+          aria-label="Imagen de portada"
+          className="flex flex-wrap gap-3"
+        >
           {images.map((image, index) => (
             <ImageCard
               key={image.id}
@@ -205,7 +209,8 @@ export function ImageManager({
               index={index}
               total={images.length}
               isDragging={reorder.draggingId === image.id}
-              offsetY={reorder.draggingId === image.id ? reorder.offsetY : 0}
+              isDropTarget={reorder.draggingId !== null && reorder.draggingId !== image.id && reorder.dropIndex === index}
+              offset={reorder.draggingId === image.id ? reorder.offset : NO_DRAG_OFFSET}
               onPointerDownHandle={(event) => reorder.onHandlePointerDown(event, image.id)}
               onMoveUp={() => move(index, -1)}
               onMoveDown={() => move(index, 1)}
@@ -224,9 +229,9 @@ export function ImageManager({
         </p>
       ) : null}
       <p className="text-xs text-muted-foreground">
-        Una sola portada. Se muestra primero en la tienda.
+        Una sola portada: es la imagen del catálogo. El orden de esta cuadrícula es el de la galería del producto.
         {variants.length > 0
-          ? " Las imágenes en «Todos» se ven con cualquier color; las asignadas a un color aparecen primero al elegirlo."
+          ? " Las imágenes en «Todos» se ven con cualquier color; las asignadas a un color solo se ven al elegirlo."
           : null}
       </p>
       <p ref={liveRef} aria-live="polite" className="sr-only" />
