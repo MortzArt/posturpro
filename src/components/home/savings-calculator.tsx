@@ -112,7 +112,7 @@ export function SavingsCalculator({
               label={labels.newPriceLabel}
               value={newPriceLabel}
               fraction={result.newBarFraction}
-              fillClassName="bg-muted-foreground/30"
+              fillClassName="bg-foreground/45"
               valueClassName="text-sm tabular-nums text-muted-foreground line-through decoration-muted-foreground/60"
             />
             <Bar
@@ -143,16 +143,20 @@ export function SavingsCalculator({
               </span>
             </div>
             <div aria-hidden className="h-px w-full bg-foreground/10" />
-            <p className="text-sm leading-relaxed text-muted-foreground">
+            <p className="flex flex-col gap-0.5">
+              {/* Amount and suffix on separate lines: a digit-count change can
+                  no longer push the suffix onto a second line mid-animation. */}
               <span
                 key={`amt-${result.savingsCents}`}
                 className="price-value font-heading text-xl font-bold tabular-nums text-foreground"
               >
                 {savingsLabel}
-              </span>{" "}
-              {labels.amountSuffix}
+              </span>
+              <span className="text-sm leading-relaxed text-muted-foreground">
+                {labels.amountSuffix}
+              </span>
             </p>
-          </div>{" "}
+          </div>
         </div>
       </div>
     </div>
@@ -194,7 +198,7 @@ function Bar({
         </span>
         <span className={valueClassName}>{value}</span>
       </div>
-      <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+      <div className="h-2.5 w-full overflow-hidden rounded-full bg-foreground/12">
         <div
           className={cn(
             "calc-bar-fill h-full w-full rounded-full",
