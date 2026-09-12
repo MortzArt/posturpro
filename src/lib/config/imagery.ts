@@ -35,13 +35,13 @@ export const CATALOG_BANNER_IMAGE: string | null =
 export const CATALOG_BANNER_BACKDROP = "#e8f5eb" as const;
 
 /**
- * B2B `/empresas` hero image (4/3, matches `HeroMedia`). Owner-supplied photo
- * (2026-09-12): a row of grey leather executive chairs with chrome frames at a
- * white meeting table — the audience's scene, inside the cobalt cartouche frame. `null` degrades to the `HeroMedia` blank tile with a
+ * B2B `/empresas` hero image (frame is 4/3, matches `HeroMedia`; the source is a
+ * portrait original that `object-cover` fills). Owner-supplied photo (2026-09-12):
+ * a row of grey leather executive chairs with chrome frames at a white meeting table — the audience's scene, inside the cobalt cartouche frame. `null` degrades to the `HeroMedia` blank tile with a
  * BUILDING glyph (so the fallback reads "offices", not "single product"). Never
  * proof imagery (T16 AC-3, PRODUCT.md hard rule).
  */
-export const B2B_HERO_IMAGE: string | null = "/images/b2b/meeting-room-chairs.jpg";
+export const B2B_HERO_IMAGE: string | null = "/images/b2b/meeting-room-chairs-portrait.jpg";
 
 /**
  * B2B `/empresas` QUOTE-FORM companion image (owner request 2026-09-12): a
