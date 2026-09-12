@@ -113,7 +113,7 @@ owner → client confirmation before launch. All live in the translation files
 - **Contact:** WhatsApp/phone +52 55 1234 5678 (`WHATSAPP_DISPLAY` / `WHATSAPP_PHONE_E164`) ·
   email hola@posturpro.mx (`home.footer.contactEmail`) · showroom cities CDMX/Guadalajara/Monterrey ·
   hours Mon–Fri 9:00–18:00.
-- **Social links:** Instagram / LinkedIn / Facebook hrefs — currently `#` (footer).
+- **Social links:** Instagram ✅ https://www.instagram.com/posturpro (footer + Organization `sameAs`, 2026-09-12) · LinkedIn / Facebook hrefs — still `#` (footer).
 - **Legal links:** Aviso de privacidad / Términos hrefs — currently `#` (footer bottom bar).
 - **Copyright year:** 2026 (`home.footer.copyright`).
 - **Brand palette source:** logo greens confirmed from `public/brand/logo.svg`

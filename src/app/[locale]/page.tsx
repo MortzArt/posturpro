@@ -16,6 +16,7 @@ import type { CatalogProductCard } from "@/lib/catalog/types";
 import { JsonLd } from "@/components/seo/json-ld";
 import { buildAlternates, buildOpenGraph } from "@/lib/seo/metadata";
 import { buildOrganizationLd, buildWebSiteLd } from "@/lib/seo/json-ld";
+import { configuredSocialProfileUrls } from "@/lib/config/footer-links";
 import { getSiteUrl, absoluteUrl } from "@/lib/seo/site-url";
 import type { Locale } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
@@ -87,6 +88,7 @@ async function buildHomeJsonLd() {
       name: siteName,
       url: origin,
       logoUrl: HERO_IMAGE ? absoluteUrl(HERO_IMAGE) : null,
+      sameAs: configuredSocialProfileUrls(),
     }),
     buildWebSiteLd({ name: siteName, url: origin }),
   ];

@@ -99,7 +99,11 @@ describe("buildBreadcrumbLd", () => {
     expect(node["@type"]).toBe("BreadcrumbList");
     const items = node.itemListElement as Array<Record<string, unknown>>;
     expect(items).toHaveLength(3);
-    expect(items[0]).toMatchObject({ position: 1, name: "Inicio", item: "https://x.test/" });
+    expect(items[0]).toMatchObject({
+      position: 1,
+      name: "Inicio",
+      item: "https://x.test/",
+    });
     expect(items[2]).toMatchObject({ position: 3, name: "Silla Ergo" });
     expect(items[2].item).toBeUndefined();
   });
@@ -118,12 +122,34 @@ describe("Organization + WebSite", () => {
       url: "https://x.test",
       logo: "https://x.test/logo.png",
     });
-    const noLogo = buildOrganizationLd({ name: "PosturPro", url: "https://x.test" });
+    const noLogo = buildOrganizationLd({
+      name: "PosturPro",
+      url: "https://x.test",
+    });
     expect(noLogo.logo).toBeUndefined();
   });
 
+  it("emits sameAs only when at least one social profile is configured", () => {
+    const withProfiles = buildOrganizationLd({
+      name: "PosturPro",
+      url: "https://x.test",
+      sameAs: ["https://www.instagram.com/posturpro"],
+    });
+    expect(withProfiles.sameAs).toEqual([
+      "https://www.instagram.com/posturpro",
+    ]);
+    const empty = buildOrganizationLd({
+      name: "PosturPro",
+      url: "https://x.test",
+      sameAs: [],
+    });
+    expect(empty.sameAs).toBeUndefined();
+  });
+
   it("builds a WebSite node", () => {
-    expect(buildWebSiteLd({ name: "PosturPro", url: "https://x.test" })).toEqual({
+    expect(
+      buildWebSiteLd({ name: "PosturPro", url: "https://x.test" }),
+    ).toEqual({
       "@context": "https://schema.org",
       "@type": "WebSite",
       name: "PosturPro",

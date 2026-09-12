@@ -1,11 +1,12 @@
 /**
  * Footer social + legal link destinations (T19 n-3).
  *
- * These are PLACEHOLDER hrefs — the store's real social profiles and legal pages
- * do not exist yet (tracked in `tasks/client-content-questionnaire.md`, PART M,
- * as go-live data). Previously each footer `<a>` hardcoded `href="#"`, so swapping
- * in real URLs meant editing five separate JSX attributes. Centralizing them here
- * makes each swap a ONE-LINE config edit; the footer maps over these.
+ * Instagram is live (owner-supplied 2026-09-12). The remaining hrefs are
+ * PLACEHOLDERS — those profiles/legal pages do not exist yet (tracked in
+ * `tasks/client-content-questionnaire.md`, PART M, as go-live data). Previously
+ * each footer `<a>` hardcoded `href="#"`, so swapping in real URLs meant editing
+ * five separate JSX attributes. Centralizing them here makes each swap a ONE-LINE
+ * config edit; the footer maps over these.
  *
  * `FOOTER_LINK_PLACEHOLDER` is the shared sentinel; the footer treats any link
  * still pointing at it as "not yet configured" (renders it, but a future guard or
@@ -14,6 +15,19 @@
 
 /** Sentinel href for a not-yet-configured footer link. */
 export const FOOTER_LINK_PLACEHOLDER = "#" as const;
+
+/** The business's public Instagram profile (owner-supplied 2026-09-12). */
+export const INSTAGRAM_URL = "https://www.instagram.com/posturpro" as const;
+
+/**
+ * Every CONFIGURED social profile URL (placeholders excluded) — feeds the
+ * `Organization` JSON-LD `sameAs` so search engines tie the site to its profiles.
+ */
+export function configuredSocialProfileUrls(): string[] {
+  return FOOTER_SOCIAL_LINKS.map((link) => link.href).filter(
+    (href) => href !== FOOTER_LINK_PLACEHOLDER,
+  );
+}
 
 /** A footer social/legal destination. `key` also drives the `data-testid`. */
 export interface FooterExternalLink {
@@ -27,7 +41,7 @@ export interface FooterExternalLink {
  * real profile URL when it exists.
  */
 export const FOOTER_SOCIAL_LINKS: readonly FooterExternalLink[] = [
-  { key: "instagram", href: FOOTER_LINK_PLACEHOLDER },
+  { key: "instagram", href: INSTAGRAM_URL },
   { key: "linkedin", href: FOOTER_LINK_PLACEHOLDER },
   { key: "facebook", href: FOOTER_LINK_PLACEHOLDER },
 ] as const;

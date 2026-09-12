@@ -17,12 +17,7 @@ import type { StockState } from "@/lib/catalog/types";
 
 /** JSON-LD is a tree of JSON-serializable values with a `@type` discriminator. */
 export type JsonLdValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonLdObject
-  | JsonLdValue[];
+  string | number | boolean | null | JsonLdObject | JsonLdValue[];
 export interface JsonLdObject {
   [key: string]: JsonLdValue;
 }
@@ -106,6 +101,8 @@ export interface OrganizationLdInput {
   url: string;
   /** Absolute logo URL, if one is configured. */
   logoUrl?: string | null;
+  /** Absolute URLs of the org's social profiles (schema.org `sameAs`). */
+  sameAs?: readonly string[];
 }
 
 /** Build an `Organization` JSON-LD node for the homepage. */
@@ -117,6 +114,7 @@ export function buildOrganizationLd(input: OrganizationLdInput): JsonLdObject {
     url: input.url,
   };
   if (input.logoUrl?.trim()) node.logo = input.logoUrl.trim();
+  if (input.sameAs && input.sameAs.length > 0) node.sameAs = [...input.sameAs];
   return node;
 }
 
