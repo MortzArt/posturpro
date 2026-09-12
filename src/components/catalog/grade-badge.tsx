@@ -26,15 +26,15 @@ interface GradeBadgeProps {
   /** Placement classes (absolute on a card, inline on a PDP). */
   className?: string;
   /**
-   * `sm` (default) is the compact chip overlaid on catalog card images (capped
-   * at 45% of the image width). `lg` is the PDP purchase-card treatment: a
-   * roomier chip with a larger glyph and no width cap.
+   * `sm` (default) is the compact chip overlaid on catalog card images (never
+   * truncated — the card's overlay row wraps instead). `lg` is the PDP
+   * purchase-card treatment: a roomier chip with a larger glyph.
    */
   size?: "sm" | "lg";
 }
 
 const SIZE_STYLES = {
-  sm: "max-w-[45%] gap-1 px-2 py-0.5 text-xs",
+  sm: "gap-1 px-2 py-0.5 text-xs",
   lg: "gap-1.5 px-3 py-1 text-sm",
 } as const;
 
@@ -49,7 +49,7 @@ export function GradeBadge({ grade, label, className, size = "sm" }: GradeBadgeP
   return (
     <span
       className={cn(
-        "inline-flex items-center truncate rounded-full bg-secondary font-medium text-secondary-foreground",
+        "inline-flex items-center rounded-full bg-secondary font-medium whitespace-nowrap text-secondary-foreground",
         SIZE_STYLES[size],
         className,
       )}

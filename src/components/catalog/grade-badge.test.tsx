@@ -50,13 +50,13 @@ describe("GradeBadge (T19 AC-10/11, edges 1/2)", () => {
     const compact = screen.getByTestId("grade-badge");
     expect(compact.dataset.size).toBe("sm");
     expect(compact.className).toContain("text-xs");
-    expect(compact.className).toContain("max-w-[45%]");
+    expect(compact.className).toContain("whitespace-nowrap");
+    expect(compact.className).not.toContain("truncate");
 
     cleanup();
     render(<GradeBadge grade="A+" label="Grado A+" size="lg" />);
     const roomy = screen.getByTestId("grade-badge");
     expect(roomy.dataset.size).toBe("lg");
     expect(roomy.className).toContain("text-sm");
-    expect(roomy.className).not.toContain("max-w-[45%]");
   });
 });

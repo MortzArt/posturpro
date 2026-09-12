@@ -95,20 +95,26 @@ export function ProductCard({
               />
             </span>
           )}
-          {product.conditionGrade && labels.grade ? (
-            <GradeBadge
-              grade={product.conditionGrade}
-              label={labels.grade}
-              className="absolute left-2 top-2"
-            />
-          ) : null}
-          {product.stockState !== "in" ? (
-            <StockBadge
-              state={product.stockState}
-              label={labels.stock}
-              className="absolute right-2 top-2"
-            />
-          ) : null}
+          {/* Badge overlay: grade left, stock right. A wrapping flex row (not two
+              absolutes) so on narrow phone cards the stock chip drops to a second
+              line instead of forcing the grade chip to truncate ("Grado A" with
+              the "+" cut off). */}
+          <div className="pointer-events-none absolute inset-x-2 top-2 flex flex-wrap items-start justify-between gap-1">
+            {product.conditionGrade && labels.grade ? (
+              <GradeBadge
+                grade={product.conditionGrade}
+                label={labels.grade}
+                className="mr-auto"
+              />
+            ) : null}
+            {product.stockState !== "in" ? (
+              <StockBadge
+                state={product.stockState}
+                label={labels.stock}
+                className="ml-auto"
+              />
+            ) : null}
+          </div>
         </div>
 
         <div className="flex flex-1 flex-col gap-1.5 p-3 md:p-4">
