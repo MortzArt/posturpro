@@ -16,6 +16,8 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseParsed = supabaseUrl ? new URL(supabaseUrl) : undefined;
 const supabaseHost = supabaseParsed?.hostname;
+const LOOPBACK_HOSTS: readonly string[] = ["127.0.0.1", "localhost", "[::1]"];
+const supabaseIsLoopback = supabaseHost ? LOOPBACK_HOSTS.includes(supabaseHost) : false;
 // Derive the protocol from the URL so the LOCAL Supabase host (http://127.0.0.1)
 // is allow-listed for dev/e2e too — prod is https, local is http (T11 fix).
 const supabaseProtocol: "http" | "https" =
@@ -41,12 +43,21 @@ const nextConfig: NextConfig = {
     ? { distDir: process.env.NEXT_QA_DIST_DIR }
     : {}),
   images: {
+    // Next 16 refuses to optimize upstream images that resolve to a private IP
+    // (SSRF guard). The LOCAL Supabase Storage host IS loopback, so admin uploads
+    // in dev rendered as broken tiles. Opt in only when the configured Supabase
+    // host is loopback — production points at *.supabase.co and keeps the guard.
+    ...(supabaseIsLoopback ? { dangerouslyAllowLocalIP: true } : {}),
     remotePatterns: [
       ...(supabaseHost
         ? [
             {
               protocol: supabaseProtocol,
               hostname: supabaseHost,
+              // The LOCAL Supabase host carries a port (127.0.0.1:54321); without
+              // it `next/image` rejects every locally uploaded product image
+              // with a 400 and the admin preview renders as a broken tile.
+              ...(supabaseParsed?.port ? { port: supabaseParsed.port } : {}),
               pathname: "/storage/v1/object/public/**",
             },
           ]
