@@ -256,9 +256,15 @@ export async function SiteFooter() {
         </div>
 
         <div className="mt-10 flex flex-col gap-2 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <p data-testid="footer-copyright">{t("copyright")}</p>
-          <p className="max-w-md">{t("payments")}</p>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <p className="shrink-0" data-testid="footer-copyright">
+            {t("copyright")}
+          </p>
+          {/* The payments note is the only elastic cell: it takes all the width
+              between the two fixed-content sides instead of wrapping early. */}
+          <p className="sm:flex-1 sm:px-8 sm:text-center lg:px-12">
+            {t("payments")}
+          </p>
+          <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1">
             <ExternalFooterLink
               href={legalHref("privacy")}
               label={t("legalPrivacy")}
