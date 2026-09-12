@@ -103,6 +103,18 @@ export interface OrganizationLdInput {
   logoUrl?: string | null;
   /** Absolute URLs of the org's social profiles (schema.org `sameAs`). */
   sameAs?: readonly string[];
+  /** Physical address (schema.org `PostalAddress` fields). */
+  address?: PostalAddressLdInput;
+}
+
+/** schema.org `PostalAddress` fields for the `Organization` node. */
+export interface PostalAddressLdInput {
+  streetAddress: string;
+  addressLocality: string;
+  addressRegion: string;
+  postalCode: string;
+  /** ISO 3166-1 alpha-2 (e.g. "MX"). */
+  addressCountry: string;
 }
 
 /** Build an `Organization` JSON-LD node for the homepage. */
@@ -115,6 +127,8 @@ export function buildOrganizationLd(input: OrganizationLdInput): JsonLdObject {
   };
   if (input.logoUrl?.trim()) node.logo = input.logoUrl.trim();
   if (input.sameAs && input.sameAs.length > 0) node.sameAs = [...input.sameAs];
+  if (input.address)
+    node.address = { "@type": "PostalAddress", ...input.address };
   return node;
 }
 

@@ -111,7 +111,7 @@ owner → client confirmation before launch. All live in the translation files
   Aeron 38,500 → 21,900 · Leap V2 32,000 → 15,900 · Zody 24,000 → 11,500 ·
   Embody 42,500 → 26,500 · Gesture 29,500 → 14,900 · Sayl 19,500 → 9,800.
 - **Contact:** WhatsApp/phone +52 55 1363 7449 ✅ real (owner 2026-09-12; `WHATSAPP_DISPLAY` / `WHATSAPP_PHONE_E164`) ·
-  email hola@posturpro.mx (`home.footer.contactEmail`) · showroom cities CDMX/Guadalajara/Monterrey ·
+  email hola@posturpro.mx (`home.footer.contactEmail`) · showroom ✅ Av. Azcapotzalco 202, Col. Ángel Zimbrón, Azcapotzalco, 02099 CDMX (owner 2026-09-12; showroom/contacto bodies, footer, Organization `address`, `SHOWROOM_MAP_URL`) ·
   hours Mon–Fri 9:00–18:00.
 - **Social links:** Instagram ✅ https://www.instagram.com/posturpro · Facebook ✅ https://www.facebook.com/people/PosturPro/61575246580283/ (footer + Organization `sameAs`, 2026-09-12) · LinkedIn — still `#` (hidden in footer until configured).
 - **Legal links:** Aviso de privacidad / Términos hrefs — currently `#` (footer bottom bar).

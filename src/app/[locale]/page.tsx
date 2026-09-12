@@ -8,6 +8,7 @@ import {
   HOME_FEATURED_PRODUCTS,
   HERO_IMAGE,
   SEED_STORE_NAME,
+  BUSINESS_ADDRESS,
 } from "@/lib/config";
 import { HERO_BACKGROUND_IMAGE } from "@/lib/config/imagery";
 import { listProducts } from "@/lib/catalog/queries";
@@ -89,6 +90,7 @@ async function buildHomeJsonLd() {
       url: origin,
       logoUrl: HERO_IMAGE ? absoluteUrl(HERO_IMAGE) : null,
       sameAs: configuredSocialProfileUrls(),
+      address: BUSINESS_ADDRESS,
     }),
     buildWebSiteLd({ name: siteName, url: origin }),
   ];

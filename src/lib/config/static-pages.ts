@@ -126,11 +126,12 @@ export const HERO_IMAGE: string | null = "/images/hero/ergonomic-chair.jpg";
 
 /**
  * A maps deep-link (Google/Apple Maps) for the showroom, or `null` to omit the
- * "Ver en mapas" affordance. No real address is configured in Phase 1, so this
- * is `null`; set it to a `https://maps.google.com/?q=...` (or `geo:`) URL when
- * the real location lands. Must be an absolute `https:`/`geo:` URL.
+ * "Ver en mapas" affordance. Points at the real showroom (owner-supplied
+ * 2026-09-12) via a Google Maps search URL — no API key, no SDK. Must be an
+ * absolute `https:`/`geo:` URL.
  */
-export const SHOWROOM_MAP_URL: string | null = null;
+export const SHOWROOM_MAP_URL: string | null =
+  "https://www.google.com/maps/search/?api=1&query=Av.%20Azcapotzalco%20202%2C%20%C3%81ngel%20Zimbr%C3%B3n%2C%20Azcapotzalco%2C%2002099%20Ciudad%20de%20M%C3%A9xico";
 
 /**
  * A static map IMAGE URL for the showroom (a plain `<img>`, no SDK), or `null`

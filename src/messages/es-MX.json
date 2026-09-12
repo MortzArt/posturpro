@@ -72,7 +72,7 @@
     },
     "brandBar": {
       "label": "Trabajamos únicamente con las marcas que definen la ergonomía moderna",
-      "brands": "Herman Miller · Steelcase · Haworth · Knoll · Humanscale"
+      "brands": "Herman Miller · Steelcase · Haworth · MillerKnoll"
     },
     "values": {
       "eyebrow": "Por qué PosturPro",
@@ -188,7 +188,7 @@
       "colContactHeading": "Contacto",
       "contactWhatsapp": "WhatsApp: {phone}",
       "contactEmail": "hola@posturpro.mx",
-      "contactShowrooms": "Showrooms con cita: CDMX · Guadalajara · Monterrey",
+      "contactShowrooms": "Showroom con cita: Av. Azcapotzalco 202, Ángel Zimbrón, Azcapotzalco, 02099 CDMX",
       "contactHours": "Lunes a viernes, 9:00–18:00",
       "copyright": "© 2026 PosturPro. Todos los derechos reservados.",
       "payments": "Pagos con tarjeta, transferencia, PayPal y MSI. Facturación disponible.",

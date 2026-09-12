@@ -146,6 +146,27 @@ describe("Organization + WebSite", () => {
     expect(empty.sameAs).toBeUndefined();
   });
 
+  it("emits a typed PostalAddress when an address is given", () => {
+    const node = buildOrganizationLd({
+      name: "PosturPro",
+      url: "https://x.test",
+      address: {
+        streetAddress: "Av. Azcapotzalco 202",
+        addressLocality: "Azcapotzalco",
+        addressRegion: "Ciudad de México",
+        postalCode: "02099",
+        addressCountry: "MX",
+      },
+    });
+    expect(node.address).toMatchObject({
+      "@type": "PostalAddress",
+      postalCode: "02099",
+    });
+    expect(
+      buildOrganizationLd({ name: "P", url: "https://x.test" }).address,
+    ).toBeUndefined();
+  });
+
   it("builds a WebSite node", () => {
     expect(
       buildWebSiteLd({ name: "PosturPro", url: "https://x.test" }),

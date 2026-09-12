@@ -114,3 +114,16 @@ export const SEED_STORE_NAME = "PosturPro" as const;
 
 /** Default store contact email written by the seed (admin-editable in T10). */
 export const SEED_STORE_CONTACT_EMAIL = "hola@posturpro.mx" as const;
+
+/**
+ * Physical showroom / business address (owner-supplied 2026-09-12). Non-secret;
+ * feeds the `Organization` JSON-LD `PostalAddress`. Storefront copy of the same
+ * address lives in the `showroom`/`contacto` page bodies and `home.footer.*`.
+ */
+export const BUSINESS_ADDRESS = {
+  streetAddress: "Av. Azcapotzalco 202, Col. Ángel Zimbrón",
+  addressLocality: "Azcapotzalco",
+  addressRegion: "Ciudad de México",
+  postalCode: "02099",
+  addressCountry: "MX",
+} as const;
