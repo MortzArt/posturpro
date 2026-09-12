@@ -91,7 +91,6 @@ const CONSUMED_KEYS: readonly string[] = [
   "home.hero.stats.s1Figure",
   "home.hero.stats.s1Label",
   "home.hero.cert.grade",
-  "home.hero.cert.code",
   "home.hero.cert.meta",
   "home.brandBar.label",
   "home.brandBar.brands",

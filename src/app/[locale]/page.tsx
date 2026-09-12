@@ -150,7 +150,6 @@ export default async function HomePage({ params }: HomePageProps) {
           ]}
           cert={{
             grade: t("hero.cert.grade"),
-            code: t("hero.cert.code"),
             meta: t("hero.cert.meta"),
           }}
         />

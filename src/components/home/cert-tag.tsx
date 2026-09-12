@@ -4,19 +4,18 @@ import { Award01Icon } from "@hugeicons/core-free-icons";
 /**
  * CertTag (T19 D.1) — the mockup's rotated brass cert-tag reinterpreted in our
  * design language: a small tokenized card (NOT rotated) overlaid bottom-left on
- * the hero media. It is a STATIC illustrative element (grade + cert number are a
- * proposal, tied to nothing real) — the hero disclaimer footnote makes that
- * explicit. All strings pre-resolved. Mounts with `.enter-fade` (+delay set by
+ * the hero media. It is a STATIC illustrative element (grade + inspection meta;
+ * the cert number was removed at the owner's request 2026-09-12). All strings
+ * pre-resolved. Mounts with `.enter-fade` (+delay set by
  * the caller); the parent guards reduced motion via the shared class.
  */
 
 interface CertTagProps {
   grade: string;
-  code: string;
   meta: string;
 }
 
-export function CertTag({ grade, code, meta }: CertTagProps) {
+export function CertTag({ grade, meta }: CertTagProps) {
   return (
     <div
       data-testid="hero-cert-tag"
@@ -32,8 +31,7 @@ export function CertTag({ grade, code, meta }: CertTagProps) {
         />
         {grade}
       </p>
-      <p className="mt-1 text-xs tabular-nums text-muted-foreground">{code}</p>
-      <p className="mt-0.5 text-[11px] tracking-[-0.02em] text-muted-foreground">
+      <p className="mt-1 text-[11px] tracking-[-0.02em] text-muted-foreground">
         {meta}
       </p>
     </div>

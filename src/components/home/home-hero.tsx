@@ -32,7 +32,7 @@ interface HomeHeroProps {
   imageUrl: string | null;
   imageAlt: string;
   stats: readonly [HeroStat, HeroStat, HeroStat];
-  cert: { grade: string; code: string; meta: string };
+  cert: { grade: string; meta: string };
 }
 
 export function HomeHero(props: HomeHeroProps) {
@@ -99,11 +99,7 @@ export function HomeHero(props: HomeHeroProps) {
               />
             </span>
           )}
-          <CertTag
-            grade={props.cert.grade}
-            code={props.cert.code}
-            meta={props.cert.meta}
-          />
+          <CertTag grade={props.cert.grade} meta={props.cert.meta} />
         </div>
       </div>
     </div>
