@@ -16,8 +16,11 @@ import { cn } from "@/lib/utils";
  * is Out of Scope (submit-based only), so there is no live query / debounce.
  *
  * Two placements:
- * - `variant="header"` — collapses to an icon button below `md`; tapping it
- *   expands to a full-width input and autofocuses.
+ * - `variant="header"` — collapses to an icon button below `lg`; tapping it
+ *   expands to an OVERLAY that covers the whole header row (the row is
+ *   `relative`), autofocuses, and offers a close button + Escape. It used to
+ *   expand inline inside the `shrink-0` controls cluster, which pushed the
+ *   input off the right edge of narrow phones.
  * - `variant="toolbar"` — always expanded, fills its column, echoes the active
  *   `q` on `/sillas`.
  *
@@ -32,6 +35,8 @@ interface SearchBoxProps {
   clearLabel: string;
   submitLabel: string;
   openLabel: string;
+  /** Header variant only: label for the button that collapses the overlay. */
+  closeLabel?: string;
   defaultValue?: string;
   action: string;
   variant?: "header" | "toolbar";
@@ -49,6 +54,7 @@ export function SearchBox({
   clearLabel,
   submitLabel,
   openLabel,
+  closeLabel,
   defaultValue = "",
   action,
   variant = "toolbar",
@@ -73,12 +79,15 @@ export function SearchBox({
   }
 
   const isHeader = variant === "header";
-  const showInput = !isHeader || expanded;
 
   const openSearch = (): void => {
     setExpanded(true);
     // Focus after the input renders/expands.
     window.requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const closeSearch = (): void => {
+    setExpanded(false);
   };
 
   const clear = (): void => {
@@ -110,7 +119,12 @@ export function SearchBox({
           "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
         )}
       >
-        <HugeiconsIcon icon={Search01Icon} size={20} strokeWidth={2} aria-hidden />
+        <HugeiconsIcon
+          icon={Search01Icon}
+          size={20}
+          strokeWidth={2}
+          aria-hidden
+        />
       </button>
     );
   }
@@ -122,9 +136,16 @@ export function SearchBox({
       action={action}
       role="search"
       data-testid="search-form"
+      onKeyDown={(event) => {
+        if (isHeader && event.key === "Escape") closeSearch();
+      }}
       className={cn(
-        "relative flex items-center",
-        showInput ? "w-full" : "",
+        "flex items-center gap-1",
+        isHeader
+          ? // Overlay the header row (which is `relative`) so the input gets the
+            // full width regardless of the controls cluster it was opened from.
+            "absolute inset-x-0 top-0 z-10 h-full bg-background px-4 md:px-6 lg:hidden"
+          : "w-full",
         className,
       )}
     >
@@ -145,57 +166,89 @@ export function SearchBox({
         {ariaLabel}
       </label>
 
-      <HugeiconsIcon
-        icon={Search01Icon}
-        size={18}
-        strokeWidth={2}
-        aria-hidden
-        className="pointer-events-none absolute left-3 text-muted-foreground"
-      />
+      <div className="relative flex min-w-0 flex-1 items-center">
+        <HugeiconsIcon
+          icon={Search01Icon}
+          size={18}
+          strokeWidth={2}
+          aria-hidden
+          className="pointer-events-none absolute left-3 text-muted-foreground"
+        />
 
-      <Input
-        id={inputId}
-        ref={inputRef}
-        type="search"
-        name={QUERY_FIELD}
-        data-testid="search-input"
-        placeholder={placeholder}
-        aria-label={ariaLabel}
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        // Native `type=search` shows a UA clear button; hide ours redundancy by
-        // keeping the custom one for consistent styling + JS-off submit.
-        className="h-11 w-full rounded-md pl-9 pr-16"
-        autoComplete="off"
-        enterKeyHint="search"
-      />
+        <Input
+          id={inputId}
+          ref={inputRef}
+          type="search"
+          name={QUERY_FIELD}
+          data-testid="search-input"
+          placeholder={placeholder}
+          aria-label={ariaLabel}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          // Native `type=search` shows a UA clear button; hide ours redundancy by
+          // keeping the custom one for consistent styling + JS-off submit.
+          className="h-11 w-full rounded-md pl-9 pr-16"
+          autoComplete="off"
+          enterKeyHint="search"
+        />
 
-      {value.length > 0 ? (
+        {value.length > 0 ? (
+          <button
+            type="button"
+            data-testid="search-clear"
+            aria-label={clearLabel}
+            onClick={clear}
+            className={cn(
+              "clear-fade absolute right-10 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none",
+              "hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+          >
+            <HugeiconsIcon
+              icon={Cancel01Icon}
+              size={16}
+              strokeWidth={2}
+              aria-hidden
+            />
+          </button>
+        ) : null}
+
         <button
-          type="button"
-          data-testid="search-clear"
-          aria-label={clearLabel}
-          onClick={clear}
+          type="submit"
+          data-testid="search-submit"
+          aria-label={submitLabel}
           className={cn(
-            "clear-fade absolute right-10 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none",
+            "absolute right-1 inline-flex size-9 items-center justify-center rounded-md text-muted-foreground outline-none",
             "hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
           )}
         >
-          <HugeiconsIcon icon={Cancel01Icon} size={16} strokeWidth={2} aria-hidden />
+          <HugeiconsIcon
+            icon={Search01Icon}
+            size={18}
+            strokeWidth={2}
+            aria-hidden
+          />
+        </button>
+      </div>
+
+      {isHeader ? (
+        <button
+          type="button"
+          data-testid="search-close"
+          aria-label={closeLabel ?? openLabel}
+          onClick={closeSearch}
+          className={cn(
+            "nav-hover inline-flex size-11 shrink-0 items-center justify-center rounded-md text-foreground outline-none",
+            "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          <HugeiconsIcon
+            icon={Cancel01Icon}
+            size={20}
+            strokeWidth={2}
+            aria-hidden
+          />
         </button>
       ) : null}
-
-      <button
-        type="submit"
-        data-testid="search-submit"
-        aria-label={submitLabel}
-        className={cn(
-          "absolute right-1 inline-flex size-9 items-center justify-center rounded-md text-muted-foreground outline-none",
-          "hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-        )}
-      >
-        <HugeiconsIcon icon={Search01Icon} size={18} strokeWidth={2} aria-hidden />
-      </button>
     </form>
   );
 }

@@ -266,7 +266,8 @@
       "label": "Buscar en el catálogo",
       "submit": "Buscar",
       "clear": "Borrar búsqueda",
-      "open": "Abrir búsqueda"
+      "open": "Abrir búsqueda",
+      "close": "Cerrar búsqueda"
     },
     "filters": {
       "title": "Filtros",

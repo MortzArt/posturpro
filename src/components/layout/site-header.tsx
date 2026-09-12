@@ -50,7 +50,7 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background">
-      <div className="mx-auto flex h-14 max-w-(--breakpoint-xl) items-center gap-2 px-4 md:h-16 md:gap-3 md:px-6 lg:px-8">
+      <div className="relative mx-auto flex h-14 max-w-(--breakpoint-xl) items-center gap-2 px-4 md:h-16 md:gap-3 md:px-6 lg:px-8">
         <MobileNav />
 
         <Link
@@ -115,6 +115,7 @@ export async function SiteHeader({ storeName }: SiteHeaderProps) {
             clearLabel={tSearch("clear")}
             submitLabel={tSearch("submit")}
             openLabel={tSearch("open")}
+            closeLabel={tSearch("close")}
           />
           <CartCountBadge />
           {/* Compact controls run through the tablet range; the segmented toggle

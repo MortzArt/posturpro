@@ -266,7 +266,8 @@
       "label": "Search the catalog",
       "submit": "Search",
       "clear": "Clear search",
-      "open": "Open search"
+      "open": "Open search",
+      "close": "Close search"
     },
     "filters": {
       "title": "Filters",
