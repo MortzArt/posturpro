@@ -108,13 +108,14 @@ export const HOME_FEATURED_PRODUCTS = 8;
 export const HOME_FEATURED_BRANDS = 6;
 
 /**
- * Hero media asset (a shipped licensed Unsplash photo under `/public`), or
- * `null` to render the token-tinted glyph panel instead of a broken `<img>`.
- * T15: filled with an art-directed ergonomic-chair photo (bright cool-neutral
- * daylight; provenance in `public/images/SOURCES.md`). Set back to `null` to
- * restore the blank-tile placeholder — the Hero degrades gracefully either way.
+ * Hero media asset under `/public`, or `null` to render the token-tinted glyph
+ * panel instead of a broken `<img>`. Owner-supplied photo since 2026-09-12 (a
+ * green high-back executive chair by a factory window; ~1.1:1, cover-cropped
+ * into the 4/3 card — provenance in `public/images/SOURCES.md`). Set back to
+ * `null` to restore the blank-tile placeholder — the Hero degrades either way.
  */
-export const HERO_IMAGE: string | null = "/images/hero/ergonomic-chair.jpg";
+export const HERO_IMAGE: string | null =
+  "/images/hero/green-executive-chair.jpg";
 
 /* ------------------------------------------------------------------------- *
  * Showroom config (Option A): address/hours copy lives in the `showroom` page
