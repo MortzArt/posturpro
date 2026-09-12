@@ -2,7 +2,8 @@
  * ProcessSteps (T19 D.5) — 4 numbered certification steps. `id="proceso"` with
  * scroll-mt so the header deep-link lands cleanly below the sticky chrome. The
  * big step numbers carry the sequence (a legitimate use — the reader needs the
- * order). Steps enter with `.stagger`. All strings pre-resolved.
+ * order). Each step is a floating white `.factorial-card` (same card grammar as
+ * the values grid). Steps enter with `.stagger`. All strings pre-resolved.
  */
 
 export interface ProcessStep {
@@ -40,11 +41,11 @@ export function ProcessSteps(props: ProcessStepsProps) {
         </p>
       </div>
 
-      <ol className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <ol className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {props.steps.map((step, index) => (
           <li
             key={step.number}
-            className="stagger flex flex-col gap-1"
+            className="stagger factorial-card flex flex-col gap-1 p-6"
             style={{ transitionDelay: `${index * STAGGER_STEP_MS}ms` }}
           >
             <span
