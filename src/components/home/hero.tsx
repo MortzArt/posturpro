@@ -77,7 +77,11 @@ export function Hero({
         </div>
       </div>
 
-      <HeroMedia imageUrl={imageUrl} imageAlt={imageAlt} fallbackIcon={fallbackIcon} />
+      <HeroMedia
+        imageUrl={imageUrl}
+        imageAlt={imageAlt}
+        fallbackIcon={fallbackIcon}
+      />
     </div>
   );
 }
@@ -92,39 +96,35 @@ function HeroMedia({
   imageAlt: string;
   fallbackIcon: IconSvgElement;
 }) {
-  // Whisper-green tint canvas holding a white floating media card (Factorial
-  // grammar, matching HomeHero). The inner card keeps `aspect-[4/3]` on BOTH
-  // the image and the fallback tile (hero.test.tsx pins).
+  // A white floating media card with no tint canvas frame (matching HomeHero;
+  // the mint frame was retired 2026-09-12). The card keeps `aspect-[4/3]` on
+  // BOTH the image and the fallback tile (hero.test.tsx pins).
   if (imageUrl) {
     return (
-      <div className="order-2 rounded-lg bg-[var(--tint-green)] p-4 sm:p-6">
-        <span className="factorial-card relative block aspect-[4/3] w-full overflow-hidden rounded-md">
-          <Image
-            src={imageUrl}
-            alt={imageAlt}
-            fill
-            priority
-            sizes="(min-width: 1024px) 50vw, 100vw"
-            className="object-cover"
-          />
-        </span>
-      </div>
+      <span className="factorial-card relative order-2 block aspect-[4/3] w-full overflow-hidden rounded-md">
+        <Image
+          src={imageUrl}
+          alt={imageAlt}
+          fill
+          priority
+          sizes="(min-width: 1024px) 50vw, 100vw"
+          className="object-cover"
+        />
+      </span>
     );
   }
   return (
-    <div className="order-2 rounded-lg bg-[var(--tint-green)] p-4 sm:p-6">
-      <span
-        aria-hidden
-        data-testid="hero-image-fallback"
-        className="factorial-card flex aspect-[4/3] w-full items-center justify-center rounded-md"
-      >
-        <HugeiconsIcon
-          icon={fallbackIcon}
-          size={72}
-          strokeWidth={1.5}
-          className="text-muted-foreground/40"
-        />
-      </span>
-    </div>
+    <span
+      aria-hidden
+      data-testid="hero-image-fallback"
+      className="factorial-card order-2 flex aspect-[4/3] w-full items-center justify-center rounded-md"
+    >
+      <HugeiconsIcon
+        icon={fallbackIcon}
+        size={72}
+        strokeWidth={1.5}
+        className="text-muted-foreground/40"
+      />
+    </span>
   );
 }
