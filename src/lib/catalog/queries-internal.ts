@@ -38,6 +38,7 @@ import {
 import type {
   CatalogPage,
   CatalogProductCard,
+  ProductColorSwatch,
 } from "@/lib/catalog/types";
 import { isConditionGrade } from "@/lib/catalog/grade";
 
@@ -89,6 +90,7 @@ interface VariantRow {
   product_id: string;
   stock: number;
   color_hex: string;
+  color_name: string | null;
 }
 
 /**
@@ -101,7 +103,9 @@ interface VariantRow {
  * all map onto an existing bounded key instead of minting a fresh cache entry
  * (and a fresh DB count+read) each time.
  */
-export function cacheKeyForPage(rawPage: string | string[] | undefined): string {
+export function cacheKeyForPage(
+  rawPage: string | string[] | undefined,
+): string {
   return `p:${canonicalPageKey(rawPage)}`;
 }
 
@@ -132,7 +136,7 @@ async function stitchCards(
       .order("sort_order", { ascending: true }),
     db
       .from("product_variants")
-      .select("product_id,stock,color_hex")
+      .select("product_id,stock,color_hex,color_name")
       .in("product_id", ids),
   ]);
 
@@ -189,9 +193,7 @@ function toCard(
   const productVariants = variantsByProduct.get(row.id) ?? [];
   const effective = effectiveStock(row.stock, productVariants);
   const state = stockState(effective);
-  const distinctColors = new Set(
-    productVariants.map((variant) => variant.color_hex),
-  ).size;
+  const colors = distinctColorSwatches(productVariants);
 
   const cover = coverByProduct.get(row.id) ?? null;
   const priceCents = row.price_cents ?? 0;
@@ -204,10 +206,13 @@ function toCard(
     brandName: brand?.name ?? "",
     priceCents,
     compareAtPriceCents:
-      typeof compareAt === "number" && compareAt > priceCents ? compareAt : null,
+      typeof compareAt === "number" && compareAt > priceCents
+        ? compareAt
+        : null,
     coverImageUrl: cover?.url ?? null,
     coverAlt: cover?.alt_text?.trim() ? cover.alt_text : row.name,
-    colorCount: distinctColors,
+    colorCount: colors.length,
+    colors,
     stockState: state,
     lowStockN: state === "low" ? effective : null,
     // Defend the read layer against a legacy/unexpected DB value (edge 2): the
@@ -237,9 +242,10 @@ async function countProducts(
   filter: (query: ProductCardQuery) => ProductCardQuery,
 ): Promise<number> {
   const db = createPublicClient();
-  const base = db
-    .from("products_public")
-    .select("id", { count: "exact", head: true }) as unknown as ProductCardQuery;
+  const base = db.from("products_public").select("id", {
+    count: "exact",
+    head: true,
+  }) as unknown as ProductCardQuery;
   const { count, error } = await filter(base);
   if (error) {
     fail("products_public count", error.message);
@@ -339,7 +345,13 @@ export async function readCategoryProductPage(
     ...new Set((membership.data ?? []).map((row) => row.product_id)),
   ];
   if (memberIds.length === 0) {
-    return { items: [], page: parsePageParam(rawPage, 1), pageSize, total: 0, lastPage: 1 };
+    return {
+      items: [],
+      page: parsePageParam(rawPage, 1),
+      pageSize,
+      total: 0,
+      lastPage: 1,
+    };
   }
   if (memberIds.length >= CATEGORY_MEMBER_ID_CAP) {
     console.warn(
@@ -353,4 +365,20 @@ export async function readCategoryProductPage(
     rawPage,
     pageSize,
   );
+}
+
+/** Distinct variant colours (by hex, case-insensitive), sorted by name. */
+function distinctColorSwatches(variants: VariantRow[]): ProductColorSwatch[] {
+  const byHex = new Map<string, ProductColorSwatch>();
+  for (const variant of variants) {
+    const key = variant.color_hex.toLowerCase();
+    // Defensive: a legacy row without `color_name` still yields a usable swatch.
+    if (!byHex.has(key)) {
+      byHex.set(key, {
+        name: variant.color_name ?? variant.color_hex,
+        hex: variant.color_hex,
+      });
+    }
+  }
+  return [...byHex.values()].sort((a, b) => a.name.localeCompare(b.name, "es"));
 }

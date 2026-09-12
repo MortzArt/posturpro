@@ -248,7 +248,7 @@ const CONSUMED_KEYS: readonly string[] = [
   "catalog.stock.inStock",
   "catalog.stock.lowStock",
   "catalog.stock.outOfStock",
-  "catalog.card.colorsCount",
+  "catalog.card.colors",
   "catalog.card.imagePlaceholder",
   "catalog.pagination.label",
   "catalog.pagination.previous",

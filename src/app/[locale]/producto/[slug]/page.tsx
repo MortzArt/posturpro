@@ -26,6 +26,7 @@ import {
 import type { StockState } from "@/lib/catalog/types";
 import type { ProductDetail } from "@/lib/catalog/product-detail.types";
 import type { RecentlyViewedEntry } from "@/lib/recently-viewed";
+import type { ProductColorSwatch } from "@/lib/catalog/types";
 import { Breadcrumbs, type Crumb } from "@/components/catalog/breadcrumbs";
 import { JsonLd } from "@/components/seo/json-ld";
 import { buildAlternates, buildOpenGraph, localeUrl } from "@/lib/seo/metadata";
@@ -215,7 +216,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
             outOfStock: tCatalog("stock.outOfStock"),
             lowStockTemplate: tCatalog.raw("stock.lowStock"),
             imagePlaceholder: tCatalog("card.imagePlaceholder"),
-            colorsCountTemplate: tCatalog.raw("card.colorsCount"),
+            colorsLabel: tCatalog("card.colors"),
             gradeBadgeTemplate: t.raw("grade.badge"),
           }}
         />
@@ -310,9 +311,7 @@ function toRecentlyViewedEntry(product: ProductDetail): RecentlyViewedEntry {
     product.images.find((image) => image.isPrimary) ??
     product.images[0] ??
     null;
-  const distinctColors = new Set(
-    product.variants.map((variant) => variant.colorHex),
-  ).size;
+  const colors = distinctVariantColors(product.variants);
   const effective = effectiveStock(product.stock, product.variants);
   const lowStockN = product.stockState === "low" ? effective : null;
 
@@ -325,9 +324,24 @@ function toRecentlyViewedEntry(product: ProductDetail): RecentlyViewedEntry {
     compareAtPriceCents: product.compareAtPriceCents,
     coverImageUrl: primary?.url ?? null,
     coverAlt: primary?.altText?.trim() ? primary.altText : product.name,
-    colorCount: distinctColors,
+    colorCount: colors.length,
+    colors,
     stockState: product.stockState,
     lowStockN,
     conditionGrade: product.conditionGrade,
   };
+}
+
+/** Distinct variant colours (by hex, case-insensitive), name + hex, sorted by name. */
+function distinctVariantColors(
+  variants: ProductDetail["variants"],
+): ProductColorSwatch[] {
+  const byHex = new Map<string, ProductColorSwatch>();
+  for (const variant of variants) {
+    if (!variant.colorHex) continue;
+    const key = variant.colorHex.toLowerCase();
+    if (!byHex.has(key))
+      byHex.set(key, { name: variant.colorName, hex: variant.colorHex });
+  }
+  return [...byHex.values()].sort((a, b) => a.name.localeCompare(b.name, "es"));
 }

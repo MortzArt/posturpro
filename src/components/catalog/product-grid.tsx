@@ -41,8 +41,7 @@ export async function ProductGrid({
     }
   };
 
-  const colorsLabel = (count: number): string | null =>
-    count >= 2 ? t("card.colorsCount", { count }) : null;
+  const colorsLabel = t("card.colors");
 
   const placeholder = t("card.imagePlaceholder");
 
@@ -61,10 +60,12 @@ export async function ProductGrid({
           <ProductCard
             product={product}
             priority={index < priorityCount}
-            staggerDelayMs={Math.min(index, STAGGER_MAX_STEPS) * STAGGER_STEP_MS}
+            staggerDelayMs={
+              Math.min(index, STAGGER_MAX_STEPS) * STAGGER_STEP_MS
+            }
             labels={{
               stock: stockLabel(product),
-              colors: colorsLabel(product.colorCount),
+              colors: colorsLabel,
               imagePlaceholder: placeholder,
               grade: gradeLabel(product),
             }}

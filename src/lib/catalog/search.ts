@@ -42,7 +42,11 @@ import {
   parsePageParam,
   rangeFor,
 } from "@/lib/catalog/pagination";
-import type { CatalogPage, CatalogProductCard } from "@/lib/catalog/types";
+import type {
+  CatalogPage,
+  CatalogProductCard,
+  ProductColorSwatch,
+} from "@/lib/catalog/types";
 import type { CatalogFilters } from "@/lib/catalog/search.types";
 import { isCacheableFilters } from "@/lib/catalog/search-params";
 import {
@@ -65,6 +69,7 @@ interface SearchRow {
   brand_logo_url: string | null;
   effective_stock: number;
   distinct_color_count: number;
+  color_swatches: unknown;
   total_count: number;
 }
 
@@ -208,6 +213,7 @@ function toCard(
     coverImageUrl: cover?.url ?? null,
     coverAlt: cover?.alt_text?.trim() ? cover.alt_text : row.name,
     colorCount: row.distinct_color_count,
+    colors: parseColorSwatches(row.color_swatches),
     stockState: stockState(row.effective_stock),
     lowStockN:
       stockState(row.effective_stock) === "low" ? row.effective_stock : null,
@@ -350,3 +356,27 @@ export function listPopularProducts(
     },
   );
 }
+
+/**
+ * Narrow the RPC's `color_swatches` JSON to typed swatches. Defensive: a row
+ * from an older function version (or a malformed entry) yields `[]`, never a
+ * crash — the card simply renders no dots.
+ */
+function parseColorSwatches(value: unknown): ProductColorSwatch[] {
+  if (!Array.isArray(value)) return [];
+  const swatches: ProductColorSwatch[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { name, hex } = entry as Record<string, unknown>;
+    if (
+      typeof name === "string" &&
+      typeof hex === "string" &&
+      HEX_COLOR.test(hex)
+    ) {
+      swatches.push({ name, hex });
+    }
+  }
+  return swatches;
+}
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;

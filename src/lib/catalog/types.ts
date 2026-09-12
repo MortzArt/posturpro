@@ -18,6 +18,13 @@ export type StockState = "in" | "low" | "out";
  * row and no cost data. `coverImageUrl === null` → the card renders a
  * placeholder tile. `compareAtPriceCents` is only struck when `> priceCents`.
  */
+/** One distinct variant colour for the card's swatch dots. */
+export interface ProductColorSwatch {
+  name: string;
+  /** CSS hex, `#rrggbb`. */
+  hex: string;
+}
+
 export interface CatalogProductCard {
   id: string;
   slug: string;
@@ -30,8 +37,10 @@ export interface CatalogProductCard {
   coverImageUrl: string | null;
   /** `alt_text ?? name` — never empty (AC-17). */
   coverAlt: string;
-  /** Distinct variant colors; the card omits the line when `< 2`. */
+  /** Number of distinct variant colours (kept for sorting/analytics parity). */
   colorCount: number;
+  /** Distinct variant colours, name + hex, for the card's swatch dots. */
+  colors: ProductColorSwatch[];
   stockState: StockState;
   /** The `{n}` for "Solo quedan {n}"; `null` unless `stockState === "low"`. */
   lowStockN: number | null;

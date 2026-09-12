@@ -9,6 +9,7 @@
  * every `.rpc(...)` call loses its types. tsc is the regression proof.
  */
 import type { OrderStatus, PaymentStatus, TransitionKind } from "./enums";
+import type { Json } from "./json";
 
 /**
  * One line item in the `create_order` RPC payload (T7, 0008_checkout.sql). All
@@ -269,6 +270,8 @@ export type DatabaseFunctions = {
       brand_logo_url: string | null;
       effective_stock: number;
       distinct_color_count: number;
+      /** JSON array of {name, hex} per distinct variant colour (0018). */
+      color_swatches: Json;
       total_count: number;
     }[];
   };
@@ -324,4 +327,4 @@ export type DatabaseFunctions = {
     Args: FinalizeEmailSendArgs;
     Returns: undefined;
   };
-}
+};

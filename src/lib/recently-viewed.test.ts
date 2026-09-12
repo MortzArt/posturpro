@@ -30,6 +30,10 @@ function makeEntry(
     coverImageUrl: "https://example.test/cover.jpg",
     coverAlt: "Silla Ejemplo",
     colorCount: 2,
+    colors: [
+      { name: "Café", hex: "#6b4423" },
+      { name: "Negro", hex: "#111111" },
+    ],
     stockState: "in",
     lowStockN: null,
     conditionGrade: null,

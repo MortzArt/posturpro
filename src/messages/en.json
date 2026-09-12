@@ -243,7 +243,7 @@
       "outOfStock": "Out of stock"
     },
     "card": {
-      "colorsCount": "{count} colors",
+      "colors": "Colors",
       "imagePlaceholder": "Image unavailable"
     },
     "pagination": {

@@ -8,12 +8,12 @@
  * storage, quota, and malformed JSON all degrade to an empty read / swallowed
  * write with at most ONE guarded `console.warn` — the page is never affected.
  */
+import { RECENTLY_VIEWED_MAX, RECENTLY_VIEWED_STORAGE_KEY } from "@/lib/config";
+import type { ProductColorSwatch, StockState } from "@/lib/catalog/types";
 import {
-  RECENTLY_VIEWED_MAX,
-  RECENTLY_VIEWED_STORAGE_KEY,
-} from "@/lib/config";
-import type { StockState } from "@/lib/catalog/types";
-import { isConditionGrade, type ProductConditionGrade } from "@/lib/catalog/grade";
+  isConditionGrade,
+  type ProductConditionGrade,
+} from "@/lib/catalog/grade";
 
 /**
  * A stored recently-viewed entry — the minimal `CatalogProductCard` fields a
@@ -30,6 +30,8 @@ export interface RecentlyViewedEntry {
   coverImageUrl: string | null;
   coverAlt: string;
   colorCount: number;
+  /** Distinct variant colours for the card's swatch dots. */
+  colors: ProductColorSwatch[];
   stockState: StockState;
   /** The `{n}` for "Solo quedan {n}"; null unless `stockState === "low"`. */
   lowStockN: number | null;
@@ -50,6 +52,7 @@ function isEntry(value: unknown): value is RecentlyViewedEntry {
     typeof entry.priceCents === "number" &&
     typeof entry.coverAlt === "string" &&
     typeof entry.colorCount === "number" &&
+    isSwatchList(entry.colors) &&
     // Validate the remaining spread fields too (m-5): a tampered entry that
     // omitted `compareAtPriceCents` used to reach `formatMXN(undefined)` → $NaN.
     (entry.compareAtPriceCents === null ||
@@ -57,8 +60,7 @@ function isEntry(value: unknown): value is RecentlyViewedEntry {
     (entry.coverImageUrl === null || typeof entry.coverImageUrl === "string") &&
     (entry.brandName === null || typeof entry.brandName === "string") &&
     (entry.lowStockN === null || typeof entry.lowStockN === "number") &&
-    (entry.conditionGrade === null ||
-      isConditionGrade(entry.conditionGrade)) &&
+    (entry.conditionGrade === null || isConditionGrade(entry.conditionGrade)) &&
     (entry.stockState === "in" ||
       entry.stockState === "low" ||
       entry.stockState === "out")
@@ -78,7 +80,9 @@ function warnOnce(message: string): void {
 
 /** Whether `window.localStorage` is available and usable. */
 function hasStorage(): boolean {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  return (
+    typeof window !== "undefined" && typeof window.localStorage !== "undefined"
+  );
 }
 
 /**
@@ -129,4 +133,18 @@ export function recordRecentlyViewed(
     }
   }
   return next;
+}
+
+/** Shape guard for the persisted `colors` list (stale/tampered entries drop). */
+function isSwatchList(value: unknown): value is ProductColorSwatch[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (swatch) =>
+        typeof swatch === "object" &&
+        swatch !== null &&
+        typeof (swatch as Record<string, unknown>).name === "string" &&
+        typeof (swatch as Record<string, unknown>).hex === "string",
+    )
+  );
 }

@@ -29,8 +29,8 @@ export interface RecentlyViewedCardLabels {
    */
   lowStockTemplate: string;
   imagePlaceholder: string;
-  /** Template "{count} colores", interpolated client-side. */
-  colorsCountTemplate: string;
+  /** Group label for the colour dots ("Colores"). */
+  colorsLabel: string;
   /** Template "Grado {grade}", interpolated per-entry when a grade is stored. */
   gradeBadgeTemplate: string;
 }
@@ -91,20 +91,12 @@ export function RecentlyViewed({
       </h2>
       <ul className="flex snap-x gap-4 overflow-x-auto pb-2 sm:grid sm:grid-cols-3 sm:gap-x-4 sm:gap-y-8 sm:overflow-visible lg:grid-cols-4">
         {entries.map((entry, index) => (
-          <li
-            key={entry.slug}
-            className="w-40 shrink-0 snap-start sm:w-auto"
-          >
+          <li key={entry.slug} className="w-40 shrink-0 snap-start sm:w-auto">
             <ProductCard
               product={toCard(entry)}
               labels={{
                 stock: resolveStockLabel(entry, cardLabels),
-                colors:
-                  entry.colorCount >= 2
-                    ? interpolate(cardLabels.colorsCountTemplate, {
-                        count: entry.colorCount,
-                      })
-                    : null,
+                colors: cardLabels.colorsLabel,
                 imagePlaceholder: cardLabels.imagePlaceholder,
                 grade: entry.conditionGrade
                   ? interpolate(cardLabels.gradeBadgeTemplate, {
@@ -133,6 +125,7 @@ function toCard(entry: RecentlyViewedEntry): CatalogProductCard {
     coverImageUrl: entry.coverImageUrl,
     coverAlt: entry.coverAlt,
     colorCount: entry.colorCount,
+    colors: entry.colors,
     stockState: entry.stockState,
     lowStockN: entry.lowStockN,
     conditionGrade: entry.conditionGrade,
