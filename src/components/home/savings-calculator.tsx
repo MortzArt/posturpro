@@ -103,7 +103,7 @@ export function SavingsCalculator({
           />
         </div>
 
-        <div className="mt-6 grid flex-1 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <div className="mt-6 grid flex-1 bg-[var(--tint-green)] sm:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
           {/* Compare panel — the two price bars. */}
           <div className="flex flex-col justify-center gap-6 p-6 sm:p-8">
             {/* Compare-at grammar mirrors the product cards: the "new" reference
@@ -124,12 +124,12 @@ export function SavingsCalculator({
               valueClassName="text-sm font-semibold tabular-nums text-foreground"
             />
           </div>
-          {/* Result tile — whisper-green tint canvas (flat, no border/shadow) with
+          {/* Result tile — shares the row's whisper-green tint canvas (owner 2026-09-12) with
           the naked Factorial stat numeral, like the hero stat row. */}
           <div
             aria-live="polite"
             data-testid="calc-results"
-            className="flex flex-col justify-center gap-5 bg-[var(--tint-green)] p-6 sm:p-8 lg:p-10"
+            className="flex flex-col justify-center gap-5 p-6 sm:p-8 lg:p-10"
           >
             <div>
               <span
