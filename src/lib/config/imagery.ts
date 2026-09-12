@@ -59,3 +59,11 @@ export const B2B_QUOTE_IMAGE: string | null = "/images/b2b/quote-office.jpg";
  */
 export const CALCULATOR_IMAGE: string | null =
   "/images/home/savings-chairs.jpg";
+
+/**
+ * Closing CTA banner illustration (owner request 2026-09-12): three task chairs
+ * on a TRANSPARENT ground (PNG), sitting on the banner's gradient to the LEFT of
+ * the heading + CTAs on `lg+`, above them on small screens. `null` → the
+ * centred text-only banner.
+ */
+export const CTA_BANNER_IMAGE: string | null = "/images/home/cta-chairs.png";
