@@ -80,7 +80,7 @@ export function CatalogShell({
 
         <div className="lg:grid lg:grid-cols-[16rem_1fr] lg:gap-8">
           <aside className="hidden lg:block">
-            <div className="sticky top-20 max-h-[calc(100vh-6rem)] self-start overflow-y-auto pr-2">
+            <div className="sticky top-20 -ml-1 max-h-[calc(100vh-6rem)] self-start overflow-y-auto pb-8 pl-1 pr-5 [scrollbar-gutter:stable]">
               <FilterPanel
                 context="sidebar"
                 facets={facets}
