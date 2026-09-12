@@ -73,6 +73,8 @@ interface ProductPurchasePanelProps {
   slug: string;
   productName: string;
   brandName: string | null;
+  /** Condition-grade chip (T19), rendered at the top of the purchase card. */
+  gradeBadge?: React.ReactNode;
   /** Product-level `price_cents`; the add-to-cart snapshot uses the EFFECTIVE
    *  price (variant override ?? this) computed per selection. */
   basePriceCents: number;
@@ -93,6 +95,7 @@ export function ProductPurchasePanel({
   slug,
   productName,
   brandName,
+  gradeBadge,
   basePriceCents,
   coverImageUrl,
   variants,
@@ -185,6 +188,7 @@ export function ProductPurchasePanel({
       ) : null}
 
       <div className="factorial-card order-2 flex flex-col gap-4 p-5 md:p-6 lg:order-3 lg:sticky lg:top-20 lg:self-start">
+        {gradeBadge ? <div className="flex">{gradeBadge}</div> : null}
         {brandName ? (
           <p className="text-xs text-muted-foreground">{brandName}</p>
         ) : null}

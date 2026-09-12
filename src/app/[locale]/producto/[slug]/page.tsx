@@ -153,17 +153,17 @@ export default async function ProductPage({ params }: ProductPageProps) {
         items={crumbs}
       />
 
-      {product.conditionGrade ? (
-        <div className="mt-3">
-          <GradeBadge
-            grade={product.conditionGrade}
-            label={t("grade.badge", { grade: product.conditionGrade })}
-          />
-        </div>
-      ) : null}
-
-      <section className="enter-fade mt-2">
+      <section className="enter-fade mt-6">
         <ProductPurchasePanel
+          gradeBadge={
+            product.conditionGrade ? (
+              <GradeBadge
+                grade={product.conditionGrade}
+                label={t("grade.badge", { grade: product.conditionGrade })}
+                size="lg"
+              />
+            ) : null
+          }
           details={
             product.description?.trim() || specRows.length > 0 ? (
               <div className="flex flex-col gap-8">

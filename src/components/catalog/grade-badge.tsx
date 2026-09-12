@@ -25,9 +25,23 @@ interface GradeBadgeProps {
   label: string;
   /** Placement classes (absolute on a card, inline on a PDP). */
   className?: string;
+  /**
+   * `sm` (default) is the compact chip overlaid on catalog card images (capped
+   * at 45% of the image width). `lg` is the PDP purchase-card treatment: a
+   * roomier chip with a larger glyph and no width cap.
+   */
+  size?: "sm" | "lg";
 }
 
-export function GradeBadge({ grade, label, className }: GradeBadgeProps) {
+const SIZE_STYLES = {
+  sm: "max-w-[45%] gap-1 px-2 py-0.5 text-xs",
+  lg: "gap-1.5 px-3 py-1 text-sm",
+} as const;
+
+const ICON_SIZE_PX = { sm: 12, lg: 16 } as const;
+const ICON_STYLES = { sm: "size-3", lg: "size-4" } as const;
+
+export function GradeBadge({ grade, label, className, size = "sm" }: GradeBadgeProps) {
   if (!isConditionGrade(grade)) {
     return null;
   }
@@ -35,18 +49,20 @@ export function GradeBadge({ grade, label, className }: GradeBadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex max-w-[45%] items-center gap-1 truncate rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground",
+        "inline-flex items-center truncate rounded-full bg-secondary font-medium text-secondary-foreground",
+        SIZE_STYLES[size],
         className,
       )}
       data-testid="grade-badge"
       data-grade={grade}
+      data-size={size}
     >
       <HugeiconsIcon
         icon={Award01Icon}
-        size={12}
+        size={ICON_SIZE_PX[size]}
         strokeWidth={2}
         aria-hidden
-        className="size-3 shrink-0 text-primary"
+        className={cn("shrink-0 text-primary", ICON_STYLES[size])}
       />
       {label}
     </span>
