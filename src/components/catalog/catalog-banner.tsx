@@ -12,7 +12,7 @@ import { Chair01Icon } from "@hugeicons/core-free-icons";
  *
  * Image-slot grammar mirrors `Hero`/`EditorialBand`: `next/image` inside the
  * reserved 42/9 aspect box; the artwork is CONTAINED on a backdrop matching its ground
- * colour, then zoomed 20% (owner request 2026-09-12) — the frame clips only the poster's
+ * colour, then zoomed 38% (owner: +20% then +15%, 2026-09-12) — the frame clips only the poster's
  * empty top/bottom margins, never the chairs or slogan + cobalt cartouche frame when `imageUrl` is set, else
  * a token-styled blank cobalt tile with a centered chair glyph — never a broken
  * `<img>`, zero CLS either way (edge 3). NOT the LCP (it sits above the grid but
@@ -39,7 +39,7 @@ export function CatalogBanner({ imageUrl, imageAlt }: CatalogBannerProps) {
           alt={imageAlt}
           fill
           sizes="(min-width: 1280px) 1152px, 100vw"
-          className="scale-[1.2] object-contain"
+          className="scale-[1.38] object-contain"
         />
       ) : (
         <span
