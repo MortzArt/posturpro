@@ -157,7 +157,11 @@ async function readProductDetail(slug: string): Promise<ProductDetail | null> {
   return stitchDetail(row, images, variants, questions);
 }
 
-/** Batched image read, ordered deterministically (is_primary, sort_order, id). */
+/**
+ * Batched image read in the ADMIN's order (sort_order, id). The cover is NOT
+ * promoted here: the gallery mirrors the admin image grid one-to-one (owner
+ * request 2026-09-12); the cover's job is the catalog card / social image.
+ */
 async function readImages(
   db: ReturnType<typeof createPublicClient>,
   productId: string,
@@ -166,7 +170,6 @@ async function readImages(
     .from("product_images")
     .select("id,variant_id,url,alt_text,is_primary,sort_order")
     .eq("product_id", productId)
-    .order("is_primary", { ascending: false })
     .order("sort_order", { ascending: true })
     .order("id", { ascending: true });
   if (error) fail("product_images", error.message);

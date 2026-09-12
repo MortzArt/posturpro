@@ -47,24 +47,22 @@ export function shouldStrikeCompareAt(
 /**
  * The image set to show for a selection (AC-7, edge 1 & 8).
  *
- * A variant's own images lead, followed by the SHARED product images
- * (`variantId === null`) — so a photo uploaded without a colour is always
- * visible, and colour-specific shots simply jump to the front when that colour
- * is chosen (owner request 2026-09-12; previously own images REPLACED the shared
- * set, which hid every admin upload behind a single seeded per-colour image).
- * When a product has no variants, `variantId` is `null` and we return the shared
- * set directly. The caller renders the placeholder tile when the array is empty.
+ * A FILTER, never a re-sort: the gallery keeps the admin's image order (the
+ * read returns `sort_order`, exactly the admin grid) and shows the SHARED
+ * images (`variantId === null`) plus the selected variant's own. Other
+ * variants' images are hidden. Owner request 2026-09-12: previously own images
+ * REPLACED the shared set (hiding every admin upload behind one seeded
+ * per-colour photo), and an interim "own first" rule broke the admin order.
+ * When a product has no variants, `variantId` is `null` and only the shared
+ * set remains. The caller renders the placeholder tile when the array is empty.
  */
 export function imagesForVariant(
   allImages: readonly ProductImageView[],
   variantId: string | null,
 ): ProductImageView[] {
-  const shared = allImages.filter((image) => image.variantId === null);
-  if (variantId === null) {
-    return shared;
-  }
-  const own = allImages.filter((image) => image.variantId === variantId);
-  return [...own, ...shared];
+  return allImages.filter(
+    (image) => image.variantId === null || (variantId !== null && image.variantId === variantId),
+  );
 }
 
 /** The stock state for a single variant (its own stock drives its own badge). */

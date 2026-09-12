@@ -108,8 +108,11 @@ describe("imagesForVariant (AC-7, edges 1 & 8)", () => {
     expect(imagesForVariant(all, null)).toEqual([shared1, shared2]);
   });
 
-  it("leads with the variant's own images and follows with the shared set (AC-7)", () => {
-    expect(imagesForVariant(all, "var-a")).toEqual([varA1, varA2, shared1, shared2]);
+  it("keeps the admin order and shows shared images plus the variant's own (AC-7)", () => {
+    // `all` is in admin order (cover first, then sort_order) — nothing is re-sorted.
+    expect(imagesForVariant(all, "var-a")).toEqual([shared1, shared2, varA1, varA2]);
+    const interleaved = [varA1, shared1, varA2, shared2];
+    expect(imagesForVariant(interleaved, "var-a")).toEqual(interleaved);
   });
 
   it("shows just the shared images when the selected variant has none of its own (AC-7)", () => {
@@ -119,7 +122,7 @@ describe("imagesForVariant (AC-7, edges 1 & 8)", () => {
 
   it("never shows another variant's images", () => {
     const varB1 = makeImage({ id: "b1", variantId: "var-b" });
-    expect(imagesForVariant([...all, varB1], "var-a")).toEqual([varA1, varA2, shared1, shared2]);
+    expect(imagesForVariant([...all, varB1], "var-a")).toEqual([shared1, shared2, varA1, varA2]);
   });
 
   it("returns an empty array when there are no images at all (edge 1 placeholder)", () => {

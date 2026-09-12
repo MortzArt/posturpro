@@ -122,7 +122,8 @@ async function readImages(db: AdminClient, productId: string): Promise<EditImage
     .from("product_images")
     .select("id, url, variant_id, sort_order, is_primary")
     .eq("product_id", productId)
-    .order("is_primary", { ascending: false })
+    // sort_order only — the grid IS the storefront gallery order; promoting the
+    // cover here made a dragged-away cover snap back to first on reload.
     .order("sort_order", { ascending: true });
   if (error) throw new Error(`[product-read] images failed: ${error.message}`);
   return (data ?? []).map((row) => ({
