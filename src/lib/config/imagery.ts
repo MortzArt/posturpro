@@ -31,15 +31,17 @@ export const EDITORIAL_BAND_IMAGE: string | null =
 
 /**
  * Catalog index banner — the owner's "Eleva tu mobiliario. No tus costos."
- * poster (three chairs + slogan, mint ground; supplied 2026-09-12). Rendered at
- * its NATIVE ~2.48:1 ratio (`CATALOG_BANNER_ASPECT`) so nothing is cropped:
- * the slogan is baked into the artwork. `null` → blank tile.
+ * poster (three chairs + slogan on a flat mint ground; supplied 2026-09-12).
+ * The frame keeps its 42/9 shape; the ~2.48:1 artwork is CONTAINED (never
+ * cropped — the slogan is baked in) and the frame is painted with the poster's
+ * own ground colour (`CATALOG_BANNER_BACKDROP`) so the letterbox is invisible
+ * and it reads as one wide banner. `null` → blank tile.
  */
 export const CATALOG_BANNER_IMAGE: string | null =
   "/images/catalog/poster-banner.jpg";
 
-/** Tailwind aspect class matching the banner artwork's pixel ratio (2400×967). */
-export const CATALOG_BANNER_ASPECT = "aspect-[2400/967]" as const;
+/** The poster's flat ground colour, sampled from its edges (all four corners). */
+export const CATALOG_BANNER_BACKDROP = "#e8f5eb" as const;
 
 /**
  * B2B `/empresas` hero image (4/3, matches `HeroMedia`). A bright cool-neutral

@@ -1,6 +1,5 @@
 import Image from "next/image";
-import { cn } from "@/lib/utils";
-import { CATALOG_BANNER_ASPECT } from "@/lib/config";
+import { CATALOG_BANNER_BACKDROP } from "@/lib/config";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Chair01Icon } from "@hugeicons/core-free-icons";
 
@@ -12,7 +11,7 @@ import { Chair01Icon } from "@hugeicons/core-free-icons";
  * via `CATALOG_BANNER_IMAGE`.
  *
  * Image-slot grammar mirrors `Hero`/`EditorialBand`: `next/image` inside the
- * reserved aspect box (`CATALOG_BANNER_ASPECT`, matches the artwork so the baked-in slogan is never cropped) + cobalt cartouche frame when `imageUrl` is set, else
+ * reserved 42/9 aspect box; the artwork is CONTAINED (never cropped) on a backdrop matching its ground colour + cobalt cartouche frame when `imageUrl` is set, else
  * a token-styled blank cobalt tile with a centered chair glyph — never a broken
  * `<img>`, zero CLS either way (edge 3). NOT the LCP (it sits above the grid but
  * below the page header/breadcrumbs), so `next/image` is lazy (no `priority`).
@@ -27,10 +26,10 @@ interface CatalogBannerProps {
 export function CatalogBanner({ imageUrl, imageAlt }: CatalogBannerProps) {
   return (
     <div
-      className={cn(
-        "enter-fade relative mb-6 w-full overflow-hidden rounded-md bg-muted shadow-sm md:mb-8",
-        CATALOG_BANNER_ASPECT,
-      )}
+      className="enter-fade relative mb-6 aspect-[42/9] w-full overflow-hidden rounded-md bg-muted shadow-sm md:mb-8"
+      style={
+        imageUrl ? { backgroundColor: CATALOG_BANNER_BACKDROP } : undefined
+      }
     >
       {imageUrl ? (
         <Image
@@ -38,7 +37,7 @@ export function CatalogBanner({ imageUrl, imageAlt }: CatalogBannerProps) {
           alt={imageAlt}
           fill
           sizes="(min-width: 1280px) 1152px, 100vw"
-          className="object-cover"
+          className="object-contain"
         />
       ) : (
         <span
