@@ -40,12 +40,12 @@ export function CtaBanner({
       className={cn(
         "enter-fade gradient-banner rounded-[2rem] px-6 py-14 text-center text-foreground sm:py-20",
         withImage &&
-          "lg:grid lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)] lg:items-center lg:gap-10 lg:px-12 lg:py-14 lg:text-left",
+          "lg:grid lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)] lg:items-center lg:gap-10 lg:px-12 lg:py-11 lg:text-left",
       )}
       data-testid="cta-banner"
     >
       {withImage ? (
-        <div className="relative mx-auto mb-8 aspect-[541/500] w-full max-w-[220px] sm:max-w-[280px] lg:mb-0 lg:max-w-[340px]">
+        <div className="relative mx-auto mb-8 aspect-[541/500] w-full max-w-[200px] sm:max-w-[240px] lg:mb-0 lg:max-w-[270px]">
           <Image
             src={imageUrl}
             alt={imageAlt}
