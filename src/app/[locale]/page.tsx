@@ -334,10 +334,9 @@ interface SectionProps {
  */
 /**
  * Hero wrapper — the one section allowed a non-white surface. Owner request
- * 2026-09-12: a MUTED green gradient that drifts almost imperceptibly (see
- * `.hero-aurora` in theme-storefront.css) replaces the earlier lifestyle
- * photo + scrim. Purely decorative (`aria-hidden`), transform-only motion,
- * static under reduced motion; a bottom fade blends into the white page.
+ * 2026-09-12: a MUTED, STATIC green gradient (see `.hero-aurora` in
+ * theme-storefront.css) replaces the earlier lifestyle photo + scrim. Purely
+ * decorative (`aria-hidden`), no motion; a bottom fade blends into the page.
  */
 function HeroSection({ children }: { children: React.ReactNode }) {
   return (

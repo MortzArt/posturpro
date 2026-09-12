@@ -77,14 +77,13 @@
 }
 
 /* ------------------------------------------------------------------------- *
- * Hero aurora (owner request 2026-09-12) — replaces the hero background photo
- * with a MUTED, MINIMAL green gradient that drifts almost imperceptibly. Three
- * large, heavily blurred radial washes in the brand's own tint sit on the white
- * page; each drifts on `transform` only (compositor-friendly, no layout or
- * paint work per frame) over 45–70s with ease-in-out, alternating. The blur is
- * static (never animated). Reduced motion: the washes simply hold their first
- * frame — the gradient stays, the movement goes. Contrast: every wash is a
- * whisper (≤ 0.6 alpha of an already-pale tint) so ink copy over it keeps AA.
+ * Hero aurora (owner requests 2026-09-12) — a MUTED, MINIMAL, STATIC green
+ * gradient behind the hero (replaces the earlier background photo; the drift
+ * animation was removed the same day at the owner's request). Three large,
+ * heavily blurred radial washes in the brand's own tint sit on a whisper-green
+ * → white vertical fade. Purely decorative, no motion, no per-frame work.
+ * Contrast: every wash is a whisper (≤ 0.6 alpha of an already-pale tint) so
+ * ink copy over it keeps AA.
  * ------------------------------------------------------------------------- */
 .hero-aurora {
   position: absolute;
@@ -101,10 +100,6 @@
   position: absolute;
   border-radius: 9999px;
   filter: blur(72px);
-  will-change: transform;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-direction: alternate;
 }
 .hero-aurora__wash--a {
   top: -20%;
@@ -114,8 +109,6 @@
   max-width: 820px;
   max-height: 820px;
   background: oklch(0.94 0.045 158 / 0.6);
-  animation-name: hero-aurora-a;
-  animation-duration: 58s;
 }
 .hero-aurora__wash--b {
   bottom: -30%;
@@ -125,8 +118,6 @@
   max-width: 700px;
   max-height: 700px;
   background: oklch(0.955 0.03 150 / 0.55);
-  animation-name: hero-aurora-b;
-  animation-duration: 70s;
 }
 .hero-aurora__wash--c {
   top: 10%;
@@ -136,36 +127,4 @@
   max-width: 560px;
   max-height: 560px;
   background: oklch(0.965 0.02 165 / 0.5);
-  animation-name: hero-aurora-c;
-  animation-duration: 46s;
-}
-@keyframes hero-aurora-a {
-  from {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  to {
-    transform: translate3d(-6%, 8%, 0) scale(1.08);
-  }
-}
-@keyframes hero-aurora-b {
-  from {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  to {
-    transform: translate3d(9%, -6%, 0) scale(1.05);
-  }
-}
-@keyframes hero-aurora-c {
-  from {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  to {
-    transform: translate3d(7%, 5%, 0) scale(0.95);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .hero-aurora__wash {
-    animation: none;
-    will-change: auto;
-  }
 }
