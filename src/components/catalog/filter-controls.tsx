@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Tick02Icon } from "@hugeicons/core-free-icons";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -19,16 +19,78 @@ import type { FacetOption } from "@/lib/catalog/search.types";
  * client control that mutates the URL through the shared filter navigation
  * (page → 1).
  *
- * JS-OFF CONTRACT (C-1, M-1). The interactive controls are Radix primitives
- * (a `<button role="checkbox">`), which submit NOTHING in a native form. So the
- * source of truth for a native (JS-off) submit is a set of always-present
- * `<input type="hidden">` fields that mirror the *selected* state — the same
- * pattern the color facet already uses. The Radix checkbox is left `name`-less
- * (no hydrated Radix `BubbleInput`) so it never double-submits alongside the
- * hidden mirror; it exists purely for the JS-on live toggle. Prices submit in
- * CENTS via a hidden input (the visible field is display-only pesos) so the
- * native URL contract matches the parser (which reads cents).
+ * FACET OPTIONS ARE CHOICE CHIPS (owner request 2026-09-12): each option is a
+ * `FilterChip` — a NATIVE `<input type="checkbox">` stretched (invisibly) over a
+ * styled pill, so the control keeps real checkbox semantics (label, keyboard,
+ * `:checked`, form participation) while reading as a tappable chip. Selected =
+ * filled brand green with a tick glyph; unselected = hairline outline.
+ *
+ * JS-OFF CONTRACT (C-1, M-1). Multi-facet chips are `name`-less; the source of
+ * truth for a native (JS-off) submit is the set of always-present
+ * `<input type="hidden">` fields mirroring the *selected* state (even options
+ * collapsed under "Ver más") — the same pattern the color facet uses — so a chip
+ * never double-posts. The availability chip IS named (single opt-in value) and
+ * posts natively. Prices submit in pesos under the canonical param.
  */
+
+/**
+ * A choice chip backed by a native checkbox. The input is the full hit target
+ * (absolute, `opacity-0`, covers the pill) so pointer + keyboard + Playwright all
+ * address the real control; the sibling `<span>` paints the state via `peer-*`.
+ */
+export function FilterChip({
+  id,
+  label,
+  checked,
+  onCheckedChange,
+  name,
+  value,
+  testId,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onCheckedChange: (next: boolean) => void;
+  name?: string;
+  value?: string;
+  testId?: string;
+}) {
+  return (
+    <label htmlFor={id} className="relative inline-flex max-w-full">
+      <input
+        type="checkbox"
+        id={id}
+        name={name}
+        value={value}
+        checked={checked}
+        data-testid={testId}
+        onChange={(event) => onCheckedChange(event.target.checked)}
+        className="peer absolute inset-0 z-10 m-0 size-full cursor-pointer appearance-none rounded-full opacity-0"
+      />
+      <span
+        className={cn(
+          "inline-flex min-h-10 max-w-full items-center gap-1.5 rounded-full border px-4 text-sm font-medium select-none",
+          "border-border bg-card text-foreground",
+          "transition-[background-color,border-color,color,transform] duration-150 ease-out motion-reduce:transition-none",
+          "peer-hover:border-foreground/30 peer-hover:bg-muted",
+          "peer-active:scale-[0.97] motion-reduce:peer-active:transform-none",
+          "peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
+          "peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-checked:hover:bg-primary",
+          "[&>svg]:hidden peer-checked:[&>svg]:block",
+        )}
+      >
+        <HugeiconsIcon
+          icon={Tick02Icon}
+          size={14}
+          strokeWidth={2.5}
+          aria-hidden
+          className="shrink-0"
+        />
+        <span className="truncate">{label}</span>
+      </span>
+    </label>
+  );
+}
 
 /** A group heading (fieldset legend) used by every facet group. */
 export function FacetGroup({
@@ -42,13 +104,15 @@ export function FacetGroup({
 }) {
   return (
     <fieldset className="flex flex-col gap-3" data-testid={testId}>
-      <legend className="font-heading text-sm font-semibold tracking-[-0.02em]">{title}</legend>
+      <legend className="font-heading text-sm font-semibold tracking-[-0.02em]">
+        {title}
+      </legend>
       {children}
     </fieldset>
   );
 }
 
-/** Multi-select checkbox list for a facet, with "Ver más" collapse past N. */
+/** Multi-select choice-chip group for a facet, with "Ver más" collapse past N. */
 export function FacetCheckboxGroup({
   facet,
   paramName,
@@ -70,38 +134,31 @@ export function FacetCheckboxGroup({
 
   const collapses = options.length > FILTER_FACET_COLLAPSE_AFTER;
   const visible =
-    collapses && !expanded ? options.slice(0, FILTER_FACET_COLLAPSE_AFTER) : options;
+    collapses && !expanded
+      ? options.slice(0, FILTER_FACET_COLLAPSE_AFTER)
+      : options;
 
   return (
     <div className="flex flex-col gap-2">
       {/* JS-off: mirror EVERY selected value (even ones collapsed under "Ver más")
           as a hidden input so a native submit posts the full facet selection.
-          The Radix Checkbox below is `name`-less, so it contributes nothing to a
-          native submit and never double-posts with these (C-1). */}
+          The chips below are `name`-less, so they contribute nothing to a native
+          submit and never double-post with these (C-1). */}
       {selected.map((value) => (
         <input key={value} type="hidden" name={paramName} value={value} />
       ))}
-      {visible.map((option) => {
-        const checked = selectedSet.has(option.value);
-        return (
-          <div key={option.value} className="flex items-center gap-2">
-            <Checkbox
-              id={`${facet}-${option.value}`}
-              checked={checked}
-              data-testid={`filter-${facet}-${option.value}`}
-              onCheckedChange={(next) =>
-                toggleValue(facet, option.value, next === true)
-              }
-            />
-            <Label
-              htmlFor={`${facet}-${option.value}`}
-              className="flex min-h-11 flex-1 cursor-pointer items-center text-sm font-normal"
-            >
-              {option.label}
-            </Label>
-          </div>
-        );
-      })}
+      <div className="flex flex-wrap gap-2">
+        {visible.map((option) => (
+          <FilterChip
+            key={option.value}
+            id={`${facet}-${option.value}`}
+            label={option.label}
+            checked={selectedSet.has(option.value)}
+            testId={`filter-${facet}-${option.value}`}
+            onCheckedChange={(next) => toggleValue(facet, option.value, next)}
+          />
+        ))}
+      </div>
       {collapses ? (
         <button
           type="button"
@@ -122,7 +179,7 @@ export function FacetCheckboxGroup({
  * `disponibilidad` with value `todos`. Default catalog view = unchecked = posts
  * nothing = in-stock only. Checking it posts `disponibilidad=todos` on a native
  * (JS-off) submit, exactly the value the parser reads. With JS it also pushes
- * the URL live. Styled to match the Radix `Checkbox` peers.
+ * the URL live. Rendered as a `FilterChip` like every other facet option.
  */
 export function AvailabilityToggle({
   paramName,
@@ -138,28 +195,16 @@ export function AvailabilityToggle({
   const { patch } = useFilterNavigation();
   const includeOutOfStock = !inStockOnly;
   return (
-    <div className="flex items-center gap-2">
-      <input
-        type="checkbox"
+    <div className="flex flex-wrap gap-2">
+      <FilterChip
         id="availability-include-oos"
         name={paramName}
         value={allValue}
+        label={label}
         checked={includeOutOfStock}
-        data-testid="filter-in-stock"
-        onChange={(event) =>
-          patch({ inStockOnly: !event.target.checked })
-        }
-        className={cn(
-          "peer size-4 shrink-0 cursor-pointer rounded-[4px] border border-input accent-primary outline-none",
-          "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30",
-        )}
+        testId="filter-in-stock"
+        onCheckedChange={(next) => patch({ inStockOnly: !next })}
       />
-      <Label
-        htmlFor="availability-include-oos"
-        className="flex min-h-11 flex-1 cursor-pointer items-center text-sm font-normal"
-      >
-        {label}
-      </Label>
     </div>
   );
 }
@@ -277,7 +322,12 @@ export function ClearFiltersButton({
   className?: string;
 }) {
   return (
-    <Button asChild variant="ghost" size="lg" className={cn("min-h-11", className)}>
+    <Button
+      asChild
+      variant="ghost"
+      size="lg"
+      className={cn("min-h-11", className)}
+    >
       <a href={href} data-testid="clear-filters">
         {label}
       </a>
