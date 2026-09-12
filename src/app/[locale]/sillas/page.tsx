@@ -57,7 +57,9 @@ export function generateStaticParams() {
 }
 
 /** Resolve the active locale, falling back to the default. */
-async function resolveLocale(params: Promise<{ locale: string }>): Promise<string> {
+async function resolveLocale(
+  params: Promise<{ locale: string }>,
+): Promise<string> {
   const { locale } = await params;
   return hasLocale(routing.locales, locale) ? locale : routing.defaultLocale;
 }
@@ -143,28 +145,31 @@ export default async function CatalogListPage({
           { label: t("breadcrumb.catalog") },
         ]}
       />
-      <header className="mb-6 mt-2 flex flex-col gap-2 md:mb-8">
-        <h1 className="font-heading text-2xl font-semibold tracking-[-0.04em] sm:text-3xl sm:font-bold">
-          {t("title")}
-        </h1>
-        <p className="max-w-prose text-sm leading-relaxed text-muted-foreground sm:text-base">
-          {t("subtitle")}
-        </p>
-      </header>
-
-      {/* The catalog index art slot (Casa de Azulejo, AC-8) — a framed cartouche
-       * that opens the tile wall. Shown only on the unfiltered index (the hall
-       * entrance), not on filtered/searched result views. Degrades to a blank
-       * cobalt tile when its config asset is `null` (edge 3). Sits above the
-       * grid, so the e2e column-count assertion is unaffected. */}
-      {!active ? (
-        <CatalogBanner
-          imageUrl={CATALOG_BANNER_IMAGE}
-          imageAlt={t("banner.imageAlt")}
-        />
-      ) : null}
-
+      {/* Heading + index banner render INSIDE the shell, below its toolbar
+       * (search + sort lead the page — owner request 2026-09-12). The banner
+       * (Casa de Azulejo art slot, AC-8) shows only on the unfiltered index, not
+       * on filtered/searched views; degrades to a blank tile when its asset is
+       * `null` (edge 3). Both sit above the grid, so the e2e column-count
+       * assertion is unaffected. */}
       <CatalogShell
+        heading={
+          <header className="mb-6 flex flex-col gap-2 md:mb-8">
+            <h1 className="font-heading text-2xl font-semibold tracking-[-0.04em] sm:text-3xl sm:font-bold">
+              {t("title")}
+            </h1>
+            <p className="max-w-prose text-sm leading-relaxed text-muted-foreground sm:text-base">
+              {t("subtitle")}
+            </p>
+          </header>
+        }
+        banner={
+          !active ? (
+            <CatalogBanner
+              imageUrl={CATALOG_BANNER_IMAGE}
+              imageAlt={t("banner.imageAlt")}
+            />
+          ) : null
+        }
         filters={filters}
         facets={options}
         activeFilterCount={activeFilterCount}
@@ -202,7 +207,9 @@ function hasAnyFacetParam(raw: RawSearchParams): boolean {
     keys.orden,
   ].some((key) => {
     const value = raw[key];
-    return typeof value === "string" ? value.trim().length > 0 : Array.isArray(value);
+    return typeof value === "string"
+      ? value.trim().length > 0
+      : Array.isArray(value);
   });
 }
 
@@ -221,7 +228,9 @@ function countActiveFilters(filters: CatalogFilters): number {
 }
 
 /** The serialized filters (minus page) as hidden inputs for the toolbar search. */
-function searchPreservedParams(filters: CatalogFilters): Record<string, string> {
+function searchPreservedParams(
+  filters: CatalogFilters,
+): Record<string, string> {
   const withoutQuery = serializeFilters({ ...filters, query: null });
   const params = Object.fromEntries(new URLSearchParams(withoutQuery));
   return params;
