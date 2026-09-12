@@ -65,14 +65,29 @@ export function firstOrSelf<T>(value: T | T[] | null): T | null {
  * @param tags per-entity cache tags (busted on write)
  * @param read the read function to memoize
  */
+/**
+ * Schema version folded into EVERY catalog cache key. Bump it whenever the
+ * cached shape changes (a new field on `CatalogProductCard`, a renamed column)
+ * so entries written by the previous deploy are never read back into code that
+ * expects the new shape. Next's data cache persists across deploys on Vercel,
+ * and a stale `CatalogProductCard` without `colors` 500'd the catalog on
+ * 2026-09-12 (`ColorDots` read `.length` of undefined) — this is the guard.
+ * History: v2 = `colors` swatches added (migration 0018).
+ */
+const CATALOG_CACHE_SCHEMA_VERSION = "v2";
+
 export function cachedRead<T>(
   keyParts: string[],
   tags: string[],
   read: () => Promise<T>,
 ): Promise<T> {
-  const cached = unstable_cache(read, keyParts, {
-    tags,
-    revalidate: CATALOG_REVALIDATE_SECONDS,
-  });
+  const cached = unstable_cache(
+    read,
+    [CATALOG_CACHE_SCHEMA_VERSION, ...keyParts],
+    {
+      tags,
+      revalidate: CATALOG_REVALIDATE_SECONDS,
+    },
+  );
   return cached();
 }

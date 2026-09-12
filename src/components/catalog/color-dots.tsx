@@ -11,13 +11,17 @@ import type { ProductColorSwatch } from "@/lib/catalog/types";
 const MAX_VISIBLE_DOTS = 5;
 
 interface ColorDotsProps {
-  colors: ProductColorSwatch[];
+  /**
+   * Optional on purpose: a card object read back from a cache entry written by
+   * an older schema may lack the field; render nothing rather than throw.
+   */
+  colors?: ProductColorSwatch[];
   /** Group label, e.g. "Colores" — read as "Colores: Negro, Gris". */
   label: string;
 }
 
 export function ColorDots({ colors, label }: ColorDotsProps) {
-  if (colors.length === 0) return null;
+  if (!colors || colors.length === 0) return null;
   const visible = colors.slice(0, MAX_VISIBLE_DOTS);
   const overflow = colors.length - visible.length;
   const names = colors.map((color) => color.name).join(", ");
