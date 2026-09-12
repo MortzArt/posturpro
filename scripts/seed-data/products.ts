@@ -82,6 +82,17 @@ type ColorKey = keyof typeof COLORS;
  * constant so tests/e2e can target it without guessing.
  */
 export const ZERO_STOCK_PRODUCT_SLUG = "silla-ergonomica-kids-junior";
+
+/**
+ * Products seeded fully OUT OF STOCK (every variant at 0) so the catalog's
+ * "Agotado" badge, the dimmed card, and the `disponibilidad=todos` opt-in
+ * have live data to render against. One is featured so the home grid shows it.
+ */
+export const OUT_OF_STOCK_PRODUCT_SLUGS: readonly string[] = [
+  "silla-ejecutiva-verona",
+  "silla-gamer-cobra",
+  "silla-hogar-bergen",
+];
 const ZERO_STOCK_VARIANT_COLOR: ColorKey = "blanco";
 
 function variant(
@@ -170,7 +181,8 @@ function buildProduct(bp: ProductBlueprint, index: number): ProductSeed {
     // price paths exist in the data (edge case 5).
     const override =
       colorIndex === 1 && bp.colors.length > 1 ? bp.priceCents + 30_000 : null;
-    return variant(`${index + 1}-${colorIndex + 1}`, color, override, 8 + colorIndex * 3);
+    const stock = OUT_OF_STOCK_PRODUCT_SLUGS.includes(bp.slug) ? 0 : 8 + colorIndex * 3;
+    return variant(`${index + 1}-${colorIndex + 1}`, color, override, stock);
   });
 
   // T7: one designated product carries a deliberately ZERO-STOCK variant so the

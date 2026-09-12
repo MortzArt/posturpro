@@ -13,7 +13,7 @@ import type { CatalogProductCard } from "@/lib/catalog/types";
 /**
  * ProductCard (T3 — the single most-reused component). One product in a grid:
  * cover image, name, brand, price (+ struck compare-at when a real discount),
- * stock badge, and the colour swatch dots. Cards in a row are EQUAL HEIGHT
+ * stock badge (only for low / out — "En stock" is the unmarked default), and the colour swatch dots. Cards in a row are EQUAL HEIGHT
  * (`h-full` flex column) and the title box always reserves two lines so price
  * rows align across the row (owner request 2026-09-12). The WHOLE card is one
  * locale-aware `Link` to the PDP (`/producto/[slug]`, owned by T4 — may 404
@@ -102,11 +102,13 @@ export function ProductCard({
               className="absolute left-2 top-2"
             />
           ) : null}
-          <StockBadge
-            state={product.stockState}
-            label={labels.stock}
-            className="absolute right-2 top-2"
-          />
+          {product.stockState !== "in" ? (
+            <StockBadge
+              state={product.stockState}
+              label={labels.stock}
+              className="absolute right-2 top-2"
+            />
+          ) : null}
         </div>
 
         <div className="flex flex-1 flex-col gap-1.5 p-3 md:p-4">

@@ -20,8 +20,8 @@ test.describe("catalog browse + paginate (es-MX)", () => {
     // Each card links to the PDP route.
     const firstLink = page.getByTestId("product-card-link").first();
     await expect(firstLink).toHaveAttribute("href", /\/producto\//);
-    // A stock badge is present on cards.
-    await expect(page.getByTestId("stock-badge").first()).toBeVisible();
+    // In-stock cards carry no badge; the badge is reserved for low / out.
+    await expect(page.getByTestId("stock-badge").filter({ hasText: "En stock" })).toHaveCount(0);
   });
 
   test("does not leak cost_price_cents anywhere in the payload/DOM (AC-13)", async ({
@@ -334,8 +334,9 @@ test.describe("catalog under /en (AC-10)", () => {
     expect(response?.status()).toBe(200);
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page.getByTestId("product-grid")).toBeVisible();
-    // English stock copy is present (In stock / Only N left / Out of stock).
-    await expect(page.getByTestId("stock-badge").first()).toBeVisible();
+    // Out-of-stock cards (opted in via disponibilidad=todos) carry English copy.
+    await page.goto("/en/sillas?disponibilidad=todos");
+    await expect(page.getByTestId("stock-badge").filter({ hasText: "Out of stock" }).first()).toBeVisible();
   });
 
   test("English pagination keeps the /en prefix on page links", async ({
