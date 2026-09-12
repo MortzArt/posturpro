@@ -12,7 +12,7 @@ one decisive chair or furnished workspace; no faces, no text, no thumbs-up clich
 
 | File | Slot | Unsplash photo | Photographer | Profile | Aspect / size |
 | --- | --- | --- | --- | --- | --- |
-| `hero/green-executive-chair.jpg` | Homepage hero media card (`HERO_IMAGE`) | — owner-supplied photo (green high-back executive chair by a factory window), not stock | PosturPro (owner) | — | ~1.1/1 · 1115×1000 · 248 KB (2026-09-12) |
+| `hero/green-chair-window-left.jpg` | Homepage hero media card (`HERO_IMAGE`) | — owner-supplied photo (green high-back executive chair by a factory window), not stock | PosturPro (owner) | — | ~1.1/1 · 1115×1000 · 252 KB (2026-09-12, mirrored v2) |
 | `editorial/workspace.jpg` | Homepage editorial band (`EDITORIAL_BAND_IMAGE`) | `photo-1688578735427-994ecdea3ea4` | EFFYDESK | <https://unsplash.com/@effydesk> | 16/9 · 1800×1013 · 295 KB |
 | `catalog/eleva-banner.jpg` | Catalog index banner (`CATALOG_BANNER_IMAGE`) | — owner-supplied marketing artwork (PosturPro poster: three chairs + slogan), not stock | PosturPro (owner) | — | ~3/1 · 1514×500 · 64 KB (owner export, 2026-09-12 v2) |
 | `b2b/office-workspace.jpg` | B2B `/empresas` hero (`B2B_HERO_IMAGE`) | `photo-1688578735997-32626d2babd4` ([ElELSfycRvw](https://unsplash.com/photos/a-woman-sitting-in-an-office-chair-with-a-computer-on-her-desk-ElELSfycRvw)) | EFFYDESK | <https://unsplash.com/@effydesk> | 4/3 · 1400×1050 · 261 KB |

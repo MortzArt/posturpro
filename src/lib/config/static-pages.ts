@@ -115,7 +115,7 @@ export const HOME_FEATURED_BRANDS = 6;
  * `null` to restore the blank-tile placeholder — the Hero degrades either way.
  */
 export const HERO_IMAGE: string | null =
-  "/images/hero/green-executive-chair.jpg";
+  "/images/hero/green-chair-window-left.jpg";
 
 /* ------------------------------------------------------------------------- *
  * Showroom config (Option A): address/hours copy lives in the `showroom` page
