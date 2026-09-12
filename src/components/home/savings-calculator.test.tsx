@@ -1,19 +1,8 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SavingsCalculator } from "@/components/home/savings-calculator";
 import { CALCULATOR_MODELS } from "@/lib/config/calculator";
-
-// Radix Select relies on Pointer Capture + scrollIntoView, which jsdom does not
-// implement. Polyfill them so the open/select interaction can be exercised.
-beforeAll(() => {
-  const proto = window.HTMLElement.prototype;
-  proto.hasPointerCapture = proto.hasPointerCapture ?? (() => false);
-  proto.setPointerCapture = proto.setPointerCapture ?? (() => undefined);
-  proto.releasePointerCapture =
-    proto.releasePointerCapture ?? (() => undefined);
-  proto.scrollIntoView = proto.scrollIntoView ?? (() => undefined);
-});
 
 const LABELS = {
   selectLabel: "Modelo de silla",
@@ -32,17 +21,23 @@ describe("SavingsCalculator (T19 AC-23, edge 9)", () => {
     expect(results).toHaveTextContent("de ahorro");
   });
 
-  it("exposes every configured model as an option and updates on change", async () => {
+  it("exposes every configured model as a chip and updates on selection", async () => {
     const user = userEvent.setup();
     render(<SavingsCalculator labels={LABELS} />);
 
-    await user.click(screen.getByTestId("calc-select"));
-    // Radix Select renders options in a portal listbox.
+    // Every model is a radio chip, visible at once (no dropdown to open).
+    expect(screen.getAllByRole("radio")).toHaveLength(CALCULATOR_MODELS.length);
     const sayl = CALCULATOR_MODELS.find((m) => m.id === "sayl");
     if (!sayl) {
       throw new Error("expected a 'sayl' entry in CALCULATOR_MODELS");
     }
-    await user.click(screen.getByText(`${sayl.brand} — ${sayl.model}`));
+    await user.click(
+      screen.getByRole("radio", { name: `${sayl.brand} — ${sayl.model}` }),
+    );
+    expect(screen.getByTestId("calc-model-sayl")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
 
     // Sayl: (1,950,000 − 980,000) / 1,950,000 ≈ 50%.
     expect(screen.getByTestId("calc-results")).toHaveTextContent("50%");

@@ -2,13 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Image from "next/image";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { ModelChips } from "@/components/home/model-chips";
 import { formatMXN } from "@/lib/money";
 import {
   CALCULATOR_MODELS,
@@ -90,36 +84,28 @@ export function SavingsCalculator({
         </div>
       ) : null}
 
-      <div className={cn(imageUrl ? "flex flex-col" : "contents")}>
-        {/* Compare panel — model picker + the two price bars. */}
-        <div className="flex flex-col p-6 sm:p-8">
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="calc-model"
-              className="text-sm font-medium text-foreground"
-            >
-              {labels.selectLabel}
-            </label>
-            <Select value={selectedId} onValueChange={setSelectedId}>
-              <SelectTrigger
-                id="calc-model"
-                size="default"
-                className="h-10 w-full text-sm"
-                data-testid="calc-select"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CALCULATOR_MODELS.map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
-                    {modelLabel(model)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      {/* Right column: model chips on top, then price bars (left) beside the
+          result tile (right) — owner request 2026-09-12. */}
+      <div className="flex flex-col">
+        <div className="flex flex-col gap-2.5 p-6 pb-0 sm:p-8 sm:pb-0">
+          <p
+            id="calc-model-label"
+            className="text-sm font-medium text-foreground"
+          >
+            {labels.selectLabel}
+          </p>
+          <ModelChips
+            models={CALCULATOR_MODELS}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            labelledBy="calc-model-label"
+            formatLabel={modelLabel}
+          />
+        </div>
 
-          <div className="mt-8 flex flex-1 flex-col justify-center gap-6">
+        <div className="mt-6 grid flex-1 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+          {/* Compare panel — the two price bars. */}
+          <div className="flex flex-col justify-center gap-6 p-6 sm:p-8">
             {/* Compare-at grammar mirrors the product cards: the "new" reference
               price is struck + muted; the PosturPro price carries the weight. */}
             <Bar
@@ -138,36 +124,35 @@ export function SavingsCalculator({
               valueClassName="text-sm font-semibold tabular-nums text-foreground"
             />
           </div>
-        </div>
-
-        {/* Result tile — whisper-green tint canvas (flat, no border/shadow) with
+          {/* Result tile — whisper-green tint canvas (flat, no border/shadow) with
           the naked Factorial stat numeral, like the hero stat row. */}
-        <div
-          aria-live="polite"
-          data-testid="calc-results"
-          className="flex flex-col justify-center gap-5 bg-[var(--tint-green)] p-6 sm:p-8 lg:p-10"
-        >
-          <div>
-            <span
-              key={`pct-${result.savingsPct}`}
-              className="price-value block font-heading text-[3.5rem] font-bold leading-none tracking-[-0.04em] text-foreground sm:text-[4rem]"
-            >
-              {result.savingsPct}%
-            </span>
-            <span className="mt-2 block text-base font-medium text-foreground/80">
-              {labels.pctSuffix}
-            </span>
-          </div>
-          <div aria-hidden className="h-px w-full bg-foreground/10" />
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            <span
-              key={`amt-${result.savingsCents}`}
-              className="price-value font-heading text-xl font-bold tabular-nums text-foreground"
-            >
-              {savingsLabel}
-            </span>{" "}
-            {labels.amountSuffix}
-          </p>
+          <div
+            aria-live="polite"
+            data-testid="calc-results"
+            className="flex flex-col justify-center gap-5 bg-[var(--tint-green)] p-6 sm:p-8 lg:p-10"
+          >
+            <div>
+              <span
+                key={`pct-${result.savingsPct}`}
+                className="price-value block font-heading text-[3.5rem] font-bold leading-none tracking-[-0.04em] text-foreground sm:text-[4rem]"
+              >
+                {result.savingsPct}%
+              </span>
+              <span className="mt-2 block text-base font-medium text-foreground/80">
+                {labels.pctSuffix}
+              </span>
+            </div>
+            <div aria-hidden className="h-px w-full bg-foreground/10" />
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              <span
+                key={`amt-${result.savingsCents}`}
+                className="price-value font-heading text-xl font-bold tabular-nums text-foreground"
+              >
+                {savingsLabel}
+              </span>{" "}
+              {labels.amountSuffix}
+            </p>
+          </div>{" "}
         </div>
       </div>
     </div>
