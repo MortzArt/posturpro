@@ -59,3 +59,12 @@ export const B2B_HERO_IMAGE: string | null = "/images/b2b/office-workspace.jpg";
  * collapses the section back to the single-column form — no layout rework.
  */
 export const B2B_QUOTE_IMAGE: string | null = "/images/b2b/quote-office.jpg";
+
+/**
+ * Homepage savings-calculator companion image (owner request 2026-09-12): two
+ * task chairs in a dark studio, filling the LEFT column of the calculator card
+ * on `lg+` (the compare panel + result tile stack on the right). Square source,
+ * cover-cropped. `null` collapses the card back to compare | result.
+ */
+export const CALCULATOR_IMAGE: string | null =
+  "/images/home/savings-chairs.jpg";

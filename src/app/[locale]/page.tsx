@@ -7,6 +7,7 @@ import {
   CATALOG_PATH,
   HOME_FEATURED_PRODUCTS,
   HERO_IMAGE,
+  CALCULATOR_IMAGE,
   SEED_STORE_NAME,
   BUSINESS_ADDRESS,
 } from "@/lib/config";
@@ -255,6 +256,8 @@ export default async function HomePage({ params }: HomePageProps) {
             </p>
           </div>
           <SavingsCalculator
+            imageUrl={CALCULATOR_IMAGE}
+            imageAlt={t("calculator.imageAlt")}
             labels={{
               selectLabel: t("calculator.selectLabel"),
               newPriceLabel: t("calculator.newPriceLabel"),

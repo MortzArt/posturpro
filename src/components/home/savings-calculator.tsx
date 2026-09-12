@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 import {
   Select,
   SelectContent,
@@ -9,7 +10,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatMXN } from "@/lib/money";
-import { CALCULATOR_MODELS, type ChairReference } from "@/lib/config/calculator";
+import {
+  CALCULATOR_MODELS,
+  type ChairReference,
+} from "@/lib/config/calculator";
 import { computeSavings } from "@/lib/catalog/savings";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +40,9 @@ export interface SavingsCalculatorLabels {
 
 interface SavingsCalculatorProps {
   labels: SavingsCalculatorLabels;
+  /** Optional left-column photo (`CALCULATOR_IMAGE`); absent/`null` → two-panel card. */
+  imageUrl?: string | null;
+  imageAlt?: string;
 }
 
 /** "Herman Miller — Aeron" — identical in both locales (derived from config). */
@@ -43,7 +50,11 @@ function modelLabel(chair: ChairReference): string {
   return `${chair.brand} — ${chair.model}`;
 }
 
-export function SavingsCalculator({ labels }: SavingsCalculatorProps) {
+export function SavingsCalculator({
+  labels,
+  imageUrl = null,
+  imageAlt = "",
+}: SavingsCalculatorProps) {
   const [selectedId, setSelectedId] = useState(CALCULATOR_MODELS[0].id);
 
   const chair = useMemo(
@@ -60,90 +71,109 @@ export function SavingsCalculator({ labels }: SavingsCalculatorProps) {
 
   return (
     <div
-      className="factorial-card grid overflow-hidden lg:grid-cols-[1.05fr_0.95fr]"
+      className={cn(
+        "factorial-card grid overflow-hidden",
+        imageUrl
+          ? "lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]"
+          : "lg:grid-cols-[1.05fr_0.95fr]",
+      )}
       data-testid="savings-calculator"
     >
-      {/* Compare panel — model picker + the two price bars. */}
-      <div className="flex flex-col p-6 sm:p-8">
-        <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor="calc-model"
-            className="text-sm font-medium text-foreground"
-          >
-            {labels.selectLabel}
-          </label>
-          <Select value={selectedId} onValueChange={setSelectedId}>
-            <SelectTrigger
-              id="calc-model"
-              size="default"
-              className="h-10 w-full text-sm"
-              data-testid="calc-select"
+      {imageUrl ? (
+        <div className="relative aspect-[16/10] w-full lg:aspect-auto lg:h-full lg:min-h-full">
+          <Image
+            src={imageUrl}
+            alt={imageAlt}
+            fill
+            sizes="(min-width: 1024px) 40vw, 100vw"
+            className="object-cover"
+          />
+        </div>
+      ) : null}
+
+      <div className={cn(imageUrl ? "flex flex-col" : "contents")}>
+        {/* Compare panel — model picker + the two price bars. */}
+        <div className="flex flex-col p-6 sm:p-8">
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="calc-model"
+              className="text-sm font-medium text-foreground"
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CALCULATOR_MODELS.map((model) => (
-                <SelectItem key={model.id} value={model.id}>
-                  {modelLabel(model)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+              {labels.selectLabel}
+            </label>
+            <Select value={selectedId} onValueChange={setSelectedId}>
+              <SelectTrigger
+                id="calc-model"
+                size="default"
+                className="h-10 w-full text-sm"
+                data-testid="calc-select"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CALCULATOR_MODELS.map((model) => (
+                  <SelectItem key={model.id} value={model.id}>
+                    {modelLabel(model)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div className="mt-8 flex flex-1 flex-col justify-center gap-6">
-          {/* Compare-at grammar mirrors the product cards: the "new" reference
+          <div className="mt-8 flex flex-1 flex-col justify-center gap-6">
+            {/* Compare-at grammar mirrors the product cards: the "new" reference
               price is struck + muted; the PosturPro price carries the weight. */}
-          <Bar
-            label={labels.newPriceLabel}
-            value={newPriceLabel}
-            fraction={result.newBarFraction}
-            fillClassName="bg-muted-foreground/30"
-            valueClassName="text-sm tabular-nums text-muted-foreground line-through decoration-muted-foreground/60"
-          />
-          <Bar
-            label={labels.posturLabel}
-            value={posturPriceLabel}
-            fraction={result.posturBarFraction}
-            fillClassName="bg-primary"
-            emphasized
-            valueClassName="text-sm font-semibold tabular-nums text-foreground"
-          />
+            <Bar
+              label={labels.newPriceLabel}
+              value={newPriceLabel}
+              fraction={result.newBarFraction}
+              fillClassName="bg-muted-foreground/30"
+              valueClassName="text-sm tabular-nums text-muted-foreground line-through decoration-muted-foreground/60"
+            />
+            <Bar
+              label={labels.posturLabel}
+              value={posturPriceLabel}
+              fraction={result.posturBarFraction}
+              fillClassName="bg-primary"
+              emphasized
+              valueClassName="text-sm font-semibold tabular-nums text-foreground"
+            />
+          </div>
+
+          <p className="mt-8 text-xs leading-relaxed text-muted-foreground/80">
+            {labels.note}
+          </p>
         </div>
 
-        <p className="mt-8 text-xs leading-relaxed text-muted-foreground/80">
-          {labels.note}
-        </p>
-      </div>
-
-      {/* Result tile — whisper-green tint canvas (flat, no border/shadow) with
+        {/* Result tile — whisper-green tint canvas (flat, no border/shadow) with
           the naked Factorial stat numeral, like the hero stat row. */}
-      <div
-        aria-live="polite"
-        data-testid="calc-results"
-        className="flex flex-col justify-center gap-5 bg-[var(--tint-green)] p-6 sm:p-8 lg:p-10"
-      >
-        <div>
-          <span
-            key={`pct-${result.savingsPct}`}
-            className="price-value block font-heading text-[3.5rem] font-bold leading-none tracking-[-0.04em] text-foreground sm:text-[4rem]"
-          >
-            {result.savingsPct}%
-          </span>
-          <span className="mt-2 block text-base font-medium text-foreground/80">
-            {labels.pctSuffix}
-          </span>
+        <div
+          aria-live="polite"
+          data-testid="calc-results"
+          className="flex flex-col justify-center gap-5 bg-[var(--tint-green)] p-6 sm:p-8 lg:p-10"
+        >
+          <div>
+            <span
+              key={`pct-${result.savingsPct}`}
+              className="price-value block font-heading text-[3.5rem] font-bold leading-none tracking-[-0.04em] text-foreground sm:text-[4rem]"
+            >
+              {result.savingsPct}%
+            </span>
+            <span className="mt-2 block text-base font-medium text-foreground/80">
+              {labels.pctSuffix}
+            </span>
+          </div>
+          <div aria-hidden className="h-px w-full bg-foreground/10" />
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            <span
+              key={`amt-${result.savingsCents}`}
+              className="price-value font-heading text-xl font-bold tabular-nums text-foreground"
+            >
+              {savingsLabel}
+            </span>{" "}
+            {labels.amountSuffix}
+          </p>
         </div>
-        <div aria-hidden className="h-px w-full bg-foreground/10" />
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          <span
-            key={`amt-${result.savingsCents}`}
-            className="price-value font-heading text-xl font-bold tabular-nums text-foreground"
-          >
-            {savingsLabel}
-          </span>{" "}
-          {labels.amountSuffix}
-        </p>
       </div>
     </div>
   );
@@ -175,7 +205,9 @@ function Bar({
         <span
           className={cn(
             "text-sm",
-            emphasized ? "font-medium text-foreground" : "text-muted-foreground",
+            emphasized
+              ? "font-medium text-foreground"
+              : "text-muted-foreground",
           )}
         >
           {label}
@@ -184,7 +216,10 @@ function Bar({
       </div>
       <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
         <div
-          className={cn("calc-bar-fill h-full w-full rounded-full", fillClassName)}
+          className={cn(
+            "calc-bar-fill h-full w-full rounded-full",
+            fillClassName,
+          )}
           style={{ transform: `scaleX(${fraction})` }}
         />
       </div>

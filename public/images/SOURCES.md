@@ -18,6 +18,7 @@ one decisive chair or furnished workspace; no faces, no text, no thumbs-up clich
 | `catalog/eleva-banner.jpg` | Catalog index banner (`CATALOG_BANNER_IMAGE`) | — owner-supplied marketing artwork (PosturPro poster: three chairs + slogan), not stock | PosturPro (owner) | — | ~3/1 · 1514×500 · 64 KB (owner export, 2026-09-12 v2) |
 | `b2b/office-workspace.jpg` | B2B `/empresas` hero (`B2B_HERO_IMAGE`) | `photo-1688578735997-32626d2babd4` ([ElELSfycRvw](https://unsplash.com/photos/a-woman-sitting-in-an-office-chair-with-a-computer-on-her-desk-ElELSfycRvw)) | EFFYDESK | <https://unsplash.com/@effydesk> | 4/3 · 1400×1050 · 261 KB |
 | `b2b/quote-office.jpg` | B2B `/empresas` quote-form companion (`B2B_QUOTE_IMAGE`) | `photo-1497215728101-856f4ea42174` | Alesia Kazantceva | <https://unsplash.com/@saltnstreets> | 4/5 · 1200×1500 · 232 KB |
+| `home/savings-chairs.jpg` | Homepage savings calculator, left column (`CALCULATOR_IMAGE`) | — owner-supplied render (two mesh task chairs, teal seats, dark studio), not stock | PosturPro (owner) | — | 1/1 · 800×800 · 76 KB (2026-09-12) |
 
 ## Notes
 
