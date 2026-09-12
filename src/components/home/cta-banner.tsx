@@ -51,7 +51,10 @@ export function CtaBanner({
             alt={imageAlt}
             fill
             sizes="(min-width: 1024px) 340px, 280px"
-            className="scale-[1.25] object-contain"
+            // Owner-tuned zoom (2026-09-13): +40% on phones/tablets, +20% on lg
+            // over the previous 1.25 baseline. Transform only — the wrapper box
+            // (and so the banner height) is unchanged.
+            className="scale-[1.75] object-contain lg:scale-[1.5]"
           />
         </div>
       ) : null}
