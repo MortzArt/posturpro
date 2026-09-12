@@ -9,7 +9,6 @@ import type { Locale } from "@/i18n/routing";
 import {
   hasNoFilters,
   parseCatalogFilters,
-  serializeFilters,
   type RawSearchParams,
 } from "@/lib/catalog/search-params";
 import { loadFacetOptions } from "@/lib/catalog/facets";
@@ -19,6 +18,7 @@ import { Breadcrumbs } from "@/components/catalog/breadcrumbs";
 import { CatalogBanner } from "@/components/catalog/catalog-banner";
 import { CatalogShell } from "@/components/catalog/catalog-shell";
 import { SearchResults } from "@/components/catalog/search-results";
+import { CatalogResultsControls } from "@/components/catalog/results-controls";
 import type { CatalogFilters, SortKey } from "@/lib/catalog/search.types";
 
 /**
@@ -134,6 +134,7 @@ export default async function CatalogListPage({
   // Locale-aware form target so a NATIVE (JS-off) GET submit stays on the
   // current locale (`/en/sillas` under `/en`), not the unprefixed default (M-3).
   const catalogAction = getPathname({ href: CATALOG_PATH, locale });
+  const labels = buildCatalogLabels(t);
 
   return (
     <section className="mx-auto max-w-(--breakpoint-xl) px-4 py-8 md:px-6 md:py-10 lg:px-8">
@@ -172,15 +173,26 @@ export default async function CatalogListPage({
         }
         filters={filters}
         facets={options}
-        activeFilterCount={activeFilterCount}
         hasActiveFilters={active}
-        searchPreservedParams={searchPreservedParams(filters)}
         chips={chips}
         clearAllLabel={t("filters.clearAll")}
-        toolbarLabels={buildToolbarLabels(t)}
+        labels={labels}
         catalogAction={catalogAction}
       >
-        <SearchResults filters={filters} rawPage={rawPage} />
+        <SearchResults
+          filters={filters}
+          rawPage={rawPage}
+          controls={
+            <CatalogResultsControls
+              filters={filters}
+              facets={options}
+              labels={labels}
+              activeFilterCount={activeFilterCount}
+              hasActiveFilters={active}
+              catalogAction={catalogAction}
+            />
+          }
+        />
       </CatalogShell>
     </section>
   );
@@ -227,15 +239,6 @@ function countActiveFilters(filters: CatalogFilters): number {
   return count;
 }
 
-/** The serialized filters (minus page) as hidden inputs for the toolbar search. */
-function searchPreservedParams(
-  filters: CatalogFilters,
-): Record<string, string> {
-  const withoutQuery = serializeFilters({ ...filters, query: null });
-  const params = Object.fromEntries(new URLSearchParams(withoutQuery));
-  return params;
-}
-
 /** Build the SortKey→label map from translations. */
 function sortLabels(
   t: Awaited<ReturnType<typeof getTranslations>>,
@@ -253,17 +256,12 @@ function sortLabels(
   return byKey as Record<SortKey, string>;
 }
 
-/** Assemble the full toolbar/filter-panel label bundle from translations. */
-function buildToolbarLabels(
+/** Assemble the catalog control label bundle (sort, sheet, panel) from translations. */
+function buildCatalogLabels(
   t: Awaited<ReturnType<typeof getTranslations>>,
-): Parameters<typeof CatalogShell>[0]["toolbarLabels"] {
+): Parameters<typeof CatalogShell>[0]["labels"] {
   const options = sortLabels(t);
   return {
-    searchPlaceholder: t("search.placeholder"),
-    searchAriaLabel: t("search.label"),
-    searchClear: t("search.clear"),
-    searchSubmit: t("search.submit"),
-    searchOpen: t("search.open"),
     sortAriaLabel: t("sort.label"),
     sortPrefix: t("sort.prefix"),
     sortOptions: options,

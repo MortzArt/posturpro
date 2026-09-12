@@ -3,8 +3,8 @@
 import { CATALOG_PATH } from "@/lib/config";
 import { FilterNavigationProvider } from "@/components/catalog/filter-navigation";
 import {
-  CatalogToolbar,
-  type ToolbarLabels,
+  CatalogNoScriptFilters,
+  type CatalogLabels,
 } from "@/components/catalog/catalog-toolbar";
 import { CatalogGridRegion } from "@/components/catalog/catalog-grid-region";
 import {
@@ -16,8 +16,8 @@ import { ResultAnnouncerProvider } from "@/components/catalog/result-announcer";
 import type { CatalogFilters, FacetOptions } from "@/lib/catalog/search.types";
 
 /**
- * CatalogShell (T5) — the client interactive region of `/sillas`: toolbar →
- * page heading (+ index banner) → active-filter chips + the desktop filter sidebar (`≥ lg`) + the grid region
+ * CatalogShell (T5) — the client interactive region of `/sillas`: JS-off filter
+ * fallback → page heading (+ index banner) → active-filter chips + the desktop filter sidebar (`≥ lg`) + the grid region
  * (server-rendered, passed as `children`, dimmed while a client change is
  * pending — M-7). Wraps everything in the `FilterNavigationProvider` so the
  * toolbar/sidebar controls share ONE `useTransition` and one serialize path.
@@ -30,19 +30,16 @@ import type { CatalogFilters, FacetOptions } from "@/lib/catalog/search.types";
 interface CatalogShellProps {
   filters: CatalogFilters;
   facets: FacetOptions;
-  toolbarLabels: ToolbarLabels;
-  activeFilterCount: number;
+  labels: CatalogLabels;
   hasActiveFilters: boolean;
-  searchPreservedParams: Record<string, string>;
   chips: ActiveFilterChip[];
   clearAllLabel: string;
   /** Locale-aware `/sillas` target for native (JS-off) form GETs (M-3). */
   catalogAction: string;
   /**
-   * The page heading (h1 + subtitle) and optional index banner. They render
-   * BELOW the toolbar (owner request 2026-09-12: search + sort lead the page)
-   * but must live inside the shell so the toolbar keeps the shared filter
-   * context. Server nodes passed through (RSC-through-client-child).
+   * The page heading (h1 + subtitle) and optional index banner, passed through
+   * as server nodes (RSC-through-client-child) so the shell owns the vertical
+   * order: heading → banner → chips → sidebar + grid.
    */
   heading: React.ReactNode;
   banner?: React.ReactNode;
@@ -52,10 +49,8 @@ interface CatalogShellProps {
 export function CatalogShell({
   filters,
   facets,
-  toolbarLabels,
-  activeFilterCount,
+  labels,
   hasActiveFilters,
-  searchPreservedParams,
   chips,
   clearAllLabel,
   catalogAction,
@@ -66,13 +61,11 @@ export function CatalogShell({
   return (
     <FilterNavigationProvider filters={filters}>
       <ResultAnnouncerProvider>
-        <CatalogToolbar
+        <CatalogNoScriptFilters
           filters={filters}
           facets={facets}
-          labels={toolbarLabels}
-          activeFilterCount={activeFilterCount}
+          labels={labels}
           hasActiveFilters={hasActiveFilters}
-          searchPreservedParams={searchPreservedParams}
           catalogAction={catalogAction}
         />
 
@@ -92,7 +85,7 @@ export function CatalogShell({
                 context="sidebar"
                 facets={facets}
                 selected={filters}
-                labels={toolbarLabels.filterPanel}
+                labels={labels.filterPanel}
                 hasActiveFilters={hasActiveFilters}
                 action={catalogAction}
               />

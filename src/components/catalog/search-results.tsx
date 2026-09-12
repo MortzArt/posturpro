@@ -28,6 +28,8 @@ import type { CatalogProductCard } from "@/lib/catalog/types";
 interface SearchResultsProps {
   filters: CatalogFilters;
   rawPage: string | string[] | undefined;
+  /** Right-hand controls rendered on the count line (sort, mobile filters). */
+  controls?: React.ReactNode;
 }
 
 /** Load the popular strip, degrading to an empty strip on failure (edge 8). */
@@ -44,7 +46,11 @@ async function safePopular(): Promise<CatalogProductCard[]> {
   }
 }
 
-export async function SearchResults({ filters, rawPage }: SearchResultsProps) {
+export async function SearchResults({
+  filters,
+  rawPage,
+  controls,
+}: SearchResultsProps) {
   const t = await getTranslations("catalog");
   const result = await searchProducts(filters, rawPage);
 
@@ -56,12 +62,15 @@ export async function SearchResults({ filters, rawPage }: SearchResultsProps) {
   // (M-7), so this visible node is NOT itself the live region.
   const countNode = (
     <>
-      <p
-        className="mb-4 text-sm font-medium tabular-nums text-muted-foreground"
-        data-testid="result-count"
-      >
-        {countText}
-      </p>
+      <div className="mb-4 flex min-h-11 items-center justify-between gap-3">
+        <p
+          className="text-sm font-medium tabular-nums text-muted-foreground"
+          data-testid="result-count"
+        >
+          {countText}
+        </p>
+        {controls}
+      </div>
       <ResultCountAnnouncer text={countText} count={result.total} />
     </>
   );
