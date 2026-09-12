@@ -41,11 +41,15 @@ export function ProcessSteps(props: ProcessStepsProps) {
         </p>
       </div>
 
-      <ol className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Phones: a snap-scrolling row of narrower cards (next card peeks in) that
+          bleeds to the viewport edges and pads itself so the layered card shadow
+          isn't clipped by the scroll container; the negative margins cancel the
+          padding so the rhythm is unchanged. sm+: the 2/4-column grid. */}
+      <ol className="scrollbar-quiet -mx-4 -mt-6 -mb-8 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pt-6 pb-10 scroll-px-4 sm:m-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:p-0 lg:grid-cols-4">
         {props.steps.map((step, index) => (
           <li
             key={step.number}
-            className="stagger factorial-card flex flex-col gap-1 p-6"
+            className="stagger factorial-card flex w-[72vw] max-w-[18rem] shrink-0 snap-start flex-col gap-1 p-6 sm:w-auto sm:max-w-none"
             style={{ transitionDelay: `${index * STAGGER_STEP_MS}ms` }}
           >
             <span
