@@ -89,7 +89,11 @@ export function RecentlyViewed({
       <h2 className="mb-4 font-heading text-sm tracking-[-0.02em] text-foreground">
         {heading}
       </h2>
-      <ul className="flex snap-x gap-4 overflow-x-auto pb-2 sm:grid sm:grid-cols-3 sm:gap-x-4 sm:gap-y-8 sm:overflow-visible lg:grid-cols-4">
+      {/* Mobile scroller bleeds to the viewport edges and pads itself (top/side
+          16–24px, bottom 40px) so the cards' layered shadow is never clipped by
+          the scroll container; the negative margins cancel the padding so the
+          layout rhythm is unchanged. sm+ is a plain grid with visible overflow. */}
+      <ul className="-mx-4 -mt-6 -mb-8 flex snap-x gap-4 overflow-x-auto px-4 pt-6 pb-10 scroll-px-4 sm:m-0 sm:grid sm:grid-cols-3 sm:gap-x-4 sm:gap-y-8 sm:overflow-visible sm:p-0 lg:grid-cols-4">
         {entries.map((entry, index) => (
           <li key={entry.slug} className="w-40 shrink-0 snap-start sm:w-auto">
             <ProductCard
