@@ -1,16 +1,8 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import Image from "next/image";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  UploadCircle02Icon,
-  DragDropVerticalIcon,
-  ArrowUp01Icon,
-  ArrowDown01Icon,
-  Delete02Icon,
-  StarIcon,
-} from "@hugeicons/core-free-icons";
+import { UploadCircle02Icon, Alert02Icon } from "@hugeicons/core-free-icons";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +19,7 @@ import {
   uploadImageAction,
   reorderImagesAction,
   setCoverAction,
+  setImageVariantAction,
   deleteImageAction,
 } from "@/app/admin/(app)/products/image-actions";
 import {
@@ -34,23 +27,29 @@ import {
   IMAGE_MAX_BYTES,
 } from "@/lib/config";
 import { cn } from "@/lib/utils";
-import { Alert02Icon } from "@hugeicons/core-free-icons";
-import type { EditImage } from "@/lib/admin/products/product-read";
+import { ImageCard } from "@/components/admin/products/image-card";
+import type { EditImage, EditVariant } from "@/lib/admin/products/product-read";
 
 /**
  * ImageManager (T11 Slice 3, AC-14..17) — dropzone + drag-order grid + cover
  * radiogroup + delete. Native Pointer Events drag with a keyboard ↑/↓ fallback
- * (the guaranteed a11y path). Optimistic order/cover reconciled on the server
- * response. Server re-validates every upload. Section within the edit form.
+ * (the guaranteed a11y path). Optimistic order/cover/colour reconciled on the
+ * server response. Server re-validates every upload. Section within the edit
+ * form. The card itself lives in `image-card.tsx`.
  */
 const CARD_HEIGHT_PX = 160;
+/** Extra card height when the per-image colour picker row is present. */
+const COLOR_ROW_HEIGHT_PX = 32;
 
 export function ImageManager({
   productId,
   initialImages,
+  variants = [],
 }: {
   productId: string;
   initialImages: EditImage[];
+  /** The product's colours; when non-empty each card offers a colour picker. */
+  variants?: EditVariant[];
 }) {
   const [images, setImages] = useState<EditImage[]>(initialImages);
   const [uploading, setUploading] = useState(0);
@@ -85,7 +84,8 @@ export function ImageManager({
   };
 
   const ids = images.map((image) => image.id);
-  const reorder = usePointerReorder(ids, CARD_HEIGHT_PX, persistOrder);
+  const cardHeightPx = CARD_HEIGHT_PX + (variants.length > 0 ? COLOR_ROW_HEIGHT_PX : 0);
+  const reorder = usePointerReorder(ids, cardHeightPx, persistOrder);
 
   const move = (index: number, direction: -1 | 1): void => {
     const target = index + direction;
@@ -135,6 +135,21 @@ export function ImageManager({
     startTransition(async () => {
       const result = await setCoverAction(productId, imageId);
       if (!result.ok) setError("No se pudo cambiar la portada.");
+    });
+  };
+
+  /** Bind an image to one colour (or back to all colours). Optimistic, rolled back on failure. */
+  const assignColor = (imageId: string, variantId: string | null): void => {
+    const previous = images.find((image) => image.id === imageId)?.variantId ?? null;
+    setImages((prev) => prev.map((image) => (image.id === imageId ? { ...image, variantId } : image)));
+    startTransition(async () => {
+      const result = await setImageVariantAction(productId, imageId, variantId);
+      if (!result.ok) {
+        setImages((prev) =>
+          prev.map((image) => (image.id === imageId ? { ...image, variantId: previous } : image)),
+        );
+        setError("No se pudo asignar el color a la imagen.");
+      }
     });
   };
 
@@ -196,6 +211,8 @@ export function ImageManager({
               onMoveDown={() => move(index, 1)}
               onChooseCover={() => chooseCover(image.id)}
               onDelete={() => requestDelete(image)}
+              variants={variants}
+              onChangeColor={(variantId) => assignColor(image.id, variantId)}
             />
           ))}
         </div>
@@ -206,7 +223,12 @@ export function ImageManager({
           Subiendo {uploading} {uploading === 1 ? "imagen" : "imágenes"}…
         </p>
       ) : null}
-      <p className="text-xs text-muted-foreground">Una sola portada. Se muestra primero en la tienda.</p>
+      <p className="text-xs text-muted-foreground">
+        Una sola portada. Se muestra primero en la tienda.
+        {variants.length > 0
+          ? " Las imágenes en «Todos» se ven con cualquier color; las asignadas a un color aparecen primero al elegirlo."
+          : null}
+      </p>
       <p ref={liveRef} aria-live="polite" className="sr-only" />
 
       <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && clearPendingDelete()}>
@@ -251,95 +273,4 @@ function uploadErrorMessage(reason: string): string {
   if (reason === "bad-type") return "Formato no permitido (usa JPG/PNG/WebP).";
   if (reason === "too-large") return "La imagen supera 5 MB.";
   return "No se pudo subir la imagen. Intenta de nuevo.";
-}
-
-interface ImageCardProps {
-  image: EditImage;
-  index: number;
-  total: number;
-  isDragging: boolean;
-  offsetY: number;
-  onPointerDownHandle: (event: React.PointerEvent) => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-  onChooseCover: () => void;
-  onDelete: () => void;
-}
-
-function ImageCard({
-  image, index, total, isDragging, offsetY,
-  onPointerDownHandle, onMoveUp, onMoveDown, onChooseCover, onDelete,
-}: ImageCardProps) {
-  return (
-    <div
-      className={cn(
-        "reorder-item relative flex w-28 flex-col gap-1 rounded-md border border-border p-1.5 sm:w-32",
-        image.isPrimary && "ring-2 ring-ring",
-        isDragging && "z-10 opacity-95 shadow-lg",
-      )}
-      style={isDragging ? { transform: `translateY(${offsetY}px) scale(1.03)`, transition: "none" } : undefined}
-      data-testid={`admin-image-card-${image.id}`}
-    >
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          aria-label="Reordenar (arrastra o usa las flechas)"
-          onPointerDown={onPointerDownHandle}
-          className="inline-flex size-9 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 sm:size-8"
-          style={{ touchAction: "none" }}
-        >
-          <HugeiconsIcon icon={DragDropVerticalIcon} size={16} strokeWidth={2} aria-hidden />
-        </button>
-        {image.isPrimary ? (
-          <HugeiconsIcon icon={StarIcon} size={13} strokeWidth={2} aria-hidden className="text-foreground" />
-        ) : null}
-      </div>
-      <Image src={image.url} alt="" width={128} height={96} className="h-20 w-full rounded-sm bg-muted object-cover" />
-      <label className="flex items-center gap-1 text-xs">
-        <input
-          type="radio"
-          name="cover"
-          checked={image.isPrimary}
-          onChange={onChooseCover}
-          data-testid={`admin-image-cover-${image.id}`}
-          className="size-3 accent-primary"
-        />
-        Portada
-      </label>
-      <div className="flex items-center justify-between">
-        <div className="flex gap-0.5">
-          <IconButton label="Subir imagen" disabled={index === 0} onClick={onMoveUp} icon={ArrowUp01Icon} testid={`admin-image-up-${image.id}`} />
-          <IconButton label="Bajar imagen" disabled={index === total - 1} onClick={onMoveDown} icon={ArrowDown01Icon} testid={`admin-image-down-${image.id}`} />
-        </div>
-        <IconButton label="Eliminar imagen" onClick={onDelete} icon={Delete02Icon} testid={`admin-image-delete-${image.id}`} destructive />
-      </div>
-    </div>
-  );
-}
-
-function IconButton({
-  label, onClick, icon, testid, disabled, destructive,
-}: {
-  label: string;
-  onClick: () => void;
-  icon: typeof ArrowUp01Icon;
-  testid: string;
-  disabled?: boolean;
-  destructive?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      onClick={onClick}
-      disabled={disabled}
-      data-testid={testid}
-      className={cn(
-        "inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-30 sm:size-8",
-        destructive && "hover:text-destructive",
-      )}
-    >
-      <HugeiconsIcon icon={icon} size={16} strokeWidth={2} aria-hidden />
-    </button>
-  );
 }

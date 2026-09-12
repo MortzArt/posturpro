@@ -47,10 +47,13 @@ export function shouldStrikeCompareAt(
 /**
  * The image set to show for a selection (AC-7, edge 1 & 8).
  *
- * A variant's own images take precedence; if it has none we fall back to the
- * SHARED product images (`variantId === null`). When a product has no variants,
- * `variantId` is `null` and we return the shared set directly. The caller renders
- * the placeholder tile when the returned array is empty.
+ * A variant's own images lead, followed by the SHARED product images
+ * (`variantId === null`) — so a photo uploaded without a colour is always
+ * visible, and colour-specific shots simply jump to the front when that colour
+ * is chosen (owner request 2026-09-12; previously own images REPLACED the shared
+ * set, which hid every admin upload behind a single seeded per-colour image).
+ * When a product has no variants, `variantId` is `null` and we return the shared
+ * set directly. The caller renders the placeholder tile when the array is empty.
  */
 export function imagesForVariant(
   allImages: readonly ProductImageView[],
@@ -61,7 +64,7 @@ export function imagesForVariant(
     return shared;
   }
   const own = allImages.filter((image) => image.variantId === variantId);
-  return own.length > 0 ? own : shared;
+  return [...own, ...shared];
 }
 
 /** The stock state for a single variant (its own stock drives its own badge). */

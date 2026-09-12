@@ -61,7 +61,11 @@ export default async function EditProductPage({
         tagSuggestions={tags.map((tag) => tag.name)}
         editSections={
           <>
-            <ImageManager productId={product.id} initialImages={product.images} />
+            <ImageManager
+              productId={product.id}
+              initialImages={product.images}
+              variants={product.variants}
+            />
             <VariantEditor
               productId={product.id}
               basePrice={product.values.price}
