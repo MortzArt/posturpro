@@ -1,8 +1,8 @@
 /**
  * Footer social + legal link destinations (T19 n-3).
  *
- * Instagram is live (owner-supplied 2026-09-12). The remaining hrefs are
- * PLACEHOLDERS — those profiles/legal pages do not exist yet (tracked in
+ * Instagram + Facebook are live (owner-supplied 2026-09-12). The remaining hrefs
+ * are PLACEHOLDERS — those profiles/legal pages do not exist yet (tracked in
  * `tasks/client-content-questionnaire.md`, PART M, as go-live data). Previously
  * each footer `<a>` hardcoded `href="#"`, so swapping in real URLs meant editing
  * five separate JSX attributes. Centralizing them here makes each swap a ONE-LINE
@@ -18,6 +18,10 @@ export const FOOTER_LINK_PLACEHOLDER = "#" as const;
 
 /** The business's public Instagram profile (owner-supplied 2026-09-12). */
 export const INSTAGRAM_URL = "https://www.instagram.com/posturpro" as const;
+
+/** The business's public Facebook page (owner-supplied 2026-09-12). */
+export const FACEBOOK_URL =
+  "https://www.facebook.com/people/PosturPro/" as const;
 
 /**
  * Every CONFIGURED social profile URL (placeholders excluded) — feeds the
@@ -43,7 +47,7 @@ export interface FooterExternalLink {
 export const FOOTER_SOCIAL_LINKS: readonly FooterExternalLink[] = [
   { key: "instagram", href: INSTAGRAM_URL },
   { key: "linkedin", href: FOOTER_LINK_PLACEHOLDER },
-  { key: "facebook", href: FOOTER_LINK_PLACEHOLDER },
+  { key: "facebook", href: FACEBOOK_URL },
 ] as const;
 
 /**

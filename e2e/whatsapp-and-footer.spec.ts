@@ -85,19 +85,20 @@ test.describe("footer restyle + graceful degrade (T19 AC-16, edge 2)", () => {
     )
   })
 
-  test("social + legal links render exactly once each (no duplicate chrome)", async ({
+  test("configured social + legal links render exactly once each (no duplicate chrome)", async ({
     page,
   }) => {
     await page.goto("/")
     for (const id of [
       "footer-social-instagram",
-      "footer-social-linkedin",
       "footer-social-facebook",
       "footer-legal-privacy",
       "footer-legal-terms",
     ]) {
       await expect(page.getByTestId(id)).toHaveCount(1)
     }
+    // Unconfigured profiles (LinkedIn) are hidden entirely, not rendered disabled.
+    await expect(page.getByTestId("footer-social-linkedin")).toHaveCount(0)
   })
 
   test("footer catalog link carries the /en prefix in English (AC-6/AC-20)", async ({

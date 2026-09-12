@@ -1,4 +1,11 @@
 import { getTranslations } from "next-intl/server";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Facebook01Icon,
+  InstagramIcon,
+  Linkedin01Icon,
+} from "@hugeicons/core-free-icons";
+import type { IconSvgElement } from "@hugeicons/react";
 import { Link } from "@/i18n/navigation";
 import {
   BRANDS_PATH,
@@ -18,7 +25,8 @@ import { cn } from "@/lib/utils";
 /**
  * SiteFooter (T20 — Factorial white footer, content frozen from T19 AC-16).
  * Async server component. Structure follows the Factorial pattern: a wide brand
- * column (ink text wordmark + blurb + 3 social links) then four columns:
+ * column (ink text wordmark + blurb + the CONFIGURED social links, icon + label)
+ * then four columns:
  * Catálogo / Empresas / Compañía / Contacto, plus a bottom bar (copyright +
  * payments line + legal links). Hairline-separated on a pure-white ground, no
  * drop shadow (AC-15). Column titles 16/600 ink; links 500-weight muted with a
@@ -33,7 +41,7 @@ import { cn } from "@/lib/utils";
  */
 
 const LINK_CLASS = cn(
-  "nav-hover inline-flex rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 outline-none",
+  "nav-hover inline-flex items-center gap-1.5 rounded-sm text-sm font-medium text-muted-foreground underline-offset-4 outline-none",
   "hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring",
 );
 
@@ -63,7 +71,18 @@ interface ExternalFooterLinkProps {
   href: string;
   label: string;
   testid: string;
+  /** Optional leading glyph (social links); decorative, label carries meaning. */
+  icon?: IconSvgElement;
 }
+
+/** Social profiles in display order; only CONFIGURED ones render (owner 2026-09-12). */
+const SOCIAL_ICONS: Record<string, IconSvgElement> = {
+  instagram: InstagramIcon,
+  linkedin: Linkedin01Icon,
+  facebook: Facebook01Icon,
+};
+
+const SOCIAL_ICON_SIZE_PX = 18;
 
 /**
  * A social/legal footer link whose destination is owner-gated (n-3). Until a real
@@ -73,7 +92,20 @@ interface ExternalFooterLinkProps {
  * non-navigating `<span>` (styled identically, `aria-disabled`, no scroll-jump);
  * the instant a real URL is set in `footer-links.ts` it upgrades to a live `<a>`.
  */
-function ExternalFooterLink({ href, label, testid }: ExternalFooterLinkProps) {
+function ExternalFooterLink({
+  href,
+  label,
+  testid,
+  icon,
+}: ExternalFooterLinkProps) {
+  const glyph = icon ? (
+    <HugeiconsIcon
+      icon={icon}
+      size={SOCIAL_ICON_SIZE_PX}
+      strokeWidth={1.75}
+      aria-hidden
+    />
+  ) : null;
   if (href === FOOTER_LINK_PLACEHOLDER) {
     return (
       <span
@@ -82,6 +114,7 @@ function ExternalFooterLink({ href, label, testid }: ExternalFooterLinkProps) {
         data-testid={testid}
         className={cn(LINK_CLASS, "cursor-default opacity-80")}
       >
+        {glyph}
         {label}
       </span>
     );
@@ -95,6 +128,7 @@ function ExternalFooterLink({ href, label, testid }: ExternalFooterLinkProps) {
       target="_blank"
       rel="noopener noreferrer"
     >
+      {glyph}
       {label}
     </a>
   );
@@ -102,7 +136,10 @@ function ExternalFooterLink({ href, label, testid }: ExternalFooterLinkProps) {
 
 export async function SiteFooter() {
   const t = await getTranslations("home.footer");
-  const waUrl = buildWhatsAppUrl(WHATSAPP_PHONE_E164, WHATSAPP_PREFILL_MESSAGE_ES);
+  const waUrl = buildWhatsAppUrl(
+    WHATSAPP_PHONE_E164,
+    WHATSAPP_PREFILL_MESSAGE_ES,
+  );
   const whatsappLine = t("contactWhatsapp", { phone: WHATSAPP_DISPLAY });
 
   return (
@@ -128,15 +165,21 @@ export async function SiteFooter() {
                 { key: "instagram", label: t("socialInstagram") },
                 { key: "linkedin", label: t("socialLinkedin") },
                 { key: "facebook", label: t("socialFacebook") },
-              ].map((social) => (
-                <li key={social.key}>
-                  <ExternalFooterLink
-                    href={socialHref(social.key)}
-                    label={social.label}
-                    testid={`footer-social-${social.key}`}
-                  />
-                </li>
-              ))}
+              ]
+                .filter(
+                  (social) =>
+                    socialHref(social.key) !== FOOTER_LINK_PLACEHOLDER,
+                )
+                .map((social) => (
+                  <li key={social.key}>
+                    <ExternalFooterLink
+                      href={socialHref(social.key)}
+                      label={social.label}
+                      testid={`footer-social-${social.key}`}
+                      icon={SOCIAL_ICONS[social.key]}
+                    />
+                  </li>
+                ))}
             </ul>
           </div>
 
@@ -191,14 +234,23 @@ export async function SiteFooter() {
                 {whatsappLine}
               </a>
             ) : (
-              <span className="text-sm text-muted-foreground" data-testid="footer-whatsapp-text">
+              <span
+                className="text-sm text-muted-foreground"
+                data-testid="footer-whatsapp-text"
+              >
                 {whatsappLine}
               </span>
             )}
-            <a href={`mailto:${t("contactEmail")}`} className={LINK_CLASS} data-testid="footer-email">
+            <a
+              href={`mailto:${t("contactEmail")}`}
+              className={LINK_CLASS}
+              data-testid="footer-email"
+            >
               {t("contactEmail")}
             </a>
-            <p className="text-sm text-muted-foreground">{t("contactShowrooms")}</p>
+            <p className="text-sm text-muted-foreground">
+              {t("contactShowrooms")}
+            </p>
             <p className="text-sm text-muted-foreground">{t("contactHours")}</p>
           </FooterColumn>
         </div>
