@@ -49,7 +49,7 @@ export const B2B_HERO_IMAGE: string | null = "/images/b2b/office-workspace.jpg";
  * `lg+` (4/5 portrait, sticky) and below it on small screens (4/3). `null`
  * collapses the section back to the single-column form — no layout rework.
  */
-export const B2B_QUOTE_IMAGE: string | null = "/images/b2b/quote-office.jpg";
+export const B2B_QUOTE_IMAGE: string | null = "/images/b2b/quote-open-plan-office.jpg";
 
 /**
  * Homepage savings-calculator companion image (owner request 2026-09-12): two
