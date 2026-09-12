@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Tick02Icon } from "@hugeicons/core-free-icons";
 import { Input } from "@/components/ui/input";
+import { FilterSwitch } from "@/components/catalog/filter-switch";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatMXN } from "@/lib/money";
@@ -193,7 +194,8 @@ export function FacetCheckboxGroup({
  * `disponibilidad` with value `todos`. Default catalog view = unchecked = posts
  * nothing = in-stock only. Checking it posts `disponibilidad=todos` on a native
  * (JS-off) submit, exactly the value the parser reads. With JS it also pushes
- * the URL live. Rendered as a `FilterChip` like every other facet option.
+ * the URL live. Rendered as a `FilterSwitch` (on/off toggle, owner request
+ * 2026-09-12) — the one boolean facet, distinct from the multi-select chips.
  */
 export function AvailabilityToggle({
   paramName,
@@ -209,17 +211,15 @@ export function AvailabilityToggle({
   const { patch } = useFilterNavigation();
   const includeOutOfStock = !inStockOnly;
   return (
-    <div className="flex flex-wrap gap-2">
-      <FilterChip
-        id="availability-include-oos"
-        name={paramName}
-        value={allValue}
-        label={label}
-        checked={includeOutOfStock}
-        testId="filter-in-stock"
-        onCheckedChange={(next) => patch({ inStockOnly: !next })}
-      />
-    </div>
+    <FilterSwitch
+      id="availability-include-oos"
+      name={paramName}
+      value={allValue}
+      label={label}
+      checked={includeOutOfStock}
+      testId="filter-in-stock"
+      onCheckedChange={(next) => patch({ inStockOnly: !next })}
+    />
   );
 }
 
