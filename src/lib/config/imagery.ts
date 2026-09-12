@@ -45,7 +45,7 @@ export const B2B_HERO_IMAGE: string | null = "/images/b2b/office-workspace.jpg";
 
 /**
  * B2B `/empresas` QUOTE-FORM companion image (owner request 2026-09-12): a
- * daylit office with chairs, shown in a floating card to the LEFT of the form on
+ * owner-supplied open-plan office with rows of task chairs, shown in a floating card to the LEFT of the form on
  * `lg+` (4/5 portrait, sticky) and below it on small screens (4/3). `null`
  * collapses the section back to the single-column form — no layout rework.
  */
